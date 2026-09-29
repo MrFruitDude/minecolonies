@@ -31,6 +31,22 @@ import org.jetbrains.annotations.NotNull;
 public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, CitizenRenderState, CitizenModel<CitizenRenderState>>
 {
     private static final double  SHADOW_SIZE   = 0.5F;
+    private static final String RENDER_META_WORKING = "working";
+    private static final String RENDER_META_STUDYING = "study";
+    private static final String RENDER_META_BOOK = "book";
+    private static final String RENDER_META_FLOWERS = "flowers";
+    private static final String RENDER_META_POTION = "potion";
+    private static final String RENDER_META_CARROT = "carrot";
+    private static final String RENDER_META_LOGS = "logs";
+    private static final String RENDER_META_ARROW = "arrow";
+    private static final String RENDER_META_BUCKET = "bucket";
+    private static final String RENDER_META_BACKPACK = "backpack";
+    private static final String RENDER_META_STONE = "stone";
+    private static final String RENDER_META_TORCH = "torch";
+    private static final String RENDER_META_SHOVEL = "shovel";
+    private static final String RENDER_META_PICKAXE = "pickaxe";
+    private static final String RENDER_META_ROD = "rod";
+    private static final String RENDER_META_FISH = "fish";
     public static        boolean isItGhostTime = false;
     private final CitizenModel<CitizenRenderState> defaultModel;
 
@@ -67,7 +83,26 @@ public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, Citiz
         state.setCitizen(citizen);
         state.rightArmPose = RenderUtils.getArmPose(citizen, InteractionHand.MAIN_HAND);
         state.leftArmPose = RenderUtils.getArmPose(citizen, InteractionHand.OFF_HAND);
-        state.customHeadHidden = false;
+        final String renderMetadata = citizen.getRenderMetadata();
+        state.working = hasRenderMetadata(renderMetadata, RENDER_META_WORKING);
+        state.studying = hasRenderMetadata(renderMetadata, RENDER_META_STUDYING);
+        state.bookVisible = hasRenderMetadata(renderMetadata, RENDER_META_BOOK);
+        state.flowersVisible = hasRenderMetadata(renderMetadata, RENDER_META_FLOWERS);
+        state.potionVisible = hasRenderMetadata(renderMetadata, RENDER_META_POTION);
+        state.carrotVisible = hasRenderMetadata(renderMetadata, RENDER_META_CARROT);
+        state.logsVisible = hasRenderMetadata(renderMetadata, RENDER_META_LOGS);
+        state.arrowVisible = hasRenderMetadata(renderMetadata, RENDER_META_ARROW);
+        state.bucketVisible = hasRenderMetadata(renderMetadata, RENDER_META_BUCKET);
+        state.backpackVisible = hasRenderMetadata(renderMetadata, RENDER_META_BACKPACK);
+        state.mainHandEmpty = citizen.getMainHandItem().isEmpty();
+        state.stoneLidHidden = !hasRenderMetadata(renderMetadata, RENDER_META_STONE);
+        state.torchesVisible = hasRenderMetadata(renderMetadata, RENDER_META_TORCH);
+        state.shovelVisible = hasRenderMetadata(renderMetadata, RENDER_META_SHOVEL);
+        state.pickaxeVisible = hasRenderMetadata(renderMetadata, RENDER_META_PICKAXE);
+        state.fishingPoleVisible = hasRenderMetadata(renderMetadata, RENDER_META_ROD);
+        state.fishVisible = hasRenderMetadata(renderMetadata, RENDER_META_FISH);
+        state.customHeadHidden = citizen.getCitizenDataView() != null
+            && citizen.getCitizenDataView().getCustomTextureUUID() != null;
         state.actualBodyRotation = 0.0F;
         if (citizen.getCitizenDataView() != null)
         {
@@ -77,6 +112,7 @@ public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, Citiz
             state.legsEquipment = firstNonEmpty(citizenDataView.getDisplayArmor(EquipmentSlot.LEGS), citizen.getItemBySlot(EquipmentSlot.LEGS));
             state.feetEquipment = firstNonEmpty(citizenDataView.getDisplayArmor(EquipmentSlot.FEET), citizen.getItemBySlot(EquipmentSlot.FEET));
         }
+        state.chestEquipmentAbsent = state.chestEquipment.isEmpty();
     }
 
     @Override
@@ -102,7 +138,7 @@ public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, Citiz
         final IModelTypeRegistry registry = IModelTypeRegistry.getInstance();
         final ICitizenDataView citizenDataView = citizen.getCitizenDataView();
         final IModelType modelType = registry.getModelType(citizen.getModelType());
-        if (citizenDataView != null && citizenDataView.getCustomTexture() != null)
+        if (citizenDataView != null && citizenDataView.getCustomTextureUUID() != null)
         {
             final IModelType customType = registry.getModelType(ModModelTypes.CUSTOM_ID);
             if (customType != null && customType.getMaleModel() != null)
@@ -159,5 +195,10 @@ public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, Citiz
             return citizen.getCitizenDataView().getCustomTexture();
         }
         return citizen == null ? Identifier.withDefaultNamespace("textures/entity/citizen/default/settlermale1_b.png") : citizen.getTexture();
+    }
+
+    private static boolean hasRenderMetadata(final String renderMetadata, final String key)
+    {
+        return renderMetadata != null && renderMetadata.contains(key);
     }
 }

@@ -19,7 +19,7 @@
 				"7": "minecolonies:block_item/beetroot",
 				"8": "minecolonies:block_item/rotten_flesh",
 				"9": "minecolonies:block_item/bread",
-				"10": "entity/chest/normal",
+				"10": "minecolonies:block/chest/normal",
 				"11": "block/cauldron_side"
 			},
 			"elements": [

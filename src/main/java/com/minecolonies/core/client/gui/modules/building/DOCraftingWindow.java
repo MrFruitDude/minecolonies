@@ -71,6 +71,12 @@ public class DOCraftingWindow extends AbstractModuleWindow<DOCraftingModuleView>
     private final OptionalPredicate<ItemStack> validator;
 
     /**
+     * Recipe snapshot generation used to refresh a screen that opened while
+     * the client recipe payload was still loading.
+     */
+    private long observedRecipeGeneration = Long.MIN_VALUE;
+
+    /**
      * Constructor for the minimum stock window view.
      */
     public DOCraftingWindow(final DOCraftingModuleView moduleView)
@@ -233,7 +239,20 @@ public class DOCraftingWindow extends AbstractModuleWindow<DOCraftingModuleView>
     public void onOpened()
     {
         super.onOpened();
+        observedRecipeGeneration = RecipeUtils.clientSyncedRecipesGeneration();
         updateStockList();
+    }
+
+    @Override
+    public void onUpdate()
+    {
+        super.onUpdate();
+        final long currentRecipeGeneration = RecipeUtils.clientSyncedRecipesGeneration();
+        if (currentRecipeGeneration != observedRecipeGeneration)
+        {
+            observedRecipeGeneration = currentRecipeGeneration;
+            updateStockList();
+        }
     }
 
     /**

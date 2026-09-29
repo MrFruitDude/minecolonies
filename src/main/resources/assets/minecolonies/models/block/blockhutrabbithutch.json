@@ -10,7 +10,7 @@
 		"first": {
       "render_type": "solid",
 			"textures": {
-				"14": "entity/chest/normal",
+				"14": "minecolonies:block/chest/normal",
 				"15": "block/cauldron_side",
 				"16": "block/oak_planks",
 				"17": "minecolonies:block/liquid/liq1",

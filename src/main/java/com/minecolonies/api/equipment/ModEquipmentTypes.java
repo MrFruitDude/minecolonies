@@ -10,12 +10,14 @@ import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.api.util.constant.translation.ToolTranslationConstants;
 import com.minecolonies.apiimp.CommonMinecoloniesAPIImpl;
 import net.minecraft.core.Registry;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.*;
+import net.minecraft.world.item.enchantment.Repairable;
 import net.neoforged.neoforge.common.ItemAbilities;
 import net.neoforged.neoforge.common.ItemAbility;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -208,7 +210,12 @@ public class ModEquipmentTypes
         {
             return Compatibility.getToolLevel(itemStack);
         }
-        return Compatibility.getItemLevel(itemStack);
+        final int registeredLevel = Compatibility.getItemLevel(itemStack);
+        // Item-material tags are the 26.2 replacement for the removed
+        // TieredItem/Tier metadata.  They may be unavailable when the one-time
+        // common setup registry is populated, so resolve them lazily as a
+        // runtime fallback as well.
+        return registeredLevel >= 0 ? registeredLevel : getToolMaterialLevel(itemStack);
     }
 
     /**
@@ -261,7 +268,16 @@ public class ModEquipmentTypes
             {
                 final ItemStack dummy = new ItemStack(item);
 
-                if (ItemStackUtils.getEquippable(dummy) != null)
+                // Minecraft 26.2 no longer exposes the old TieredItem/Tier
+                // hierarchy.  ToolMaterial stores its repair tag in the
+                // REPAIRABLE component, so use that tag key to register the
+                // same level mapping that the 1.21 TieredItem path used.
+                final int toolMaterialLevel = getToolMaterialLevel(dummy);
+                if (toolMaterialLevel >= 0)
+                {
+                    Compatibility.registerItemTierIfAbsent(item, toolMaterialLevel);
+                }
+                else if (ItemStackUtils.getEquippable(dummy) != null)
                 {
                     final int level = ItemStackUtils.getArmorLevel(dummy);
                     if (level > 0)
@@ -295,6 +311,47 @@ public class ModEquipmentTypes
                 Log.getLogger().error("Failed to register equipment tiers for item: " + BuiltInRegistries.ITEM.getKey(item), e);
             }
         }
+    }
+
+    /**
+     * Resolve the MineColonies equipment level for a 26.2 ToolMaterial item.
+     * ToolMaterial applies its repair tag as a REPAIRABLE component; reading
+     * the tag key (rather than the tag contents) preserves the material even
+     * when the data pack has not populated the tag's item members yet.  This
+     * also covers MineColonies' own ToolMaterial-based weapons and compatible
+     * third-party tools without requiring the removed TieredItem class.
+     *
+     * @param stack item stack to inspect
+     * @return level 0-4, or -1 when the stack is not a material-tagged tool
+     */
+    private static int getToolMaterialLevel(final ItemStack stack)
+    {
+        final Repairable repairable = stack.get(DataComponents.REPAIRABLE);
+        if (repairable != null && repairable.items().unwrapKey().isPresent())
+        {
+            final var repairTag = repairable.items().unwrapKey().get();
+            if (repairTag.equals(ItemTags.NETHERITE_TOOL_MATERIALS))
+            {
+                return 4;
+            }
+            if (repairTag.equals(ItemTags.DIAMOND_TOOL_MATERIALS))
+            {
+                return 3;
+            }
+            if (repairTag.equals(ItemTags.IRON_TOOL_MATERIALS))
+            {
+                return 2;
+            }
+            if (repairTag.equals(ItemTags.COPPER_TOOL_MATERIALS) || repairTag.equals(ItemTags.STONE_TOOL_MATERIALS))
+            {
+                return 1;
+            }
+            if (repairTag.equals(ItemTags.GOLD_TOOL_MATERIALS) || repairTag.equals(ItemTags.WOODEN_TOOL_MATERIALS))
+            {
+                return 0;
+            }
+        }
+        return -1;
     }
 
     /**

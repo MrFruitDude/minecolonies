@@ -24,9 +24,49 @@ import net.minecraft.world.level.Level;
  */
 public final class RecipeUtils
 {
+    /**
+     * The recipe map delivered by NeoForge's client recipe-sync event.
+     *
+     * <p>26.2 no longer exposes the full map through {@code ClientLevel}; keep
+     * the authoritative event payload here so MineColonies screens do not
+     * depend on JEI's initialization order.</p>
+     */
+    @Nullable
+    private static volatile RecipeMap clientRecipeMap;
+
+    /**
+     * Monotonic generation for the client recipe snapshot.
+     *
+     * <p>Client screens can open before NeoForge delivers
+     * {@code RecipesReceivedEvent}.  Tracking the snapshot generation lets
+     * those screens refresh once without polling the recipe map itself or
+     * depending on JEI lifecycle events.</p>
+     */
+    private static volatile long clientRecipeGeneration;
+
     private RecipeUtils()
     {
         throw new UnsupportedOperationException("utility class");
+    }
+
+    /**
+     * Stores the latest server-synchronised client recipe map.
+     *
+     * @param recipeMap map received from NeoForge.
+     */
+    public static void setClientSyncedRecipes(@NotNull final RecipeMap recipeMap)
+    {
+        clientRecipeMap = recipeMap;
+        clientRecipeGeneration++;
+    }
+
+    /**
+     * Clears the client recipe map when the client disconnects.
+     */
+    public static void clearClientSyncedRecipes()
+    {
+        clientRecipeMap = null;
+        clientRecipeGeneration++;
     }
 
     /**
@@ -107,33 +147,29 @@ public final class RecipeUtils
     }
 
     /**
-     * Returns JEI's client-side recipe snapshot when it is available.
+     * Returns the latest server-synchronised client recipe map.
      *
-     * <p>Minecraft 26.2 no longer exposes a {@code RecipeManager} from a
-     * client connection. JEI still keeps the complete synchronized recipe
-     * map for its vanilla and mod integrations, so client-only MineColonies
-     * screens can use it without linking against JEI's implementation jar.
-     * Reflection keeps the core/common code loadable when JEI is absent.</p>
+     * <p>The map is populated by {@code RecipesReceivedEvent}. A null result
+     * means the client has not received a recipe snapshot yet; it is not an
+     * assertion that the world has no recipes.</p>
      *
-     * @return the synchronized client recipe map, or {@code null} when JEI
-     *         is not loaded or its snapshot is not ready.
+     * @return the synchronized client recipe map, or {@code null} while it is
+     *         still loading.
      */
     @Nullable
     public static RecipeMap clientSyncedRecipes()
     {
-        try
-        {
-            final Class<?> internal = Class.forName("mezz.jei.common.Internal");
-            if (!(internal.getMethod("hasClientSyncedRecipes").invoke(null) instanceof final Boolean available) || !available)
-            {
-                return null;
-            }
-            final Object recipes = internal.getMethod("getClientSyncedRecipes").invoke(null);
-            return recipes instanceof final RecipeMap recipeMap ? recipeMap : null;
-        }
-        catch (final ReflectiveOperationException ignored)
-        {
-            return null;
-        }
+        return clientRecipeMap;
+    }
+
+    /**
+     * Returns the generation of the latest client recipe snapshot.
+     *
+     * @return a value that changes whenever the snapshot is replaced or
+     *         cleared.
+     */
+    public static long clientSyncedRecipesGeneration()
+    {
+        return clientRecipeGeneration;
     }
 }

@@ -106,6 +106,11 @@ public class RestaurantMenuModuleWindow extends AbstractModuleWindow<RestaurantM
     private static Map<ItemStorage, List<ItemStorage>> recipeMapping = new HashMap<>();
 
     /**
+     * Recipe snapshot generation observed by this screen.
+     */
+    private long observedRecipeGeneration = Long.MIN_VALUE;
+
+    /**
      * Constructor for the minimum stock window view.
      *
      * @param moduleView the module view.
@@ -169,6 +174,7 @@ public class RestaurantMenuModuleWindow extends AbstractModuleWindow<RestaurantM
     public void onOpened()
     {
         super.onOpened();
+        observedRecipeGeneration = RecipeUtils.clientSyncedRecipesGeneration();
         updateStockList();
         updateResources();
     }
@@ -177,6 +183,14 @@ public class RestaurantMenuModuleWindow extends AbstractModuleWindow<RestaurantM
     public void onUpdate()
     {
         super.onUpdate();
+        final long currentRecipeGeneration = RecipeUtils.clientSyncedRecipesGeneration();
+        if (currentRecipeGeneration != observedRecipeGeneration)
+        {
+            observedRecipeGeneration = currentRecipeGeneration;
+            recipeMapping.clear();
+            updateStockList();
+            updateResources();
+        }
         if (tick > 0 && --tick == 0)
         {
             updateResources();

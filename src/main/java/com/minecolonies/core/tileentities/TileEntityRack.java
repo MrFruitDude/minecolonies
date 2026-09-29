@@ -2,6 +2,7 @@ package com.minecolonies.core.tileentities;
 import net.minecraft.nbt.CompoundTag;
 
 import com.google.common.collect.ImmutableList;
+import com.mojang.serialization.Codec;
 import com.ldtteam.domumornamentum.client.model.data.MaterialTextureData;
 import com.ldtteam.domumornamentum.client.model.properties.ModProperties;
 import com.ldtteam.domumornamentum.entity.block.IMateriallyTexturedBlockEntity;
@@ -63,6 +64,17 @@ import static com.minecolonies.api.util.constant.TranslationConstants.RACK;
  */
 public class TileEntityRack extends AbstractTileEntityRack implements IMateriallyTexturedBlockEntity, Clearable
 {
+    /**
+     * Item stack codec used by the rack inventory list.  The 1.21 port's
+     * legacy NBT writer represented an empty slot as {@code {empty:1b}},
+     * whereas 26.2's {@link ItemStack#OPTIONAL_CODEC} uses an empty map.
+     * Keep the modern encoder and accept that one legacy representation while
+     * old racks and blueprints are being loaded.
+     */
+    private static final Codec<ItemStack> RACK_ITEM_STACK_CODEC = Codec.withAlternative(
+        ItemStack.OPTIONAL_CODEC,
+        Codec.BOOL.fieldOf("empty").codec().xmap(empty -> ItemStack.EMPTY, ignored -> true));
+
     /**
      * All Racks current version id
      */
@@ -408,7 +420,7 @@ public class TileEntityRack extends AbstractTileEntityRack implements IMateriall
         }
 
         final int[] slotIndex = {0};
-        compound.listOrEmpty(TAG_INVENTORY, ItemStack.OPTIONAL_CODEC).forEach(stack ->
+        compound.listOrEmpty(TAG_INVENTORY, RACK_ITEM_STACK_CODEC).forEach(stack ->
           inventory.setStackInSlot(slotIndex[0]++, stack));
 
         updateContent();
@@ -430,7 +442,7 @@ public class TileEntityRack extends AbstractTileEntityRack implements IMateriall
     {
         super.saveAdditional(compound);
         compound.putInt(TAG_SIZE, size);
-        final ValueOutput.TypedOutputList<ItemStack> inventoryTagList = compound.list(TAG_INVENTORY, ItemStack.OPTIONAL_CODEC);
+        final ValueOutput.TypedOutputList<ItemStack> inventoryTagList = compound.list(TAG_INVENTORY, RACK_ITEM_STACK_CODEC);
         for (int slot = 0; slot < inventory.getSlots(); slot++)
         {
             inventoryTagList.add(inventory.getStackInSlot(slot));

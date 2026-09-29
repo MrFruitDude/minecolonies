@@ -11,7 +11,7 @@
 		"15": "minecolonies:block/books/paper_2",
 		"16": "block/sand",
 		"particle": "block/oak_planks",
-		"1_0": "entity/chest/normal"
+		"1_0": "minecolonies:block/chest/normal"
 	},
 	"elements": [
 		{

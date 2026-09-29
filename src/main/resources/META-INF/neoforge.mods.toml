@@ -29,8 +29,9 @@ displayName="MineColonies" #mandatory
 # A URL for the "homepage" for this mod, displayed in the mod UI
 displayURL="https://minecolonies.com" #optional
 
-# A file name (in the root of the mod JAR) containing a logo for display
-logoFile="minecolonies_logo.png" #optional
+# A banner and square icon for the mod list screen.
+bannerFile="minecolonies:textures/gui/logo_large_empty.png" #optional
+iconFile="minecolonies:textures/gui/logo_small_empty.png" #optional
 
 # A text field displayed in the mod UI
 credits="All the coffees!" #optional

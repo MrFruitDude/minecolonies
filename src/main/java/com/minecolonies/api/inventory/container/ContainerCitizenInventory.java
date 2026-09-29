@@ -107,7 +107,16 @@ public class ContainerCitizenInventory extends AbstractContainerMenu
         if (inv.player.level().isClientSide())
         {
             final ICitizenDataView data = ((IColonyView) colony).getCitizen(citizenId);
-            this.entity = Optional.of(inv.player.level().getEntity(data.getEntityId()));
+            // The menu packet can arrive before the colony-view/entity synchronization on
+            // the client.  Do not turn that normal loading window into a client crash by
+            // passing a missing view/entity through Optional.of(...).
+            if (data == null)
+            {
+                inventorySize = 0;
+                displayName = "";
+                return;
+            }
+            this.entity = Optional.ofNullable(inv.player.level().getEntity(data.getEntityId()));
             this.citizenData = data;
             inventory = data.getInventory();
             this.displayName = data.getName();

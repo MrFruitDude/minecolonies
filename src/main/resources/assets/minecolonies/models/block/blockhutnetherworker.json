@@ -16,7 +16,7 @@
                 "7": "block/stripped_dark_oak_log_top",
                 "8": "block/warped_planks",
                 "10": "block/obsidian",
-                "12": "entity/chest/normal",
+                "12": "minecolonies:block/chest/normal",
                 "13": "block/dark_oak_planks",
                 "16": "block/gold_block"
             },

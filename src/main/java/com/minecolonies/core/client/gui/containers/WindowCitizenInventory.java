@@ -80,7 +80,10 @@ public class WindowCitizenInventory extends AbstractContainerScreen<ContainerCit
     public WindowCitizenInventory(final ContainerCitizenInventory container, final Inventory playerInventory, final Component iTextComponent)
     {
         super(container, playerInventory, iTextComponent, 245, Y_OFFSET + Math.min(SLOTS_EACH_ROW, (container.getItems().size() - 36) / 9) * SLOT_OFFSET);
-        this.inventoryRows = (container.getItems().size() - 36) / 9;
+        // A client can construct the menu during the short interval before its
+        // colony view arrives.  The server-side container then has no citizen
+        // slots; never turn that loading state into a negative screen height.
+        this.inventoryRows = Math.max(0, (container.getItems().size() - 36) / 9);
         activeCitizenInventory = this;
         citizenData = container.getCitizenData();
     }
@@ -137,26 +140,73 @@ public class WindowCitizenInventory extends AbstractContainerScreen<ContainerCit
             stack.blit(RenderPipelines.GUI_TEXTURED, TEXT, i + 222, j + 22 + index * 18, 0.0F, 300.0F, 18, 18, TEXTURE_SIZE, TEXTURE_SIZE);
         }
 
-        renderEntityInInventoryFollowsMouse(stack, i + 197, j + 88, 30, (float)(i + 51) - mouseX, (float)(j + 75 - 50) - mouseY, this.menu.getEntity());
+        // The 26.2 picture-in-picture API treats x/y as the top-left of the
+        // render rectangle and centers the entity inside it.  The old
+        // renderer treated (i + 197, j + 88) as the entity's model origin,
+        // which left the ported preview below and to the right of the paper
+        // panel.  Use the panel bounds so the citizen is clipped and
+        // centered in the intended preview area.
+        renderEntityInInventoryFollowsMouse(
+          stack,
+          i + 172,
+          j + 22,
+          i + 221,
+          j + 94,
+          30,
+          mouseX,
+          mouseY,
+          this.menu.getEntity());
     }
 
 
-    public static void renderEntityInInventoryFollowsMouse(GuiGraphicsExtractor stack, int x, int y, int scale, float mouseX, float mouseY, Optional<? extends Entity> optionalEntity) {
+    public static void renderEntityInInventoryFollowsMouse(
+      GuiGraphicsExtractor stack,
+      int x0,
+      int y0,
+      int x1,
+      int y1,
+      int scale,
+      float mouseX,
+      float mouseY,
+      Optional<? extends Entity> optionalEntity)
+    {
         optionalEntity.ifPresent(entity -> {
-            float relativeMouseX = (float)Math.atan(mouseX / 40.0F);
-            float relativeMouseY = (float)Math.atan(mouseY / 40.0F);
             if (entity instanceof LivingEntity livingEntity)
             {
-                renderEntityInInventoryFollowsAngle(stack, x, y, scale, relativeMouseX, relativeMouseY, livingEntity);
+                // The 26.2 helper owns both the rectangle-center calculation
+                // and the render-state extraction.  Passing precomputed
+                // offsets here applies the old 1.21 origin twice and leaves
+                // the citizen outside the preview panel.
+                InventoryScreen.extractEntityInInventoryFollowsMouse(
+                    stack,
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    scale,
+                    0.0625F,
+                    mouseX,
+                    mouseY,
+                    livingEntity);
             }
         });
     }
 
-    public static void renderEntityInInventoryFollowsAngle(GuiGraphicsExtractor stack, int x, int y, int scale, float angleXComponent, float angleYComponent, LivingEntity entity) {
+    public static void renderEntityInInventoryFollowsAngle(
+      GuiGraphicsExtractor stack,
+      int x0,
+      int y0,
+      int x1,
+      int y1,
+      int scale,
+      float angleXComponent,
+      float angleYComponent,
+      LivingEntity entity)
+    {
         float f = angleXComponent;
         float f1 = angleYComponent;
         InventoryScreen.renderEntityInInventoryFollowsAngle(
-          stack, x, y, x + scale, y + scale, scale, 0.0625F, f, f1, entity);
+          stack, x0, y0, x1, y1, scale, 0.0625F, f, f1, entity);
     }
 
     public static void renderEntityInInventory(GuiGraphicsExtractor stack, int x, int y, int scale, Quaternionf quaternionf, @Nullable Quaternionf quaternionf1, LivingEntity entity) {

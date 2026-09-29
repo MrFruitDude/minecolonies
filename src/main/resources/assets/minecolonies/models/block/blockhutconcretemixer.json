@@ -3,7 +3,7 @@
 	"parent": "block/block",
 	"ambientocclusion": false,
 	"textures": {
-		"0": "entity/chest/normal",
+		"0": "minecolonies:block/chest/normal",
 		"1": "block/gravel",
 		"2": "block/sand",
 		"6": "minecolonies:block/liquid/liq4",

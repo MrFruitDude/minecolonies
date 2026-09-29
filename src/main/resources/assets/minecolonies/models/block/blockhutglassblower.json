@@ -11,7 +11,7 @@
 		"19": "block/yellow_stained_glass",
 		"20": "block/gray_concrete",
 		"particle": "block/dark_oak_planks",
-		"1_0": "entity/chest/normal",
+		"1_0": "minecolonies:block/chest/normal",
 		"1_6": "block/glass"
 	},
 	"elements": [

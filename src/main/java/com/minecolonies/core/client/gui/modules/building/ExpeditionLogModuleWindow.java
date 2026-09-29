@@ -206,11 +206,25 @@ public class ExpeditionLogModuleWindow extends AbstractModuleWindow<ExpeditionLo
 
     private static <T extends Entity> void setEntityIcon(final EntityIcon icon, final EntityType<T> entityType)
     {
-        final EntityRenderState template = new EntityRenderState();
-        template.entityType = entityType;
-        final EntityRenderer<?, ?> renderer = Minecraft.getInstance().getEntityRenderDispatcher().getRenderer(template);
-        @SuppressWarnings("unchecked") final EntityRenderer<Entity, EntityRenderState> typedRenderer =
-            (EntityRenderer<Entity, EntityRenderState>) renderer;
-        icon.setEntityState(new EntityIcon.StaticState<>(typedRenderer.createRenderState()));
+        final Minecraft minecraft = Minecraft.getInstance();
+        final T previewEntity = minecraft.level == null
+            ? null
+            : entityType.create(minecraft.level, net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+        if (previewEntity != null)
+        {
+            icon.setEntityState(new EntityIcon.StaticState<>(
+                minecraft.getEntityRenderDispatcher().extractEntity(previewEntity, 1.0F)));
+        }
+        else
+        {
+            // Keep a renderer-specific empty state only for entity types that
+            // cannot be instantiated in the client preview level.
+            final EntityRenderState template = new EntityRenderState();
+            template.entityType = entityType;
+            final EntityRenderer<?, ?> renderer = minecraft.getEntityRenderDispatcher().getRenderer(template);
+            @SuppressWarnings("unchecked") final EntityRenderer<Entity, EntityRenderState> typedRenderer =
+                (EntityRenderer<Entity, EntityRenderState>) renderer;
+            icon.setEntityState(new EntityIcon.StaticState<>(typedRenderer.createRenderState()));
+        }
     }
 }

@@ -2,6 +2,7 @@ package com.minecolonies.core.event;
 
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.IColonyManager;
+import com.minecolonies.api.crafting.RecipeUtils;
 import com.minecolonies.api.research.IGlobalResearchTree;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.core.MineColonies;
@@ -18,6 +19,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.RecipesReceivedEvent;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.event.OnDatapackSyncEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import org.jetbrains.annotations.NotNull;
@@ -176,7 +178,20 @@ public class DataPackSyncEventHandler
         @SubscribeEvent
         public static void onRecipesLoaded(@NotNull final RecipesReceivedEvent event)
         {
+            RecipeUtils.setClientSyncedRecipes(event.getRecipeMap());
             IColonyManager.getInstance().getCompatibilityManager().getFurnaceRecipes().loadRecipes(event.getRecipeMap().values(), Minecraft.getInstance().level);
+        }
+
+        /**
+         * Prevent a disconnected world's recipe map from being reused after a
+         * reconnect or a profile switch.
+         *
+         * @param event client network logout event.
+         */
+        @SubscribeEvent
+        public static void onLoggingOut(@NotNull final ClientPlayerNetworkEvent.LoggingOut event)
+        {
+            RecipeUtils.clearClientSyncedRecipes();
         }
 
         /**
