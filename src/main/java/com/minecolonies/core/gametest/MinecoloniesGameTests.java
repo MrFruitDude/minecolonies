@@ -2,6 +2,7 @@ package com.minecolonies.core.gametest;
 
 import com.mojang.authlib.GameProfile;
 import com.minecolonies.api.blocks.ModBlocks;
+import com.minecolonies.core.tileentities.TileEntityDecorationController;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.colony.buildings.IBuilding;
@@ -2250,6 +2251,82 @@ public final class MinecoloniesGameTests
         helper.assertTrue(reloaded.getCurrentSlotId() == 3, "scan tool current slot was not saved on the stack");
         helper.assertTrue("slot3".equals(reloaded.getCurrentSlotData().getName()), "scan tool slot data was not saved on the stack");
         helper.assertTrue(com.ldtteam.structurize.items.ItemScanTool.getAnchorPos(tool) == null, "loading an anchor-less slot must clear the anchor");
+        helper.succeed();
+    }
+
+    /**
+     * Regression fixture for review BS-C3: blueprint-data block entities (Structurize tag substitution, MineColonies decoration
+     * controller) must load the single-nested format that blueprints, rotation ({@code Blueprint#rotateWithMirror}) and
+     * {@code BlueprintTagUtils} use, and must save it back in the same shape.
+     */
+    public static void blueprintDataBlockEntityFormat(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos pos = helper.absolutePos(new BlockPos(1, 1, 1));
+        final String dataKey = com.ldtteam.structurize.blockentities.interfaces.IBlueprintDataProviderBE.TAG_BLUEPRINTDATA;
+        final Map<BlockPos, List<String>> tags = Map.of(BlockPos.ZERO, List.of("bsc3"));
+
+        // Legacy/blueprint shape, written by the shared default writers onto a root compound.
+        final com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution donor = new com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution(pos,
+          com.ldtteam.structurize.blocks.ModBlocks.blockTagSubstitution.get().defaultBlockState());
+        donor.setSchematicName("bsc3name");
+        donor.setSchematicCorners(new BlockPos(-1, 0, -2), new BlockPos(3, 4, 5));
+        donor.setPositionedTags(tags);
+        donor.setPackName("bsc3pack");
+        donor.setBlueprintPath("bsc3/path");
+        final CompoundTag legacy = new CompoundTag();
+        donor.writeSchematicDataToNBT(legacy);
+        new com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock(Blocks.STONE.defaultBlockState(), (CompoundTag) null,
+          new ItemStack(Items.STONE)).write(legacy);
+        Log.getLogger().info("BS-C3 legacy fixture={}", legacy);
+
+        final com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution sub = new com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution(pos,
+          com.ldtteam.structurize.blocks.ModBlocks.blockTagSubstitution.get().defaultBlockState());
+        sub.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), legacy));
+        Log.getLogger().info("BS-C3 substitution loaded name='{}' corners={} tags={} replacement={}", sub.getSchematicName(),
+          sub.getSchematicCorners().getA(), sub.getPositionedTags(), sub.getReplacement().getBlockState());
+        helper.assertTrue("bsc3name".equals(sub.getSchematicName()), "tag substitution lost the schematic name");
+        helper.assertTrue(new BlockPos(-1, 0, -2).equals(sub.getSchematicCorners().getA()), "tag substitution lost the schematic corners");
+        helper.assertTrue(tags.equals(sub.getPositionedTags()), "tag substitution lost its positioned tags");
+        helper.assertTrue(sub.getReplacement().getBlockState().is(Blocks.STONE), "tag substitution lost its replacement block");
+
+        final CompoundTag saved = sub.saveWithoutMetadata(level.registryAccess());
+        Log.getLogger().info("BS-C3 substitution saved={}", saved);
+        helper.assertTrue(saved.getCompoundOrEmpty(dataKey).contains(com.ldtteam.structurize.blockentities.interfaces.IBlueprintDataProviderBE.TAG_SCHEMATIC_NAME),
+          "tag substitution saved blueprint data double-nested");
+        helper.assertTrue(com.ldtteam.structurize.blockentities.interfaces.IBlueprintDataProviderBE.readTagPosMapFrom(saved.getCompoundOrEmpty(dataKey)).equals(tags),
+          "BlueprintTagUtils cannot read the tags a tag substitution saves");
+        helper.assertTrue(saved.getCompoundOrEmpty("replacement").contains("b"), "tag substitution saved its replacement double-nested");
+
+        final TileEntityDecorationController deco = new TileEntityDecorationController(pos, ModBlocks.blockDecorationPlaceholder.defaultBlockState());
+        deco.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), legacy));
+        Log.getLogger().info("BS-C3 decoration controller loaded name='{}' pack='{}' path='{}' tags={}", deco.getSchematicName(), deco.getPackName(),
+          deco.getBlueprintPath(), deco.getPositionedTags());
+        helper.assertTrue("bsc3name".equals(deco.getSchematicName()), "decoration controller lost the schematic name");
+        helper.assertTrue("bsc3pack".equals(deco.getPackName()) && "bsc3/path.blueprint".equals(deco.getBlueprintPath()), "decoration controller lost pack/path");
+        helper.assertTrue(tags.equals(deco.getPositionedTags()), "decoration controller lost its positioned tags");
+        final CompoundTag decoSaved = deco.saveWithoutMetadata(level.registryAccess());
+        helper.assertTrue(decoSaved.getCompoundOrEmpty(dataKey).contains(com.ldtteam.structurize.blockentities.interfaces.IBlueprintDataProviderBE.TAG_SCHEMATIC_NAME),
+          "decoration controller saved blueprint data double-nested");
+
+        // Hut and plantation-field block entities share the same persistence path.
+        final com.minecolonies.core.tileentities.TileEntityColonyBuilding hut = new com.minecolonies.core.tileentities.TileEntityColonyBuilding(pos,
+          ModBlocks.blockHutBuilder.defaultBlockState());
+        hut.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), legacy));
+        Log.getLogger().info("BS-C3 hut loaded name='{}' tags={}", hut.getSchematicName(), hut.getPositionedTags());
+        helper.assertTrue("bsc3name".equals(hut.getSchematicName()) && tags.equals(hut.getPositionedTags()), "hut block entity lost its blueprint data");
+        helper.assertTrue(hut.saveWithoutMetadata(level.registryAccess()).getCompoundOrEmpty(dataKey)
+          .contains(com.ldtteam.structurize.blockentities.interfaces.IBlueprintDataProviderBE.TAG_SCHEMATIC_NAME), "hut block entity saved blueprint data double-nested");
+
+        final com.minecolonies.core.tileentities.TileEntityPlantationField field = new com.minecolonies.core.tileentities.TileEntityPlantationField(pos,
+          ModBlocks.blockPlantationField.defaultBlockState());
+        field.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), legacy));
+        Log.getLogger().info("BS-C3 plantation field loaded name='{}' tags={}", field.getSchematicName(), field.getPositionedTags());
+        helper.assertTrue("bsc3name".equals(field.getSchematicName()) && tags.equals(field.getPositionedTags()), "plantation field lost its blueprint data");
+        final com.minecolonies.core.tileentities.TileEntityPlantationField fieldDirect = new com.minecolonies.core.tileentities.TileEntityPlantationField(pos,
+          ModBlocks.blockPlantationField.defaultBlockState());
+        fieldDirect.readSchematicDataFromNBT(legacy);
+        helper.assertTrue(tags.equals(fieldDirect.getPositionedTags()), "plantation field readSchematicDataFromNBT ignores blueprint tile data");
         helper.succeed();
     }
 

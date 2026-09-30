@@ -222,7 +222,7 @@ public class TileEntityPlantationField extends AbstractTileEntityPlantationField
     @Override
     public void readSchematicDataFromNBT(final CompoundTag compound)
     {
-        compound.read(TAG_BLUEPRINTDATA, CompoundTag.CODEC).ifPresent(data -> super.readSchematicDataFromNBT(data));
+        super.readSchematicDataFromNBT(compound);
         final CompoundTag blueprintDataProvider = compound.getCompoundOrEmpty(TAG_BLUEPRINTDATA);
 
         this.packName = blueprintDataProvider.getStringOr(TAG_PACK, "");
@@ -262,7 +262,7 @@ public class TileEntityPlantationField extends AbstractTileEntityPlantationField
     public void loadAdditional(final ValueInput compound)
     {
         super.loadAdditional(compound);
-        compound.read(TAG_BLUEPRINTDATA, CompoundTag.CODEC).ifPresent(data -> super.readSchematicDataFromNBT(data));
+        loadSchematicData(compound);
         final byte rotationMirrorId = compound.getByteOr(TAG_ROTATION_MIRROR, (byte) -1);
         if (rotationMirrorId >= 0)
         {
@@ -300,9 +300,7 @@ public class TileEntityPlantationField extends AbstractTileEntityPlantationField
     public void saveAdditional(final ValueOutput compound)
     {
         super.saveAdditional(compound);
-        final CompoundTag schematicData = new CompoundTag();
-        writeSchematicDataToNBT(schematicData);
-        compound.store(TAG_BLUEPRINTDATA, CompoundTag.CODEC, schematicData);
+        storeSchematicData(compound);
         compound.putByte(TAG_ROTATION_MIRROR, (byte) this.rotationMirror.ordinal());
         compound.putString(TAG_NAME, schematicName == null ? "" : schematicName);
         compound.putString(TAG_PATH, schematicPath == null ? "" : schematicPath);

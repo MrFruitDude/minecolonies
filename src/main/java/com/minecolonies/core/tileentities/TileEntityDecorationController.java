@@ -155,8 +155,8 @@ public class TileEntityDecorationController extends BlockEntity implements IBlue
     public void loadAdditional(final ValueInput compound)
     {
         super.loadAdditional(compound);
-        compound.read(TAG_BLUEPRINTDATA, CompoundTag.CODEC)
-          .ifPresent(data -> IBlueprintDataProviderBE.super.readSchematicDataFromNBT(data));
+        // Reads name, corners, tags and (via the override above) pack/path.
+        loadSchematicData(compound);
         final byte rotationMirrorId = compound.getByteOr(TAG_ROTATION_MIRROR, (byte) -1);
         if (rotationMirrorId >= 0)
         {
@@ -167,11 +167,6 @@ public class TileEntityDecorationController extends BlockEntity implements IBlue
             // TODO: remove this later (data break introduced in 1.20.4) because of blueprint data
             this.rotationMirror = RotationMirror.of(Rotation.values()[compound.getIntOr(TAG_ROTATION, 0)], compound.getBooleanOr(TAG_MIRROR, false) ? Mirror.FRONT_BACK : Mirror.NONE);
         }
-
-        // inexplicably IBlueprintDataProviderBE does not load the pack/path even though it saved them
-        final ValueInput blueprintDataProvider = compound.childOrEmpty(TAG_BLUEPRINTDATA);
-        this.packName = blueprintDataProvider.getStringOr(TAG_PACK, "");
-        this.schematicPath = blueprintDataProvider.getStringOr(TAG_PATH, "");
 
         // the rest of this is backwards compat code that can be removed at some point (maybe even now)
         if(compound.getString(TAG_PATH).isPresent() && StringUtils.isEmpty(this.schematicName))
@@ -204,9 +199,7 @@ public class TileEntityDecorationController extends BlockEntity implements IBlue
     public void saveAdditional(final ValueOutput compound)
     {
         super.saveAdditional(compound);
-        final CompoundTag schematicData = new CompoundTag();
-        writeSchematicDataToNBT(schematicData);
-        compound.store(TAG_BLUEPRINTDATA, CompoundTag.CODEC, schematicData);
+        storeSchematicData(compound);
         compound.putByte(TAG_ROTATION_MIRROR, (byte) this.rotationMirror.ordinal());
     }
 

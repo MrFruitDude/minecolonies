@@ -268,7 +268,7 @@ public abstract class AbstractTileEntityColonyBuilding extends TileEntityRack im
     public void loadAdditional(@NotNull final ValueInput compound)
     {
         super.loadAdditional(compound);
-        compound.read(TAG_BLUEPRINTDATA, CompoundTag.CODEC).ifPresent(this::readSchematicDataFromNBT);
+        loadSchematicData(compound);
         this.version = compound.getIntOr(TAG_VERSION, 0);
     }
 
@@ -295,9 +295,7 @@ public abstract class AbstractTileEntityColonyBuilding extends TileEntityRack im
     public void saveAdditional(@NotNull final ValueOutput compound)
     {
         super.saveAdditional(compound);
-        final CompoundTag schematicData = new CompoundTag();
-        writeSchematicDataToNBT(schematicData);
-        compound.store(TAG_BLUEPRINTDATA, CompoundTag.CODEC, schematicData);
+        storeSchematicData(compound);
         compound.putInt(TAG_VERSION, this.version);
     }
 
