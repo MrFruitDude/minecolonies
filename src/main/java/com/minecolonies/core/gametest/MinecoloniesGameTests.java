@@ -47,6 +47,7 @@ import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.api.util.EntityUtils;
 import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.ItemStackUtils;
+import com.minecolonies.api.util.IItemHandlerCapProvider;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.WorldUtil;
 import com.ldtteam.multipiston.TileEntityMultiPiston;
@@ -2327,6 +2328,50 @@ public final class MinecoloniesGameTests
             Log.getLogger().info("MC-C03 survival handler '{}' registered on server: {}", id, registered);
             helper.assertTrue(registered, "Survival placement handler '" + id + "' is not registered on the server");
         }
+        helper.succeed();
+    }
+
+    /**
+     * Regression fixture for review MC-C08: IItemHandlerCapProvider.wrap must return null for targets without an item capability
+     * (1.21 behaviour, callers null-check), not throw from IItemHandler.of(null). A chest is the positive control.
+     */
+    public static void itemHandlerWrapNullCapability(final GameTestHelper helper)
+    {
+        final BlockPos signPos = new BlockPos(1, 2, 1);
+        final BlockPos chestPos = new BlockPos(2, 2, 1);
+        helper.setBlock(signPos, Blocks.OAK_SIGN);
+        helper.setBlock(chestPos, Blocks.CHEST);
+        final BlockEntity sign = helper.getBlockEntity(signPos, BlockEntity.class);
+        final BlockEntity chest = helper.getBlockEntity(chestPos, BlockEntity.class);
+        final net.minecraft.world.entity.Entity orb =
+          helper.spawn(net.minecraft.world.entity.EntityTypes.EXPERIENCE_ORB, new BlockPos(1, 3, 2));
+
+        final java.util.Map<String, java.util.function.Supplier<Object>> noInventory = new java.util.LinkedHashMap<>();
+        noInventory.put("sign block entity", () -> IItemHandlerCapProvider.wrap(sign).getItemHandlerCap());
+        noInventory.put("sign block entity (north)", () -> IItemHandlerCapProvider.wrap(sign).getItemHandlerCap(net.minecraft.core.Direction.NORTH));
+        noInventory.put("experience orb (unsided)", () -> IItemHandlerCapProvider.wrap(orb, false).getItemHandlerCap());
+        noInventory.put("experience orb (sided)", () -> IItemHandlerCapProvider.wrap(orb, true).getItemHandlerCap(net.minecraft.core.Direction.UP));
+        noInventory.put("dirt item stack", () -> IItemHandlerCapProvider.wrap(new ItemStack(Items.DIRT)).getItemHandlerCap());
+        for (final var entry : noInventory.entrySet())
+        {
+            final Object handler;
+            try
+            {
+                handler = entry.getValue().get();
+            }
+            catch (final RuntimeException e)
+            {
+                Log.getLogger().info("MC-C08 {} threw {}", entry.getKey(), e.toString());
+                helper.fail("wrap(" + entry.getKey() + ") threw " + e);
+                return;
+            }
+            Log.getLogger().info("MC-C08 {} -> {}", entry.getKey(), handler);
+            helper.assertTrue(handler == null, "wrap(" + entry.getKey() + ") should have no item handler but returned " + handler);
+        }
+
+        final Object chestHandler = IItemHandlerCapProvider.wrap(chest).getItemHandlerCap();
+        Log.getLogger().info("MC-C08 chest -> {}", chestHandler);
+        helper.assertTrue(chestHandler != null, "wrap(chest) lost its item handler");
         helper.succeed();
     }
 

@@ -81,6 +81,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::citizenInventoryMenuLayout),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "item_handler_wrap_null_capability"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::itemHandlerWrapNullCapability),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "client_recipe_sync"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::clientRecipeSync),
           data);

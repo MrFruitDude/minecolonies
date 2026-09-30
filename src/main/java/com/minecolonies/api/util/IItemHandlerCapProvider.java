@@ -5,6 +5,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.capabilities.Capabilities.Item;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.item.ItemResource;
 import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 import com.minecolonies.api.util.capability.ItemHandlerResourceHandlerAdapter;
 import org.jetbrains.annotations.Nullable;
@@ -41,7 +43,7 @@ public interface IItemHandlerCapProvider
 
     public static IItemHandlerCapProvider wrap(final BlockEntity blockEntity)
     {
-        return direction -> IItemHandler.of(Item.BLOCK.getCapability(blockEntity.getLevel(), blockEntity.getBlockPos(), blockEntity.getBlockState(), blockEntity, direction));
+        return direction -> ofNullable(Item.BLOCK.getCapability(blockEntity.getLevel(), blockEntity.getBlockPos(), blockEntity.getBlockState(), blockEntity, direction));
     }
 
     /**
@@ -49,12 +51,22 @@ public interface IItemHandlerCapProvider
      */
     public static IItemHandlerCapProvider wrap(final Entity entity, final boolean sided)
     {
-        return sided ? direction -> IItemHandler.of(Item.ENTITY_AUTOMATION.getCapability(entity, direction)) :
-            direction -> IItemHandler.of(Item.ENTITY.getCapability(entity, null));
+        return sided ? direction -> ofNullable(Item.ENTITY_AUTOMATION.getCapability(entity, direction)) :
+            direction -> ofNullable(Item.ENTITY.getCapability(entity, null));
     }
 
     public static IItemHandlerCapProvider wrap(final ItemStack itemStack)
     {
-        return direction -> IItemHandler.of(Item.ITEM.getCapability(itemStack, null));
+        return direction -> ofNullable(Item.ITEM.getCapability(itemStack, null));
+    }
+
+    /**
+     * Capabilities are absent for targets without an inventory; keep that as null (like 1.21) instead of letting
+     * {@link IItemHandler#of} throw on it.
+     */
+    @Nullable
+    private static IItemHandler ofNullable(@Nullable final ResourceHandler<ItemResource> handler)
+    {
+        return handler == null ? null : IItemHandler.of(handler);
     }
 }
