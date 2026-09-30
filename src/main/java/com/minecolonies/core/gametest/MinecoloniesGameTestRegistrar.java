@@ -69,6 +69,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::domumMaterialTints),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "domum_block_properties"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::domumBlockProperties),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "domum_placement_ghost"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::domumPlacementGhost),
           data);

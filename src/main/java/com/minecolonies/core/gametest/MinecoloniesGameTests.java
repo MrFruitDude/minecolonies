@@ -2121,6 +2121,61 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for Domum Ornamentum's panel, post and shingle slab block
+     * properties (review DPT-C05). The port registered all three with bare
+     * {@code Properties.of()}, so they broke instantly, had stone-grey map colour,
+     * and panels occluded neighbours and let mobs spawn on them. Expected values are
+     * the 1.21 constructors': wood map colour, hardness 3, resistance 3 (panel, post)
+     * or 1 (shingle slab), and for panels no occlusion and no mob spawns.
+     */
+    public static void domumBlockProperties(final GameTestHelper helper)
+    {
+        final com.ldtteam.domumornamentum.block.ModBlocks blocks = com.ldtteam.domumornamentum.block.ModBlocks.getInstance();
+        final BlockPos pos = new BlockPos(1, 1, 1);
+        final List<String> failures = new ArrayList<>();
+
+        final Object[][] expected = {
+          // block, hardness, resistance, occludes, zombies may spawn (null: no 1.21 override)
+          {blocks.getPanel(), 3.0F, 3.0F, false, false},
+          {blocks.getPost(), 3.0F, 3.0F, true, null},
+          {blocks.getShingleSlab(), 3.0F, 1.0F, true, null}};
+        for (final Object[] row : expected)
+        {
+            final Block block = (Block) row[0];
+            final BlockState state = block.defaultBlockState();
+            final String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).toString();
+            if (block.defaultDestroyTime() != (float) row[1])
+            {
+                failures.add(id + " hardness " + block.defaultDestroyTime() + ", expected " + row[1]);
+            }
+            if (block.getExplosionResistance() != (float) row[2])
+            {
+                failures.add(id + " resistance " + block.getExplosionResistance() + ", expected " + row[2]);
+            }
+            if (state.canOcclude() != (boolean) row[3])
+            {
+                failures.add(id + " occludes " + state.canOcclude() + ", expected " + row[3]);
+            }
+            if (state.getMapColor(helper.getLevel(), helper.absolutePos(pos)) != net.minecraft.world.level.material.MapColor.WOOD)
+            {
+                failures.add(id + " map colour is not wood");
+            }
+            final boolean spawn = state.isValidSpawn(helper.getLevel(), helper.absolutePos(pos), net.minecraft.world.entity.EntityTypes.ZOMBIE);
+            if (row[4] != null && spawn != (boolean) row[4])
+            {
+                failures.add(id + " zombie spawn " + spawn + ", expected " + row[4]);
+            }
+        }
+
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException("Domum block properties wrong: " + String.join("; ", failures));
+        }
+        Log.getLogger().info("[domum_block_properties] panel/post/shingle_slab have their 1.21 block properties");
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for Domum Ornamentum's placement ghost (review DPT-C03/04).
      * The ghost must show the held stack's materials at the position the block will
      * be placed: the port built a block entity from the stack and then ignored it,
