@@ -2106,6 +2106,59 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Server-side regression fixture for Domum Ornamentum's Architect's Cutter
+     * (review DPT-C01). Inserting a material used to throw on every input: the
+     * recipe list was an unmodifiable {@code Stream.toList()} that was then
+     * sorted, and it was looked up through {@code registryAccess()}, where
+     * recipes are not a registry. The fixture fills the inputs with oak planks,
+     * walks the cutter's groups and variants through the same button ids the
+     * screen sends, and requires at least one real crafted output.
+     */
+    public static void architectsCutterRecipeLookup(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos cutterPos = helper.absolutePos(new BlockPos(2, 1, 2));
+        helper.setBlock(new BlockPos(2, 1, 2), com.ldtteam.domumornamentum.block.IModBlocks.getInstance().getArchitectsCutter());
+        final ServerPlayer player = FakePlayerFactory.getMinecraft(level);
+        final com.ldtteam.domumornamentum.container.ArchitectsCutterContainer menu =
+          new com.ldtteam.domumornamentum.container.ArchitectsCutterContainer(1, player.getInventory(),
+            net.minecraft.world.inventory.ContainerLevelAccess.create(level, cutterPos));
+
+        for (int slot = 0; slot < menu.inputInventory.getContainerSize(); slot++)
+        {
+            menu.inputInventory.setItem(slot, new ItemStack(Items.OAK_PLANKS, 16));
+        }
+
+        final java.util.Map<Identifier, java.util.List<ItemStack>> groups =
+          com.ldtteam.domumornamentum.block.ModBlocks.getInstance().getOrComputeItemGroups();
+        helper.assertTrue(!groups.isEmpty(), "Architect's Cutter has no item groups");
+        int groupIndex = 0;
+        ItemStack crafted = ItemStack.EMPTY;
+        String craftedFrom = "";
+        for (final java.util.Map.Entry<Identifier, java.util.List<ItemStack>> group : groups.entrySet())
+        {
+            menu.clickMenuButton(player, groupIndex);
+            for (int variant = 0; variant < group.getValue().size() && crafted.isEmpty(); variant++)
+            {
+                menu.clickMenuButton(player, groups.size() + variant);
+                crafted = menu.outputInventorySlot.getItem().copy();
+                craftedFrom = group.getKey() + "#" + variant;
+            }
+            if (!crafted.isEmpty())
+            {
+                break;
+            }
+            groupIndex++;
+        }
+        Log.getLogger().info("DPT-C01 architects cutter crafted={} from={}", crafted, craftedFrom);
+        helper.assertTrue(!crafted.isEmpty(), "Architect's Cutter produced no output for oak-plank inputs in any group");
+        helper.assertTrue(crafted.getItem() instanceof net.minecraft.world.item.BlockItem blockItem
+            && blockItem.getBlock() instanceof com.ldtteam.domumornamentum.block.IMateriallyTexturedBlock,
+          "Architect's Cutter output is not a materially textured block: " + crafted);
+        helper.succeed();
+    }
+
     private static final class TestCreateColonyMessage extends CreateColonyMessage
     {
         private TestCreateColonyMessage(

@@ -60,5 +60,9 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multipiston_obstruction"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::multiPistonObstruction),
           data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "architects_cutter_recipe_lookup"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::architectsCutterRecipeLookup),
+          data);
     }
 }
