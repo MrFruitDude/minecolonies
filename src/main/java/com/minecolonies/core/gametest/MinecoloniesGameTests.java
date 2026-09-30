@@ -2159,6 +2159,44 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Regression fixture for review MC-C01: breaking a rack or grave must drop its
+     * contents. Since MC 1.21.5 the block entity is removed before
+     * {@code affectNeighborsAfterRemoval}, so drops coded there silently vanished.
+     * Huts share the same inventory path ({@code AbstractTileEntityColonyBuilding}
+     * extends {@code TileEntityRack}).
+     */
+    public static void containerContentsDropOnBreak(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final java.util.Map<String, Integer> dropped = new java.util.LinkedHashMap<>();
+        final Object[][] cases = {
+          { "rack", ModBlocks.blockRack, new BlockPos(1, 1, 1), Items.DIAMOND },
+          { "grave", ModBlocks.blockGrave, new BlockPos(5, 1, 1), Items.EMERALD } };
+        for (final Object[] testCase : cases)
+        {
+            final String name = (String) testCase[0];
+            final BlockPos relative = (BlockPos) testCase[2];
+            final net.minecraft.world.item.Item item = (net.minecraft.world.item.Item) testCase[3];
+            helper.setBlock(relative, (net.minecraft.world.level.block.Block) testCase[1]);
+            final BlockPos pos = helper.absolutePos(relative);
+            helper.assertTrue(level.getBlockEntity(pos) instanceof TileEntityRack, name + " has no rack-style block entity");
+            final TileEntityRack container = (TileEntityRack) level.getBlockEntity(pos);
+            container.getInventory().setStackInSlot(0, new ItemStack(item, 7));
+            level.destroyBlock(pos, false);
+            final int count = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new net.minecraft.world.phys.AABB(pos).inflate(2))
+              .stream()
+              .map(net.minecraft.world.entity.item.ItemEntity::getItem)
+              .filter(stack -> stack.is(item))
+              .mapToInt(ItemStack::getCount)
+              .sum();
+            dropped.put(name, count);
+        }
+        Log.getLogger().info("MC-C01 dropped contents on break: {}", dropped);
+        dropped.forEach((name, count) -> helper.assertTrue(count == 7, "Breaking the " + name + " dropped " + count + "/7 stored items"));
+        helper.succeed();
+    }
+
     private static final class TestCreateColonyMessage extends CreateColonyMessage
     {
         private TestCreateColonyMessage(

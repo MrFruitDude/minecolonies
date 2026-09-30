@@ -174,17 +174,6 @@ public abstract class AbstractColonyBlock<B extends AbstractColonyBlock<B>> exte
         return building;
     }
 
-    @Override
-    public void affectNeighborsAfterRemoval(final @NotNull BlockState blockState, final @NotNull ServerLevel level, final @NotNull BlockPos pos, final boolean movedByPiston)
-    {
-        final BlockEntity tileentity = level.getBlockEntity(pos);
-        if (tileentity instanceof AbstractTileEntityColonyBuilding tileEntityColonyBuilding)
-        {
-            InventoryUtils.dropItemHandler(tileEntityColonyBuilding.getInventory(), level, pos.getX(), pos.getY(), pos.getZ());
-        }
-        super.affectNeighborsAfterRemoval(blockState, level, pos, movedByPiston);
-    }
-
     /**
      * Method to get the building registry entry.
      *

@@ -340,6 +340,24 @@ public class TileEntityColonySign extends BlockEntity implements ITickable
         return colonyId;
     }
 
+    /**
+     * Unregister the connection node when the sign is removed. Since MC 1.21.5 the block entity is already gone when
+     * {@code Block#affectNeighborsAfterRemoval} runs, so this has to happen here.
+     */
+    @Override
+    public void preRemoveSideEffects(@NotNull final BlockPos pos, @NotNull final BlockState state)
+    {
+        super.preRemoveSideEffects(pos, state);
+        if (level != null && !level.isClientSide())
+        {
+            final IColony colony = IColonyManager.getInstance().getColonyByDimension(colonyId, level.dimension());
+            if (colony != null)
+            {
+                colony.getConnectionManager().removeConnectionNode(pos);
+            }
+        }
+    }
+
     /**+
      * Get target colony id from sign, -1 if not set.
      * @return the target colony id.

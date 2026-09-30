@@ -116,21 +116,6 @@ public class BlockColonySign extends AbstractBlockMinecolonies<BlockColonySign> 
     }
 
     @Override
-    public void affectNeighborsAfterRemoval(final BlockState currentState, final ServerLevel level, final BlockPos pos, final boolean movedByPiston)
-    {
-        BlockEntity tileEntity = level.getBlockEntity(pos);
-        if (!level.isClientSide() && tileEntity instanceof TileEntityColonySign tileEntityColonySign)
-        {
-            final IColony colony = IColonyManager.getInstance().getColonyByDimension(tileEntityColonySign.getColonyId(), level.dimension());
-            if (colony != null)
-            {
-                colony.getConnectionManager().removeConnectionNode(pos);
-            }
-        }
-        super.affectNeighborsAfterRemoval(currentState, level, pos, movedByPiston);
-    }
-
-    @Override
     public RenderShape getRenderShape(final BlockState p_60550_)
     {
         return RenderShape.MODEL;

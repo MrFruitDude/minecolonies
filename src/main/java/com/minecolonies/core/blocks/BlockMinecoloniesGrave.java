@@ -203,20 +203,8 @@ public class BlockMinecoloniesGrave extends AbstractBlockMinecoloniesGrave<Block
     @Override
     public void affectNeighborsAfterRemoval(BlockState state, @NotNull ServerLevel worldIn, @NotNull BlockPos pos, boolean movedByPiston)
     {
-        if (!worldIn.isClientSide())
-        {
-            BlockEntity tileEntity = worldIn.getBlockEntity(pos);
-            if (tileEntity instanceof TileEntityGrave tileEntityGrave)
-            {
-                InventoryUtils.dropItemHandler(tileEntityGrave.getInventory(),
-                    worldIn,
-                    tileEntityGrave.getBlockPos().getX(),
-                    tileEntityGrave.getBlockPos().getY(),
-                    tileEntityGrave.getBlockPos().getZ());
-                worldIn.updateNeighbourForOutputSignal(pos, this);
-            }
-
-            super.affectNeighborsAfterRemoval(state, worldIn, pos, movedByPiston);
-        }
+        // Contents are dropped in AbstractTileEntityRack#preRemoveSideEffects; the block entity is gone by now.
+        worldIn.updateNeighbourForOutputSignal(pos, this);
+        super.affectNeighborsAfterRemoval(state, worldIn, pos, movedByPiston);
     }
 }

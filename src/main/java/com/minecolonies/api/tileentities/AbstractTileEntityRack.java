@@ -6,6 +6,7 @@ import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
 import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.util.IItemHandlerCapProvider;
+import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.ItemStackUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.MenuProvider;
@@ -279,5 +280,20 @@ public abstract class AbstractTileEntityRack extends BlockEntity implements Menu
     public IItemHandlerModifiable getInventory()
     {
         return inventory;
+    }
+
+    /**
+     * Drop the inventory when the block is removed. Since MC 1.21.5 the block entity is already gone when
+     * {@code Block#affectNeighborsAfterRemoval} runs, so this is the only hook that still sees the contents.
+     * Covers racks, graves and every hut (they all extend this class).
+     */
+    @Override
+    public void preRemoveSideEffects(@NotNull final BlockPos pos, @NotNull final BlockState state)
+    {
+        super.preRemoveSideEffects(pos, state);
+        if (level != null)
+        {
+            InventoryUtils.dropItemHandler(getInventory(), level, pos.getX(), pos.getY(), pos.getZ());
+        }
     }
 }
