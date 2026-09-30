@@ -84,7 +84,9 @@ public class ItemNbtCalculator implements DataProvider
 
         // Force loading some tags, since the creative tabs don't enumerate properly without them
         return lookupProvider
-            // MC26 moved instruments to a data-driven registry, so load it before creative tabs enumerate goat horns.
+            // Enchantments decode against entity type tags (e.g. sensitive_to_bane_of_arthropods), so bind them first.
+            .thenApply(p -> loadRegistryTags(p, serverResources, BuiltInRegistries.ENTITY_TYPE))
+            // MC26 creative tabs read data-driven registries (instruments, paintings, enchantments); load them with their tags.
             .thenApply(p -> loadDataRegistries(p, serverResources))
             .thenApply(p -> loadRegistryTags(p, serverResources, BuiltInRegistries.ITEM))
             // Missing tag: 'minecraft:blocks_wind_charge_explosions' in 'minecraft:block'
@@ -157,11 +159,14 @@ public class ItemNbtCalculator implements DataProvider
                 {
                     keys.add(DataComponents.MAP_ID);
                 }
-                if (!stack.isEnchantable())
+                // 1.21 kept enchantments/repair_cost for every damageable item (Item#isEnchantable/isRepairable checked
+                // durability). 26.x ties them to the enchantable/repairable components, which many tools (bows, shears,
+                // scepters, hammers) lack although an anvil still enchants them and sets their repair cost.
+                if (!stack.isEnchantable() && !stack.isDamageableItem())
                 {
                     keys.remove(DataComponents.ENCHANTMENTS);
                 }
-                if (stack.get(DataComponents.REPAIRABLE) == null)
+                if (stack.get(DataComponents.REPAIRABLE) == null && !stack.isDamageableItem())
                 {
                     keys.remove(DataComponents.REPAIR_COST);
                 }
@@ -279,19 +284,26 @@ public class ItemNbtCalculator implements DataProvider
         return provider;
     }
 
+    /**
+     * Data registries the creative tabs read that datagen's lookup lacks or holds without tags: instruments (goat horns),
+     * painting variants (the "placeable" tag picks the preset paintings) and enchantments (books; they decode against damage
+     * type and entity type tags). Loaded from the vanilla/NeoForge data together with their tags.
+     */
+    private static final Set<ResourceKey<? extends Registry<?>>> TAB_DATA_REGISTRIES =
+        Set.of(Registries.INSTRUMENT, Registries.PAINTING_VARIANT, Registries.DAMAGE_TYPE, Registries.ENCHANTMENT);
+
     private static HolderLookup.Provider loadDataRegistries(final HolderLookup.Provider provider, final ResourceManager resources)
     {
         final RegistryAccess.Frozen loaded = RegistryDataLoader.load(
             resources,
-            provider.listRegistries().filter(lookup -> !lookup.key().equals(Registries.INSTRUMENT)).toList(),
-            List.of(new RegistryDataLoader.RegistryData<>(
-                Registries.INSTRUMENT, Instrument.DIRECT_CODEC, RegistryValidator.none())),
+            provider.listRegistries().filter(lookup -> !TAB_DATA_REGISTRIES.contains(lookup.key())).toList(),
+            RegistryDataLoader.WORLD_REGISTRIES.stream().filter(data -> TAB_DATA_REGISTRIES.contains(data.key())).toList(),
             Runnable::run
         ).join();
 
         return HolderLookup.Provider.create(Stream.concat(
-            provider.listRegistries().filter(lookup -> !lookup.key().equals(Registries.INSTRUMENT)),
-            Stream.of(loaded.lookupOrThrow(Registries.INSTRUMENT))));
+            provider.listRegistries().filter(lookup -> !TAB_DATA_REGISTRIES.contains(lookup.key())),
+            TAB_DATA_REGISTRIES.stream().map(loaded::lookupOrThrow)));
     }
 
 }

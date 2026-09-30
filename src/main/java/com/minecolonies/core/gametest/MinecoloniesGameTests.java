@@ -2419,6 +2419,54 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review CP-MATCH: the generated item-matching table (compatibility/itemnbtmatching) decides which
+     * components a colony request compares. The port's table skipped two creative tabs (functional blocks, ingredients) that
+     * failed to populate in datagen, and dropped enchantments/repair cost for tools without the 26.x enchantable/repairable
+     * components, so a request accepted an enchanted/anvil-worked tool or a filled furnace as a plain one.
+     */
+    public static void itemNbtMatchingTable(final GameTestHelper helper)
+    {
+        final net.minecraft.core.Holder<net.minecraft.world.item.enchantment.Enchantment> efficiency = helper.getLevel().registryAccess()
+          .lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT).getOrThrow(net.minecraft.world.item.enchantment.Enchantments.EFFICIENCY);
+
+        final ItemStack workedBow = new ItemStack(Items.BOW);
+        workedBow.set(net.minecraft.core.component.DataComponents.REPAIR_COST, 3);
+        final ItemStack enchantedShears = new ItemStack(Items.SHEARS);
+        enchantedShears.enchant(efficiency, 1);
+        final ItemStack filledFurnace = new ItemStack(Items.FURNACE);
+        filledFurnace.set(net.minecraft.core.component.DataComponents.CONTAINER,
+          net.minecraft.world.item.component.ItemContainerContents.fromItems(java.util.List.of(new ItemStack(Items.COAL))));
+        // Paintings come from the functional-blocks tab, which failed to populate in the port's datagen.
+        final net.minecraft.core.Registry<net.minecraft.world.entity.decoration.painting.PaintingVariant> paintings =
+          helper.getLevel().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.PAINTING_VARIANT);
+        final ItemStack kebab = new ItemStack(Items.PAINTING);
+        kebab.set(net.minecraft.core.component.DataComponents.PAINTING_VARIANT,
+          paintings.getOrThrow(net.minecraft.world.entity.decoration.painting.PaintingVariants.KEBAB));
+        final ItemStack aztec = new ItemStack(Items.PAINTING);
+        aztec.set(net.minecraft.core.component.DataComponents.PAINTING_VARIANT,
+          paintings.getOrThrow(net.minecraft.world.entity.decoration.painting.PaintingVariants.AZTEC));
+
+        final java.util.List<String> wronglyMatched = new java.util.ArrayList<>();
+        final java.util.Map<String, ItemStack[]> cases = new java.util.LinkedHashMap<>();
+        cases.put("bow with repair cost", new ItemStack[] {new ItemStack(Items.BOW), workedBow});
+        cases.put("enchanted shears", new ItemStack[] {new ItemStack(Items.SHEARS), enchantedShears});
+        cases.put("furnace with contents", new ItemStack[] {new ItemStack(Items.FURNACE), filledFurnace});
+        cases.put("different painting variants", new ItemStack[] {kebab, aztec});
+        cases.forEach((name, pair) -> {
+            if (ItemStackUtils.compareItemStacksIgnoreStackSize(pair[0], pair[1], false, true))
+            {
+                wronglyMatched.add(name);
+            }
+        });
+        Log.getLogger().info("CP-MATCH table has {} items; bow keys {}, furnace keys {}; wrongly matched: {}",
+          ItemStackUtils.CHECKED_NBT_KEYS.size(), ItemStackUtils.CHECKED_NBT_KEYS.get(Items.BOW), ItemStackUtils.CHECKED_NBT_KEYS.get(Items.FURNACE), wronglyMatched);
+        helper.assertTrue(ItemStackUtils.compareItemStacksIgnoreStackSize(new ItemStack(Items.BOW), new ItemStack(Items.BOW), false, true),
+          "two plain bows no longer match");
+        helper.assertTrue(wronglyMatched.isEmpty(), "plain stacks matched modified ones: " + wronglyMatched);
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review MC-C07: since 1.21.2 the server sends clients only the recipe types a mod requests, so
      * without JEI the Domum crafting window, restaurant menu and brewing lookups had no recipes. Also checks the restaurant's
      * dish lookup key is the item's registry id (1.21 behaviour), not its description id.
