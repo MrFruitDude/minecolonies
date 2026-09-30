@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:potato_soup"
+        "recipes": "minecolonies:potato_soup"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

@@ -22,7 +22,6 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import org.jetbrains.annotations.NotNull;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.List;
 
@@ -110,7 +109,7 @@ public class WindowListRecipes extends AbstractModuleWindow<CraftingModuleView>
      */
     private void backwardClicked(final Button button)
     {
-        final boolean shift = InputConstants.isKeyDown(mc.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT);
+        final boolean shift = InputConstants.isKeyDown(InputConstants.KEY_LSHIFT);
         final int row = recipeList.getListElementIndexByPane(button);
         moduleView.switchOrder(row, row + 1, shift);
         new ChangeRecipePriorityMessage(buildingView, row, false, moduleView.getProducer().getRuntimeID(), shift).sendToServer();
@@ -123,7 +122,7 @@ public class WindowListRecipes extends AbstractModuleWindow<CraftingModuleView>
      */
     private void forwardClicked(final Button button)
     {
-        final boolean shift = InputConstants.isKeyDown(mc.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT);
+        final boolean shift = InputConstants.isKeyDown(InputConstants.KEY_LSHIFT);
         final int row = recipeList.getListElementIndexByPane(button);
         moduleView.switchOrder(row, row - 1, shift);
         new ChangeRecipePriorityMessage(buildingView, row, true, moduleView.getProducer().getRuntimeID(), shift).sendToServer();

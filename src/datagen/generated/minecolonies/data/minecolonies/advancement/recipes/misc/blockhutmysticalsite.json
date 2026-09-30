@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutmysticalsite"
+        "recipes": "minecolonies:blockhutmysticalsite"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

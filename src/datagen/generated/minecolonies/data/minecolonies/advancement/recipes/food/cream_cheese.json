@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:cream_cheese"
+        "recipes": "minecolonies:cream_cheese"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.production.herders;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.core.entity.ai.combat.ServerDamageHelper;
 
@@ -64,7 +65,7 @@ public class EntityAIWorkChickenHerder extends AbstractEntityAIHerder<JobChicken
     {
         if (animal != null && !walkingToAnimal(animal) && !ItemStackUtils.isEmpty(worker.getMainHandItem()))
         {
-            worker.swing(InteractionHand.MAIN_HAND);
+            worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
 
             if (worker.getRandom().nextInt(1 + (ONE_HUNDRED_PERCENT - getSecondarySkillLevel()) / 5) <= 1)
             {

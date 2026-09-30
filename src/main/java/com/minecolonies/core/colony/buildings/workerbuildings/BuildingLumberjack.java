@@ -1,4 +1,5 @@
 package com.minecolonies.core.colony.buildings.workerbuildings;
+import net.minecraft.world.level.block.BonemealSource;
 
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
@@ -296,13 +297,13 @@ public class BuildingLumberjack extends AbstractBuilding
                     if (rand < threshold)
                     {
                         final BonemealableBlock growable = (BonemealableBlock) block;
-                        if (growable.isValidBonemealTarget(world, pos, blockState))
+                        if (growable.isValidBonemealTarget(world, pos, blockState, BonemealSource.MOB))
                         {
                             if (!world.isClientSide())
                             {
-                                if (growable.isBonemealSuccess(world, world.getRandom(), pos, blockState))
+                                if (growable.isBonemealSuccess(world, world.getRandom(), pos, blockState, BonemealSource.MOB))
                                 {
-                                    growable.performBonemeal((ServerLevel) world, world.getRandom(), pos, blockState);
+                                    growable.performBonemeal((ServerLevel) world, world.getRandom(), pos, blockState, BonemealSource.MOB);
                                     return;
                                 }
                             }

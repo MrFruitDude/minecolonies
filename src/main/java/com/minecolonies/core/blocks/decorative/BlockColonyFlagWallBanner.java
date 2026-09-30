@@ -40,10 +40,6 @@ import net.minecraft.world.level.block.state.BlockState;
  */
 public class BlockColonyFlagWallBanner extends AbstractColonyFlagBanner<BlockColonyFlagWallBanner>
 {
-    public static final MapCodec<BlockColonyFlagWallBanner> CODEC = RecordCodecBuilder.mapCodec(builder -> builder
-        .group(DyeColor.CODEC.fieldOf("color").forGetter(BlockColonyFlagWallBanner::getColor),
-            propertiesCodec())
-        .apply(builder, BlockColonyFlagWallBanner::new));
     public static final EnumProperty<Direction>          HORIZONTAL_FACING = HorizontalDirectionalBlock.FACING;
     private static final Map<Direction, VoxelShape> BANNER_SHAPES     = Maps.newEnumMap(ImmutableMap.of(
             Direction.NORTH, Block.box(0.0D, 0.0D, 14.0D, 16.0D, 12.5D, 16.0D),
@@ -65,12 +61,6 @@ public class BlockColonyFlagWallBanner extends AbstractColonyFlagBanner<BlockCol
     {
         super(dyeColor, properties);
         this.registerDefaultState(this.stateDefinition.any().setValue(HORIZONTAL_FACING, Direction.NORTH));
-    }
-
-    @Override
-    protected MapCodec<BlockColonyFlagWallBanner> codec()
-    {
-        return CODEC;
     }
 
     @Override

@@ -3,9 +3,7 @@
     {
       "rules": [
         {
-          "output_state": {
-            "Name": "minecraft:netherrack"
-          },
+          "output_state": "minecraft:netherrack",
           "input_predicate": {
             "block": "structurize:blocksolidsubstitution",
             "predicate_type": "minecraft:block_match"
@@ -16,10 +14,10 @@
         },
         {
           "output_state": {
-            "Properties": {
+            "id": "minecraft:lava",
+            "properties": {
               "level": "0"
-            },
-            "Name": "minecraft:lava"
+            }
           },
           "input_predicate": {
             "block": "minecraft:netherrack",
@@ -32,10 +30,10 @@
         },
         {
           "output_state": {
-            "Properties": {
+            "id": "minecraft:lava",
+            "properties": {
               "level": "0"
-            },
-            "Name": "minecraft:lava"
+            }
           },
           "input_predicate": {
             "block": "minecraft:netherrack",
@@ -50,10 +48,8 @@
       "processor_type": "minecraft:rule"
     },
     {
-      "blocks":[
-        {
-          "Name":"structurize:blocksubstitution"
-        }
+      "blocks": [
+        "structurize:blocksubstitution"
       ],
       "processor_type": "minecraft:block_ignore"
     }

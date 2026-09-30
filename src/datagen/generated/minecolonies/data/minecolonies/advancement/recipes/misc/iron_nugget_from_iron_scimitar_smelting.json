@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:iron_nugget_from_iron_scimitar_smelting"
+        "recipes": "minecolonies:iron_nugget_from_iron_scimitar_smelting"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

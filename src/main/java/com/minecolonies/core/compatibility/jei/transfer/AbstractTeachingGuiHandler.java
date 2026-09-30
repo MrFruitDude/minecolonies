@@ -1,4 +1,5 @@
 package com.minecolonies.core.compatibility.jei.transfer;
+import com.minecolonies.core.client.gui.containers.ITeachingContainerScreen;
 
 import com.minecolonies.api.colony.jobs.registry.JobEntry;
 import com.minecolonies.core.colony.buildings.moduleviews.CraftingModuleView;
@@ -81,7 +82,7 @@ public abstract class AbstractTeachingGuiHandler<W extends AbstractContainerScre
             {
                 if (!slot.isActive() || !isSupportedSlot(slot)) continue;
 
-                final Rect2i bounds = new Rect2i(gui.getGuiLeft() + slot.x, gui.getGuiTop() + slot.y, 17, 17);
+                final Rect2i bounds = new Rect2i(((ITeachingContainerScreen) gui).getGuiLeft() + slot.x, ((ITeachingContainerScreen) gui).getGuiTop() + slot.y, 17, 17);
 
                 targets.add(new Target<I>()
                 {

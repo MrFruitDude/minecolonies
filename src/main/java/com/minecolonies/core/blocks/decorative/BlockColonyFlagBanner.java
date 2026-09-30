@@ -36,10 +36,6 @@ import net.minecraft.world.level.LevelReader;
  */
 public class BlockColonyFlagBanner extends AbstractColonyFlagBanner<BlockColonyFlagBanner>
 {
-    public static final MapCodec<BlockColonyFlagBanner> CODEC = RecordCodecBuilder.mapCodec(builder -> builder
-        .group(DyeColor.CODEC.fieldOf("color").forGetter(BlockColonyFlagBanner::getColor),
-            propertiesCodec())
-        .apply(builder, BlockColonyFlagBanner::new));
     public static final IntegerProperty ROTATION = BlockStateProperties.ROTATION_16;
     private static final VoxelShape SHAPE = Block.box(4.0D, 0.0D, 4.0D, 12.0D, 16.0D, 12.0D);
 
@@ -57,12 +53,6 @@ public class BlockColonyFlagBanner extends AbstractColonyFlagBanner<BlockColonyF
     {
         super(dyeColor, properties);
         this.registerDefaultState(this.stateDefinition.any().setValue(ROTATION, Integer.valueOf(0)));
-    }
-
-    @Override
-    protected MapCodec<BlockColonyFlagBanner> codec()
-    {
-        return CODEC;
     }
 
     @Override

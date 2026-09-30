@@ -1,9 +1,10 @@
 package com.minecolonies.api.advancements;
+import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
+import net.minecraft.core.Holder;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.advancements.triggers.Criterion;
-import net.minecraft.advancements.predicates.ContextAwarePredicate;
 import net.minecraft.advancements.predicates.entity.EntityPredicate;
 import net.minecraft.advancements.triggers.SimpleCriterionTrigger;
 import net.minecraft.advancements.triggers.SimpleCriterionTrigger.SimpleInstance;
@@ -33,10 +34,10 @@ public class AllTowersTrigger extends SimpleCriterionTrigger<AllTowersTrigger.Al
         return AllTowersTriggerInstance.CODEC;
     }
 
-    public static record AllTowersTriggerInstance(Optional<ContextAwarePredicate> player) implements SimpleInstance
+    public static record AllTowersTriggerInstance(Optional<Holder<LootItemCondition>> player) implements SimpleInstance
     {
         public static final Codec<AllTowersTriggerInstance> CODEC = RecordCodecBuilder.create(builder -> builder
-            .group(EntityPredicate.ADVANCEMENT_CODEC.optionalFieldOf("player").forGetter(AllTowersTriggerInstance::player))
+            .group(LootItemCondition.CODEC.optionalFieldOf("player").forGetter(AllTowersTriggerInstance::player))
             .apply(builder, AllTowersTriggerInstance::new));
 
         public static Criterion<AllTowersTriggerInstance> allTowers()

@@ -20,7 +20,7 @@ import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraft.world.level.storage.loot.LootTable;
-import net.minecraft.world.level.storage.loot.entries.LootPoolSingletonContainer;
+import net.minecraft.world.level.storage.loot.entries.UniformContainerBase;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
 import org.jetbrains.annotations.NotNull;
 
@@ -369,7 +369,7 @@ public class DefaultEnchanterCraftingProvider extends CustomRecipeAndLootTablePr
     }
 
     @NotNull
-    private LootPoolSingletonContainer.Builder<?> enchantedBook(final ResourceKey<Enchantment> key, final int level)
+    private UniformContainerBase.Builder<?> enchantedBook(final ResourceKey<Enchantment> key, final int level)
     {
         final Holder<Enchantment> enchantment = provider.holderOrThrow(key);
         final ItemStack stack = new ItemStack(Items.ENCHANTED_BOOK);
@@ -442,7 +442,7 @@ public class DefaultEnchanterCraftingProvider extends CustomRecipeAndLootTablePr
     @Override
     protected List<LootTableProvider.SubProviderEntry> registerTables()
     {
-        return List.of(new LootTableProvider.SubProviderEntry(provider -> builder ->
+        return List.of(new LootTableProvider.SubProviderEntry(builder -> () ->
         {
             for (int i = 0; i < levels.size(); i++)
             {

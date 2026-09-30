@@ -505,10 +505,11 @@ public class CraftingTagAuditor
             writeItemData(writer, item);
             writer.write(",");
 
-            final float vanilla = ComposterBlock.getValue(item);
-            if (vanilla > 0.0f)
+            final net.minecraft.world.item.component.Compostable compostable = item.get(net.minecraft.core.component.DataComponents.COMPOSTABLE);
+            final String vanilla = compostable == null ? "" : compostable.layers().toString();
+            if (!vanilla.isEmpty())
             {
-                writer.write(String.valueOf(vanilla));
+                writer.write(vanilla);
             }
 
             writer.write(",");

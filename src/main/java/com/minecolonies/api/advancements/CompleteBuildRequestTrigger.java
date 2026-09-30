@@ -1,9 +1,10 @@
 package com.minecolonies.api.advancements;
+import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
+import net.minecraft.core.Holder;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.advancements.triggers.Criterion;
-import net.minecraft.advancements.predicates.ContextAwarePredicate;
 import net.minecraft.advancements.predicates.entity.EntityPredicate;
 import net.minecraft.advancements.triggers.SimpleCriterionTrigger;
 import net.minecraft.advancements.triggers.SimpleCriterionTrigger.SimpleInstance;
@@ -32,12 +33,12 @@ public class CompleteBuildRequestTrigger extends SimpleCriterionTrigger<Complete
         return CompleteBuildRequestTriggerInstance.CODEC;
     }
 
-    public static record CompleteBuildRequestTriggerInstance(Optional<ContextAwarePredicate> player, Optional<String> hutName, int level) implements SimpleInstance
+    public static record CompleteBuildRequestTriggerInstance(Optional<Holder<LootItemCondition>> player, Optional<String> hutName, int level) implements SimpleInstance
     {
         public static final int DEFAULT_LEVEL = -1;
 
         public static final Codec<CompleteBuildRequestTriggerInstance> CODEC = RecordCodecBuilder.create(builder -> builder
-            .group(EntityPredicate.ADVANCEMENT_CODEC.optionalFieldOf("player").forGetter(CompleteBuildRequestTriggerInstance::player),
+            .group(LootItemCondition.CODEC.optionalFieldOf("player").forGetter(CompleteBuildRequestTriggerInstance::player),
                 Codec.STRING.optionalFieldOf("hut_name").forGetter(CompleteBuildRequestTriggerInstance::hutName),
               ExtraCodecs.intRange(0, 5).optionalFieldOf("level", DEFAULT_LEVEL).forGetter(CompleteBuildRequestTriggerInstance::level))
             .apply(builder, CompleteBuildRequestTriggerInstance::new));

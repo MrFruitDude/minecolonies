@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockminecoloniesrack"
+        "recipes": "minecolonies:blockminecoloniesrack"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

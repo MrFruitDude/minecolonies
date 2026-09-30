@@ -63,7 +63,7 @@ public class MinecoloniesFarmland extends AbstractBlockMinecolonies<Minecolonies
 
     public MinecoloniesFarmland(@NotNull final String blockName, final boolean waterLogged, final double height)
     {
-        super(AbstractBlockMinecolonies.registrationProperties().mapColor(MapColor.DIRT).randomTicks().strength(0.6F).sound(SoundType.GRAVEL).isViewBlocking((s,g,p) -> true).isSuffocating((s,g,p) -> true));
+        super(AbstractBlockMinecolonies.registrationProperties().mapColor(MapColor.DIRT).randomTicks().strength(0.6F).sound(SoundType.GRAVEL).isViewBlocking((s,g,p,b) -> true).isSuffocating((s,g,p) -> true));
         this.registerDefaultState(this.stateDefinition.any().setValue(MOISTURE, 0));
         this.blockId = Identifier.fromNamespaceAndPath(Constants.MOD_ID, blockName);
         this.registerDefaultState(this.stateDefinition.any().setValue(WATERLOGGED, Boolean.valueOf(waterLogged)));
@@ -207,7 +207,7 @@ public class MinecoloniesFarmland extends AbstractBlockMinecolonies<Minecolonies
                 for (int y = thisPos.getY() - 1; y <= thisPos.getY(); y++)
                 {
                     blockPos.set(x,y,z);
-                    if (state.canBeHydrated(level, thisPos, level.getFluidState(blockPos), blockPos))
+                    if (state.canBeHydrated(level, thisPos, level.getFluidState(blockPos)))
                     {
                         return true;
                     }

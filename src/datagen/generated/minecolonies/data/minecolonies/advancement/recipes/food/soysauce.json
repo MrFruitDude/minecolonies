@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:soysauce"
+        "recipes": "minecolonies:soysauce"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

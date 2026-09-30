@@ -24,12 +24,9 @@ import net.minecraft.advancements.*;
 import net.minecraft.advancements.triggers.Criterion;
 import net.minecraft.advancements.predicates.ItemPredicate;
 import net.minecraft.advancements.triggers.ItemUsedOnLocationTrigger;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.data.CachedOutput;
-import net.minecraft.data.DataProvider;
-import net.minecraft.data.PackOutput;
+import net.minecraft.data.worldgen.BootstrapContext;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStackTemplate;
@@ -37,12 +34,8 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ItemLike;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
 import static com.minecolonies.api.util.constant.Constants.MOD_ID;
 
@@ -50,17 +43,21 @@ import static com.minecolonies.api.util.constant.Constants.MOD_ID;
  * Datagen for advancements
  */
 @SuppressWarnings("unused") // copy-paste issue
-public class DefaultAdvancementsProvider implements DataProvider
+public final class DefaultAdvancementsProvider
 {
     private static final Identifier GUIDE_WINDOW_ID = Identifier.fromNamespaceAndPath(MOD_ID, "gui/windowhutguide.xml");
     private static final Identifier REQUEST_DETAIL_WINDOW_ID = Identifier.fromNamespaceAndPath(MOD_ID, "gui/windowrequestdetail.xml");
     private static final Identifier CITIZEN_REQUESTS_WINDOW_ID = Identifier.fromNamespaceAndPath(MOD_ID, "gui/citizen/requests.xml");
 
-    private final PackOutput output;
-    private final CompletableFuture<HolderLookup.Provider> lookupProvider;
-    private final PackOutput.PathProvider pathProvider;
+    private DefaultAdvancementsProvider()
+    {
+    }
 
-    public static AdvancementGenerator generator = (consumer) -> {
+    /**
+     * Registry bootstrap for {@link Registries#ADVANCEMENT}; wired through the datapack registry provider in GatherDataHandler.
+     */
+    public static void bootstrap(@NotNull final BootstrapContext<Advancement> consumer)
+    {
         // todo: the achievement ids are a bit weird, in particular the folder organisation;
         //       at some major MC version update we should probably reorganise them.
 
@@ -71,7 +68,6 @@ public class DefaultAdvancementsProvider implements DataProvider
             .display(ModItems.supplyChest,
                 Component.translatableEscape("advancements.minecolonies.root.title"),
                 Component.translatableEscape("advancements.minecolonies.root.description"),
-                null,
                 AdvancementType.TASK, false, false, false)
             .addCriterion("supply_ship", PlaceSupplyTriggerInstance.placeSupply())
             .save(consumer, Identifier.fromNamespaceAndPath(MOD_ID, "minecraft/craft_supply"));
@@ -79,61 +75,15 @@ public class DefaultAdvancementsProvider implements DataProvider
         addStandardAdvancements(consumer);
         addProductionAdvancements(consumer);
         addMilitaryAdvancements(consumer);
-    };
-
-    public DefaultAdvancementsProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> registries)
-    {
-        this.output = output;
-        this.lookupProvider = registries;
-        this.pathProvider = output.createRegistryElementsPathProvider(Registries.ADVANCEMENT);
-    }
-
-    @NotNull
-    @Override
-    public String getName()
-    {
-        return "MineColonies Advancements";
-    }
-
-    @NotNull
-    @Override
-    public CompletableFuture<?> run(@NotNull final CachedOutput cache)
-    {
-        return lookupProvider.thenCompose(provider -> {
-            final Map<Identifier, Advancement> advancements = new LinkedHashMap<>();
-            generator.generate(holder -> {
-                if (advancements.put(holder.id(), holder.value()) != null)
-                {
-                    throw new IllegalStateException("Duplicate advancement " + holder.id());
-                }
-            });
-            // Advancement icons are ItemStackTemplates and therefore encode
-            // registry-backed item holders.  Use the provider-aware serializer
-            // introduced in MC 26.2 instead of plain JsonOps.
-            final CompletableFuture<?>[] writes = advancements.entrySet().stream()
-                .map(entry -> DataProvider.saveStable(
-                    cache,
-                    provider,
-                    Advancement.CODEC,
-                    entry.getValue(),
-                    pathProvider.json(entry.getKey())))
-                .toArray(CompletableFuture<?>[]::new);
-            return CompletableFuture.allOf(writes);
-        });
-    }
-
-    public interface AdvancementGenerator
-    {
-        void generate(Consumer<AdvancementHolder> consumer);
     }
 
     private static void addStandardAdvancements(
-        @NotNull final Consumer<AdvancementHolder> consumer)
+        @NotNull final BootstrapContext<Advancement> consumer)
     {
         final String GROUP = "minecolonies/";
 
         final AdvancementHolder root = Advancement.Builder.advancement()
-            .display(ModItems.supplyChest,
+            .rootDisplay(ModItems.supplyChest,
                 Component.translatableEscape("advancements.minecolonies.root.title"),
                 Component.translatableEscape("advancements.minecolonies.root.description"),
                 Identifier.parse("textures/block/light_gray_wool.png"),
@@ -339,12 +289,12 @@ public class DefaultAdvancementsProvider implements DataProvider
     }
 
     private static void addProductionAdvancements(
-        @NotNull final Consumer<AdvancementHolder> consumer)
+        @NotNull final BootstrapContext<Advancement> consumer)
     {
         final String GROUP = "production/";
 
         final AdvancementHolder root = Advancement.Builder.advancement()
-            .display(ModBlocks.blockHutBuilder,
+            .rootDisplay(ModBlocks.blockHutBuilder.asItem(),
                 Component.translatableEscape("advancements.minecolonies.root.production.title"),
                 Component.translatableEscape("advancements.minecolonies.root.production.description"),
                 Identifier.parse("structurize:textures/block/cactus/cactus_planks.png"),
@@ -383,8 +333,8 @@ public class DefaultAdvancementsProvider implements DataProvider
         final AdvancementHolder postAndStash = Advancement.Builder.advancement()
             .parent(buildDeliveryPerson)
             .display(make(AdvancementType.TASK, ModBlocks.blockPostBox, "post_and_stash"))
-            .addCriterion("postbox", ItemUsedOnLocationTrigger.TriggerInstance.placedBlock(ModBlocks.blockPostBox))
-            .addCriterion("stash", ItemUsedOnLocationTrigger.TriggerInstance.placedBlock(ModBlocks.blockStash))
+            .addCriterion("postbox", ItemUsedOnLocationTrigger.TriggerInstance.placedBlock(consumer.lookup(Registries.BLOCK), ModBlocks.blockPostBox))
+            .addCriterion("stash", ItemUsedOnLocationTrigger.TriggerInstance.placedBlock(consumer.lookup(Registries.BLOCK), ModBlocks.blockStash))
             .save(consumer, Identifier.fromNamespaceAndPath(MOD_ID, GROUP + "post_and_stash"));
 
         // --- education ---
@@ -536,12 +486,12 @@ public class DefaultAdvancementsProvider implements DataProvider
     }
 
     private static void addMilitaryAdvancements(
-        @NotNull final Consumer<AdvancementHolder> consumer)
+        @NotNull final BootstrapContext<Advancement> consumer)
     {
         final String GROUP = "military/";
 
         final AdvancementHolder root = Advancement.Builder.advancement()
-            .display(ModBlocks.blockHutBarracks,
+            .rootDisplay(ModBlocks.blockHutBarracks.asItem(),
                 Component.translatableEscape("advancements.minecolonies.root.military.title"),
                 Component.translatableEscape("advancements.minecolonies.root.military.description"),
                 Identifier.parse("textures/block/stone_bricks.png"),

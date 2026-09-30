@@ -1,9 +1,10 @@
 package com.minecolonies.api.advancements;
+import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
+import net.minecraft.core.Holder;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.advancements.triggers.Criterion;
-import net.minecraft.advancements.predicates.ContextAwarePredicate;
 import net.minecraft.advancements.predicates.entity.EntityPredicate;
 import net.minecraft.advancements.triggers.SimpleCriterionTrigger;
 import net.minecraft.advancements.triggers.SimpleCriterionTrigger.SimpleInstance;
@@ -33,10 +34,10 @@ public class MaxFieldsTrigger extends SimpleCriterionTrigger<MaxFieldsTrigger.Ma
         return MaxFieldsTriggerInstance.CODEC;
     }
 
-    public static record MaxFieldsTriggerInstance(Optional<ContextAwarePredicate> player) implements SimpleInstance
+    public static record MaxFieldsTriggerInstance(Optional<Holder<LootItemCondition>> player) implements SimpleInstance
     {
         public static final Codec<MaxFieldsTriggerInstance> CODEC = RecordCodecBuilder.create(builder -> builder
-            .group(EntityPredicate.ADVANCEMENT_CODEC.optionalFieldOf("player").forGetter(MaxFieldsTriggerInstance::player))
+            .group(LootItemCondition.CODEC.optionalFieldOf("player").forGetter(MaxFieldsTriggerInstance::player))
             .apply(builder, MaxFieldsTriggerInstance::new));
 
         public static Criterion<MaxFieldsTriggerInstance> maxFields()

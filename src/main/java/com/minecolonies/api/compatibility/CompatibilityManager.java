@@ -1,4 +1,5 @@
 package com.minecolonies.api.compatibility;
+import com.minecolonies.api.util.BufUtils;
 import com.minecolonies.api.util.ItemStackUtils;
 
 import com.google.common.collect.ImmutableList;
@@ -269,26 +270,26 @@ public class CompatibilityManager implements ICompatibilityManager
       @NotNull final RegistryFriendlyByteBuf buf,
       @NotNull final Collection<ItemStorage> list)
     {
-        buf.writeCollection(list, (buffer, storage) -> StandardFactoryController.getInstance().serialize((RegistryFriendlyByteBuf) buffer, storage));
+        BufUtils.writeCollection(buf, list, (buffer, storage) -> StandardFactoryController.getInstance().serialize((RegistryFriendlyByteBuf) buffer, storage));
     }
 
     @NotNull
     private static List<ItemStorage> deserializeItemStorageList(@NotNull final RegistryFriendlyByteBuf buf)
     {
-        return buf.readList((buffer) -> StandardFactoryController.getInstance().deserialize((RegistryFriendlyByteBuf) buffer));
+        return BufUtils.readList(buf, (buffer) -> StandardFactoryController.getInstance().deserialize((RegistryFriendlyByteBuf) buffer));
     }
 
     private static void serializeBlockList(
       @NotNull final RegistryFriendlyByteBuf buf,
       @NotNull final Collection<Block> list)
     {
-        buf.writeCollection(list.stream().map(ItemStack::new).toList(), (b, stack) -> Utils.serializeCodecMess((RegistryFriendlyByteBuf) b, stack));
+        BufUtils.writeCollection(buf, list.stream().map(ItemStack::new).toList(), (b, stack) -> Utils.serializeCodecMess((RegistryFriendlyByteBuf) b, stack));
     }
 
     @NotNull
     private static List<Block> deserializeBlockList(@NotNull final RegistryFriendlyByteBuf buf)
     {
-        final List<ItemStack> stacks = buf.readList(b -> Utils.deserializeCodecMess((RegistryFriendlyByteBuf) b));
+        final List<ItemStack> stacks = BufUtils.readList(buf, b -> Utils.deserializeCodecMess((RegistryFriendlyByteBuf) b));
         return stacks.stream()
           .flatMap(stack -> stack.getItem() instanceof BlockItem blockItem
                               ? Stream.of(blockItem.getBlock()) : Stream.empty())
@@ -300,7 +301,7 @@ public class CompatibilityManager implements ICompatibilityManager
       @NotNull final Registry<?> registry,
       @NotNull final Collection<Identifier> ids)
     {
-        buf.writeCollection(ids, (b, id) -> b.writeIdentifier(id));
+        BufUtils.writeCollection(buf, ids, (b, id) -> b.writeIdentifier(id));
     }
 
     @NotNull
@@ -309,7 +310,7 @@ public class CompatibilityManager implements ICompatibilityManager
       @NotNull final RegistryFriendlyByteBuf buf,
       @NotNull final Registry<T> registry)
     {
-        return buf.readList(b -> b.readIdentifier());
+        return BufUtils.readList(buf, b -> b.readIdentifier());
     }
 
     private static final StreamCodec<RegistryFriendlyByteBuf, List<RecipeHolder<?>>> RECIPE_LIST_STREAM_CODEC =
@@ -321,14 +322,14 @@ public class CompatibilityManager implements ICompatibilityManager
     {
         final List<RecipeHolder<CompostRecipe>> recipes = compostRecipes.values().stream().distinct().toList();
         //RECIPE_LIST_STREAM_CODEC.encode(buf, recipes);
-        buf.writeCollection(recipes, (b, holder) -> RecipeHolder.STREAM_CODEC.encode((RegistryFriendlyByteBuf) b, holder));
+        BufUtils.writeCollection(buf, recipes, (b, holder) -> RecipeHolder.STREAM_CODEC.encode((RegistryFriendlyByteBuf) b, holder));
     }
 
     @NotNull
     private static List<RecipeHolder<?>> deserializeCompostRecipes(@NotNull final RegistryFriendlyByteBuf buf)
     {
         //return RECIPE_LIST_STREAM_CODEC.decode(buf).stream().map(r -> (RecipeHolder<CompostRecipe>) r).toList();
-        return buf.readList(b -> RecipeHolder.STREAM_CODEC.decode((RegistryFriendlyByteBuf) b));
+        return BufUtils.readList(buf, b -> RecipeHolder.STREAM_CODEC.decode((RegistryFriendlyByteBuf) b));
     }
 
     /**
@@ -786,7 +787,7 @@ public class CompatibilityManager implements ICompatibilityManager
      */
     private void discoverFuel(final Level level, final ItemStack stack)
     {
-        if (level.fuelValues().isFuel(stack))
+        if (stack.has(DataComponents.COOKING_FUEL))
         {
             fuel.add(new ItemStorage(stack));
         }

@@ -89,17 +89,17 @@ public class TileEntityNamedGraveRenderer implements BlockEntityRenderer<TileEnt
             case NORTH -> {
                 matrixStack.translate(0.5f, 1.18F, 0.48F);
                 matrixStack.scale(0.006F, -0.006F, 0.006F);
-                matrixStack.mulPose(Axis.YP.rotationDegrees(BASIC_ROTATION * ROTATE_NORTH));
+                matrixStack.rotate(Axis.YP.rotationDegrees(BASIC_ROTATION * ROTATE_NORTH));
             }
             case EAST -> {
                 matrixStack.translate(0.54f, 1.18F, 0.5F);
                 matrixStack.scale(0.006F, -0.006F, 0.006F);
-                matrixStack.mulPose(Axis.YP.rotationDegrees(BASIC_ROTATION * ROTATE_EAST));
+                matrixStack.rotate(Axis.YP.rotationDegrees(BASIC_ROTATION * ROTATE_EAST));
             }
             case WEST -> {
                 matrixStack.translate(0.48f, 1.18F, 0.5F);
                 matrixStack.scale(0.006F, -0.006F, 0.006F);
-                matrixStack.mulPose(Axis.YP.rotationDegrees(BASIC_ROTATION * ROTATE_WEST));
+                matrixStack.rotate(Axis.YP.rotationDegrees(BASIC_ROTATION * ROTATE_WEST));
             }
             default -> {
                 matrixStack.translate(0.5f, 1.18F, 0.54F);

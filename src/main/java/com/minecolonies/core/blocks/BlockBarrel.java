@@ -34,8 +34,6 @@ import net.minecraft.world.InteractionResult;
 
 public class BlockBarrel extends AbstractBlockBarrel<BlockBarrel> implements EntityBlock
 {
-    public static final MapCodec<BlockBarrel> CODEC = simpleCodec(BlockBarrel::new);
-
     /**
      * The hardness this block has.
      */
@@ -58,12 +56,6 @@ public class BlockBarrel extends AbstractBlockBarrel<BlockBarrel> implements Ent
     {
         super(properties);
         this.registerDefaultState(this.defaultBlockState().setValue(AbstractBlockBarrel.FACING, Direction.NORTH).setValue(VARIANT, BarrelType.ZERO));
-    }
-
-    @Override
-    protected MapCodec<BlockBarrel> codec()
-    {
-        return CODEC;
     }
 
     @Override

@@ -53,7 +53,7 @@ public class PathJobMoveAwayFromLocation extends AbstractPathJob implements IDes
     {
         super(world, start, range, new PathResult<PathJobMoveAwayFromLocation>(), entity);
 
-        this.avoid = new BlockPos(avoid);
+        this.avoid = avoid.immutable();
         this.avoidDistance = avoidDistance;
 
         preferredDirection = entity.blockPosition().offset(entity.blockPosition().subtract(avoid).multiply(range));

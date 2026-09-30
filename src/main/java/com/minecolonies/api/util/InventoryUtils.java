@@ -1,4 +1,5 @@
 package com.minecolonies.api.util;
+import net.minecraft.util.Prediction;
 import net.minecraft.core.component.DataComponents;
 
 import com.google.common.collect.ImmutableList;
@@ -28,8 +29,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.capabilities.ICapabilityProvider;
-import net.neoforged.neoforge.items.IItemHandler;
-import net.neoforged.neoforge.items.wrapper.InvWrapper;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.wrapper.InvWrapper;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -3175,7 +3176,7 @@ public class InventoryUtils
         final int emptySlot = playerInv.getFreeSlot();
         if (emptySlot == -1) // try full inv first
         {
-            player.drop(itemStack, false);
+            player.drop(itemStack, false, Prediction.SERVER_ONLY);
             return false;
         }
         else

@@ -89,7 +89,7 @@ public class MinecoloniesCropBlock extends AbstractBlockMinecolonies<Minecolonie
      */
     public MinecoloniesCropBlock(final String blockName, final Block preferredFarmland, final List<Block> droppedFrom, @Nullable final TagKey<Biome> preferredBiome)
     {
-        super(AbstractBlockMinecolonies.registrationProperties().mapColor(MapColor.PLANT).noCollision().instabreak().sound(SoundType.CROP).pushReaction(PushReaction.DESTROY));
+        super(AbstractBlockMinecolonies.registrationProperties().mapColor(MapColor.PLANT).noCollision().instabreak().sound(SoundType.CROP).pushReaction(PushReaction.POPPED));
         this.registerDefaultState(this.stateDefinition.any().setValue(AGE, 0));
         this.blockId = Identifier.fromNamespaceAndPath(Constants.MOD_ID, blockName);
         this.preferredFarmland = preferredFarmland;

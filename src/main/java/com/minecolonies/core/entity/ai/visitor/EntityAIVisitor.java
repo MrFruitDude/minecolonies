@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.visitor;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.core.entity.ai.combat.ServerDamageHelper;
 
@@ -126,7 +127,7 @@ public class EntityAIVisitor implements IState
 
         if (EntityNavigationUtils.walkToPos(citizen, target.blockPosition(), 2, false) && citizen.hasLineOfSight(target))
         {
-            citizen.swing(InteractionHand.MAIN_HAND);
+            citizen.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
             if (target instanceof final LivingEntity livingTarget)
         {
             ServerDamageHelper.apply(livingTarget, target.level().damageSources().source(DamageSourceKeys.VISITOR), 10.0f);

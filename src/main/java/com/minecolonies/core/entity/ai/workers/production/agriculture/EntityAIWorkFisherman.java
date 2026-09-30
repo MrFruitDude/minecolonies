@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.production.agriculture;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.ldtteam.structurize.util.BlockUtils;
 import com.ldtteam.structurize.api.util.Tuple;
@@ -565,7 +566,7 @@ public class EntityAIWorkFisherman extends AbstractEntityAISkill<JobFisherman, B
             world.addFreshEntity(this.entityFishHook);
         }
 
-        worker.swing(worker.getUsedItemHand());
+        worker.swing(worker.getUsedItemHand(), SwingAnimation.DEFAULT, false);
     }
 
     /**
@@ -680,7 +681,7 @@ public class EntityAIWorkFisherman extends AbstractEntityAISkill<JobFisherman, B
     {
         if (entityFishHook != null)
         {
-            worker.swing(worker.getUsedItemHand());
+            worker.swing(worker.getUsedItemHand(), SwingAnimation.DEFAULT, false);
             final int i = entityFishHook.retrieve(worker.getMainHandItem());
             generateBonusLoot();
             CitizenItemUtils.damageItemInHand(worker, InteractionHand.MAIN_HAND, i);

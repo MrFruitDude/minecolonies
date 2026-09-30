@@ -11,8 +11,8 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.network.chat.Component;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
-import net.neoforged.neoforge.items.IItemHandler;
-import net.neoforged.neoforge.items.wrapper.CombinedInvWrapper;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.wrapper.CombinedInvWrapper;
 import org.jetbrains.annotations.NotNull;
 
 import static com.minecolonies.api.util.constant.InventoryConstants.*;

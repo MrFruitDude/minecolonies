@@ -15,9 +15,9 @@ import net.minecraft.world.inventory.FurnaceResultSlot;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.neoforged.neoforge.items.IItemHandler;
-import net.neoforged.neoforge.items.IItemHandlerModifiable;
-import net.neoforged.neoforge.items.SlotItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandlerModifiable;
+import com.ldtteam.structurize.api.compat.itemhandler.SlotItemHandler;
 import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nonnull;

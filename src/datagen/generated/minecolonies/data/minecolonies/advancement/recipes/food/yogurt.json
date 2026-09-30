@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:yogurt"
+        "recipes": "minecolonies:yogurt"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

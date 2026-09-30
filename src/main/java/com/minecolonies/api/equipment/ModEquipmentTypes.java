@@ -1,4 +1,16 @@
 package com.minecolonies.api.equipment;
+import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.common.DataMapHooks;
+import net.minecraft.core.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.core.Holder;
+import net.minecraft.world.item.component.BlockTransformers;
+import net.minecraft.core.component.BlockTransformer;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.item.Item;
+import net.minecraft.tags.TagKey;
 
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.util.Log;
@@ -70,7 +82,7 @@ public class ModEquipmentTypes
 
         shovel = register("shovel",
           builder -> builder.setDisplayName(Component.translatable(ToolTranslationConstants.TOOL_TYPE_SHOVEL))
-                       .setIsEquipment((itemStack, equipmentType) -> canPerformDefaultActions(itemStack, ItemAbilities.DEFAULT_SHOVEL_ACTIONS) || Compatibility.isTinkersTool(
+                       .setIsEquipment((itemStack, equipmentType) -> isToolOfKind(itemStack, ItemTags.SHOVELS, BlockTransformers.SHOVEL) || Compatibility.isTinkersTool(
                          itemStack,
                          equipmentType))
                        .setEquipmentLevel(ModEquipmentTypes::vanillaToolLevel)
@@ -78,14 +90,14 @@ public class ModEquipmentTypes
 
         axe = register("axe",
           builder -> builder.setDisplayName(Component.translatable(ToolTranslationConstants.TOOL_TYPE_AXE))
-                       .setIsEquipment((itemStack, equipmentType) -> canPerformDefaultActions(itemStack, ItemAbilities.DEFAULT_AXE_ACTIONS) || Compatibility.isTinkersTool(itemStack,
+                       .setIsEquipment((itemStack, equipmentType) -> isToolOfKind(itemStack, ItemTags.AXES, BlockTransformers.AXE) || Compatibility.isTinkersTool(itemStack,
                          equipmentType))
                        .setEquipmentLevel(ModEquipmentTypes::vanillaToolLevel)
                   .build());
 
         hoe = register("hoe",
           builder -> builder.setDisplayName(Component.translatable(ToolTranslationConstants.TOOL_TYPE_HOE))
-                       .setIsEquipment((itemStack, equipmentType) -> canPerformDefaultActions(itemStack, ItemAbilities.DEFAULT_HOE_ACTIONS) || Compatibility.isTinkersTool(itemStack,
+                       .setIsEquipment((itemStack, equipmentType) -> isToolOfKind(itemStack, ItemTags.HOES, BlockTransformers.HOE) || Compatibility.isTinkersTool(itemStack,
                          equipmentType))
                        .setEquipmentLevel(ModEquipmentTypes::vanillaToolLevel)
                   .build());
@@ -361,6 +373,58 @@ public class ModEquipmentTypes
      * @param actions   The set of actions to compare
      * @return Whether the item stack can perform the actions
      */
+    /**
+     * MC 26.3: ItemAbilities.DEFAULT_SHOVEL/AXE/HOE_ACTIONS were removed; shovels, axes and hoes are the
+     * vanilla item tag, or anything carrying the matching BLOCK_TRANSFORMER component.
+     *
+     * @param itemStack   the stack.
+     * @param tag         the vanilla tool tag.
+     * @param transformer the vanilla block transformer of that tool.
+     * @return true if the stack is such a tool.
+     */
+    public static boolean isToolOfKind(final ItemStack itemStack, final TagKey<Item> tag, final ResourceKey<BlockTransformer> transformer)
+    {
+        if (itemStack.is(tag))
+        {
+            return true;
+        }
+        final Holder<BlockTransformer> component = itemStack.get(DataComponents.BLOCK_TRANSFORMER);
+        return component != null && component.is(transformer);
+    }
+
+    /**
+     * Simulate the block transform the given tool would apply to a block (no side effects).
+     * Replaces 26.2's getToolModifiedState(context, ability, simulate=true).
+     *
+     * @param tool  the tool stack.
+     * @param level the level.
+     * @param pos   the position.
+     * @param face  the clicked face.
+     * @return the resulting state, or null if the tool does not transform it.
+     */
+    @Nullable
+    public static BlockState simulateBlockTransform(final ItemStack tool, final Level level, final BlockPos pos, final Direction face)
+    {
+        final Holder<BlockTransformer> component = tool.get(DataComponents.BLOCK_TRANSFORMER);
+        if (component == null)
+        {
+            return null;
+        }
+        for (final BlockTransformer.BlockTransformData data : DataMapHooks.appendDatamapTransformers(tool, component.value().transforms()))
+        {
+            if (data.disallowedFaces().contains(face))
+            {
+                continue;
+            }
+            final BlockState result = data.blockStateProvider().value().getOptionalState(level, level.getRandom(), pos);
+            if (result != null)
+            {
+                return result;
+            }
+        }
+        return null;
+    }
+
     public static boolean canPerformDefaultActions(ItemStack itemStack, Set<ItemAbility> actions)
     {
         for (final ItemAbility toolAction : actions)

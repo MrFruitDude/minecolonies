@@ -1,4 +1,5 @@
 package com.minecolonies.core.recipes;
+import com.minecolonies.api.util.BrewingUtils;
 
 import com.minecolonies.api.MinecoloniesAPIProxy;
 import com.minecolonies.api.compatibility.ICompatibilityManager;
@@ -53,17 +54,17 @@ public class BrewingCraftingType extends CraftingType
         final ICompatibilityManager compatibilityManager = MinecoloniesAPIProxy.getInstance().getColonyManager().getCompatibilityManager();
 
         final List<ItemStack> containers = compatibilityManager.getListOfAllItems().stream()
-                .filter(world.potionBrewing()::isInput)
+                .filter(stack -> BrewingUtils.isInput(world, stack))
                 .toList();
         final List<ItemStack> ingredients = compatibilityManager.getListOfAllItems().stream()
-                .filter(world.potionBrewing()::isIngredient)
+                .filter(stack -> BrewingUtils.isIngredient(world, stack))
                 .toList();
 
         for (final ItemStack container : containers)
         {
             for (final ItemStack ingredient : ingredients)
             {
-                final ItemStack output = world.potionBrewing().mix(ingredient, container);
+                final ItemStack output = BrewingUtils.mix(world, ingredient, container);
                 if (!output.isEmpty() && output != container)
                 {
                     recipes.add(GenericRecipe.builder()

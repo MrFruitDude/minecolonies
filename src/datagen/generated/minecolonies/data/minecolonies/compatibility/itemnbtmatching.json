@@ -1371,6 +1371,15 @@
     "item": "minecraft:black_concrete_powder"
   },
   {
+    "item": "minecraft:black_concrete_slab"
+  },
+  {
+    "item": "minecraft:black_concrete_stairs"
+  },
+  {
+    "item": "minecraft:black_cushion"
+  },
+  {
     "item": "minecraft:black_glazed_terracotta"
   },
   {
@@ -1390,6 +1399,12 @@
   },
   {
     "item": "minecraft:black_wool"
+  },
+  {
+    "item": "minecraft:black_wool_slab"
+  },
+  {
+    "item": "minecraft:black_wool_stairs"
   },
   {
     "item": "minecraft:blackstone"
@@ -1428,6 +1443,15 @@
     "item": "minecraft:blue_concrete_powder"
   },
   {
+    "item": "minecraft:blue_concrete_slab"
+  },
+  {
+    "item": "minecraft:blue_concrete_stairs"
+  },
+  {
+    "item": "minecraft:blue_cushion"
+  },
+  {
     "item": "minecraft:blue_egg"
   },
   {
@@ -1456,6 +1480,12 @@
   },
   {
     "item": "minecraft:blue_wool"
+  },
+  {
+    "item": "minecraft:blue_wool_slab"
+  },
+  {
+    "item": "minecraft:blue_wool_stairs"
   },
   {
     "item": "minecraft:bogged_spawn_egg"
@@ -1518,6 +1548,15 @@
     "item": "minecraft:brown_concrete_powder"
   },
   {
+    "item": "minecraft:brown_concrete_slab"
+  },
+  {
+    "item": "minecraft:brown_concrete_stairs"
+  },
+  {
+    "item": "minecraft:brown_cushion"
+  },
+  {
     "item": "minecraft:brown_egg"
   },
   {
@@ -1546,6 +1585,12 @@
   },
   {
     "item": "minecraft:brown_wool"
+  },
+  {
+    "item": "minecraft:brown_wool_slab"
+  },
+  {
+    "item": "minecraft:brown_wool_stairs"
   },
   {
     "item": "minecraft:brush"
@@ -2034,6 +2079,15 @@
     "item": "minecraft:cyan_concrete_powder"
   },
   {
+    "item": "minecraft:cyan_concrete_slab"
+  },
+  {
+    "item": "minecraft:cyan_concrete_stairs"
+  },
+  {
+    "item": "minecraft:cyan_cushion"
+  },
+  {
     "item": "minecraft:cyan_glazed_terracotta"
   },
   {
@@ -2053,6 +2107,12 @@
   },
   {
     "item": "minecraft:cyan_wool"
+  },
+  {
+    "item": "minecraft:cyan_wool_slab"
+  },
+  {
+    "item": "minecraft:cyan_wool_stairs"
   },
   {
     "item": "minecraft:dandelion"
@@ -2574,6 +2634,15 @@
     "item": "minecraft:gray_concrete_powder"
   },
   {
+    "item": "minecraft:gray_concrete_slab"
+  },
+  {
+    "item": "minecraft:gray_concrete_stairs"
+  },
+  {
+    "item": "minecraft:gray_cushion"
+  },
+  {
     "item": "minecraft:gray_glazed_terracotta"
   },
   {
@@ -2593,6 +2662,12 @@
   },
   {
     "item": "minecraft:gray_wool"
+  },
+  {
+    "item": "minecraft:gray_wool_slab"
+  },
+  {
+    "item": "minecraft:gray_wool_stairs"
   },
   {
     "item": "minecraft:green_banner"
@@ -2616,6 +2691,15 @@
     "item": "minecraft:green_concrete_powder"
   },
   {
+    "item": "minecraft:green_concrete_slab"
+  },
+  {
+    "item": "minecraft:green_concrete_stairs"
+  },
+  {
+    "item": "minecraft:green_cushion"
+  },
+  {
     "item": "minecraft:green_glazed_terracotta"
   },
   {
@@ -2635,6 +2719,12 @@
   },
   {
     "item": "minecraft:green_wool"
+  },
+  {
+    "item": "minecraft:green_wool_slab"
+  },
+  {
+    "item": "minecraft:green_wool_stairs"
   },
   {
     "item": "minecraft:guardian_spawn_egg"
@@ -2862,6 +2952,15 @@
     "item": "minecraft:light_blue_concrete_powder"
   },
   {
+    "item": "minecraft:light_blue_concrete_slab"
+  },
+  {
+    "item": "minecraft:light_blue_concrete_stairs"
+  },
+  {
+    "item": "minecraft:light_blue_cushion"
+  },
+  {
     "item": "minecraft:light_blue_glazed_terracotta"
   },
   {
@@ -2881,6 +2980,12 @@
   },
   {
     "item": "minecraft:light_blue_wool"
+  },
+  {
+    "item": "minecraft:light_blue_wool_slab"
+  },
+  {
+    "item": "minecraft:light_blue_wool_stairs"
   },
   {
     "item": "minecraft:light_gray_banner"
@@ -2904,6 +3009,15 @@
     "item": "minecraft:light_gray_concrete_powder"
   },
   {
+    "item": "minecraft:light_gray_concrete_slab"
+  },
+  {
+    "item": "minecraft:light_gray_concrete_stairs"
+  },
+  {
+    "item": "minecraft:light_gray_cushion"
+  },
+  {
     "item": "minecraft:light_gray_glazed_terracotta"
   },
   {
@@ -2923,6 +3037,12 @@
   },
   {
     "item": "minecraft:light_gray_wool"
+  },
+  {
+    "item": "minecraft:light_gray_wool_slab"
+  },
+  {
+    "item": "minecraft:light_gray_wool_stairs"
   },
   {
     "item": "minecraft:light_weighted_pressure_plate"
@@ -2958,6 +3078,15 @@
     "item": "minecraft:lime_concrete_powder"
   },
   {
+    "item": "minecraft:lime_concrete_slab"
+  },
+  {
+    "item": "minecraft:lime_concrete_stairs"
+  },
+  {
+    "item": "minecraft:lime_cushion"
+  },
+  {
     "item": "minecraft:lime_glazed_terracotta"
   },
   {
@@ -2977,6 +3106,12 @@
   },
   {
     "item": "minecraft:lime_wool"
+  },
+  {
+    "item": "minecraft:lime_wool_slab"
+  },
+  {
+    "item": "minecraft:lime_wool_stairs"
   },
   {
     "checkednbtkeys": [
@@ -3012,6 +3147,15 @@
     "item": "minecraft:magenta_concrete_powder"
   },
   {
+    "item": "minecraft:magenta_concrete_slab"
+  },
+  {
+    "item": "minecraft:magenta_concrete_stairs"
+  },
+  {
+    "item": "minecraft:magenta_cushion"
+  },
+  {
     "item": "minecraft:magenta_glazed_terracotta"
   },
   {
@@ -3031,6 +3175,12 @@
   },
   {
     "item": "minecraft:magenta_wool"
+  },
+  {
+    "item": "minecraft:magenta_wool_slab"
+  },
+  {
+    "item": "minecraft:magenta_wool_stairs"
   },
   {
     "item": "minecraft:magma_block"
@@ -3411,10 +3561,22 @@
     "item": "minecraft:orange_concrete_powder"
   },
   {
+    "item": "minecraft:orange_concrete_slab"
+  },
+  {
+    "item": "minecraft:orange_concrete_stairs"
+  },
+  {
+    "item": "minecraft:orange_cushion"
+  },
+  {
     "item": "minecraft:orange_glazed_terracotta"
   },
   {
     "item": "minecraft:orange_harness"
+  },
+  {
+    "item": "minecraft:orange_poplar_leaves"
   },
   {
     "item": "minecraft:orange_shulker_box"
@@ -3433,6 +3595,12 @@
   },
   {
     "item": "minecraft:orange_wool"
+  },
+  {
+    "item": "minecraft:orange_wool_slab"
+  },
+  {
+    "item": "minecraft:orange_wool_stairs"
   },
   {
     "item": "minecraft:oxeye_daisy"
@@ -3582,6 +3750,15 @@
     "item": "minecraft:pink_concrete_powder"
   },
   {
+    "item": "minecraft:pink_concrete_slab"
+  },
+  {
+    "item": "minecraft:pink_concrete_stairs"
+  },
+  {
+    "item": "minecraft:pink_cushion"
+  },
+  {
     "item": "minecraft:pink_glazed_terracotta"
   },
   {
@@ -3607,6 +3784,12 @@
   },
   {
     "item": "minecraft:pink_wool"
+  },
+  {
+    "item": "minecraft:pink_wool_slab"
+  },
+  {
+    "item": "minecraft:pink_wool_stairs"
   },
   {
     "item": "minecraft:piston"
@@ -3738,6 +3921,48 @@
     "item": "minecraft:polished_tuff_wall"
   },
   {
+    "item": "minecraft:poplar_boat"
+  },
+  {
+    "item": "minecraft:poplar_button"
+  },
+  {
+    "item": "minecraft:poplar_chest_boat"
+  },
+  {
+    "item": "minecraft:poplar_door"
+  },
+  {
+    "item": "minecraft:poplar_fence"
+  },
+  {
+    "item": "minecraft:poplar_fence_gate"
+  },
+  {
+    "item": "minecraft:poplar_log"
+  },
+  {
+    "item": "minecraft:poplar_planks"
+  },
+  {
+    "item": "minecraft:poplar_pressure_plate"
+  },
+  {
+    "item": "minecraft:poplar_sapling"
+  },
+  {
+    "item": "minecraft:poplar_slab"
+  },
+  {
+    "item": "minecraft:poplar_stairs"
+  },
+  {
+    "item": "minecraft:poplar_trapdoor"
+  },
+  {
+    "item": "minecraft:poplar_wood"
+  },
+  {
     "item": "minecraft:poppy"
   },
   {
@@ -3822,6 +4047,15 @@
     "item": "minecraft:purple_concrete_powder"
   },
   {
+    "item": "minecraft:purple_concrete_slab"
+  },
+  {
+    "item": "minecraft:purple_concrete_stairs"
+  },
+  {
+    "item": "minecraft:purple_cushion"
+  },
+  {
     "item": "minecraft:purple_glazed_terracotta"
   },
   {
@@ -3841,6 +4075,12 @@
   },
   {
     "item": "minecraft:purple_wool"
+  },
+  {
+    "item": "minecraft:purple_wool_slab"
+  },
+  {
+    "item": "minecraft:purple_wool_stairs"
   },
   {
     "item": "minecraft:purpur_block"
@@ -3918,6 +4158,15 @@
     "item": "minecraft:red_concrete_powder"
   },
   {
+    "item": "minecraft:red_concrete_slab"
+  },
+  {
+    "item": "minecraft:red_concrete_stairs"
+  },
+  {
+    "item": "minecraft:red_cushion"
+  },
+  {
     "item": "minecraft:red_glazed_terracotta"
   },
   {
@@ -3942,6 +4191,9 @@
     "item": "minecraft:red_nether_bricks"
   },
   {
+    "item": "minecraft:red_poplar_leaves"
+  },
+  {
     "item": "minecraft:red_sand"
   },
   {
@@ -3955,6 +4207,9 @@
   },
   {
     "item": "minecraft:red_sandstone_wall"
+  },
+  {
+    "item": "minecraft:red_shrub"
   },
   {
     "item": "minecraft:red_shulker_box"
@@ -3973,6 +4228,12 @@
   },
   {
     "item": "minecraft:red_wool"
+  },
+  {
+    "item": "minecraft:red_wool_slab"
+  },
+  {
+    "item": "minecraft:red_wool_stairs"
   },
   {
     "item": "minecraft:redstone"
@@ -4075,6 +4336,9 @@
   },
   {
     "item": "minecraft:sheep_spawn_egg"
+  },
+  {
+    "item": "minecraft:shelf_mushroom"
   },
   {
     "item": "minecraft:shield"
@@ -4363,6 +4627,12 @@
   },
   {
     "item": "minecraft:stripped_pale_oak_wood"
+  },
+  {
+    "item": "minecraft:stripped_poplar_log"
+  },
+  {
+    "item": "minecraft:stripped_poplar_wood"
   },
   {
     "item": "minecraft:stripped_spruce_log"
@@ -4809,6 +5079,15 @@
     "item": "minecraft:white_concrete_powder"
   },
   {
+    "item": "minecraft:white_concrete_slab"
+  },
+  {
+    "item": "minecraft:white_concrete_stairs"
+  },
+  {
+    "item": "minecraft:white_cushion"
+  },
+  {
     "item": "minecraft:white_glazed_terracotta"
   },
   {
@@ -4831,6 +5110,12 @@
   },
   {
     "item": "minecraft:white_wool"
+  },
+  {
+    "item": "minecraft:white_wool_slab"
+  },
+  {
+    "item": "minecraft:white_wool_stairs"
   },
   {
     "item": "minecraft:wildflowers"
@@ -4896,10 +5181,22 @@
     "item": "minecraft:yellow_concrete_powder"
   },
   {
+    "item": "minecraft:yellow_concrete_slab"
+  },
+  {
+    "item": "minecraft:yellow_concrete_stairs"
+  },
+  {
+    "item": "minecraft:yellow_cushion"
+  },
+  {
     "item": "minecraft:yellow_glazed_terracotta"
   },
   {
     "item": "minecraft:yellow_harness"
+  },
+  {
+    "item": "minecraft:yellow_poplar_leaves"
   },
   {
     "item": "minecraft:yellow_shulker_box"
@@ -4915,6 +5212,12 @@
   },
   {
     "item": "minecraft:yellow_wool"
+  },
+  {
+    "item": "minecraft:yellow_wool_slab"
+  },
+  {
+    "item": "minecraft:yellow_wool_stairs"
   },
   {
     "item": "minecraft:zoglin_spawn_egg"

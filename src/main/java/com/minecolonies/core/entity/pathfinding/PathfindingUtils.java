@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.pathfinding;
+import com.minecolonies.api.util.BlockStateUtils;
 
 import com.ldtteam.domumornamentum.block.decorative.FloatingCarpetBlock;
 import com.ldtteam.domumornamentum.block.decorative.PanelBlock;
@@ -126,7 +127,7 @@ public class PathfindingUtils
         // 1 Up when we're standing within this collision shape
         final VoxelShape collisionShape = bs.getCollisionShape(level, pos);
         final boolean isFineToStandIn = canStandInSolidBlock(bs);
-        if (bs.blocksMotion() && !isFineToStandIn && collisionShape.max(Direction.Axis.Y) > 0)
+        if (BlockStateUtils.blocksMotion(bs) && !isFineToStandIn && collisionShape.max(Direction.Axis.Y) > 0)
         {
             final double relPosX = Math.abs(entity.getX() % 1);
             final double relPosZ = Math.abs(entity.getZ() % 1);
@@ -165,7 +166,7 @@ public class PathfindingUtils
                 bs = level.getBlockState(pos);
             }
         }
-        else if (b instanceof FenceBlock || b instanceof WallBlock || b instanceof AbstractBlockMinecoloniesDefault || (bs.blocksMotion() && !canStandInSolidBlock(bs)))
+        else if (b instanceof FenceBlock || b instanceof WallBlock || b instanceof AbstractBlockMinecoloniesDefault || (BlockStateUtils.blocksMotion(bs) && !canStandInSolidBlock(bs)))
         {
             final VoxelShape shape = bs.getCollisionShape(level, pos);
             if (shape.isEmpty())
@@ -257,7 +258,7 @@ public class PathfindingUtils
      */
     public static boolean isLiquid(final BlockState state)
     {
-        return state.liquid() || (!state.blocksMotion() && !state.getFluidState().isEmpty());
+        return state.liquid() || (!BlockStateUtils.blocksMotion(state) && !state.getFluidState().isEmpty());
     }
 
     /**

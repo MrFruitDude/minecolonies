@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutblacksmith"
+        "recipes": "minecolonies:blockhutblacksmith"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

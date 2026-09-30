@@ -100,8 +100,8 @@ public class TileEntityScarecrowRenderer
     {
         poseStack.pushPose();
         poseStack.translate(BLOCK_MIDDLE, Y_OFFSET, BLOCK_MIDDLE);
-        poseStack.mulPose(Axis.ZP.rotationDegrees(ROTATION));
-        poseStack.mulPose(Axis.YP.rotationDegrees(rotationDegrees(state.facing)));
+        poseStack.rotate(Axis.ZP.rotationDegrees(ROTATION));
+        poseStack.rotate(Axis.YP.rotationDegrees(rotationDegrees(state.facing)));
 
         collector.order(0).submitModel(
             model,
@@ -110,8 +110,7 @@ public class TileEntityScarecrowRenderer
             state.scarecrowType == ScareCrowType.PUMPKINHEAD ? SCARECROW_A : SCARECROW_B,
             LightCoordsUtil.pack(state.blockLight, state.skyLight),
             OverlayTexture.NO_OVERLAY,
-            0,
-            null);
+            0);
 
         submitLantern(state, poseStack, collector);
         poseStack.popPose();
@@ -139,7 +138,7 @@ public class TileEntityScarecrowRenderer
         }
 
         poseStack.pushPose();
-        poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
+        poseStack.rotate(Axis.ZP.rotationDegrees(180.0F));
         poseStack.translate(0.6F, -0.6F, -0.375F);
         poseStack.scale(0.75F, 0.65F, 0.75F);
         state.lanternModel.submitMultiLayer(

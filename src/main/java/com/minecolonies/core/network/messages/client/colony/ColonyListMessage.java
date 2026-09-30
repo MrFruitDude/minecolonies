@@ -1,4 +1,5 @@
 package com.minecolonies.core.network.messages.client.colony;
+import com.minecolonies.api.util.BufUtils;
 
 import com.ldtteam.common.network.AbstractPlayMessage;
 import com.ldtteam.common.network.PlayMessageType;
@@ -48,7 +49,7 @@ public class ColonyListMessage extends AbstractPlayMessage
     {
         super(buf, type);
         colonies = null;
-        colonyInfo = buf.readList(b -> {
+        colonyInfo = BufUtils.readList(buf, b -> {
             final ColonyInfo info = new ColonyInfo(b.readInt());
             info.center = b.readBlockPos();
             info.name = b.readUtf(32767);
@@ -62,7 +63,7 @@ public class ColonyListMessage extends AbstractPlayMessage
     @Override
     protected void toBytes(@NotNull final RegistryFriendlyByteBuf buf)
     {
-        buf.writeCollection(colonies, (b, colony) ->{
+        BufUtils.writeCollection(buf, colonies, (b, colony) ->{
             b.writeInt(colony.getID());
             b.writeBlockPos(colony.getCenter());
             b.writeUtf(colony.getName());

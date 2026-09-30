@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutbeekeeper"
+        "recipes": "minecolonies:blockhutbeekeeper"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

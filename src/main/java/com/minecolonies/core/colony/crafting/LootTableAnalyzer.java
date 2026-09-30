@@ -13,7 +13,7 @@ import com.mojang.serialization.MapCodec;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.HolderSet;
-import net.minecraft.core.RegistryCodecs;
+import net.minecraft.core.registries.codec.RegistryCodecs;
 import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -368,7 +368,7 @@ public final class LootTableAnalyzer
 
                     case "minecraft:enchant_with_levels":   // EnchantWithLevelsFunction
                         final int levels = processNumber(function.get("levels"), 1);
-                        final MapCodec<Optional<HolderSet<Enchantment>>> optionsCodec = RegistryCodecs.homogeneousList(Registries.ENCHANTMENT).optionalFieldOf("options");
+                        final MapCodec<Optional<HolderSet<Enchantment>>> optionsCodec = RegistryCodecs.holderSet(Registries.ENCHANTMENT).optionalFieldOf("options");
                         final RegistryOps<JsonElement> ops = provider.createSerializationContext(JsonOps.INSTANCE);
                         final Optional<HolderSet<Enchantment>> options = optionsCodec.decode(ops, ops.getMap(function).getOrThrow()).getOrThrow();
                         final Stream<Holder<Enchantment>> enchantments = options.map(HolderSet::stream)

@@ -3,9 +3,7 @@
     {
       "rules": [
         {
-          "output_state": {
-            "Name": "minecraft:dirt"
-          },
+          "output_state": "minecraft:dirt",
           "input_predicate": {
             "block": "structurize:blocksolidsubstitution",
             "predicate_type": "minecraft:block_match"
@@ -15,9 +13,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:cobweb"
-          },
+          "output_state": "minecraft:cobweb",
           "input_predicate": {
             "block": "minecraft:cobblestone",
             "probability": 0.08,
@@ -28,9 +24,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:cobweb"
-          },
+          "output_state": "minecraft:cobweb",
           "input_predicate": {
             "block": "minecraft:birch_log",
             "probability": 0.04,
@@ -41,9 +35,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:cobweb"
-          },
+          "output_state": "minecraft:cobweb",
           "input_predicate": {
             "block": "minecraft:spruce_planks",
             "probability": 0.02,
@@ -54,9 +46,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:air"
-          },
+          "output_state": "minecraft:air",
           "input_predicate": {
             "block": "minecraft:spruce_planks",
             "probability": 0.03,
@@ -67,9 +57,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:air"
-          },
+          "output_state": "minecraft:air",
           "input_predicate": {
             "block": "minecraft:spruce_slab",
             "probability": 0.03,
@@ -80,9 +68,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:air"
-          },
+          "output_state": "minecraft:air",
           "input_predicate": {
             "block": "minecraft:spruce_stairs",
             "probability": 0.2,
@@ -93,9 +79,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:air"
-          },
+          "output_state": "minecraft:air",
           "input_predicate": {
             "block": "minecraft:oak_stairs",
             "probability": 0.2,
@@ -105,19 +89,15 @@
             "predicate_type": "minecraft:always_true"
           }
         }
-
       ],
       "processor_type": "minecraft:rule"
     },
     {
-      "blocks":[
-        {
-          "Name":"structurize:blocksubstitution"
-        },
-        {
-          "Name":"minecolonies:blockwaypoint"
-        }
+      "blocks": [
+        "structurize:blocksubstitution",
+        "minecolonies:blockwaypoint"
       ],
       "processor_type": "minecraft:block_ignore"
-    }  ]
+    }
+  ]
 }

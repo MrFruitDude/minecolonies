@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutconcretemixer"
+        "recipes": "minecolonies:blockhutconcretemixer"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

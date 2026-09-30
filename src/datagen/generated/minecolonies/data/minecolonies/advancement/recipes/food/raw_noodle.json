@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:raw_noodle"
+        "recipes": "minecolonies:raw_noodle"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

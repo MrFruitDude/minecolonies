@@ -98,7 +98,7 @@ public class CitizenSleepHandler implements ICitizenSleepHandler
     public boolean trySleep(final BlockPos bedLocation)
     {
         final BlockState state = WorldUtil.isEntityBlockLoaded(citizen.level(), bedLocation) ? citizen.level().getBlockState(bedLocation) : null;
-        final boolean isBed = state != null && state.getBlock().isBed(state, citizen.level(), bedLocation, citizen);
+        final boolean isBed = state != null && state.getBlock() instanceof BedBlock;
 
         if (!isBed)
         {

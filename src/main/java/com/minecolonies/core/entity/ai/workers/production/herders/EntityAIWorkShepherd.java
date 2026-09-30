@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.production.herders;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.api.entity.ai.statemachine.AITarget;
 import com.minecolonies.api.entity.ai.statemachine.states.IAIState;
@@ -131,7 +132,7 @@ public class EntityAIWorkShepherd extends AbstractEntityAIHerder<JobShepherd, Bu
             int enchantmentLevel = worker.getMainHandItem().getEnchantmentLevel(Utils.getRegistryValue(Enchantments.FORTUNE, world));
             enchantmentLevel *= Math.max(1.0, (getPrimarySkillLevel() / 5.0));
 
-            worker.swing(InteractionHand.MAIN_HAND);
+            worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
 
             final List<ItemStack> items = new ArrayList<>();
             if (!this.world.isClientSide())

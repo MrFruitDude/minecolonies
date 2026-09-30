@@ -39,8 +39,6 @@ import net.minecraft.core.Direction.Plane;
  */
 public class BlockConstructionTape extends AbstractBlockMinecoloniesConstructionTape<BlockConstructionTape>
 {
-    public static final MapCodec<BlockConstructionTape> CODEC = simpleCodec(BlockConstructionTape::new);
-
     /**
      * This blocks name.
      */
@@ -55,7 +53,7 @@ public class BlockConstructionTape extends AbstractBlockMinecoloniesConstruction
                 .mapColor(MapColor.PLANT)
                 .sound(SoundType.WOOD)
                 .replaceable()
-                .pushReaction(PushReaction.DESTROY)
+                .pushReaction(PushReaction.POPPED)
                 .isRedstoneConductor((state, getter, pos) -> false)
                 .forceSolidOff()
                 .strength(0.0f).noCollision().noLootTable());
@@ -82,12 +80,6 @@ public class BlockConstructionTape extends AbstractBlockMinecoloniesConstruction
     public int getDustColor(final BlockState state, final BlockGetter reader, final BlockPos pos)
     {
         return MapColor.COLOR_YELLOW.col;
-    }
-
-    @Override
-    protected MapCodec<BlockConstructionTape> codec()
-    {
-        return CODEC;
     }
 
     @Override

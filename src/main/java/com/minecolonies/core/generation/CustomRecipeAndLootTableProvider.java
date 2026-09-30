@@ -100,7 +100,7 @@ public abstract class CustomRecipeAndLootTableProvider implements DataProvider
 
         @NotNull
         @Override
-        public List<SubProviderEntry> getTables()
+        public List<LootTableProvider.SubProviderEntry> getTables()
         {
             return CustomRecipeAndLootTableProvider.this.registerTables();
         }

@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:veggie_quiche"
+        "recipes": "minecolonies:veggie_quiche"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

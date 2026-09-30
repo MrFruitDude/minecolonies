@@ -1,6 +1,7 @@
 package com.minecolonies.core.generation.defaults;
 
 import com.minecolonies.api.util.Log;
+import com.minecolonies.core.generation.ItemNbtCalculator;
 import com.google.common.hash.Hashing;
 import com.google.common.hash.HashingOutputStream;
 import com.mojang.blaze3d.platform.NativeImage;
@@ -9,16 +10,10 @@ import net.minecraft.data.CachedOutput;
 import net.minecraft.data.DataGenerator;
 import net.minecraft.data.DataProvider;
 import net.minecraft.data.PackOutput;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.PackType;
-import net.minecraft.server.packs.repository.PackSource;
 import net.minecraft.server.packs.resources.IoSupplier;
-import net.neoforged.fml.ModList;
-import net.neoforged.neoforge.resource.ResourcePackLoader;
-import net.neoforged.neoforgespi.language.IModFileInfo;
 import org.jetbrains.annotations.NotNull;
 
 import javax.imageio.ImageIO;
@@ -29,7 +24,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static com.minecolonies.api.util.constant.Constants.MOD_ID;
@@ -66,8 +60,7 @@ public class DefaultEntityIconProvider implements DataProvider
     {
         final PackOutput.PathProvider outputProvider = generator.getPackOutput().createPathProvider(PackOutput.Target.RESOURCE_PACK, "textures/entity_icon");
 
-        final IModFileInfo modFileInfo = ModList.get().getModFileById(MOD_ID);
-        try (final PackResources pack = ResourcePackLoader.createPackForMod(modFileInfo).openPrimary(new PackLocationInfo("mod/" + MOD_ID, Component.empty(), PackSource.BUILT_IN, Optional.empty())))
+        try (final PackResources pack = ItemNbtCalculator.openModPack(MOD_ID))
         {
             final List<CompletableFuture<?>> icons = new ArrayList<>();
 

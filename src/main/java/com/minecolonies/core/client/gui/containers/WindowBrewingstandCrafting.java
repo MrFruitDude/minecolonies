@@ -1,4 +1,5 @@
 package com.minecolonies.core.client.gui.containers;
+import com.minecolonies.api.util.BrewingUtils;
 
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.crafting.ItemStorage;
@@ -30,8 +31,20 @@ import static com.minecolonies.api.util.constant.translation.BaseGameTranslation
 /**
  * BrewingStand crafting gui.
  */
-public class WindowBrewingstandCrafting extends AbstractContainerScreen<ContainerCraftingBrewingstand>
+public class WindowBrewingstandCrafting extends AbstractContainerScreen<ContainerCraftingBrewingstand> implements ITeachingContainerScreen
 {
+    @Override
+    public int getGuiLeft()
+    {
+        return this.leftPos;
+    }
+
+    @Override
+    public int getGuiTop()
+    {
+        return this.topPos;
+    }
+
     private static final Identifier BREWING_STAND_LOCATION = Identifier.withDefaultNamespace("textures/gui/container/brewing_stand.png");
 
     /**
@@ -120,7 +133,7 @@ public class WindowBrewingstandCrafting extends AbstractContainerScreen<Containe
                 input.add(new ItemStorage(potion, 3, false));
                 input.add(new ItemStorage(ingredient));
 
-                final ItemStack primaryOutput = Minecraft.getInstance().level.potionBrewing().mix(ingredient, potion);
+                final ItemStack primaryOutput = BrewingUtils.mix(Minecraft.getInstance().level, ingredient, potion);
 
                 if (!ItemStackUtils.isEmpty(primaryOutput) && primaryOutput != potion)
                 {

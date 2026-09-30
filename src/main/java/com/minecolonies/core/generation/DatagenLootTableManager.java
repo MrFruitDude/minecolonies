@@ -8,6 +8,7 @@ import com.mojang.serialization.JsonOps;
 import com.mojang.serialization.Lifecycle;
 import net.minecraft.core.*;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.FileToIdConverter;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.packs.resources.Resource;
@@ -101,7 +102,9 @@ public class DatagenLootTableManager implements HolderLookup.Provider
         {
             try
             {
-                final Resource resource = dataPack.getResourceOrThrow(id.identifier());
+                // The data pack stores registry elements under data/<ns>/<registry dir>/<path>.json (1.21 resolved
+                // this via ExistingFileHelper + Registries.elementsDirPath); the bare id never matches a file.
+                final Resource resource = dataPack.getResourceOrThrow(FileToIdConverter.registry(key()).idToFile(id.identifier()));
                 final DynamicOps<JsonElement> ops = createSerializationContext(JsonOps.INSTANCE);
                 try (final var reader = resource.openAsReader())
                 {

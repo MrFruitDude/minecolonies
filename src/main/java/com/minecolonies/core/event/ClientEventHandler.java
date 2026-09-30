@@ -75,7 +75,7 @@ import net.neoforged.neoforge.common.util.Lazy;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
-import net.neoforged.neoforge.items.wrapper.InvWrapper;
+import com.ldtteam.structurize.api.compat.itemhandler.wrapper.InvWrapper;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -177,11 +177,11 @@ public class ClientEventHandler
             Minecraft.getInstance().setScreenAndShow(new ConfirmLinkScreen(confirmed -> {
                 if (confirmed)
                 {
-                    Util.getPlatform().openUri(link.url());
+                    com.mojang.blaze3d.Blaze3D.openUri(java.net.URI.create(link.url()));
                 }
 
                 Minecraft.getInstance().setScreenAndShow(titleScreen);
-            }, link.url(), true))));
+            }, java.net.URI.create(link.url()), true))));
     }
 
     /**

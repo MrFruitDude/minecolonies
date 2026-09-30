@@ -1,4 +1,5 @@
 package com.minecolonies.core.network.messages.server;
+import com.minecolonies.api.util.BufUtils;
 
 import com.ldtteam.common.network.AbstractServerPlayMessage;
 import com.ldtteam.common.network.PlayMessageType;
@@ -63,7 +64,7 @@ public class ResourceScrollSaveWarehouseSnapshotMessage extends AbstractServerPl
     {
         super(buf, type);
         builderPos = buf.readBoolean() ? buf.readBlockPos() : null;
-        snapshot = buf.readMap(FriendlyByteBuf::readUtf, FriendlyByteBuf::readInt);
+        snapshot = BufUtils.readMap(buf, FriendlyByteBuf::readUtf, FriendlyByteBuf::readInt);
         workOrderHash = buf.readUtf(32767);
     }
 
@@ -75,7 +76,7 @@ public class ResourceScrollSaveWarehouseSnapshotMessage extends AbstractServerPl
         {
             buf.writeBlockPos(builderPos);
         }
-        buf.writeMap(snapshot, FriendlyByteBuf::writeUtf, FriendlyByteBuf::writeInt);
+        BufUtils.writeMap(buf, snapshot, FriendlyByteBuf::writeUtf, FriendlyByteBuf::writeInt);
         buf.writeUtf(workOrderHash);
     }
 

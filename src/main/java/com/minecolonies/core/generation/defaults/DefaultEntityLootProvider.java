@@ -4,6 +4,7 @@ import com.minecolonies.api.entity.ModEntities;
 import com.minecolonies.api.items.ModItems;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.data.loot.LootTableSubProvider;
 import net.minecraft.data.loot.EntityLootSubProvider;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntityType;
@@ -11,12 +12,12 @@ import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraft.world.level.storage.loot.LootTable;
+import net.minecraft.world.level.storage.loot.providers.number.floats.ContextFloatProviders;
+import net.minecraft.world.level.storage.loot.providers.number.ints.ContextIntProviders;
 import net.minecraft.world.level.storage.loot.entries.EmptyLootItem;
 import net.minecraft.world.level.storage.loot.entries.LootItem;
 import net.minecraft.world.level.storage.loot.functions.EnchantedCountIncreaseFunction;
 import net.minecraft.world.level.storage.loot.functions.SetItemCountFunction;
-import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
-import net.minecraft.world.level.storage.loot.providers.number.UniformGenerator;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.function.Consumer;
@@ -27,9 +28,9 @@ import java.util.stream.Stream;
  */
 public class DefaultEntityLootProvider extends EntityLootSubProvider
 {
-    public DefaultEntityLootProvider(@NotNull final HolderLookup.Provider provider)
+    public DefaultEntityLootProvider(@NotNull final LootTableSubProvider.Context output)
     {
-        super(FeatureFlags.REGISTRY.allFlags(), provider);
+        super(FeatureFlags.REGISTRY.allFlags(), output);
     }
 
     @Override
@@ -83,7 +84,7 @@ public class DefaultEntityLootProvider extends EntityLootSubProvider
                 .add(LootItem.lootTableItem(ModItems.ancientTome).setWeight(5)));
 
         registerLoot(ModEntities.NORSEMEN_CHIEF, builder -> builder
-                .setRolls(ConstantValue.exactly(2))
+                .setRolls(ContextIntProviders.exactly(2))
                 .add(EmptyLootItem.emptyItem().setWeight(50))
                 .add(LootItem.lootTableItem(Items.LEATHER).setWeight(15).setQuality(5))
                 .add(LootItem.lootTableItem(Items.DIAMOND_AXE).setWeight(10).setQuality(1))
@@ -125,11 +126,11 @@ public class DefaultEntityLootProvider extends EntityLootSubProvider
                 .add(EmptyLootItem.emptyItem().setWeight(50))
                 .add(LootItem.lootTableItem(ModItems.pharaoscepter).setWeight(3).setQuality(1))
                 .add(LootItem.lootTableItem(Items.ARROW).setWeight(20)
-                        .apply(SetItemCountFunction.setCount(UniformGenerator.between(1, 16)))
-                        .apply(EnchantedCountIncreaseFunction.lootingMultiplier(registries, UniformGenerator.between(1, 32))))
+                        .apply(SetItemCountFunction.setCount(ContextIntProviders.between(1, 16)))
+                        .apply(EnchantedCountIncreaseFunction.lootingMultiplier(this.enchantments, ContextFloatProviders.between(1, 32))))
                 .add(LootItem.lootTableItem(ModItems.firearrow).setWeight(10)
-                        .apply(SetItemCountFunction.setCount(UniformGenerator.between(1, 16)))
-                        .apply(EnchantedCountIncreaseFunction.lootingMultiplier(registries, UniformGenerator.between(1, 32))))
+                        .apply(SetItemCountFunction.setCount(ContextIntProviders.between(1, 16)))
+                        .apply(EnchantedCountIncreaseFunction.lootingMultiplier(this.enchantments, ContextFloatProviders.between(1, 32))))
                 .add(LootItem.lootTableItem(ModItems.ancientTome).setWeight(30)));
 
         registerLoot(ModEntities.DROWNED_PIRATE, builder -> builder
@@ -162,7 +163,7 @@ public class DefaultEntityLootProvider extends EntityLootSubProvider
         final Identifier entityId = BuiltInRegistries.ENTITY_TYPE.getKey(entity);
 
         final LootPool.Builder pool = LootPool.lootPool()
-                .setRolls(ConstantValue.exactly(1));
+                .setRolls(ContextIntProviders.exactly(1));
         builder.accept(pool);
 
         add(entity, entity.getDefaultLootTable().orElseThrow(), LootTable.lootTable().withPool(pool));

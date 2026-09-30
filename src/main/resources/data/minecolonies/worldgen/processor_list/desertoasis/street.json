@@ -1,19 +1,15 @@
 {
   "processors": [
     {
-      "blocks":[
-        {
-          "Name":"structurize:blocksubstitution"
-        }
+      "blocks": [
+        "structurize:blocksubstitution"
       ],
       "processor_type": "minecraft:block_ignore"
     },
     {
       "rules": [
         {
-          "output_state": {
-            "Name": "minecraft:sand"
-          },
+          "output_state": "minecraft:sand",
           "input_predicate": {
             "block": "structurize:blocksolidsubstitution",
             "predicate_type": "minecraft:block_match"
@@ -24,10 +20,10 @@
         },
         {
           "output_state": {
-            "Properties": {
+            "id": "minecraft:water",
+            "properties": {
               "level": "0"
-            },
-            "Name": "minecraft:water"
+            }
           },
           "input_predicate": {
             "block": "minecraft:grass_block",
@@ -40,10 +36,10 @@
         },
         {
           "output_state": {
-            "Properties": {
+            "id": "minecraft:water",
+            "properties": {
               "level": "0"
-            },
-            "Name": "minecraft:water"
+            }
           },
           "input_predicate": {
             "block": "minecraft:dirt",

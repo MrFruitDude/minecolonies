@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.mobs.aitasks;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.core.entity.ai.combat.ServerDamageHelper;
 
@@ -54,7 +55,7 @@ public class RaiderMeleeAI<T extends AbstractEntityMinecoloniesMonster & IThreat
         {
             ServerDamageHelper.apply(target, target.level().damageSources().mobAttack(user), (float) damageToBeDealt);
         }
-        user.swing(InteractionHand.MAIN_HAND);
+        user.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
         user.playSound(SoundEvents.PLAYER_ATTACK_SWEEP, (float) 1.0D, (float) SoundUtils.getRandomPitch(user.getRandom()));
         target.setLastHurtByMob(user);
     }

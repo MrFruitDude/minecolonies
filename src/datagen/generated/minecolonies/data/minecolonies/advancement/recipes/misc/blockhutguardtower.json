@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutguardtower"
+        "recipes": "minecolonies:blockhutguardtower"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

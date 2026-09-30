@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.guard;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.google.common.collect.ImmutableList;
 import com.minecolonies.api.colony.guardtype.registry.ModGuardTypes;
@@ -135,7 +136,7 @@ public class DruidCombatAI extends AttackMoveAI<EntityCitizen>
             user.getNavigation().stop();
         }
 
-        user.swing(InteractionHand.MAIN_HAND);
+        user.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
 
         final int level = user.getCitizenData().getCitizenSkillHandler().getLevel(ModGuardTypes.druid.get().getSecondarySkill());
         final int time = user.getCitizenData().getCitizenSkillHandler().getLevel(ModGuardTypes.druid.get().getPrimarySkill()) * 20;

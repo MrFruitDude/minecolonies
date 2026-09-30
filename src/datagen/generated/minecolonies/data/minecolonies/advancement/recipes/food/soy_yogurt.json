@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:soy_yogurt"
+        "recipes": "minecolonies:soy_yogurt"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

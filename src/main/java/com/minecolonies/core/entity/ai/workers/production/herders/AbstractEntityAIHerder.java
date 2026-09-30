@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.production.herders;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.core.entity.ai.combat.ServerDamageHelper;
 
@@ -555,7 +556,7 @@ public abstract class AbstractEntityAIHerder<J extends AbstractJob<?, J>, B exte
             }
 
             // Values taken from vanilla.
-            worker.swing(InteractionHand.MAIN_HAND);
+            worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
             StatsUtil.trackStatByName(building, ITEM_USED, worker.getMainHandItem().getItem().getDescriptionId(), 1);
             worker.getMainHandItem().shrink(1);
             worker.getCitizenExperienceHandler().addExperience(XP_PER_ACTION);
@@ -656,7 +657,7 @@ public abstract class AbstractEntityAIHerder<J extends AbstractJob<?, J>, B exte
             else
             {
                 animal.setInLove(null);
-                worker.swing(InteractionHand.MAIN_HAND);
+                worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
                 StatsUtil.trackStatByName(building, ITEM_USED, worker.getMainHandItem().getItem().getDescriptionId(), 1);
                 StatsUtil.trackStat(building, BREEDING_ATTEMPTS, 1);
                 worker.getMainHandItem().shrink(1);
@@ -790,7 +791,7 @@ public abstract class AbstractEntityAIHerder<J extends AbstractJob<?, J>, B exte
      */
     protected void butcherSwing(FakePlayer fakePlayer, Animal animal)
     {
-        worker.swing(InteractionHand.MAIN_HAND); // visual only
+        worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false); // visual only
         DamageSource ds = animal.level().damageSources().playerAttack(fakePlayer);
         ServerDamageHelper.apply(animal, ds, (float) getButcheringAttackDamage());
         CitizenItemUtils.damageItemInHand(worker, InteractionHand.MAIN_HAND, 1);

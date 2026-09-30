@@ -60,7 +60,7 @@ public class BlockMinecoloniesRack extends AbstractBlockMinecoloniesRack<BlockMi
      * Normal translation we use.
      */
     private static final Long2ObjectMap<Direction> BY_NORMAL = Arrays.stream(Direction.values()).collect(Collectors.toMap((p_235679_) -> {
-        return (new BlockPos(p_235679_.getUnitVec3i())).asLong();
+        return BlockPos.asLong(p_235679_.getUnitVec3i().getX(), p_235679_.getUnitVec3i().getY(), p_235679_.getUnitVec3i().getZ());
     }, (p_235675_) -> {
         return p_235675_;
     }, (p_235670_, p_235671_) -> {

@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:cornmeal"
+        "recipes": "minecolonies:cornmeal"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

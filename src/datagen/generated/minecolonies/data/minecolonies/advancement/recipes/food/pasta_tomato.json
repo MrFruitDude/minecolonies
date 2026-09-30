@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:pasta_tomato"
+        "recipes": "minecolonies:pasta_tomato"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

@@ -28,14 +28,17 @@ public class DefaultRecipeLootProvider implements LootTableSubProvider
     public static final Identifier LOOT_TABLE_LARGE_BOTTLE = Identifier.fromNamespaceAndPath(MOD_ID, "recipes/large_bottle");
     public static final Identifier LOOT_TABLE_GRAVEL = Identifier.fromNamespaceAndPath(MOD_ID, "recipes/gravel");
 
-    public DefaultRecipeLootProvider(@NotNull final HolderLookup.Provider provider)
-    {
+    private final LootTableSubProvider.Context output;
 
+    public DefaultRecipeLootProvider(@NotNull final LootTableSubProvider.Context output)
+    {
+        this.output = output;
     }
 
     @Override
-    public void generate(final BiConsumer<ResourceKey<LootTable>, LootTable.Builder> generator)
+    public void run()
     {
+        final BiConsumer<ResourceKey<LootTable>, LootTable.Builder> generator = output::accept;
         generator.accept(ResourceKey.create(Registries.LOOT_TABLE, LOOT_TABLE_GLASS_BOTTLE), LootTable.lootTable()
                 .withPool(LootPool.lootPool()
                         .add(EmptyLootItem.emptyItem().setWeight(100).setQuality(-1))

@@ -1,7 +1,7 @@
 package com.minecolonies.api.util;
 
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.items.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 

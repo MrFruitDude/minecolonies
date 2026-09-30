@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:corn_chowder"
+        "recipes": "minecolonies:corn_chowder"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

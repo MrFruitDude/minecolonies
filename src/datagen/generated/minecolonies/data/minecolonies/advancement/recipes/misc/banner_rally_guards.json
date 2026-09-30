@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:banner_rally_guards"
+        "recipes": "minecolonies:banner_rally_guards"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

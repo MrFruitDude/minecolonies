@@ -156,7 +156,7 @@ public class ItemScepterPermission extends AbstractItemMinecolonies implements I
         {
             case BLOCK:
                 final Set<Block> freeBlocks = new HashSet<>(colony.getFreeBlocks());
-                for (final BlockPos pos : BlockPos.withinManhattan(player.blockPosition(), BLOCK_OVERLAY_RANGE_XZ, BLOCK_OVERLAY_RANGE_Y, BLOCK_OVERLAY_RANGE_XZ))
+                for (final BlockPos pos : BlockPos.withinBoxByManhattanDistance(player.blockPosition(), BLOCK_OVERLAY_RANGE_XZ, BLOCK_OVERLAY_RANGE_Y, BLOCK_OVERLAY_RANGE_XZ))
                 {
                     if (world.isLoaded(pos) && freeBlocks.contains(world.getBlockState(pos).getBlock()))
                     {

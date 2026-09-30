@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:polenta"
+        "recipes": "minecolonies:polenta"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

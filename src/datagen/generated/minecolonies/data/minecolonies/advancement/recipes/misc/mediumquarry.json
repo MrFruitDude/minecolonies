@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:mediumquarry"
+        "recipes": "minecolonies:mediumquarry"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

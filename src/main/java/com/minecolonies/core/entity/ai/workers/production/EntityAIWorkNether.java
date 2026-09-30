@@ -57,7 +57,7 @@ import net.minecraft.world.level.portal.PortalShape;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.LootTable;
 import net.neoforged.neoforge.common.ItemAbilities;
-import net.neoforged.neoforge.items.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -421,7 +421,7 @@ public class EntityAIWorkNether extends AbstractEntityAICrafting<JobNetherWorker
                             {
                                 // Clear anti-hurt timers.
                                 worker.hurtTime = 0;
-                                worker.invulnerableTime = 0;
+                                worker.setInvulnerableTime(0);
                                 float damageToDo = BASE_PHYSICAL_DAMAGE;
 
                                 // Figure out who gets to hit who this round

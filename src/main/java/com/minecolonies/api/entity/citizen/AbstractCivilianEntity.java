@@ -1,4 +1,5 @@
 package com.minecolonies.api.entity.citizen;
+import net.minecraft.world.level.block.BedBlock;
 
 import com.minecolonies.api.colony.ICivilianData;
 import com.minecolonies.api.entity.other.AbstractFastMinecoloniesEntity;
@@ -85,7 +86,7 @@ public abstract class AbstractCivilianEntity extends AbstractFastMinecoloniesEnt
         {
             final BlockPos pos = getSleepingPos().get();
             final BlockState state = level().getBlockState(getSleepingPos().get());
-            return state.getBlock().isBed(state,level(),pos,this);
+            return state.getBlock() instanceof BedBlock;
         }
 
         return false;

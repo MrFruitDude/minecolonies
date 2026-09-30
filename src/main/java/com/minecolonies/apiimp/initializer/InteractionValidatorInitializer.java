@@ -24,7 +24,7 @@ import com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic;
 import com.minecolonies.core.util.WorkerUtil;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
-import net.neoforged.neoforge.items.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 import java.util.List;
 
 import static com.minecolonies.api.util.ItemStackUtils.*;

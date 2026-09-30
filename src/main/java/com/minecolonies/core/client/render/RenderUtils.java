@@ -69,7 +69,7 @@ public class RenderUtils
                     return HumanoidModel.ArmPose.BRUSH;
                 }
             }
-            else if (!entity.swinging && itemstack.getItem() instanceof CrossbowItem && CrossbowItem.isCharged(itemstack))
+            else if (!entity.isSwinging() && itemstack.getItem() instanceof CrossbowItem && CrossbowItem.isCharged(itemstack))
             {
                 return HumanoidModel.ArmPose.CROSSBOW_HOLD;
             }

@@ -354,11 +354,11 @@ public class WindowMainPage extends AbstractWindowTownHall
         Minecraft.getInstance().setScreenAndShow(new ConfirmLinkScreen((check) -> {
             if (check)
             {
-                Util.getPlatform().openUri("https://www.patreon.com/Minecolonies");
+                com.mojang.blaze3d.Blaze3D.openUri(java.net.URI.create("https://www.patreon.com/Minecolonies"));
             }
 
             Minecraft.getInstance().setScreenAndShow(this.screen);
-        }, "https://www.patreon.com/Minecolonies", true));
+        }, java.net.URI.create("https://www.patreon.com/Minecolonies"), true));
     }
 
     @Override

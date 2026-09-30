@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutarchery"
+        "recipes": "minecolonies:blockhutarchery"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

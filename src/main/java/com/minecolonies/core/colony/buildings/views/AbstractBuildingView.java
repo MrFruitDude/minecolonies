@@ -165,7 +165,7 @@ public abstract class AbstractBuildingView implements IBuildingView
     protected AbstractBuildingView(final IColonyView c, @NotNull final BlockPos l)
     {
         colony = c;
-        location = new BlockPos(l);
+        location = l.immutable();
     }
 
     /**

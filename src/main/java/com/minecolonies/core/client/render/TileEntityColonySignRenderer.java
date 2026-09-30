@@ -81,7 +81,7 @@ public class TileEntityColonySignRenderer
     {
         poseStack.pushPose();
         poseStack.translate(0.5D, 0.5D, 0.5D);
-        poseStack.mulPose(Axis.YP.rotationDegrees(state.relativeRotation));
+        poseStack.rotate(Axis.YP.rotationDegrees(state.relativeRotation));
         poseStack.translate(-0.5D, -0.5D, -0.5D);
         (state.connected ? connectedModel : normalModel).submitMultiLayer(
             poseStack,
@@ -103,10 +103,10 @@ public class TileEntityColonySignRenderer
     {
         poseStack.pushPose();
         poseStack.translate(0.5F, 0.5F, 0.5F);
-        poseStack.mulPose(Axis.YP.rotationDegrees(state.relativeRotation));
+        poseStack.rotate(Axis.YP.rotationDegrees(state.relativeRotation));
         if (mirrored)
         {
-            poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
+            poseStack.rotate(Axis.YP.rotationDegrees(180.0F));
         }
         poseStack.translate(0.0F, -0.1F, 0.2F);
         poseStack.scale(0.007F, -0.007F, 0.007F);

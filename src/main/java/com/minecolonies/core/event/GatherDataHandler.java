@@ -3,24 +3,22 @@ package com.minecolonies.core.event;
 import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.core.generation.DatagenLootTableManager;
 import com.minecolonies.core.generation.ItemNbtCalculator;
+import com.minecolonies.core.generation.SimpleLootTableProvider;
 import com.minecolonies.core.generation.defaults.*;
 import com.minecolonies.core.generation.defaults.workers.*;
 import com.minecolonies.core.util.SchemFixerUtil;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.RegistrySetBuilder;
-import net.minecraft.core.WritableRegistry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.DataGenerator;
 import net.minecraft.data.PackOutput;
 import net.minecraft.data.loot.LootTableProvider;
+import net.minecraft.data.recipes.RecipeProvider;
 import net.minecraft.server.packs.PackType;
-import net.minecraft.util.ProblemReporter;
-import net.minecraft.world.level.storage.loot.LootTable;
-import net.minecraft.world.level.storage.loot.ValidationContextSource;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
 import net.neoforged.neoforge.common.data.BlockTagsProvider;
-import net.neoforged.neoforge.common.data.DatapackBuiltinEntriesProvider;
 import net.neoforged.neoforge.data.event.GatherDataEvent;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 import java.util.Set;
@@ -36,10 +34,15 @@ public class GatherDataHandler
     public static void dataGeneratorSetupServer(final GatherDataEvent.Server event)
     {
         final DataGenerator generator = event.getGenerator();
-        RegistrySetBuilder enchRegBuilder = new RegistrySetBuilder().add(Registries.ENCHANTMENT, DefaultEnchantmentProvider::bootstrap);
-        DatapackBuiltinEntriesProvider enchRegProvider = new DatapackBuiltinEntriesProvider(event.getGenerator().getPackOutput(), event.getLookupProvider(), enchRegBuilder, Set.of(Constants.MOD_ID, "minecraft"));
-        generator.addProvider(true, enchRegProvider);
-        final CompletableFuture<HolderLookup.Provider> provider = enchRegProvider.getRegistryProvider()
+        // MC 26.3: enchantments are world-layer registry entries; advancements and recipes (with their unlock
+        // advancements) are reloadable-layer registry bootstraps written by NeoForge's datapack registry providers.
+        final Set<String> namespaces = Set.of(Constants.MOD_ID, "minecraft");
+        event.createWorldRegistryObjects(new RegistrySetBuilder()
+            .add(Registries.ENCHANTMENT, DefaultEnchantmentProvider::bootstrap), namespaces);
+        event.createReloadableRegistryObjects(new RegistrySetBuilder()
+            .add(Registries.ADVANCEMENT, DefaultAdvancementsProvider::bootstrap)
+            .add(RecipeProvider.asBootstrap(DefaultRecipeProvider::new)), namespaces);
+        final CompletableFuture<HolderLookup.Provider> provider = event.getReloadableLookupProvider()
             .thenApply(p -> new DatagenLootTableManager(p, event.getResourceManager(PackType.SERVER_DATA)));
 
         final BlockTagsProvider blockTagsProvider = new DefaultBlockTagsProvider(generator.getPackOutput(), provider, provider);
@@ -51,14 +54,12 @@ public class GatherDataHandler
         generator.addProvider(true, new QuestTranslationProvider(generator.getPackOutput()));
 
         generator.addProvider(true, new DefaultDamageTypeProvider(generator.getPackOutput(), provider));
-        generator.addProvider(true, new DefaultAdvancementsProvider(generator.getPackOutput(), provider));
         generator.addProvider(true, blockTagsProvider);
         generator.addProvider(true, new DefaultItemTagsProvider(generator.getPackOutput(), provider, blockTagsProvider, provider));
         generator.addProvider(true, new DefaultEntityTypeTagsProvider(generator.getPackOutput(), provider, provider));
         generator.addProvider(true, new DefaultDamageTagsProvider(generator.getPackOutput(), provider, provider));
         generator.addProvider(true, new DefaultResearchProvider(generator.getPackOutput(), provider));
         generator.addProvider(true, new DefaultBiomeTagsProvider(generator.getPackOutput(), provider, provider));
-        generator.addProvider(true, new DefaultRecipeProvider.Runner(generator.getPackOutput(), provider));
         generator.addProvider(true, new DefaultLootModifiersProvider(generator.getPackOutput(), provider));
         generator.addProvider(true, new DefaultDataMapsProvider(generator.getPackOutput(), provider));
         generator.addProvider(true, new DefaultRecruitmentItemsProvider(generator.getPackOutput()));
@@ -96,53 +97,29 @@ public class GatherDataHandler
         // either NeoForge datagen target can be invoked without registering against the abstract base event.
     }
 
-    // todo: move this back to SimpleLootTableProvider?
-    private static final class LootTableProviders extends LootTableProvider
+    /**
+     * The mod's own loot tables. MC 26.3's LootTableProvider is a reloadable-registry bootstrap; MineColonies writes
+     * its tables through {@link SimpleLootTableProvider} instead, the same path the crafter-recipe providers use.
+     */
+    private static final class LootTableProviders extends SimpleLootTableProvider
     {
         public LootTableProviders(final PackOutput packOutput, CompletableFuture<HolderLookup.Provider> provider)
         {
-            super(packOutput, Set.of(), List.of(
-                new SubProviderEntry(DefaultFishermanLootProvider::new, LootContextParamSets.FISHING),
-                new SubProviderEntry(DefaultRecipeLootProvider::new, LootContextParamSets.ALL_PARAMS),
-                new SubProviderEntry(DefaultSupplyLootProvider::new, LootContextParamSets.CHEST),
-                new SubProviderEntry(DefaultCropsLootProvider::new, LootContextParamSets.BLOCK),
-                new SubProviderEntry(DefaultEntityLootProvider::new, LootContextParamSets.ENTITY),
-                new SubProviderEntry(DefaultBlockLootTableProvider::new, LootContextParamSets.BLOCK),
-                new SubProviderEntry(DefaultLuckyOreLootProvider::new, LootContextParamSets.BLOCK)
-            ), provider);
+            super(packOutput, provider);
         }
 
+        @NotNull
         @Override
-        protected void validate(
-          final WritableRegistry<LootTable> writableregistry,
-          final ValidationContextSource validationcontext,
-          final ProblemReporter.Collector problemreporter$collector)
+        public List<LootTableProvider.SubProviderEntry> getTables()
         {
-            // todo this might be a bit aggressive, someone should adjust this.
+            return List.of(
+                new LootTableProvider.SubProviderEntry(DefaultFishermanLootProvider::new, LootContextParamSets.FISHING),
+                new LootTableProvider.SubProviderEntry(DefaultRecipeLootProvider::new, LootContextParamSets.ALL_PARAMS),
+                new LootTableProvider.SubProviderEntry(DefaultSupplyLootProvider::new, LootContextParamSets.CHEST),
+                new LootTableProvider.SubProviderEntry(DefaultCropsLootProvider::new, LootContextParamSets.BLOCK),
+                new LootTableProvider.SubProviderEntry(DefaultEntityLootProvider::new, LootContextParamSets.ENTITY),
+                new LootTableProvider.SubProviderEntry(DefaultBlockLootTableProvider::new, LootContextParamSets.BLOCK),
+                new LootTableProvider.SubProviderEntry(DefaultLuckyOreLootProvider::new, LootContextParamSets.BLOCK));
         }
-
-        // NOTE: I'm reasonably sure this code will not be required due to usage of the DatagenLootTableManager, but keeping for now just in case
-//        @Override
-//        protected void validate(WritableRegistry<LootTable> writableregistry, ValidationContext validationcontext, ProblemReporter.Collector collector)
-//        {
-//            {
-//                final ValidationContext newTracker =
-//                  new ValidationContext(validationcontext.reporter, validationcontext.params, new LootDataResolver()
-//                  {
-//                      public <T> T getElement(final LootDataId<T> id)
-//                      {
-//                          if (id.identifier().equals(BuiltInLootTables.FISHING_FISH) ||
-//                                id.identifier().equals(BuiltInLootTables.FISHING_JUNK) ||
-//                                id.identifier().equals(BuiltInLootTables.FISHING_TREASURE))
-//                          {
-//                              return id.type() == LootDataType.TABLE ? (T) map.getOrDefault(id.identifier(), LootTable.EMPTY) : null;
-//                          }
-//                          return validationcontext.resolver.getElement(id);
-//                      }
-//                  }, validationcontext.visitedElements);
-//
-//                super.validate(map, newTracker);
-//            }
-//        }
     }
 }

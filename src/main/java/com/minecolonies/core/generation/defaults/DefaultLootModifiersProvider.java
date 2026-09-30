@@ -3,6 +3,7 @@ package com.minecolonies.core.generation.defaults;
 import com.minecolonies.api.blocks.ModBlocks;
 import com.minecolonies.api.loot.GenerateSupplyLoot;
 import com.minecolonies.core.blocks.MinecoloniesCropBlock;
+import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.PackOutput;
@@ -10,8 +11,10 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.storage.loot.BuiltInLootTables;
 import net.minecraft.world.level.storage.loot.LootTable;
+import net.minecraft.world.level.storage.loot.predicates.AllOfCondition;
 import net.minecraft.world.level.storage.loot.predicates.AnyOfCondition;
 import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
+
 import net.neoforged.neoforge.common.conditions.ModLoadedCondition;
 import net.neoforged.neoforge.common.data.GlobalLootModifierProvider;
 import net.neoforged.neoforge.common.loot.AddTableLootModifier;
@@ -21,6 +24,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -65,12 +69,12 @@ public class DefaultLootModifiersProvider extends GlobalLootModifierProvider
         {
             final ResourceKey<LootTable> cropTable = DefaultCropsLootProvider.getCropSourceLootTable(source.identifier());
             add(cropTable.identifier().getPath(),
-                    new AddTableLootModifier(new LootItemCondition[] { forLootTable(source).build() }, 0, cropTable),
+                    new AddTableLootModifier(when(forLootTable(source)), 0, cropTable),
                     new ModLoadedCondition(MOD_ID));
         }
 
         add(DUNGEON_CROPS.identifier().getPath(),
-                new AddTableLootModifier(new LootItemCondition[] { forLootTable(BuiltInLootTables.SIMPLE_DUNGEON).build() }, 0, DUNGEON_CROPS));
+                new AddTableLootModifier(when(forLootTable(BuiltInLootTables.SIMPLE_DUNGEON)), 0, DUNGEON_CROPS));
     }
 
     /**
@@ -112,10 +116,21 @@ public class DefaultLootModifiersProvider extends GlobalLootModifierProvider
         );
 
         add("supplycamp_loot",
-                new AddTableLootModifier(new LootItemCondition[] { GenerateSupplyLoot.when().build(), forLootTables(campTables).build() }, 0, ResourceKey.create(Registries.LOOT_TABLE, SUPPLY_CAMP_LT)));
+                new AddTableLootModifier(when(GenerateSupplyLoot.when(), forLootTables(campTables)), 0, ResourceKey.create(Registries.LOOT_TABLE, SUPPLY_CAMP_LT)));
 
         add("supplyship_loot",
-                new AddTableLootModifier(new LootItemCondition[] { GenerateSupplyLoot.when().build(), forLootTables(shipTables).build() }, 0, ResourceKey.create(Registries.LOOT_TABLE, SUPPLY_SHIP_LT)));
+                new AddTableLootModifier(when(GenerateSupplyLoot.when(), forLootTables(shipTables)), 0, ResourceKey.create(Registries.LOOT_TABLE, SUPPLY_SHIP_LT)));
+    }
+
+    /**
+     * MC 26.3: a loot modifier takes one optional condition holder instead of a condition array.
+     * @param conditions the conditions that must all pass.
+     * @return the combined condition.
+     */
+    private static Optional<Holder<LootItemCondition>> when(@NotNull final LootItemCondition.Builder... conditions)
+    {
+        final LootItemCondition condition = conditions.length == 1 ? conditions[0].build() : AllOfCondition.allOf(conditions).build();
+        return Optional.of(Holder.direct(condition));
     }
 
     private static LootItemCondition.Builder forLootTable(@NotNull final ResourceKey<LootTable> table)

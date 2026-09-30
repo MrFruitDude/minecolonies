@@ -163,7 +163,7 @@ public abstract class AbstractEntityMinecoloniesRaider extends AbstractEntityMin
         super(type, world, textureCount);
         this.setPersistenceRequired();
         this.xpReward = BARBARIAN_EXP_DROP;
-        this.setInvulnerable(true);
+        this.setPermanentlyInvulnerable(true);
         RaiderMobUtils.setEquipment(this);
     }
 
@@ -270,7 +270,6 @@ public abstract class AbstractEntityMinecoloniesRaider extends AbstractEntityMin
             return;
         }
 
-        updateSwingTime();
 
         if (invulTime > 0)
         {
@@ -278,7 +277,7 @@ public abstract class AbstractEntityMinecoloniesRaider extends AbstractEntityMin
         }
         else
         {
-            this.setInvulnerable(false);
+            this.setPermanentlyInvulnerable(false);
         }
 
         if (collisionCounter > 0)

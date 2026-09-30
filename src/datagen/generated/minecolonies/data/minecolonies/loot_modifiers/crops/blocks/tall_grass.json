@@ -6,12 +6,10 @@
     }
   ],
   "type": "neoforge:add_table",
-  "conditions": [
-    {
-      "condition": "neoforge:loot_table_id",
-      "loot_table_id": "minecraft:blocks/tall_grass"
-    }
-  ],
+  "condition": {
+    "type": "neoforge:loot_table_id",
+    "loot_table_id": "minecraft:blocks/tall_grass"
+  },
   "priority": 0,
   "table": "minecolonies:crops/blocks/tall_grass"
 }

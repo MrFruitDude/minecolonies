@@ -1,4 +1,5 @@
 package com.minecolonies.core.items;
+import net.minecraft.util.Prediction;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.items.component.Desc;
 import com.minecolonies.api.util.ItemStackUtils;
@@ -57,7 +58,7 @@ public class ItemScrollColonyAreaTP extends AbstractItemScroll
             itemStack.shrink(1);
             if (!ItemStackUtils.isEmpty(itemStack))
             {
-                player.drop(itemStack.copy(), true, false);
+                player.drop(itemStack.copy(), false, Prediction.SERVER_ONLY);
                 itemStack.setCount(0);
             }
             for (final ServerPlayer sPlayer : getAffectedPlayers(player))

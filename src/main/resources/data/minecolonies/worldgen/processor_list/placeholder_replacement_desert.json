@@ -2,21 +2,15 @@
   "processors": [
     {
       "blocks": [
-        {
-          "Name": "structurize:blocksubstitution"
-        },
-        {
-          "Name": "minecolonies:blockwaypoint"
-        }
+        "structurize:blocksubstitution",
+        "minecolonies:blockwaypoint"
       ],
       "processor_type": "minecraft:block_ignore"
     },
     {
       "rules": [
         {
-          "output_state": {
-            "Name": "minecraft:sand"
-          },
+          "output_state": "minecraft:sand",
           "input_predicate": {
             "block": "structurize:blocksolidsubstitution",
             "predicate_type": "minecraft:block_match"
@@ -26,9 +20,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:water"
-          },
+          "output_state": "minecraft:water",
           "input_predicate": {
             "block": "structurize:blockfluidsubstitution",
             "predicate_type": "minecraft:block_match"

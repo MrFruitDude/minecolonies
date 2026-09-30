@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutfarmerstone"
+        "recipes": "minecolonies:blockhutfarmerstone"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

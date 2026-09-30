@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:pasta_plain"
+        "recipes": "minecolonies:pasta_plain"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

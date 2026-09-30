@@ -1,4 +1,5 @@
 package com.minecolonies.core.tileentities;
+import net.minecraft.world.level.block.entity.SignTextSlot;
 
 import com.ldtteam.structurize.util.RotationMirror;
 import com.ldtteam.structurize.blueprints.v1.Blueprint;
@@ -49,8 +50,8 @@ import net.minecraft.world.level.block.entity.SignText;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
-import net.neoforged.neoforge.items.IItemHandler;
-import net.neoforged.neoforge.items.IItemHandlerModifiable;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandlerModifiable;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -477,19 +478,20 @@ public class TileEntityColonyBuilding extends AbstractTileEntityColonyBuilding i
                             final BlockEntity blockEntity = colony.getWorld().getBlockEntity(buildingSignPos);
                             if (blockEntity instanceof SignBlockEntity signBlockEntity)
                             {
-                                SignText signText = new SignText();
+                                // MC 26.3: SignText is immutable; build it through SignText.Mutable.
+                                final SignText.Mutable signText = SignText.EMPTY.asMutable();
                                 final String nameText = Component.translatable(buildingView.getBuildingDisplayName()).getString();
 
                                 final List<FormattedText> lines = Minecraft.getInstance().font.getSplitter().splitLines(nameText, 60, Style.EMPTY);
                                 int i;
                                 for (i = 0; i < Math.min(lines.size(), 3); i++)
                                 {
-                                    signText = signText.setMessage(i,  Component.literal(lines.get(i).getString()));
+                                    signText.setLine(i, Component.literal(lines.get(i).getString()));
                                 }
 
-                                signText = signText.setMessage(i, Component.literal(buildingView.getBuildingLevel() + ""));
-                                signBlockEntity.setText(signText, true);
-                                signBlockEntity.setText(signText, false);
+                                signText.setLine(i, Component.literal(buildingView.getBuildingLevel() + ""));
+                                signBlockEntity.setText(signText.asImmutable(), SignTextSlot.FRONT);
+                                signBlockEntity.setText(signText.asImmutable(), SignTextSlot.BACK);
                             }
                         }
                     }

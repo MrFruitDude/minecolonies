@@ -1,22 +1,16 @@
 {
   "processors": [
     {
-      "blocks":[
-        {
-          "Name":"structurize:blocksubstitution"
-        },
-        {
-          "Name":"minecolonies:blockwaypoint"
-        }
+      "blocks": [
+        "structurize:blocksubstitution",
+        "minecolonies:blockwaypoint"
       ],
       "processor_type": "minecraft:block_ignore"
     },
     {
       "rules": [
         {
-          "output_state": {
-            "Name": "minecraft:sand"
-          },
+          "output_state": "minecraft:sand",
           "input_predicate": {
             "block": "structurize:blocksolidsubstitution",
             "predicate_type": "minecraft:block_match"
@@ -26,9 +20,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:cobweb"
-          },
+          "output_state": "minecraft:cobweb",
           "input_predicate": {
             "block": "minecraft:sandstone",
             "probability": 0.02,
@@ -39,9 +31,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:cobweb"
-          },
+          "output_state": "minecraft:cobweb",
           "input_predicate": {
             "block": "minecraft:cobblestone",
             "probability": 0.02,

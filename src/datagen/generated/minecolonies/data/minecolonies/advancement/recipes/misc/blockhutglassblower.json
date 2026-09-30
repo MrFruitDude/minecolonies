@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutglassblower"
+        "recipes": "minecolonies:blockhutglassblower"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

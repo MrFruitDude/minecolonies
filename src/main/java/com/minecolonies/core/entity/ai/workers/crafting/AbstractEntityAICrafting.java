@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.crafting;
+import net.minecraft.world.item.component.SwingAnimation;
 import com.minecolonies.api.util.ItemStackUtils;
 import com.ldtteam.structurize.api.util.Tuple;
 
@@ -649,7 +650,7 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
     {
         worker.getLookControl().setLookAt(blockPos.getX(), blockPos.getY(), blockPos.getZ(), FACING_DELTA_YAW, worker.getMaxHeadXRot());
 
-        worker.swing(worker.getUsedItemHand());
+        worker.swing(worker.getUsedItemHand(), SwingAnimation.DEFAULT, false);
 
         final BlockState blockState = worker.level().getBlockState(blockPos);
         final BlockPos vector = blockPos.subtract(worker.blockPosition());

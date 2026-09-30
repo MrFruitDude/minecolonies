@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:soy_cream_cheese"
+        "recipes": "minecolonies:soy_cream_cheese"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

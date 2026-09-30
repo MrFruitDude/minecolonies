@@ -373,8 +373,8 @@ public abstract class JobBasedRecipeCategory<T> extends AbstractRecipeCategory<T
     private static boolean isShiftDown()
     {
         final Minecraft minecraft = Minecraft.getInstance();
-        return InputConstants.isKeyDown(minecraft.getWindow(), InputConstants.KEY_LSHIFT)
-            || InputConstants.isKeyDown(minecraft.getWindow(), InputConstants.KEY_RSHIFT);
+        return InputConstants.isKeyDown(InputConstants.KEY_LSHIFT)
+            || InputConstants.isKeyDown(InputConstants.KEY_RSHIFT);
     }
 
     protected static class RecipeIdTooltipCallback implements IRecipeSlotRichTooltipCallback

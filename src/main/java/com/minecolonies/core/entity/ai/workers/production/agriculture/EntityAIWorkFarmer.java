@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.production.agriculture;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.google.common.reflect.TypeToken;
 import com.minecolonies.api.advancements.AdvancementTriggers;
@@ -49,7 +50,6 @@ import net.minecraft.world.level.block.FarmlandBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.common.ItemAbilities;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -403,7 +403,7 @@ public class EntityAIWorkFarmer extends AbstractEntityAICrafting<JobFarmer, Buil
           InteractionHand.MAIN_HAND,
           getInventory().getStackInSlot(InventoryUtils.getFirstSlotOfItemHandlerContainingEquipment(getInventory(), ModEquipmentTypes.hoe.get(), TOOL_LEVEL_WOOD_OR_GOLD, building.getMaxEquipmentLevel())),
           blockHitResult);
-        final BlockState toolModifiedState = blockState.getToolModifiedState(useOnContext, ItemAbilities.HOE_TILL, true);
+        final BlockState toolModifiedState = ModEquipmentTypes.simulateBlockTransform(useOnContext.getItemInHand(), world, position, Direction.UP);
         if (toolModifiedState == null || !toolModifiedState.is(Blocks.FARMLAND))
         {
             return null;
@@ -603,7 +603,7 @@ public class EntityAIWorkFarmer extends AbstractEntityAICrafting<JobFarmer, Buil
             {
                 didWork = true;
                 equipHoe();
-                worker.swing(worker.getUsedItemHand());
+                worker.swing(worker.getUsedItemHand(), SwingAnimation.DEFAULT, false);
                 createCorrectFarmlandForSeed(farmField.getSeed(), position);
                 CitizenItemUtils.damageItemInHand(worker, InteractionHand.MAIN_HAND, 1);
                 worker.decreaseSaturationForContinuousAction();

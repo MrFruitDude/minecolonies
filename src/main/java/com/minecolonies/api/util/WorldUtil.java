@@ -418,7 +418,7 @@ public class WorldUtil
                 continue;
             }
 
-            double invisPct = entity.getVisibilityPercent(livingEntity);
+            double invisPct = entity.getVisibilityPercent((ServerLevel) entity.level(), livingEntity);
             double invisPctModifier = Math.max(lookDistance * invisPct, 2.0D);
             if (entityDistance > invisPctModifier * invisPctModifier)
             {

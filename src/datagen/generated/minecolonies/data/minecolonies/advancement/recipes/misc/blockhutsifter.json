@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutsifter"
+        "recipes": "minecolonies:blockhutsifter"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

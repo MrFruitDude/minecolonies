@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:meat_ravioli"
+        "recipes": "minecolonies:meat_ravioli"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

@@ -251,7 +251,7 @@ public class ScanCommand extends AbstractCommand
             }
         }
 
-        final StructureTemplateManager structuretemplatemanager = ((ServerLevel) world).getStructureManager();
+        final StructureTemplateManager structuretemplatemanager = ((ServerLevel) world).getServer().getStructureTemplateManager();
         final BlockPos newZero = new BlockPos(zero.getX(), Math.max(zero.getY(), lowestY - 1), zero.getZ());
         final int yDif = newZero.getY() - zero.getY();
         StructureTemplate structuretemplate;

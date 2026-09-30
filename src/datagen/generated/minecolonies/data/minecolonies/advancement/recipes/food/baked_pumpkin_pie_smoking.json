@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:baked_pumpkin_pie_smoking"
+        "recipes": "minecolonies:baked_pumpkin_pie_smoking"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

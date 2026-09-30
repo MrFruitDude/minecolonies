@@ -36,8 +36,20 @@ import static com.minecolonies.api.util.constant.translation.BaseGameTranslation
 /**
  * AbstractCrafting gui.
  */
-public class WindowCrafting extends AbstractContainerScreen<ContainerCrafting>
+public class WindowCrafting extends AbstractContainerScreen<ContainerCrafting> implements ITeachingContainerScreen
 {
+    @Override
+    public int getGuiLeft()
+    {
+        return this.leftPos;
+    }
+
+    @Override
+    public int getGuiTop()
+    {
+        return this.topPos;
+    }
+
     private static final Identifier CRAFTING_TABLE_GUI_TEXTURES = Identifier.fromNamespaceAndPath(MOD_ID, "textures/gui/crafting2x2.png");
 
     private static final Identifier CRAFTING_TABLE_GUI_TEXTURES3X3 = Identifier.fromNamespaceAndPath(MOD_ID, "textures/gui/crafting3x3.png");

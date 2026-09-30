@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.mobs.aitasks;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.api.entity.ai.combat.threat.IThreatTableEntity;
 import com.minecolonies.api.entity.ai.statemachine.states.IState;
@@ -125,7 +126,7 @@ public class RaiderRangedAI<T extends AbstractEntityMinecoloniesMonster & IThrea
         CombatUtils.shootArrow(arrowEntity, target, 10.0f);
 
         // Visuals
-        user.swing(InteractionHand.MAIN_HAND);
+        user.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
         user.stopUsingItem();
         SoundEvent attackSound = SoundEvents.SKELETON_SHOOT;
         if (arrowEntity instanceof ICustomAttackSound)

@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.production;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.compatibility.Compatibility;
@@ -838,7 +839,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             {
                 Compatibility.plantDynamicSapling(world, location, stack);
                 getInventory().extractItem(saplingSlot, 1, false);
-                worker.swing(worker.getUsedItemHand());
+                worker.swing(worker.getUsedItemHand(), SwingAnimation.DEFAULT, false);
                 timeWaited = 0;
                 incrementActionsDoneAndDecSaturation();
                 setDelay(TIMEOUT_DELAY);
@@ -858,7 +859,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                   soundType.getPitch());
             }
 
-            worker.swing(worker.getUsedItemHand());
+            worker.swing(worker.getUsedItemHand(), SwingAnimation.DEFAULT, false);
         }
 
         if (timeWaited >= MAX_WAITING_TIME / 2 && !checkedInHut && walkToBuilding())

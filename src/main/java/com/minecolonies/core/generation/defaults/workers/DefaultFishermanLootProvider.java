@@ -6,13 +6,14 @@ import com.minecolonies.api.loot.ResearchUnlocked;
 import com.minecolonies.api.research.util.ResearchConstants;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.loot.LootTableSubProvider;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.storage.loot.*;
 import net.minecraft.world.level.storage.loot.entries.EmptyLootItem;
 import net.minecraft.world.level.storage.loot.entries.LootItem;
-import net.minecraft.world.level.storage.loot.entries.LootPoolSingletonContainer;
+import net.minecraft.world.level.storage.loot.entries.UniformContainerBase;
 import net.minecraft.world.level.storage.loot.entries.NestedLootTable;
 import net.minecraft.world.level.storage.loot.predicates.AnyOfCondition;
 import org.jetbrains.annotations.NotNull;
@@ -25,14 +26,17 @@ import java.util.function.BiConsumer;
  */
 public class DefaultFishermanLootProvider implements LootTableSubProvider
 {
-    public DefaultFishermanLootProvider(@NotNull final HolderLookup.Provider provider)
-    {
+    private final LootTableSubProvider.Context output;
 
+    public DefaultFishermanLootProvider(@NotNull final LootTableSubProvider.Context output)
+    {
+        this.output = output;
     }
 
     @Override
-    public void generate(final BiConsumer<ResourceKey<LootTable>, LootTable.Builder> generator)
+    public void run()
     {
+        final BiConsumer<ResourceKey<LootTable>, LootTable.Builder> generator = output::accept;
         registerStandardLoot(generator);
         registerBonusLoot(generator);
     }
@@ -41,28 +45,28 @@ public class DefaultFishermanLootProvider implements LootTableSubProvider
     {
         generator.accept(ModLootTables.FISHING, LootTable.lootTable()
                 .withPool(LootPool.lootPool()
-                        .add(NestedLootTable.lootTableReference(ModLootTables.FISHING_JUNK).setWeight(10).setQuality(-2))
-                        .add(NestedLootTable.lootTableReference(ModLootTables.FISHING_TREASURE).setWeight(5).setQuality(2)
+                        .add(NestedLootTable.lootTableReference(output.lookup(Registries.LOOT_TABLE).getOrThrow(ModLootTables.FISHING_JUNK)).setWeight(10).setQuality(-2))
+                        .add(NestedLootTable.lootTableReference(output.lookup(Registries.LOOT_TABLE).getOrThrow(ModLootTables.FISHING_TREASURE)).setWeight(5).setQuality(2)
                                 .when(new AnyOfCondition.Builder(
                                         EntityInBiomeTag.of(BiomeTags.IS_OCEAN),
                                         ResearchUnlocked.effect(ResearchConstants.FISH_TREASURE)
                                 )))
-                        .add(NestedLootTable.lootTableReference(ModLootTables.FISHING_FISH).setWeight(85).setQuality(-1))
+                        .add(NestedLootTable.lootTableReference(output.lookup(Registries.LOOT_TABLE).getOrThrow(ModLootTables.FISHING_FISH)).setWeight(85).setQuality(-1))
                 ));
 
         generator.accept(ModLootTables.FISHING_JUNK, LootTable.lootTable()
                 .withPool(LootPool.lootPool()
-                        .add(NestedLootTable.lootTableReference(BuiltInLootTables.FISHING_JUNK).setWeight(1))
+                        .add(NestedLootTable.lootTableReference(output.lookup(Registries.LOOT_TABLE).getOrThrow(BuiltInLootTables.FISHING_JUNK)).setWeight(1))
                 ));
 
         generator.accept(ModLootTables.FISHING_TREASURE, LootTable.lootTable()
                 .withPool(LootPool.lootPool()
-                        .add(NestedLootTable.lootTableReference(BuiltInLootTables.FISHING_TREASURE).setWeight(1))
+                        .add(NestedLootTable.lootTableReference(output.lookup(Registries.LOOT_TABLE).getOrThrow(BuiltInLootTables.FISHING_TREASURE)).setWeight(1))
                 ));
 
         generator.accept(ModLootTables.FISHING_FISH, LootTable.lootTable()
                 .withPool(LootPool.lootPool()
-                        .add(NestedLootTable.lootTableReference(BuiltInLootTables.FISHING_FISH).setWeight(1))
+                        .add(NestedLootTable.lootTableReference(output.lookup(Registries.LOOT_TABLE).getOrThrow(BuiltInLootTables.FISHING_FISH)).setWeight(1))
                 ));
     }
 
@@ -101,11 +105,11 @@ public class DefaultFishermanLootProvider implements LootTableSubProvider
         generator.accept(ModLootTables.FISHERMAN_BONUS.get(5), level45);
     }
 
-    private static LootTable.Builder makeLoot(int emptyWeight, @NotNull final LootPoolSingletonContainer.Builder<?>... entries)
+    private static LootTable.Builder makeLoot(int emptyWeight, @NotNull final UniformContainerBase.Builder<?>... entries)
     {
         final LootPool.Builder pool = LootPool.lootPool();
 
-        for (final LootPoolSingletonContainer.Builder<?> entry : entries)
+        for (final UniformContainerBase.Builder<?> entry : entries)
         {
             pool.add(entry);
             emptyWeight -= getWeightForEntry(entry);
@@ -115,14 +119,14 @@ public class DefaultFishermanLootProvider implements LootTableSubProvider
         return LootTable.lootTable().withPool(pool);
     }
 
-    private static int getWeightForEntry(@NotNull final LootPoolSingletonContainer.Builder<?> entry)
+    private static int getWeightForEntry(@NotNull final UniformContainerBase.Builder<?> entry)
     {
         // because it would be too easy for it to just have a public getter...
         if (weightField == null)
         {
             try
             {
-                weightField = LootPoolSingletonContainer.Builder.class.getDeclaredField("weight");
+                weightField = UniformContainerBase.Builder.class.getDeclaredField("weight");
                 weightField.setAccessible(true);
             }
             catch (final NoSuchFieldException | SecurityException e)

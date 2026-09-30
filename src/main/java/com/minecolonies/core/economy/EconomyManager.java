@@ -1,4 +1,5 @@
 package com.minecolonies.core.economy;
+import net.minecraft.util.Prediction;
 
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyManager;
@@ -13,7 +14,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.neoforged.neoforge.items.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -205,7 +206,7 @@ public final class EconomyManager
     {
         if (!player.getInventory().add(stack))
         {
-            player.drop(stack, false);
+            player.drop(stack, false, Prediction.SERVER_ONLY);
         }
     }
 

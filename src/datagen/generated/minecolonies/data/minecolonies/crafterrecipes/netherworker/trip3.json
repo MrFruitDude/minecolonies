@@ -20,6 +20,12 @@
       "id": "minecraft:red_mushroom"
     },
     {
+      "id": "minecraft:crimson_fungus"
+    },
+    {
+      "id": "minecraft:warped_fungus"
+    },
+    {
       "id": "minecraft:soul_soil"
     },
     {
@@ -29,9 +35,6 @@
       "id": "minecraft:crimson_nylium"
     },
     {
-      "id": "minecraft:crimson_fungus"
-    },
-    {
       "id": "minecraft:crimson_stem"
     },
     {
@@ -39,9 +42,6 @@
     },
     {
       "id": "minecraft:warped_nylium"
-    },
-    {
-      "id": "minecraft:warped_fungus"
     },
     {
       "id": "minecraft:warped_stem"

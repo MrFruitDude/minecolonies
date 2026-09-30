@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:mint_tea"
+        "recipes": "minecolonies:mint_tea"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

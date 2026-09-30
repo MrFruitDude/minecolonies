@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:cheese_pizza"
+        "recipes": "minecolonies:cheese_pizza"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

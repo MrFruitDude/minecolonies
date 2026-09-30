@@ -3,7 +3,7 @@
   "criteria": {
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockconstructiontape"
+        "recipes": "minecolonies:blockconstructiontape"
       },
       "trigger": "minecraft:recipe_unlocked"
     },

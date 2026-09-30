@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:plain_cheesecake"
+        "recipes": "minecolonies:plain_cheesecake"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

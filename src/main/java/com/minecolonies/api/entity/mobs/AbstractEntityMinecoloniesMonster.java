@@ -250,7 +250,6 @@ public abstract class AbstractEntityMinecoloniesMonster extends AbstractFastMine
             this.spawnPos = this.blockPosition();
         }
 
-        updateSwingTime();
         if (collisionCounter > 0)
         {
             collisionCounter--;

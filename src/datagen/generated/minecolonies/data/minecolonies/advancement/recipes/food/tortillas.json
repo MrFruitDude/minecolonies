@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:tortillas"
+        "recipes": "minecolonies:tortillas"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

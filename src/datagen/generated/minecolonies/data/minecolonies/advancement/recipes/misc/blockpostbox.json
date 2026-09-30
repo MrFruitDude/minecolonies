@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockpostbox"
+        "recipes": "minecolonies:blockpostbox"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

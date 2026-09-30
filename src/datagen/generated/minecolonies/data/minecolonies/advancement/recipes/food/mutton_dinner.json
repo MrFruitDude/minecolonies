@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:mutton_dinner"
+        "recipes": "minecolonies:mutton_dinner"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

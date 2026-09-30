@@ -131,7 +131,7 @@ public class EntityCitizenWalkToProxy extends AbstractWalkToProxy
                             final Direction facing = BlockPosUtil.getXZFacing(ladderPos, new BlockPos(currentNode.getX(), 0, currentNode.getZ()));
                             final BlockPos ladderHeight = new BlockPos(ladderPos.getX(), targetY + 1, ladderPos.getZ());
 
-                            return new BlockPos(ladderHeight.relative(facing, 7));
+                            return ladderHeight.relative(facing, 7).immutable();
                         }
                         else
                         {
@@ -201,7 +201,7 @@ public class EntityCitizenWalkToProxy extends AbstractWalkToProxy
                 {
                     final Direction facing = BlockPosUtil.getXZFacing(ladderPos, new BlockPos(lastNode.getX(), 0, lastNode.getZ()));
                     final BlockPos ladderHeight = new BlockPos(ladderPos.getX(), targetY + 1, ladderPos.getZ());
-                    return new BlockPos(ladderHeight.relative(facing, 7));
+                    return ladderHeight.relative(facing, 7).immutable();
                 }
 
                 if (lastNode != null && lastNode.getParent() != null)
@@ -241,7 +241,7 @@ public class EntityCitizenWalkToProxy extends AbstractWalkToProxy
                 final BlockPos ladderPos = buildingMiner.getLadderLocation();
                 final Direction facing = BlockPosUtil.getXZFacing(ladderPos, new BlockPos(currentNode.getX(), 0, currentNode.getZ()));
                 final BlockPos ladderHeight = new BlockPos(ladderPos.getX(), levelDepth + 1, ladderPos.getZ());
-                nodesToTarget.add(new BlockPos(ladderHeight.relative(facing, 7)));
+                nodesToTarget.add(ladderHeight.relative(facing, 7).immutable());
             }
             else
             {

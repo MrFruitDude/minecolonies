@@ -22,7 +22,7 @@ import net.minecraft.network.chat.Style;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.items.wrapper.InvWrapper;
+import com.ldtteam.structurize.api.compat.itemhandler.wrapper.InvWrapper;
 import net.minecraft.world.level.block.Blocks;
 
 import static com.minecolonies.api.util.constant.TranslationConstants.LABEL_X_OF_Z;

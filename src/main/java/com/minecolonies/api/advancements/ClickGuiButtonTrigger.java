@@ -1,9 +1,10 @@
 package com.minecolonies.api.advancements;
+import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
+import net.minecraft.core.Holder;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.advancements.triggers.Criterion;
-import net.minecraft.advancements.predicates.ContextAwarePredicate;
 import net.minecraft.advancements.predicates.entity.EntityPredicate;
 import net.minecraft.advancements.triggers.SimpleCriterionTrigger;
 import net.minecraft.resources.Identifier;
@@ -33,10 +34,10 @@ public class ClickGuiButtonTrigger extends SimpleCriterionTrigger<ClickGuiButton
         return ClickGuiButtonTriggerInstance.CODEC;
     }
 
-    public record ClickGuiButtonTriggerInstance(Optional<ContextAwarePredicate> player, Optional<String> buttonId, Optional<Identifier> windowResource) implements SimpleInstance
+    public record ClickGuiButtonTriggerInstance(Optional<Holder<LootItemCondition>> player, Optional<String> buttonId, Optional<Identifier> windowResource) implements SimpleInstance
     {
         public static final Codec<ClickGuiButtonTriggerInstance> CODEC = RecordCodecBuilder.create(builder -> builder
-            .group(EntityPredicate.ADVANCEMENT_CODEC.optionalFieldOf("player").forGetter(ClickGuiButtonTriggerInstance::player),
+            .group(LootItemCondition.CODEC.optionalFieldOf("player").forGetter(ClickGuiButtonTriggerInstance::player),
               Codec.STRING.optionalFieldOf("button_id").forGetter(ClickGuiButtonTriggerInstance::buttonId),
                 Identifier.CODEC.optionalFieldOf("window_resource_location").forGetter(ClickGuiButtonTriggerInstance::windowResource))
             .apply(builder, ClickGuiButtonTriggerInstance::new));

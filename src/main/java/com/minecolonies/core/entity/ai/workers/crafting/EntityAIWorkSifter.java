@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.crafting;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.api.colony.buildings.modules.ICraftingBuildingModule;
 import com.minecolonies.api.colony.interactionhandling.ChatPriority;
@@ -213,7 +214,7 @@ public class EntityAIWorkSifter extends AbstractEntityAICrafting<JobSifter, Buil
         new LocalizedParticleEffectMessage(meshItem, building.getID()).sendToTrackingEntity(worker);
         new LocalizedParticleEffectMessage(inputItem, building.getID().below()).sendToTrackingEntity(worker);
 
-        worker.swing(InteractionHand.MAIN_HAND);
+        worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
         SoundUtils.playSoundAtCitizen(world, building.getID(), SoundEvents.LEAD_BREAK);
         return getState();
     }

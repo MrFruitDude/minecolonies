@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:build_goggles"
+        "recipes": "minecolonies:build_goggles"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

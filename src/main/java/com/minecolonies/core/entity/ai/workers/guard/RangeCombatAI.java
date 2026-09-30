@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.guard;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.core.entity.ai.combat.ServerDamageHelper;
 
@@ -180,7 +181,7 @@ public class RangeCombatAI extends AttackMoveAI<EntityCitizen>
         }
 
         user.getCitizenData().setVisibleStatus(ARCHER_COMBAT);
-        user.swing(InteractionHand.MAIN_HAND);
+        user.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
         user.stopUsingItem();
 
         int amountOfArrows = 1;

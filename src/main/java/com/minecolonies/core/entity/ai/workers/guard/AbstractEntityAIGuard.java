@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.guard;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.core.entity.ai.combat.ServerDamageHelper;
 
@@ -253,7 +254,7 @@ public abstract class AbstractEntityAIGuard<J extends AbstractJobGuard<J>, B ext
         }
         else
         {
-            worker.swing(InteractionHand.OFF_HAND);
+            worker.swing(InteractionHand.OFF_HAND, SwingAnimation.DEFAULT, false);
             ServerDamageHelper.apply(sleepingCitizen, world.damageSources().source(DamageSourceKeys.WAKEY, this.worker), 1);
             sleepingCitizen.setLastHurtByMob(worker);
             return CombatAIStates.NO_TARGET;

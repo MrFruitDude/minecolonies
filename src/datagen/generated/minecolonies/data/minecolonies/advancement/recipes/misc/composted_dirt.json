@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:composted_dirt"
+        "recipes": "minecolonies:composted_dirt"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

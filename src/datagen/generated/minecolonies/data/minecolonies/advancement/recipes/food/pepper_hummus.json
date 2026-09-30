@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:pepper_hummus"
+        "recipes": "minecolonies:pepper_hummus"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

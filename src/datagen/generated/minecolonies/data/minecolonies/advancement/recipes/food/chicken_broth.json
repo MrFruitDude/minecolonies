@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:chicken_broth"
+        "recipes": "minecolonies:chicken_broth"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

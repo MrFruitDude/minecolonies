@@ -1,4 +1,5 @@
 package com.minecolonies.core.network.messages.server;
+import com.minecolonies.api.util.BufUtils;
 
 import com.ldtteam.common.network.AbstractServerPlayMessage;
 import com.ldtteam.common.network.PlayMessageType;
@@ -48,14 +49,14 @@ public class TransferRecipeCraftingTeachingMessage extends AbstractServerPlayMes
     protected TransferRecipeCraftingTeachingMessage(final RegistryFriendlyByteBuf buf, final PlayMessageType<?> type)
     {
         super(buf, type);
-        itemStacks = buf.readMap(FriendlyByteBuf::readInt, b -> ItemStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) b));
+        itemStacks = BufUtils.readMap(buf, FriendlyByteBuf::readInt, b -> ItemStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) b));
         complete = buf.readBoolean();
     }
 
     @Override
     protected void toBytes(final RegistryFriendlyByteBuf buf)
     {
-        buf.writeMap(itemStacks, FriendlyByteBuf::writeInt, (b, v) -> ItemStack.OPTIONAL_STREAM_CODEC.encode((RegistryFriendlyByteBuf) b, v));
+        BufUtils.writeMap(buf, itemStacks, FriendlyByteBuf::writeInt, (b, v) -> ItemStack.OPTIONAL_STREAM_CODEC.encode((RegistryFriendlyByteBuf) b, v));
         buf.writeBoolean(complete);
     }
 

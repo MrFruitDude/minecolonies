@@ -1,4 +1,5 @@
 package com.minecolonies.core.network.messages.client;
+import com.minecolonies.api.util.BufUtils;
 
 import com.ldtteam.common.network.AbstractClientPlayMessage;
 import com.ldtteam.common.network.PlayMessageType;
@@ -38,13 +39,13 @@ public class SyncPathReachedMessage extends AbstractClientPlayMessage
     @Override
     protected void toBytes(final RegistryFriendlyByteBuf buf)
     {
-        buf.writeCollection(reached, RegistryFriendlyByteBuf::writeBlockPos);
+        BufUtils.writeCollection(buf, reached, (b, pos) -> b.writeBlockPos(pos));
     }
 
     protected SyncPathReachedMessage(final RegistryFriendlyByteBuf buf, final PlayMessageType<?> type)
     {
         super(buf, type);
-        reached = buf.readCollection(HashSet::new, RegistryFriendlyByteBuf::readBlockPos);
+        reached = BufUtils.readCollection(buf, HashSet::new, b -> b.readBlockPos());
     }
 
     @Override

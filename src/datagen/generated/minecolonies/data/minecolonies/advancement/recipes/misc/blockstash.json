@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockstash"
+        "recipes": "minecolonies:blockstash"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

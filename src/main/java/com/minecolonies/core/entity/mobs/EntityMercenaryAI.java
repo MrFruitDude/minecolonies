@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.mobs;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.core.entity.ai.combat.ServerDamageHelper;
 
@@ -15,7 +16,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.items.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -170,7 +171,7 @@ public class EntityMercenaryAI extends Goal
 
                     if (!ItemStackUtils.isEmpty(stack))
                     {
-                        entity.swing(InteractionHand.OFF_HAND);
+                        entity.swing(InteractionHand.OFF_HAND, SwingAnimation.DEFAULT, false);
                         MessageUtils.format(MESSAGE_INFO_COLONY_MERCENARY_STEAL_BUILDING, stack.getHoverName().getString()).sendTo(entity.getColony()).forAllPlayers();
                     }
                 }
@@ -239,7 +240,7 @@ public class EntityMercenaryAI extends Goal
         // Check if we can attack
         if (distance < MELEE_ATTACK_DIST && attacktimer == 0)
         {
-            entity.swing(InteractionHand.MAIN_HAND);
+            entity.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
             entity.playSound(MercenarySounds.mercenaryAttack, 0.55f, 1.0f);
             ServerDamageHelper.apply(entity.getTarget(), entity.level().damageSources().mobAttack(entity), 15);
             entity.getTarget().setRemainingFireTicks(3 * TICKS_PER_SECOND);

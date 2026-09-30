@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:squash_soup"
+        "recipes": "minecolonies:squash_soup"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

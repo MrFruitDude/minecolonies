@@ -3,7 +3,7 @@
   "criteria": {
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:yogurt_with_berries"
+        "recipes": "minecolonies:yogurt_with_berries"
       },
       "trigger": "minecraft:recipe_unlocked"
     },

@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.minimal;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
@@ -196,7 +197,7 @@ public class EntityAIEatTask implements IStateAI
 
         citizen.setItemInHand(InteractionHand.MAIN_HAND, foodStack);
 
-        citizen.swing(InteractionHand.MAIN_HAND);
+        citizen.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
         citizen.playSound(SoundEvents.GENERIC_EAT.value(), (float) BASIC_VOLUME, (float) SoundUtils.getRandomPitch(citizen.getRandom()));
         new ItemParticleEffectMessage(foodStack.copy(), citizen.getX(), citizen.getY(), citizen.getZ(), citizen.getXRot(), citizen.getYRot(), citizen.getEyeHeight()).sendToTrackingEntity(citizen);
 

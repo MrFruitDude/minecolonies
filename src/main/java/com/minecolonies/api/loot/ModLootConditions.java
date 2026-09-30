@@ -7,6 +7,7 @@ import net.minecraft.advancements.predicates.ItemPredicate;
 import net.minecraft.advancements.triggers.*;
 import net.minecraft.core.component.predicates.DataComponentPredicates;
 import net.minecraft.core.component.predicates.EnchantmentsPredicate;
+import net.minecraft.core.HolderGetter;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.HolderSet;
 import net.minecraft.world.item.Item;
@@ -84,7 +85,7 @@ public final class ModLootConditions
                 Items.NETHERITE_HOE));
     }
 
-    public static LootItemCondition.Builder hasSilkTouch(@NotNull final HolderLookup.RegistryLookup<Enchantment> enchantments)
+    public static LootItemCondition.Builder hasSilkTouch(@NotNull final HolderGetter<Enchantment> enchantments)
     {
         return MatchTool.toolMatches(
                 ItemPredicate.Builder.item()
@@ -99,12 +100,12 @@ public final class ModLootConditions
         );
     }
 
-    public static LootItemCondition.Builder hasShearsOrSilkTouch(@NotNull final HolderLookup.RegistryLookup<Enchantment> enchantments)
+    public static LootItemCondition.Builder hasShearsOrSilkTouch(@NotNull final HolderGetter<Enchantment> enchantments)
     {
         return hasShears().or(hasSilkTouch(enchantments));
     }
 
-    public static LootItemCondition.Builder doesNotHaveShearsOrSilkTouch(@NotNull final HolderLookup.RegistryLookup<Enchantment> enchantments)
+    public static LootItemCondition.Builder doesNotHaveShearsOrSilkTouch(@NotNull final HolderGetter<Enchantment> enchantments)
     {
         return hasShearsOrSilkTouch(enchantments).invert();
     }

@@ -21,6 +21,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.RecipesReceivedEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.event.OnDatapackSyncEvent;
+import net.minecraft.world.item.crafting.RecipeType;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import org.jetbrains.annotations.NotNull;
 
@@ -95,6 +96,8 @@ public class DataPackSyncEventHandler
         @SubscribeEvent(priority = EventPriority.LOWEST)
         public static void onDataPackSync(final OnDatapackSyncEvent event)
         {
+            // MC 26.3: brewing is recipe-driven; send those recipes so client-side brewing lookups (BrewingUtils) work.
+            event.sendRecipes(RecipeType.BREWING);
             final CustomRecipeManager recipeManager = CustomRecipeManager.getInstance();
             final MinecraftServer server = event.getPlayerList().getServer();
             final GameProfile owner = server.getSingleplayerProfile();

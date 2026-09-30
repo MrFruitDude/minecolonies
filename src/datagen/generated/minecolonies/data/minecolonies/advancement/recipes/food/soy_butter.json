@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:soy_butter"
+        "recipes": "minecolonies:soy_butter"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

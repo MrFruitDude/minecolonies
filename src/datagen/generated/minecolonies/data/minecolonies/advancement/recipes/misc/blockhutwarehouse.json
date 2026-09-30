@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutwarehouse"
+        "recipes": "minecolonies:blockhutwarehouse"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

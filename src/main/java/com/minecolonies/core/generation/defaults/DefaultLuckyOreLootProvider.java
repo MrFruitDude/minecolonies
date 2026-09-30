@@ -21,16 +21,17 @@ import static com.minecolonies.core.entity.ai.workers.production.EntityAIStructu
  */
 public class DefaultLuckyOreLootProvider implements LootTableSubProvider
 {
-    private final HolderLookup.Provider provider;
+    private final LootTableSubProvider.Context output;
 
-    public DefaultLuckyOreLootProvider(@NotNull final HolderLookup.Provider provider)
+    public DefaultLuckyOreLootProvider(@NotNull final LootTableSubProvider.Context output)
     {
-        this.provider = provider;
+        this.output = output;
     }
 
     @Override
-    public void generate(@NotNull final BiConsumer<ResourceKey<LootTable>, LootTable.Builder> generator)
+    public void run()
     {
+        final BiConsumer<ResourceKey<LootTable>, LootTable.Builder> generator = output::accept;
         final LootPool.Builder luckyOres1 = new Builder()
                                               .add(LootItem.lootTableItem(Items.COAL_ORE).setWeight(64))
                                               .add(LootItem.lootTableItem(Items.COPPER_ORE).setWeight(48));

@@ -745,8 +745,8 @@ public final class MinecoloniesGameTests
             helper.assertTrue(targetRequest != null && targetRequest.getState() != RequestState.FAILED,
               "builder oak-plank request was not registered: " + targetRequest);
 
-            final net.neoforged.neoforge.items.IItemHandler sawmillInventory = sawmill.getItemHandlerCap();
-            final net.neoforged.neoforge.items.IItemHandler builderInventory = builder.getItemHandlerCap();
+            final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler sawmillInventory = sawmill.getItemHandlerCap();
+            final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler builderInventory = builder.getItemHandlerCap();
             helper.assertTrue(sawmillInventory != null && builderInventory != null,
               "production fixture building inventory handler is unavailable: sawmill=" + sawmillInventory
                 + ", builder=" + builderInventory);
@@ -1245,8 +1245,8 @@ public final class MinecoloniesGameTests
                 + marker.workOrderLocation() + ", actual=" + restoredOrder.getLocation());
             helper.assertTrue(colony.getWorkManager().getWorkOrder(marker.workOrderId()) != null,
               "P10C restart resume work manager lost the active order " + marker.workOrderId());
-            final net.neoforged.neoforge.items.IItemHandler builderInventory = builder.getItemHandlerCap();
-            final net.neoforged.neoforge.items.IItemHandler sawmillInventory = sawmill.getItemHandlerCap();
+            final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler builderInventory = builder.getItemHandlerCap();
+            final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler sawmillInventory = sawmill.getItemHandlerCap();
             final int builderPlanks = InventoryUtils.getItemCountInItemHandler(
               builderInventory,
               stack -> ItemStackUtils.compareItemStacksIgnoreStackSize(
@@ -1462,8 +1462,8 @@ public final class MinecoloniesGameTests
             final IRequest<?> targetRequest = colony.getRequestManager().getRequestForToken(targetRequestToken);
             helper.assertTrue(targetRequest != null && targetRequest.getState() != RequestState.FAILED,
               "restart builder request was not registered: " + targetRequest);
-            final net.neoforged.neoforge.items.IItemHandler sawmillInventory = sawmill.getItemHandlerCap();
-            final net.neoforged.neoforge.items.IItemHandler builderInventory = builder.getItemHandlerCap();
+            final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler sawmillInventory = sawmill.getItemHandlerCap();
+            final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler builderInventory = builder.getItemHandlerCap();
             helper.assertTrue(sawmillInventory != null && builderInventory != null,
               "restart fixture building inventory handler is unavailable");
             final ItemStack remainder = InventoryUtils.forceItemStackToItemHandler(
@@ -1578,8 +1578,8 @@ public final class MinecoloniesGameTests
       BlockPos sawmillAnchor,
       BlockPos courierAnchor,
       BlockPos constructionTarget,
-      net.neoforged.neoforge.items.IItemHandler builderInventory,
-      net.neoforged.neoforge.items.IItemHandler sawmillInventory)
+      com.ldtteam.structurize.api.compat.itemhandler.IItemHandler builderInventory,
+      com.ldtteam.structurize.api.compat.itemhandler.IItemHandler sawmillInventory)
     {
     }
 
@@ -1908,7 +1908,7 @@ public final class MinecoloniesGameTests
           .toString();
     }
 
-    private static String describeInventory(final net.neoforged.neoforge.items.IItemHandler inventory)
+    private static String describeInventory(final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler inventory)
     {
         final List<String> stacks = new java.util.ArrayList<>();
         for (int slot = 0; slot < inventory.getSlots(); slot++)

@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:baked_muffin"
+        "recipes": "minecolonies:baked_muffin"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

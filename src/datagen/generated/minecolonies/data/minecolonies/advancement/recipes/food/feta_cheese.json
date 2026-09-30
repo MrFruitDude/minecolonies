@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:feta_cheese"
+        "recipes": "minecolonies:feta_cheese"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

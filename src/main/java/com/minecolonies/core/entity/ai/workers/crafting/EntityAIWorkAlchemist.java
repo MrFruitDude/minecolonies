@@ -1,4 +1,6 @@
 package com.minecolonies.core.entity.ai.workers.crafting;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.google.common.reflect.TypeToken;
 import com.minecolonies.api.colony.interactionhandling.ChatPriority;
@@ -38,7 +40,7 @@ import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BrewingStandBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.items.wrapper.InvWrapper;
+import com.ldtteam.structurize.api.compat.itemhandler.wrapper.InvWrapper;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -274,7 +276,7 @@ public class EntityAIWorkAlchemist extends AbstractEntityAICrafting<JobAlchemist
               InventoryUtils.getFirstSlotOfItemHandlerContainingEquipment(worker.getInventoryCitizen(), ModEquipmentTypes.shears.get(), TOOL_LEVEL_WOOD_OR_GOLD, building.getMaxEquipmentLevel());
             CitizenItemUtils.setHeldItem(worker, InteractionHand.MAIN_HAND, slot);
 
-            worker.swing(InteractionHand.MAIN_HAND);
+            worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
             world.playSound(null,
               walkTo,
               state.getSoundType(world, walkTo, worker).getBreakSound(),
@@ -483,7 +485,7 @@ public class EntityAIWorkAlchemist extends AbstractEntityAICrafting<JobAlchemist
                     {
                         if (brewingStand.brewTime > 0)
                         {
-                            BrewingStandBlockEntity.serverTick(entity.getLevel(), entity.getBlockPos(), entity.getBlockState(), brewingStand);
+                            BrewingStandBlockEntity.serverTick((ServerLevel) entity.getLevel(), entity.getBlockPos(), entity.getBlockState(), brewingStand);
                         }
                     }
                 }

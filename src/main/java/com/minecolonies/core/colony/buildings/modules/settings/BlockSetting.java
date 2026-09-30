@@ -1,4 +1,5 @@
 package com.minecolonies.core.colony.buildings.modules.settings;
+import com.minecolonies.api.util.BlockStateUtils;
 
 import com.ldtteam.blockui.Pane;
 import com.ldtteam.blockui.controls.ButtonImage;
@@ -139,7 +140,7 @@ public class BlockSetting implements ISetting<BlockItem>
                         return false;
                     }
 
-                    return state.getShape(new SingleStateBlockGetter(state), BlockPos.ZERO, CollisionContext.empty()).equals(Shapes.block()) && state.blocksMotion();
+                    return state.getShape(new SingleStateBlockGetter(state), BlockPos.ZERO, CollisionContext.empty()).equals(Shapes.block()) && BlockStateUtils.blocksMotion(state);
                 }),
                 (stack, qty) -> {
                     if (stack.isEmpty())

@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:cheddar_cheese"
+        "recipes": "minecolonies:cheddar_cheese"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

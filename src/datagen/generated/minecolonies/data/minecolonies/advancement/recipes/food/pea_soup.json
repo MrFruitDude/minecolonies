@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:pea_soup"
+        "recipes": "minecolonies:pea_soup"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

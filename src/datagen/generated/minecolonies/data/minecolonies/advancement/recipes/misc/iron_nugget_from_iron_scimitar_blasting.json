@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:iron_nugget_from_iron_scimitar_blasting"
+        "recipes": "minecolonies:iron_nugget_from_iron_scimitar_blasting"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

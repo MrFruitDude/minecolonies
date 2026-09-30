@@ -4,6 +4,7 @@ import com.minecolonies.api.blocks.ModBlocks;
 import com.minecolonies.api.loot.EntityInBiomeTag;
 import com.minecolonies.api.loot.ModLootConditions;
 import com.minecolonies.core.blocks.MinecoloniesCropBlock;
+import net.minecraft.core.HolderGetter;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.loot.LootTableSubProvider;
@@ -35,17 +36,18 @@ public class DefaultCropsLootProvider implements LootTableSubProvider
     public static final ResourceKey<LootTable> DUNGEON_CROPS = ResourceKey.create(Registries.LOOT_TABLE,
             Identifier.fromNamespaceAndPath(MOD_ID, "crops/dungeon"));
 
-    private final HolderLookup.Provider provider;
+    private final LootTableSubProvider.Context output;
 
-    public DefaultCropsLootProvider(@NotNull final HolderLookup.Provider provider)
+    public DefaultCropsLootProvider(@NotNull final LootTableSubProvider.Context output)
     {
-        this.provider = provider;
+        this.output = output;
     }
 
     @Override
-    public void generate(@NotNull final BiConsumer<ResourceKey<LootTable>, LootTable.Builder> generator)
+    public void run()
     {
-        final HolderLookup.RegistryLookup<Enchantment> enchantments = provider.lookupOrThrow(Registries.ENCHANTMENT);
+        final BiConsumer<ResourceKey<LootTable>, LootTable.Builder> generator = output::accept;
+        final HolderGetter<Enchantment> enchantments = output.lookup(Registries.ENCHANTMENT);
 
         final Map<Identifier, List<MinecoloniesCropBlock>> cropDrops = new HashMap<>();
         for (final MinecoloniesCropBlock crop : ModBlocks.getCrops())

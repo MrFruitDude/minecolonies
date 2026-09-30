@@ -3,9 +3,7 @@
     {
       "rules": [
         {
-          "output_state": {
-            "Name": "minecraft:dark_oak_planks"
-          },
+          "output_state": "minecraft:dark_oak_planks",
           "input_predicate": {
             "block": "minecraft:gravel",
             "predicate_type": "minecraft:block_match"
@@ -16,9 +14,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:oak_planks"
-          },
+          "output_state": "minecraft:oak_planks",
           "input_predicate": {
             "block": "minecraft:dirt_path",
             "predicate_type": "minecraft:block_match"
@@ -30,10 +26,10 @@
         },
         {
           "output_state": {
-            "Properties": {
+            "id": "minecraft:grass_block",
+            "properties": {
               "snowy": "false"
-            },
-            "Name": "minecraft:grass_block"
+            }
           },
           "input_predicate": {
             "block": "minecraft:dirt_path",
@@ -46,10 +42,10 @@
         },
         {
           "output_state": {
-            "Properties": {
+            "id": "minecraft:water",
+            "properties": {
               "level": "0"
-            },
-            "Name": "minecraft:water"
+            }
           },
           "input_predicate": {
             "block": "minecraft:grass_block",
@@ -62,10 +58,10 @@
         },
         {
           "output_state": {
-            "Properties": {
+            "id": "minecraft:water",
+            "properties": {
               "level": "0"
-            },
-            "Name": "minecraft:water"
+            }
           },
           "input_predicate": {
             "block": "minecraft:dirt",

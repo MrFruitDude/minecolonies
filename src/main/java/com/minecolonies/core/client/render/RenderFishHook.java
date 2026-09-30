@@ -42,7 +42,7 @@ public class RenderFishHook extends EntityRenderer<NewBobberEntity, FishingHookR
     {
         poseStack.pushPose();
         poseStack.scale(0.5F, 0.5F, 0.5F);
-        poseStack.mulPose(camera.orientation);
+        poseStack.rotate(camera.orientation);
         collector.submitCustomGeometry(poseStack, RENDER_TYPE, (pose, buffer) -> {
             vertex(buffer, pose, state.lightCoords, 0.0F, 0, 0, 1);
             vertex(buffer, pose, state.lightCoords, 1.0F, 0, 1, 1);

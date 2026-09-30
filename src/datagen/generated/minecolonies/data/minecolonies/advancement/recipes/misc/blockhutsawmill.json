@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutsawmill"
+        "recipes": "minecolonies:blockhutsawmill"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

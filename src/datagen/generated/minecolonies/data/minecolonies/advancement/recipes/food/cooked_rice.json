@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:cooked_rice"
+        "recipes": "minecolonies:cooked_rice"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

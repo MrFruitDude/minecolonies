@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.crafting;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.google.common.reflect.TypeToken;
 import com.minecolonies.api.colony.IColonyManager;
@@ -30,7 +31,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
-import net.neoforged.neoforge.items.wrapper.InvWrapper;
+import com.ldtteam.structurize.api.compat.itemhandler.wrapper.InvWrapper;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -112,7 +113,7 @@ public class EntityAIWorkSmelter extends AbstractEntityAIUsesFurnace<JobSmelter,
         new LocalizedParticleEffectMessage(inputItem, building.getID().below()).sendToTrackingEntity(worker);
 
         worker.setItemInHand(InteractionHand.MAIN_HAND, inputItem);
-        worker.swing(InteractionHand.MAIN_HAND);
+        worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
         SoundUtils.playSoundAtCitizen(world, building.getID(), SoundEvents.LEAD_BREAK);
 
         return getState();

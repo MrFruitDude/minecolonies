@@ -1,4 +1,5 @@
 package com.minecolonies.core.util;
+import net.minecraft.world.level.block.entity.SignTextSlot;
 
 import com.ldtteam.domumornamentum.block.IMateriallyTexturedBlock;
 import com.ldtteam.structurize.blueprints.v1.Blueprint;
@@ -254,7 +255,7 @@ public final class WorkerUtil
                         {
                             if (BlockEntity.loadStatic(te.getPos(), te.getState(), te.getTileEntityData(), level.registryAccess()) instanceof SignBlockEntity sign)
                             {
-                                if (sign.getFrontText().getMessage(0, false).getString().equals(LEVEL_SIGN_TEXT))
+                                if (sign.getText(SignTextSlot.FRONT).getMessages(false).get(0).getString().equals(LEVEL_SIGN_TEXT))
                                 {
                                     // try to make an anchor in 0,0,0 instead of the middle of the structure
                                     return pos.subtract(structure.getPrimaryBlockOffset()).offset(localPos);
@@ -286,14 +287,15 @@ public final class WorkerUtil
             {
                 final BlockState blockState = world.getBlockState(levelSignPos);
 
-                final SignText text = new SignText()
-                    .setMessage(0, Component.translatableEscape(MINER_MINE_NODE).append(": " + levelId))
-                    .setMessage(1, Component.literal("Y: " + (level.getDepth() + 1)))
-                    .setMessage(2, Component.translatableEscape(MINER_NODES).append(": " + level.getNumberOfBuiltNodes()))
-                    .setMessage(3, Component.literal(""));
+                final SignText text = SignText.EMPTY.asMutable()
+                    .setLine(0, Component.translatableEscape(MINER_MINE_NODE).append(": " + levelId))
+                    .setLine(1, Component.literal("Y: " + (level.getDepth() + 1)))
+                    .setLine(2, Component.translatableEscape(MINER_NODES).append(": " + level.getNumberOfBuiltNodes()))
+                    .setLine(3, Component.literal(""))
+                    .asImmutable();
 
-                teLevelSign.setText(text, true);
-                teLevelSign.setText(text, false);
+                teLevelSign.setText(text, SignTextSlot.FRONT);
+                teLevelSign.setText(text, SignTextSlot.BACK);
 
                 teLevelSign.setChanged();
                 world.sendBlockUpdated(levelSignPos, blockState, blockState, 3);

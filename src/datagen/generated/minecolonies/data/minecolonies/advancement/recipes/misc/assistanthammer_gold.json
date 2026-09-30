@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:assistanthammer_gold"
+        "recipes": "minecolonies:assistanthammer_gold"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

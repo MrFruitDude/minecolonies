@@ -9,241 +9,209 @@
       "entries": [
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 25.0,
-                "min": 5.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 25,
+              "min": 5
             }
-          ],
+          },
           "name": "minecraft:netherrack",
           "weight": 20
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 7.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 7,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:soul_sand",
           "weight": 10
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 5.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 5,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:soul_soil",
           "weight": 8
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 10.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 10,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:gravel",
           "weight": 10
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 4.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 4,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:nether_quartz_ore",
           "weight": 15
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 4.0,
-                "min": 2.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 4,
+              "min": 2
             }
-          ],
+          },
           "name": "minecraft:glowstone",
           "weight": 5
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 2.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 2,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:nether_wart",
           "weight": 3
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 2.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 2,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:brown_mushroom",
           "weight": 10
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 2.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 2,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:red_mushroom",
           "weight": 10
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 1.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 1,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:crimson_nylium",
           "weight": 5
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 1.0,
-                "min": 0.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 1,
+              "min": 0
             }
-          ],
+          },
           "name": "minecraft:crimson_fungus",
           "weight": 10
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 3.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 3,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:crimson_stem",
           "weight": 5
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 3.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 3,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:basalt",
           "weight": 5
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 1.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 1,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:warped_nylium",
           "weight": 5
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 1.0,
-                "min": 0.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 1,
+              "min": 0
             }
-          ],
+          },
           "name": "minecraft:warped_fungus",
           "weight": 10
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 3.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 3,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:warped_stem",
           "weight": 5
         },
@@ -262,39 +230,35 @@
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 2.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 2,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:nether_gold_ore",
           "weight": 5
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "count": {
-                "type": "minecraft:uniform",
-                "max": 3.0,
-                "min": 1.0
-              },
-              "function": "minecraft:set_count"
+          "modifier": {
+            "type": "minecraft:set_count",
+            "count": {
+              "type": "minecraft:uniform",
+              "max": 3,
+              "min": 1
             }
-          ],
+          },
           "name": "minecraft:blackstone",
           "weight": 5
         }
       ],
       "rolls": {
         "type": "minecraft:uniform",
-        "max": 10.0,
-        "min": 3.0
+        "max": 10,
+        "min": 3
       }
     },
     {
@@ -306,108 +270,96 @@
       "entries": [
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "components": {
-                "minecolonies:adventure": {
-                  "damage": 5.0,
-                  "entity": "minecraft:zombified_piglin",
-                  "xp": 5
-                }
-              },
-              "function": "minecraft:set_components"
+          "modifier": {
+            "type": "minecraft:set_components",
+            "components": {
+              "minecolonies:adventure": {
+                "damage": 5.0,
+                "entity": "minecraft:zombified_piglin",
+                "xp": 5
+              }
             }
-          ],
+          },
           "name": "minecolonies:adventure_token",
           "quality": -10,
           "weight": 5500
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "components": {
-                "minecolonies:adventure": {
-                  "damage": 3.0,
-                  "entity": "minecraft:magma_cube",
-                  "xp": 4
-                }
-              },
-              "function": "minecraft:set_components"
+          "modifier": {
+            "type": "minecraft:set_components",
+            "components": {
+              "minecolonies:adventure": {
+                "damage": 3.0,
+                "entity": "minecraft:magma_cube",
+                "xp": 4
+              }
             }
-          ],
+          },
           "name": "minecolonies:adventure_token",
           "quality": 10,
           "weight": 300
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "components": {
-                "minecolonies:adventure": {
-                  "damage": 3.0,
-                  "entity": "minecraft:hoglin",
-                  "xp": 5
-                }
-              },
-              "function": "minecraft:set_components"
+          "modifier": {
+            "type": "minecraft:set_components",
+            "components": {
+              "minecolonies:adventure": {
+                "damage": 3.0,
+                "entity": "minecraft:hoglin",
+                "xp": 5
+              }
             }
-          ],
+          },
           "name": "minecolonies:adventure_token",
           "quality": -1,
           "weight": 500
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "components": {
-                "minecolonies:adventure": {
-                  "damage": 12.0,
-                  "entity": "minecraft:ghast",
-                  "xp": 5
-                }
-              },
-              "function": "minecraft:set_components"
+          "modifier": {
+            "type": "minecraft:set_components",
+            "components": {
+              "minecolonies:adventure": {
+                "damage": 12.0,
+                "entity": "minecraft:ghast",
+                "xp": 5
+              }
             }
-          ],
+          },
           "name": "minecolonies:adventure_token",
           "quality": -3,
           "weight": 300
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "components": {
-                "minecolonies:adventure": {
-                  "damage": 7.0,
-                  "entity": "minecraft:enderman",
-                  "xp": 5
-                }
-              },
-              "function": "minecraft:set_components"
+          "modifier": {
+            "type": "minecraft:set_components",
+            "components": {
+              "minecolonies:adventure": {
+                "damage": 7.0,
+                "entity": "minecraft:enderman",
+                "xp": 5
+              }
             }
-          ],
+          },
           "name": "minecolonies:adventure_token",
           "quality": -3,
           "weight": 300
         },
         {
           "type": "minecraft:item",
-          "functions": [
-            {
-              "components": {
-                "minecolonies:adventure": {
-                  "damage": 5.0,
-                  "entity": "minecraft:blaze",
-                  "xp": 10
-                }
-              },
-              "function": "minecraft:set_components"
+          "modifier": {
+            "type": "minecraft:set_components",
+            "components": {
+              "minecolonies:adventure": {
+                "damage": 5.0,
+                "entity": "minecraft:blaze",
+                "xp": 10
+              }
             }
-          ],
+          },
           "name": "minecolonies:adventure_token",
           "quality": 1,
           "weight": 100
@@ -415,8 +367,8 @@
       ],
       "rolls": {
         "type": "minecraft:uniform",
-        "max": 6.0,
-        "min": 2.0
+        "max": 6,
+        "min": 2
       }
     }
   ],

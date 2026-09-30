@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:questlog"
+        "recipes": "minecolonies:questlog"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

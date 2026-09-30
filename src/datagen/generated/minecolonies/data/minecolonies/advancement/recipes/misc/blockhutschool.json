@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutschool"
+        "recipes": "minecolonies:blockhutschool"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

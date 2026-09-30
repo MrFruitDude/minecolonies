@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.production.agriculture;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.google.common.reflect.TypeToken;
 import com.minecolonies.api.colony.interactionhandling.ChatPriority;
@@ -367,7 +368,7 @@ public class EntityAIWorkBeekeeper extends AbstractEntityAIInteract<JobBeekeeper
             return getState();
         }
 
-        worker.swing(InteractionHand.MAIN_HAND);
+        worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
         final ItemStack itemStack = worker.getMainHandItem();
         if (!building.getHarvestTypes().equals(BuildingBeekeeper.HONEY) && ModEquipmentTypes.shears.get().checkIsEquipment(itemStack))
         {
@@ -492,7 +493,7 @@ public class EntityAIWorkBeekeeper extends AbstractEntityAIInteract<JobBeekeeper
             if (!animal.isInLove() && walkingToAnimal(animal))
             {
                 animal.setInLove(null);
-                worker.swing(InteractionHand.MAIN_HAND);
+                worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
                 InventoryUtils.reduceStackInItemHandler(worker.getInventoryCitizen(), worker.getMainHandItem());
             }
         }

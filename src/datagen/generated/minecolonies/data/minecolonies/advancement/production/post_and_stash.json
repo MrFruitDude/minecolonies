@@ -3,23 +3,19 @@
   "criteria": {
     "postbox": {
       "conditions": {
-        "location": [
-          {
-            "block": "minecolonies:blockpostbox",
-            "condition": "minecraft:block_state_property"
-          }
-        ]
+        "location": {
+          "type": "minecraft:match_block",
+          "blocks": "minecolonies:blockpostbox"
+        }
       },
       "trigger": "minecraft:placed_block"
     },
     "stash": {
       "conditions": {
-        "location": [
-          {
-            "block": "minecolonies:blockstash",
-            "condition": "minecraft:block_state_property"
-          }
-        ]
+        "location": {
+          "type": "minecraft:match_block",
+          "blocks": "minecolonies:blockstash"
+        }
       },
       "trigger": "minecraft:placed_block"
     }

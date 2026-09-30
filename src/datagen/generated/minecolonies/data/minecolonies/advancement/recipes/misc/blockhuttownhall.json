@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhuttownhall"
+        "recipes": "minecolonies:blockhuttownhall"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

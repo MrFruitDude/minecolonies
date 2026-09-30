@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.pathfinding.pathjobs;
+import com.minecolonies.api.util.BlockStateUtils;
 
 import com.ldtteam.domumornamentum.block.decorative.FloatingCarpetBlock;
 import com.ldtteam.domumornamentum.block.decorative.PanelBlock;
@@ -190,7 +191,7 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
 
         this.maxNodes = Math.min(MAX_NODES, range * range);
         nodesToVisit = new PriorityQueue<>(range * 2);
-        this.start = new BlockPos(start);
+        this.start = start.immutable();
 
         cachedBlockLookup = new CachingBlockLookup(start, this.world);
 
@@ -220,7 +221,7 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
         range = Math.max(10, range);
         this.maxNodes = Math.min(MAX_NODES, range * range);
         nodesToVisit = new PriorityQueue<>(range * 2);
-        this.start = new BlockPos(start);
+        this.start = start.immutable();
 
         world = chunkCache;
         cachedBlockLookup = new CachingBlockLookup(start, this.world);
@@ -269,7 +270,7 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
         this.maxNodes = Math.min(MAX_NODES, estimate);
 
         nodesToVisit = new PriorityQueue<>(maxNodes / 4);
-        this.start = new BlockPos(start);
+        this.start = start.immutable();
 
         cachedBlockLookup = new CachingBlockLookup(start, this.world);
         actualWorld = world;
@@ -1395,7 +1396,7 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
             {
                 return false;
             }
-            if (block.blocksMotion() && !(ShapeUtil.isEmpty(shape) || ShapeUtil.max(shape, Direction.Axis.Y) <= 0.1))
+            if (BlockStateUtils.blocksMotion(block) && !(ShapeUtil.isEmpty(shape) || ShapeUtil.max(shape, Direction.Axis.Y) <= 0.1))
             {
                 if (block.getBlock() instanceof TrapDoorBlock || block.getBlock() instanceof PanelBlock)
                 {

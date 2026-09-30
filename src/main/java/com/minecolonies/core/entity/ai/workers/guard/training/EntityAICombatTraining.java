@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.guard.training;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.core.entity.ai.combat.ServerDamageHelper;
 
@@ -210,7 +211,7 @@ public class EntityAICombatTraining extends AbstractEntityAITraining<JobCombatTr
             }
             else
             {
-                worker.swing(InteractionHand.MAIN_HAND);
+                worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
                 worker.playSound(SoundEvents.PLAYER_ATTACK_SWEEP, (float) BASIC_VOLUME, (float) SoundUtils.getRandomPitch(worker.getRandom()));
                 ServerDamageHelper.apply(trainingPartner, world.damageSources().source(DamageSourceKeys.TRAINING, worker), 0.0F);
                 CitizenItemUtils.damageItemInHand(worker, InteractionHand.MAIN_HAND, 1);
@@ -315,7 +316,7 @@ public class EntityAICombatTraining extends AbstractEntityAITraining<JobCombatTr
             }
             else
             {
-                worker.swing(InteractionHand.MAIN_HAND);
+                worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
                 worker.playSound(SoundEvents.PLAYER_ATTACK_SWEEP, (float) BASIC_VOLUME, (float) SoundUtils.getRandomPitch(worker.getRandom()));
                 CitizenItemUtils.damageItemInHand(worker, InteractionHand.MAIN_HAND, 1);
             }

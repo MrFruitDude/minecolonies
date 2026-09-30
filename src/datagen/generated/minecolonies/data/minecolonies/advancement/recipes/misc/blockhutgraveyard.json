@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutgraveyard"
+        "recipes": "minecolonies:blockhutgraveyard"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

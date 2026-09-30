@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.guard;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.core.entity.ai.combat.ServerDamageHelper;
 
@@ -44,7 +45,6 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
@@ -199,7 +199,7 @@ public class MeleeCombatAI extends AttackMoveAI<EntityCitizen>
             moveInAttackPosition(target);
         }
 
-        user.swing(InteractionHand.MAIN_HAND);
+        user.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
         user.playSound(SoundEvents.PLAYER_ATTACK_SWEEP, (float) BASIC_VOLUME, (float) SoundUtils.getRandomPitch(user.getRandom()));
 
         final double damageToBeDealt = getAttackDamage();
@@ -332,7 +332,7 @@ public class MeleeCombatAI extends AttackMoveAI<EntityCitizen>
             {
                 addDmg += ((ItemSpear) heldItem.getItem()).getDamage() + BASE_PHYSICAL_DAMAGE;
             }
-            else if (heldItem.getItem() instanceof AxeItem)
+            else if (heldItem.is(ItemTags.AXES))
             {
                 addDmg += heldItem.getItem().getDamage(heldItem) + BASE_PHYSICAL_DAMAGE;
             }

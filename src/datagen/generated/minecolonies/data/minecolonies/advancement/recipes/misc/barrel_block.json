@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:barrel_block"
+        "recipes": "minecolonies:barrel_block"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

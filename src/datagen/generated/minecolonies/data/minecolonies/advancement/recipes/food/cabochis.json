@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:cabochis"
+        "recipes": "minecolonies:cabochis"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

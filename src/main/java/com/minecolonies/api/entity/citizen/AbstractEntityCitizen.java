@@ -51,7 +51,7 @@ import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.items.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -417,7 +417,6 @@ public abstract class AbstractEntityCitizen extends AbstractCivilianEntity imple
         {
             entityStateController.tick();
         }
-        updateSwingTime();
         if (collisionCounter > 0)
         {
             collisionCounter--;

@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:mutton_kebab"
+        "recipes": "minecolonies:mutton_kebab"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

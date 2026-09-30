@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:doublefern"
+        "recipes": "minecolonies:doublefern"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

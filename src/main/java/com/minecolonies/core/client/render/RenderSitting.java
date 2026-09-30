@@ -27,7 +27,7 @@ public class RenderSitting<T extends Entity> extends EntityRenderer<T, EntityRen
     }
 
     @Override
-    public boolean shouldRender(@NotNull T entity, @NotNull Frustum clippingHelper, double x, double y, double z)
+    public boolean shouldRender(@NotNull T entity, @NotNull Frustum clippingHelper, double x, double y, double z, float partialTicks)
     {
         return false;
     }

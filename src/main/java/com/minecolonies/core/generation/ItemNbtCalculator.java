@@ -32,12 +32,15 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.repository.Pack;
+import net.minecraft.server.packs.repository.PackCompatibility;
 import net.minecraft.server.packs.repository.PackSource;
 import net.minecraft.server.packs.repository.ServerPacksSource;
 import net.minecraft.server.packs.resources.MultiPackResourceManager;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.tags.TagKey;
 import net.minecraft.tags.TagLoader;
+import net.minecraft.world.flag.FeatureFlagSet;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.item.*;
 import net.neoforged.fml.ModList;
@@ -201,12 +204,29 @@ public class ItemNbtCalculator implements DataProvider
     {
         // ideally we'd use ExistingFileHelper.getManager but sadly that's private :'(
         final List<PackResources> packs = List.of(
-                ServerPacksSource.createVanillaPackSource(),
-                ResourcePackLoader.createPackForMod(ModList.get().getModFileById("neoforge")).openPrimary(new PackLocationInfo("mod/neoforge", Component.empty(), PackSource.BUILT_IN, Optional.empty()))
+                ServerPacksSource.createVanillaPackSource().fullResources(),
+                openModPack("neoforge")
         );
         // we only load tags from vanilla/nf, for simplicity (and because that's all we need for now)
 
         return new MultiPackResourceManager(PackType.SERVER_DATA, packs);
+    }
+
+    /**
+     * Open a mod jar's primary (overlay-free) resources, as 26.2's {@code ResourcesSupplier.openPrimary} did.
+     *
+     * @param modId the mod whose jar to open.
+     * @return the pack resources; the caller closes them.
+     */
+    public static PackResources openModPack(@NotNull final String modId)
+    {
+        final PackLocationInfo location = new PackLocationInfo("mod/" + modId, Component.empty(), PackSource.BUILT_IN, Optional.empty());
+        // MC 26.3: suppliers open by metadata; without overlays the only pack returned is the jar's primary one.
+        final Pack.Metadata metadata = new Pack.Metadata(Component.empty(), PackCompatibility.COMPATIBLE, FeatureFlagSet.of(), List.of());
+        return ResourcePackLoader.createPackForMod(ModList.get().getModFileById(modId))
+                .openResources(location, metadata)
+                .findFirst()
+                .orElseThrow();
     }
 
     private static <T> HolderLookup.Provider loadRegistryTags(

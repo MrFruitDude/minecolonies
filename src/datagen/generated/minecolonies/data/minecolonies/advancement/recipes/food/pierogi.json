@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:pierogi"
+        "recipes": "minecolonies:pierogi"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

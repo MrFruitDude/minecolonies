@@ -1,9 +1,10 @@
 package com.minecolonies.api.advancements;
+import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
+import net.minecraft.core.Holder;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.advancements.triggers.Criterion;
-import net.minecraft.advancements.predicates.ContextAwarePredicate;
 import net.minecraft.advancements.predicates.entity.EntityPredicate;
 import net.minecraft.advancements.triggers.SimpleCriterionTrigger;
 import net.minecraft.advancements.triggers.SimpleCriterionTrigger.SimpleInstance;
@@ -30,10 +31,10 @@ public class ColonyPopulationTrigger extends SimpleCriterionTrigger<ColonyPopula
         return ColonyPopulationTriggerInstance.CODEC;
     }
 
-    public static record ColonyPopulationTriggerInstance(Optional<ContextAwarePredicate> player, int populationCount) implements SimpleInstance
+    public static record ColonyPopulationTriggerInstance(Optional<Holder<LootItemCondition>> player, int populationCount) implements SimpleInstance
     {
         public static final Codec<ColonyPopulationTriggerInstance> CODEC = RecordCodecBuilder.create(builder -> builder
-            .group(EntityPredicate.ADVANCEMENT_CODEC.optionalFieldOf("player").forGetter(ColonyPopulationTriggerInstance::player),
+            .group(LootItemCondition.CODEC.optionalFieldOf("player").forGetter(ColonyPopulationTriggerInstance::player),
                 ExtraCodecs.NON_NEGATIVE_INT.fieldOf("population_count").forGetter(ColonyPopulationTriggerInstance::populationCount))
             .apply(builder, ColonyPopulationTriggerInstance::new));
 

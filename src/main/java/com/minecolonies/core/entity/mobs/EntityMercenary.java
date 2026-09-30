@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.mobs;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import net.minecraft.world.entity.EntitySpawnReason;
 
@@ -48,7 +49,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.neoforged.neoforge.items.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nullable;
@@ -418,7 +419,7 @@ public class EntityMercenary extends AbstractFastMinecoloniesEntity implements N
             {
                 entityIn.hurtServer(serverLevel, entityIn.level().damageSources().source(DamageSourceKeys.SLAP, this), 1.0f);
             }
-            this.swing(InteractionHand.OFF_HAND);
+            this.swing(InteractionHand.OFF_HAND, SwingAnimation.DEFAULT, false);
         }
 
         if (slapTimer == 0 && entityIn instanceof EntityCitizen && colony != null && ((EntityCitizen) entityIn).isActive())
@@ -428,7 +429,7 @@ public class EntityMercenary extends AbstractFastMinecoloniesEntity implements N
             final ItemStack stack = handler.extractItem(rand.nextInt(handler.getSlots()), 5, false);
             if (!ItemStackUtils.isEmpty(stack))
             {
-                this.swing(InteractionHand.OFF_HAND);
+                this.swing(InteractionHand.OFF_HAND, SwingAnimation.DEFAULT, false);
                 MessageUtils.format(MESSAGE_INFO_COLONY_MERCENARY_STEAL_CITIZEN, entityIn.getName().getString(), stack.getHoverName().getString()).sendTo(colony).forAllPlayers();
             }
         }
@@ -473,7 +474,6 @@ public class EntityMercenary extends AbstractFastMinecoloniesEntity implements N
         {
             slapTimer--;
         }
-        updateSwingTime();
         super.aiStep();
     }
 

@@ -30,7 +30,7 @@ tasks.withType(Javadoc).configureEach {
 // removed before nested type declarations.
 tasks.matching { it.name == 'neoFormPatch' }.configureEach {
     doFirst {
-        def decompileJar = project.file("build/neoForm/neoFormJoined26.2-2/steps/decompile/outputs.jar")
+        def decompileJar = project.file("build/neoForm/neoFormJoined26.3-1/steps/decompile/outputs.jar")
         if (!decompileJar.exists()) return
 
         def workDir = new File(project.buildDir, "onlyin-fix")
@@ -67,5 +67,21 @@ tasks.matching { it.name == 'neoFormPatch' }.configureEach {
         def ant = new groovy.ant.AntBuilder()
         ant.jar(destfile: decompileJar.absolutePath, basedir: workDir, update: true)
         workDir.deleteDir()
+    }
+}
+
+// MC 26.3: NeoForge's AT widens the anonymous HolderSet$1.contents() to public,
+// but NeoGradle 7.1.x's source transformer cannot address anonymous classes, so
+// the recompile fails ("attempting to assign weaker access privileges").
+// Apply that single AT line to the transformed source before recompiling.
+tasks.matching { it.name == 'neoFormRecompile' }.configureEach {
+    doFirst {
+        def holderSet = project.file("build/neoForm/neoFormJoined26.3-1/steps/transformSource/transformed/net/minecraft/core/HolderSet.java")
+        if (!holderSet.exists()) return
+        def text = holderSet.text
+        def fixed = text.replaceFirst(
+            /(return new HolderSet\.Named<T>\(owner, key\) \{\s*@Override\s*)protected (List<Holder<T>> contents\(\))/,
+            '$1public $2')
+        if (fixed != text) holderSet.text = fixed
     }
 }

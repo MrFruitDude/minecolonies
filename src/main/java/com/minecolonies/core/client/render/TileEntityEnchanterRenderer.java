@@ -78,8 +78,8 @@ public class TileEntityEnchanterRenderer
         poseStack.pushPose();
         poseStack.translate(0.5D, 0.75D, 0.5D);
         poseStack.translate(0.0D, 0.1F + Mth.sin(state.time * 0.1F) * 0.01F, 0.0D);
-        poseStack.mulPose(Axis.YP.rotation(-state.yRot));
-        poseStack.mulPose(Axis.ZP.rotationDegrees(80.0F));
+        poseStack.rotate(Axis.YP.rotation(-state.yRot));
+        poseStack.rotate(Axis.ZP.rotationDegrees(80.0F));
 
         final float flipA = Mth.frac(state.flip + 0.25F) * 1.6F - 0.3F;
         final float flipB = Mth.frac(state.flip + 0.75F) * 1.6F - 0.3F;
@@ -98,8 +98,20 @@ public class TileEntityEnchanterRenderer
             -1,
             BOOK_TEXTURE,
             this.sprites,
-            0,
-            state.breakProgress);
+            0);
+        // MC 26.3: the crumbling overlay is a separate submission (mirrors vanilla EnchantTableRenderer).
+        if (state.breakProgress != null)
+        {
+            collector.order(1).submitCrumblingOverlay(
+                this.modelBook,
+                bookState,
+                poseStack,
+                BOOK_TEXTURE.renderType(this.modelBook.renderType()),
+                state.lightCoords,
+                OverlayTexture.NO_OVERLAY,
+                -1,
+                state.breakProgress);
+        }
         poseStack.popPose();
     }
 }

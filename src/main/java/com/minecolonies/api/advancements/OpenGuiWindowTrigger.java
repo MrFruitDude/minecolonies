@@ -1,9 +1,10 @@
 package com.minecolonies.api.advancements;
+import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
+import net.minecraft.core.Holder;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.advancements.triggers.Criterion;
-import net.minecraft.advancements.predicates.ContextAwarePredicate;
 import net.minecraft.advancements.predicates.entity.EntityPredicate;
 import net.minecraft.advancements.triggers.SimpleCriterionTrigger;
 import net.minecraft.resources.Identifier;
@@ -35,10 +36,10 @@ public class OpenGuiWindowTrigger extends SimpleCriterionTrigger<OpenGuiWindowTr
         return OpenGuiWindowTriggerInstance.CODEC;
     }
 
-    public record OpenGuiWindowTriggerInstance(Optional<ContextAwarePredicate> player, Optional<Identifier> windowResource) implements SimpleInstance
+    public record OpenGuiWindowTriggerInstance(Optional<Holder<LootItemCondition>> player, Optional<Identifier> windowResource) implements SimpleInstance
     {
         public static final Codec<OpenGuiWindowTriggerInstance> CODEC = RecordCodecBuilder.create(builder -> builder
-            .group(EntityPredicate.ADVANCEMENT_CODEC.optionalFieldOf("player").forGetter(OpenGuiWindowTriggerInstance::player),
+            .group(LootItemCondition.CODEC.optionalFieldOf("player").forGetter(OpenGuiWindowTriggerInstance::player),
                 Identifier.CODEC.optionalFieldOf("window_resource_location").forGetter(OpenGuiWindowTriggerInstance::windowResource))
             .apply(builder, OpenGuiWindowTriggerInstance::new));
 

@@ -41,12 +41,16 @@ public class SpearSpecialRenderer implements NoDataSpecialModelRenderer
                        final boolean hasFoil,
                        final int outlineColor)
     {
-        collector.order(0).submitModel(this.model, Unit.INSTANCE, poseStack, TEXTURE,
-            lightCoords, overlayCoords, outlineColor, null);
+        // MC 26.3: RenderTypes.entityGlint() is gone; foil renders in one pass with entitySolidGlint (as vanilla's trident).
         if (hasFoil)
         {
-            collector.order(1).submitModel(this.model, Unit.INSTANCE, poseStack, RenderTypes.entityGlint(),
-                lightCoords, overlayCoords, outlineColor, null);
+            collector.order(0).submitModel(this.model, Unit.INSTANCE, poseStack, RenderTypes.entitySolidGlint(TEXTURE),
+                lightCoords, overlayCoords, outlineColor);
+        }
+        else
+        {
+            collector.order(0).submitModel(this.model, Unit.INSTANCE, poseStack, TEXTURE,
+                lightCoords, overlayCoords, outlineColor);
         }
     }
 

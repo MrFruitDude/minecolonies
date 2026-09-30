@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:pottage"
+        "recipes": "minecolonies:pottage"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

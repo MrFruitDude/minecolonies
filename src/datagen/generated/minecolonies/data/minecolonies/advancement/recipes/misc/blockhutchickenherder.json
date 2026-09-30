@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutchickenherder"
+        "recipes": "minecolonies:blockhutchickenherder"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

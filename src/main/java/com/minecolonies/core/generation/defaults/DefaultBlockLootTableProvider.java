@@ -7,6 +7,7 @@ import com.minecolonies.core.blocks.BlockMinecoloniesRack;
 import net.minecraft.advancements.predicates.StatePropertiesPredicate;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.data.loot.LootTableSubProvider;
 import net.minecraft.data.loot.BlockLootSubProvider;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.item.enchantment.Enchantment;
@@ -20,12 +21,13 @@ import net.minecraft.world.level.storage.loot.LootContext;
 import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.level.storage.loot.entries.AlternativesEntry;
 import net.minecraft.world.level.storage.loot.entries.LootItem;
-import net.minecraft.world.level.storage.loot.entries.LootPoolSingletonContainer;
+import net.minecraft.world.level.storage.loot.entries.UniformContainerBase;
 import net.minecraft.world.level.storage.loot.functions.ApplyBonusCount;
 import net.minecraft.world.level.storage.loot.functions.CopyNameFunction;
 import net.minecraft.world.level.storage.loot.functions.SetBannerPatternFunction;
 import net.minecraft.world.level.storage.loot.predicates.ExplosionCondition;
-import net.minecraft.world.level.storage.loot.predicates.LootItemBlockStatePropertyCondition;
+import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
+import net.minecraft.world.level.storage.loot.predicates.MatchBlock;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import org.jetbrains.annotations.NotNull;
 
@@ -37,16 +39,15 @@ import java.util.stream.Stream;
 
 public class DefaultBlockLootTableProvider extends BlockLootSubProvider
 {
-    public DefaultBlockLootTableProvider(@NotNull final HolderLookup.Provider provider)
+    public DefaultBlockLootTableProvider(@NotNull final LootTableSubProvider.Context output)
     {
-        super(Set.of(), FeatureFlags.REGISTRY.allFlags(), provider);
+        super(Set.of(), FeatureFlags.REGISTRY.allFlags(), output);
     }
 
     @Override
     public void generate()
     {
-        HolderLookup.RegistryLookup<Enchantment> enchantments = this.registries.lookupOrThrow(Registries.ENCHANTMENT);
-        saveBlocks(Arrays.asList(ModBlocks.getHuts()));
+                saveBlocks(Arrays.asList(ModBlocks.getHuts()));
 
         saveBlock(ModBlocks.blockHutWareHouse);
         saveBlock(ModBlocks.blockStash);
@@ -73,7 +74,7 @@ public class DefaultBlockLootTableProvider extends BlockLootSubProvider
 
         for (Block block : ModBlocks.getCrops())
         {
-            final LootItemBlockStatePropertyCondition.Builder cropCondition = LootItemBlockStatePropertyCondition.hasBlockStateProperties(block).setProperties(StatePropertiesPredicate.Builder.properties().hasProperty(CropBlock.AGE, 6));
+            final LootItemCondition.Builder cropCondition = MatchBlock.blockMatches(this.blocks, block, StatePropertiesPredicate.Builder.properties().hasProperty(CropBlock.AGE, 6));
             saveBlock(block, lootPool -> lootPool.add(LootItem.lootTableItem(block.asItem()).when(cropCondition).apply(ApplyBonusCount.addBonusBinomialDistributionCount(enchantments.getOrThrow(Enchantments.FORTUNE), 0.5714286F, 3)).otherwise(LootItem.lootTableItem(block.asItem()))));
         }
 
@@ -91,7 +92,7 @@ public class DefaultBlockLootTableProvider extends BlockLootSubProvider
 
     private void saveBlock(@NotNull final Block block)
     {
-        final LootPoolSingletonContainer.Builder<?> item = LootItem.lootTableItem(block);
+        final UniformContainerBase.Builder<?> item = LootItem.lootTableItem(block);
         if (block instanceof AbstractBlockHut || block instanceof BlockMinecoloniesRack)
         {
             item.apply(CopyNameFunction.copyName(LootContext.BlockEntityTarget.BLOCK_ENTITY));

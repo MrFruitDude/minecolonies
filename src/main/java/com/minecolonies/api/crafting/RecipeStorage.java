@@ -26,7 +26,7 @@ import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.util.context.ContextKeySet;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
-import net.neoforged.neoforge.items.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -686,7 +686,7 @@ public class RecipeStorage implements IRecipeStorage
             return null;
         }
 
-        final Entity contextEntity = context.contextMap().getOptional(LootContextParams.THIS_ENTITY);
+        final Entity contextEntity = context.contextMap().get(LootContextParams.THIS_ENTITY);
         final AbstractEntityCitizen citizen = contextEntity instanceof AbstractEntityCitizen entityCitizen
                 ? entityCitizen
                 : null;

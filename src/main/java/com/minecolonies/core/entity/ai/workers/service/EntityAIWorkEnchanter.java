@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.service;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.api.colony.ICitizenData;
 import com.ldtteam.structurize.api.util.Tuple;
@@ -249,11 +250,11 @@ public class EntityAIWorkEnchanter extends AbstractEntityAICrafting<JobEnchanter
 
             if (worker.getRandom().nextBoolean())
             {
-                worker.swing(InteractionHand.MAIN_HAND);
+                worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
             }
             else
             {
-                worker.swing(InteractionHand.OFF_HAND);
+                worker.swing(InteractionHand.OFF_HAND, SwingAnimation.DEFAULT, false);
             }
             return getState();
         }
@@ -382,11 +383,11 @@ public class EntityAIWorkEnchanter extends AbstractEntityAICrafting<JobEnchanter
 
             if (worker.getRandom().nextBoolean())
             {
-                worker.swing(InteractionHand.MAIN_HAND);
+                worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
             }
             else
             {
-                worker.swing(InteractionHand.OFF_HAND);
+                worker.swing(InteractionHand.OFF_HAND, SwingAnimation.DEFAULT, false);
             }
 
             return getState();

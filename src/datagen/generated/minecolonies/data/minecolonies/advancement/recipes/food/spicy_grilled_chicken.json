@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:spicy_grilled_chicken"
+        "recipes": "minecolonies:spicy_grilled_chicken"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

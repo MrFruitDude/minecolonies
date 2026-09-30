@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:large_water_bottle"
+        "recipes": "minecolonies:large_water_bottle"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

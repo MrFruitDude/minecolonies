@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:eggdrop_soup"
+        "recipes": "minecolonies:eggdrop_soup"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

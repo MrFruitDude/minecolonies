@@ -58,7 +58,7 @@ public class CavalryOverlayLayer extends RenderLayer<HorseRenderState, HorseMode
         int color = net.minecraft.util.ARGB.color(alpha, 255, 255, 255);
 
         submitNodeCollector.order(1).submitModel(this.getParentModel(), state, pose,
-            RenderTypes.entityTranslucent(OVERLAY_TEX), packedLight, LivingEntityRenderer.getOverlayCoords(state, 0.0F), color, null);
+            RenderTypes.entityTranslucent(OVERLAY_TEX), packedLight, LivingEntityRenderer.getOverlayCoords(state, 0.0F), color);
     }
 
 }

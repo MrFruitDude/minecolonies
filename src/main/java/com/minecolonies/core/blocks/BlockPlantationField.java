@@ -48,8 +48,6 @@ import java.util.Map;
  */
 public class BlockPlantationField extends AbstractBlockMinecoloniesHorizontal<BlockPlantationField> implements IBuilderUndestroyable, IAnchorBlock, IBuildingBrowsableBlock, EntityBlock
 {
-    public static final MapCodec<BlockPlantationField> CODEC = simpleCodec(BlockPlantationField::new);
-
     /**
      * If the block is mirrored.
      */
@@ -87,12 +85,6 @@ public class BlockPlantationField extends AbstractBlockMinecoloniesHorizontal<Bl
     {
         super(properties);
         this.registerDefaultState(this.defaultBlockState().setValue(FACING, Direction.NORTH).setValue(MIRROR, false));
-    }
-
-    @Override
-    protected MapCodec<BlockPlantationField> codec()
-    {
-        return CODEC;
     }
 
     @Override

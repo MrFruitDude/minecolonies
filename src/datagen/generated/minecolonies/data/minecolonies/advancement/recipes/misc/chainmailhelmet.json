@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:chainmailhelmet"
+        "recipes": "minecolonies:chainmailhelmet"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

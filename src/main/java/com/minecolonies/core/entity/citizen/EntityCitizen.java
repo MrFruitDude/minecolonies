@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.citizen;
+import net.minecraft.util.Prediction;
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.blocks.AbstractBlockHut;
 import com.minecolonies.api.colony.*;
@@ -105,7 +106,7 @@ import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.level.storage.TagValueOutput;
 import net.neoforged.neoforge.common.CommonHooks;
 import net.neoforged.neoforge.event.entity.living.LivingShieldBlockEvent;
-import net.neoforged.neoforge.items.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import java.util.*;
@@ -542,7 +543,7 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
         else
         {
             player.getInventory().removeItem(usedStack);
-            player.drop(usedStack, true, true);
+            player.drop(usedStack, true, Prediction.SERVER_ONLY);
             if (!level().isClientSide())
             {
                 playSound(SoundEvents.VILLAGER_NO, 1.0f, (float) SoundUtils.getRandomPitch(getRandom()));

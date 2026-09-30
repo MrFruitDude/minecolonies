@@ -42,28 +42,30 @@ public class RendererSpear extends EntityRenderer<ThrownTrident, ThrownTridentRe
                        @NotNull final CameraRenderState camera)
     {
         stack.pushPose();
-        stack.mulPose(Axis.YP.rotationDegrees(state.yRot - 90.0F));
-        stack.mulPose(Axis.ZP.rotationDegrees(state.xRot + 90.0F));
-        collector.order(0).submitModel(
-            this.model,
-            Unit.INSTANCE,
-            stack,
-            this.texture,
-            state.lightCoords,
-            OverlayTexture.NO_OVERLAY,
-            state.outlineColor,
-            null);
+        stack.rotate(Axis.YP.rotationDegrees(state.yRot - 90.0F));
+        stack.rotate(Axis.ZP.rotationDegrees(state.xRot + 90.0F));
+        // MC 26.3: RenderTypes.entityGlint() is gone; like vanilla's trident, foil renders in one pass with entitySolidGlint.
         if (state.isFoil)
         {
-            collector.order(1).submitModel(
+            collector.order(0).submitModel(
                 this.model,
                 Unit.INSTANCE,
                 stack,
-                RenderTypes.entityGlint(),
+                RenderTypes.entitySolidGlint(this.texture),
                 state.lightCoords,
                 OverlayTexture.NO_OVERLAY,
-                state.outlineColor,
-                null);
+                state.outlineColor);
+        }
+        else
+        {
+            collector.order(0).submitModel(
+                this.model,
+                Unit.INSTANCE,
+                stack,
+                this.texture,
+                state.lightCoords,
+                OverlayTexture.NO_OVERLAY,
+                state.outlineColor);
         }
         stack.popPose();
         super.submit(state, stack, collector, camera);

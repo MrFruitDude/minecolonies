@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.combat;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.core.entity.ai.combat.ServerDamageHelper;
 
@@ -184,7 +185,7 @@ public class AttackMoveAI<T extends Mob & IThreatTableEntity> extends TargetAI<T
     protected void doAttack(final LivingEntity target)
     {
         ServerDamageHelper.apply(target, target.level().damageSources().source(DamageSourceKeys.DEFAULT, user), 5);
-        user.swing(InteractionHand.MAIN_HAND);
+        user.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
     }
 
     /**

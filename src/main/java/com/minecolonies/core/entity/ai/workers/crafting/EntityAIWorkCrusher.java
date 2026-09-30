@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.crafting;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.google.common.collect.ImmutableList;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
@@ -142,7 +143,7 @@ public class EntityAIWorkCrusher extends AbstractEntityAICrafting<JobCrusher, Bu
                     currentRequest.addDelivery(currentRecipeStorage.getPrimaryOutput());
                 }
 
-                worker.swing(InteractionHand.MAIN_HAND);
+                worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
                 job.setCraftCounter(job.getCraftCounter() + 1);
                 currentRecipeStorage.fullfillRecipe(getLootContext(), ImmutableList.of(worker.getItemHandlerCitizen()));
 

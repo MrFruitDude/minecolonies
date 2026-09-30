@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.guard.training;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import net.minecraft.world.entity.EntitySpawnReason;
 
@@ -170,7 +171,7 @@ public class EntityAIArcherTraining extends AbstractEntityAITraining<JobArcherTr
         if (worker.isUsingItem())
         {
             WorkerUtil.faceBlock(currentShootingTarget, worker);
-            worker.swing(InteractionHand.MAIN_HAND);
+            worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
 
             final Arrow arrow = ModEntities.MC_NORMAL_ARROW.create(world, EntitySpawnReason.EVENT);
             arrow.setBaseDamage(0);

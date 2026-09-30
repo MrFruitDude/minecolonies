@@ -98,7 +98,7 @@ public final class RecipeUtils
         // example ImbueRecipe). Prefer that data so projections do not need
         // to manufacture an invalid crafting grid.
         final ContextMap context = level == null
-                ? new ContextMap.Builder().create(SlotDisplayContext.CONTEXT)
+                ? ContextMap.builder().buildAndValidate(SlotDisplayContext.CONTEXT)
                 : SlotDisplayContext.fromLevel(level);
         for (final RecipeDisplay display : recipe.display())
         {

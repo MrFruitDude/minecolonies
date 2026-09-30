@@ -40,8 +40,20 @@ import static com.minecolonies.api.util.constant.translation.BaseGameTranslation
 /**
  * Furnace crafting gui.
  */
-public class WindowFurnaceCrafting extends AbstractContainerScreen<ContainerCraftingFurnace>
+public class WindowFurnaceCrafting extends AbstractContainerScreen<ContainerCraftingFurnace> implements ITeachingContainerScreen
 {
+    @Override
+    public int getGuiLeft()
+    {
+        return this.leftPos;
+    }
+
+    @Override
+    public int getGuiTop()
+    {
+        return this.topPos;
+    }
+
     private static final Identifier CRAFTING_FURNACE = Identifier.fromNamespaceAndPath(Constants.MOD_ID, "textures/gui/furnace.png");
 
     /**

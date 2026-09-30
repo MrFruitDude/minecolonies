@@ -1,4 +1,6 @@
 package com.minecolonies.core.entity.ai.workers.production;
+import com.minecolonies.api.util.BlockStateUtils;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.ldtteam.structurize.util.RotationMirror;
 import com.ldtteam.structurize.util.BlockUtils;
@@ -280,7 +282,7 @@ public class EntityAIStructureMiner extends AbstractEntityAIStructureWithWorkOrd
 
         if (!mineBlock(blockToMine, getCurrentWorkingPosition()))
         {
-            worker.swing(InteractionHand.MAIN_HAND);
+            worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
             return getState();
         }
 
@@ -765,7 +767,7 @@ public class EntityAIStructureMiner extends AbstractEntityAIStructureWithWorkOrd
     private boolean secureBlock(@NotNull final BlockPos curBlock, @NotNull final BlockPos safeStand)
     {
         final BlockState stateAtPos = getBlockState(curBlock);
-        if ((!stateAtPos.blocksMotion() && getBlock(curBlock) != Blocks.TORCH) || !stateAtPos.getFluidState().isEmpty()
+        if ((!BlockStateUtils.blocksMotion(stateAtPos) && getBlock(curBlock) != Blocks.TORCH) || !stateAtPos.getFluidState().isEmpty()
               || IColonyManager.getInstance().getCompatibilityManager().isOre(world.getBlockState(curBlock)))
         {
             if (!mineBlock(curBlock, safeStand))
@@ -837,7 +839,7 @@ public class EntityAIStructureMiner extends AbstractEntityAIStructureWithWorkOrd
 
     private void setBlockFromInventory(@NotNull final BlockPos location, @NotNull final Block block)
     {
-        worker.swing(worker.getUsedItemHand());
+        worker.swing(worker.getUsedItemHand(), SwingAnimation.DEFAULT, false);
         setBlockFromInventory(location, block, block.defaultBlockState());
     }
 

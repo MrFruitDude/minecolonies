@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutnetherworker"
+        "recipes": "minecolonies:blockhutnetherworker"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

@@ -8,15 +8,15 @@ import com.minecolonies.api.util.constant.TagConstants;
 import com.minecolonies.core.generation.CompostRecipeBuilder;
 import com.minecolonies.core.recipes.FoodIngredient;
 import com.minecolonies.core.recipes.PlantIngredient;
+import net.minecraft.advancements.Advancement;
 import net.minecraft.advancements.triggers.Criterion;
 import net.minecraft.advancements.triggers.InventoryChangeTrigger;
 import net.minecraft.advancements.predicates.ItemPredicate;
 import net.minecraft.core.HolderGetter;
-import net.minecraft.core.HolderLookup.Provider;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.data.PackOutput;
 import net.minecraft.data.recipes.*;
+import net.minecraft.data.worldgen.BootstrapContext;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.ItemTags;
@@ -24,6 +24,7 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.CookingBookCategory;
 import net.minecraft.world.level.ItemLike;
 import net.neoforged.neoforge.common.Tags;
@@ -42,29 +43,13 @@ import static com.minecolonies.api.util.constant.Constants.MOD_ID;
 public class DefaultRecipeProvider extends RecipeProvider
 {
 
-    public DefaultRecipeProvider(final Provider registries, final RecipeOutput output)
+    /**
+     * MC 26.3: recipes (and their unlock advancements) are reloadable-registry bootstraps; register with
+     * {@code RecipeProvider.asBootstrap(DefaultRecipeProvider::new)}.
+     */
+    public DefaultRecipeProvider(final BootstrapContext<Recipe<?>> recipes, final BootstrapContext<Advancement> advancements)
     {
-        super(registries, output);
-    }
-
-    public static class Runner extends RecipeProvider.Runner
-    {
-        public Runner(final PackOutput packOutput, final CompletableFuture<Provider> registries)
-        {
-            super(packOutput, registries);
-        }
-
-        @Override
-        public String getName()
-        {
-            return "MineColonies Recipes";
-        }
-
-        @Override
-        protected RecipeProvider createRecipeProvider(final Provider registries, final RecipeOutput output)
-        {
-            return new DefaultRecipeProvider(registries, output);
-        }
+        super(recipes, advancements);
     }
 
     @Override
@@ -93,7 +78,7 @@ public class DefaultRecipeProvider extends RecipeProvider
 
     private HolderGetter<Item> itemLookup()
     {
-        return registries.lookupOrThrow(Registries.ITEM);
+        return items;
     }
 
     private static ResourceKey<net.minecraft.world.item.crafting.Recipe<?>> recipeKey(@NotNull final Identifier id)

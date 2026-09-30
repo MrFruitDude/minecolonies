@@ -1,19 +1,15 @@
 {
   "processors": [
     {
-      "blocks":[
-        {
-          "Name":"structurize:blocksubstitution"
-        }
+      "blocks": [
+        "structurize:blocksubstitution"
       ],
       "processor_type": "minecraft:block_ignore"
     },
     {
       "rules": [
         {
-          "output_state": {
-            "Name": "minecraft:terracotta"
-          },
+          "output_state": "minecraft:terracotta",
           "input_predicate": {
             "block": "structurize:blocksolidsubstitution",
             "predicate_type": "minecraft:block_match"

@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.util;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.ldtteam.structurize.placement.structure.AbstractStructureHandler;
 import com.ldtteam.structurize.util.BlockUtils;
@@ -28,7 +29,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.items.IItemHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -179,7 +180,7 @@ public class BuildingStructureHandler<J extends AbstractJobStructure<?, J>, B ex
             EntityNavigationUtils.walkAwayFrom(structureAI.getWorker(), worldPos, 1, 1.0);
         }
 
-        structureAI.getWorker().swing(InteractionHand.MAIN_HAND);
+        structureAI.getWorker().swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
     }
 
     @Nullable

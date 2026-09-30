@@ -41,7 +41,7 @@ public class PathJobMoveToLocation extends AbstractPathJob implements IDestinati
         super(world, start, end, new PathResult<PathJobMoveToLocation>(), entity);
 
         maxNodes += range;
-        this.destination = new BlockPos(end);
+        this.destination = end.immutable();
 
         extraNodes = 4;
     }

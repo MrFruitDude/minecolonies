@@ -55,8 +55,6 @@ import static com.minecolonies.api.util.constant.SchematicTagConstants.TAG_LEISU
  */
 public class BlockDecorationController extends AbstractBlockMinecoloniesDirectional<BlockDecorationController> implements IBuilderUndestroyable, IAnchorBlock, EntityBlock, ILeveledBlueprintAnchorBlock, SimpleWaterloggedBlock
 {
-    public static final MapCodec<BlockDecorationController> CODEC = simpleCodec(BlockDecorationController::new);
-
     /**
      * The hardness this block has.
      */
@@ -104,12 +102,6 @@ public class BlockDecorationController extends AbstractBlockMinecoloniesDirectio
     {
         super(properties);
         this.registerDefaultState(this.defaultBlockState().setValue(FACING, Direction.NORTH).setValue(MIRROR, false).setValue(WATERLOGGED, false));
-    }
-
-    @Override
-    protected MapCodec<BlockDecorationController> codec()
-    {
-        return CODEC;
     }
 
     @Override

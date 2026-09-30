@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutflorist"
+        "recipes": "minecolonies:blockhutflorist"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

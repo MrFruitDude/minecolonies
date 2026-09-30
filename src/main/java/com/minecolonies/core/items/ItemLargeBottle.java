@@ -1,4 +1,5 @@
 package com.minecolonies.core.items;
+import net.minecraft.util.Prediction;
 
 import com.minecolonies.api.items.ModItems;
 import com.minecolonies.api.util.InventoryUtils;
@@ -18,7 +19,7 @@ import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
-import net.neoforged.neoforge.items.wrapper.PlayerMainInvWrapper;
+import com.ldtteam.structurize.api.compat.itemhandler.wrapper.PlayerMainInvWrapper;
 import org.jetbrains.annotations.NotNull;
 
 import static com.minecolonies.api.util.constant.Constants.TICKS_SECOND;
@@ -61,7 +62,7 @@ public class ItemLargeBottle extends Item
             player.playSound(SoundEvents.COW_MILK, 1.0F, 1.0F);
             if (!InventoryUtils.addItemStackToItemHandler(new PlayerMainInvWrapper(player.getInventory()), ModItems.large_milk_bottle.getDefaultInstance()))
             {
-                player.drop(ModItems.large_milk_bottle.getDefaultInstance(), false);
+                player.drop(ModItems.large_milk_bottle.getDefaultInstance(), false, Prediction.SERVER_ONLY);
             }
             stack.shrink(1);
             player.getCooldowns().addCooldown(stack, TICKS_SECOND * 10);
@@ -72,7 +73,7 @@ public class ItemLargeBottle extends Item
             player.playSound((goat.isScreamingGoat() ? SoundEvents.GOAT_SCREAMING_MILK : SoundEvents.GOAT_MILK), 1.0F, 1.0F);
             if (!InventoryUtils.addItemStackToItemHandler(new PlayerMainInvWrapper(player.getInventory()), ModItems.large_milk_bottle.getDefaultInstance()))
             {
-                player.drop(ModItems.large_milk_bottle.getDefaultInstance(), false);
+                player.drop(ModItems.large_milk_bottle.getDefaultInstance(), false, Prediction.SERVER_ONLY);
             }
             stack.shrink(1);
             player.getCooldowns().addCooldown(stack, TICKS_SECOND * 10);
@@ -108,7 +109,7 @@ public class ItemLargeBottle extends Item
                     level.playSound(player, player.getX(), player.getY(), player.getZ(), SoundEvents.BOTTLE_FILL, SoundSource.NEUTRAL, 1.0F, 1.0F);
                     if (!InventoryUtils.addItemStackToItemHandler(new PlayerMainInvWrapper(player.getInventory()), ModItems.large_water_bottle.getDefaultInstance()))
                     {
-                        player.drop(ModItems.large_water_bottle.getDefaultInstance(), false);
+                        player.drop(ModItems.large_water_bottle.getDefaultInstance(), false, Prediction.SERVER_ONLY);
                     }
                     itemstack.shrink(1);
                     player.getCooldowns().addCooldown(itemstack, TICKS_SECOND);

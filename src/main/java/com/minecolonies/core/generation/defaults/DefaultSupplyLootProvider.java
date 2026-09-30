@@ -12,13 +12,13 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraft.world.level.storage.loot.LootTable;
+import net.minecraft.world.level.storage.loot.providers.number.ints.ContextIntProviders;
 import net.minecraft.world.level.storage.loot.LootTable.Builder;
 import net.minecraft.world.level.storage.loot.entries.LootItem;
 import net.minecraft.world.level.storage.loot.functions.SetComponentsFunction;
 import net.minecraft.world.level.storage.loot.functions.SetItemCountFunction;
 import net.minecraft.world.level.storage.loot.functions.SetNameFunction;
 import net.minecraft.world.level.storage.loot.predicates.LootItemRandomChanceCondition;
-import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.function.BiConsumer;
@@ -36,13 +36,17 @@ public class DefaultSupplyLootProvider implements LootTableSubProvider
     public final static Identifier SUPPLY_CAMP_LT = Identifier.fromNamespaceAndPath(MOD_ID, "chests/supplycamp");
     public final static Identifier SUPPLY_SHIP_LT = Identifier.fromNamespaceAndPath(MOD_ID, "chests/supplyship");
 
-    public DefaultSupplyLootProvider(@NotNull final HolderLookup.Provider provider)
+    private final LootTableSubProvider.Context output;
+
+    public DefaultSupplyLootProvider(@NotNull final LootTableSubProvider.Context output)
     {
+        this.output = output;
     }
 
     @Override
-    public void generate(final BiConsumer<ResourceKey<LootTable>, Builder> generator)
+    public void run()
     {
+        final BiConsumer<ResourceKey<LootTable>, LootTable.Builder> generator = output::accept;
         final CompoundTag instantTag = new CompoundTag();
         instantTag.putString(PLACEMENT_NBT, INSTANT_PLACEMENT);
 
@@ -55,7 +59,7 @@ public class DefaultSupplyLootProvider implements LootTableSubProvider
                                         .apply(SetNameFunction.setName(Component.translatableEscape("item.minecolonies.supply.free", ModItems.supplyCamp.getDescriptionId()), SetNameFunction.Target.ITEM_NAME)))
                                 .add(LootItem.lootTableItem(ModItems.scrollBuff)
                                     .when(LootItemRandomChanceCondition.randomChance(0.1f))
-                                    .apply(SetItemCountFunction.setCount(ConstantValue.exactly(4))))
+                                    .apply(SetItemCountFunction.setCount(ContextIntProviders.exactly(4))))
                         ));
 
         generator.accept(ResourceKey.create(Registries.LOOT_TABLE, SUPPLY_SHIP_LT),
@@ -67,7 +71,7 @@ public class DefaultSupplyLootProvider implements LootTableSubProvider
                                         .apply(SetNameFunction.setName(Component.translatableEscape("item.minecolonies.supply.free", ModItems.supplyChest.getDescriptionId()), SetNameFunction.Target.ITEM_NAME)))
                                 .add(LootItem.lootTableItem(ModItems.scrollBuff)
                                     .when(LootItemRandomChanceCondition.randomChance(0.1f))
-                                    .apply(SetItemCountFunction.setCount(ConstantValue.exactly(4))))
+                                    .apply(SetItemCountFunction.setCount(ContextIntProviders.exactly(4))))
                         ));
     }
 }

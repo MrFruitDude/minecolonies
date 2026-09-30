@@ -578,7 +578,7 @@ public class RaidManager implements IRaiderManager
       final BlockPos start,
       final BlockPos advancePos)
     {
-        BlockPos spawnPos = new BlockPos(start);
+        BlockPos spawnPos = start.immutable();
         BlockPos tempPos = new BlockPos(spawnPos.getX(), spawnPos.getY(), spawnPos.getZ());
         final Collection<IBuilding> buildings = colony.getServerBuildingManager().getBuildings().values();
 

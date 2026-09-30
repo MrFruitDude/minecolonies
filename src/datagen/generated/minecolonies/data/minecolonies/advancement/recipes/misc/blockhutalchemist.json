@@ -16,7 +16,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockhutalchemist"
+        "recipes": "minecolonies:blockhutalchemist"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

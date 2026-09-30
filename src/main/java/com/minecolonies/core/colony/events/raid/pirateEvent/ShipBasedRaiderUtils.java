@@ -1,4 +1,5 @@
 package com.minecolonies.core.colony.events.raid.pirateEvent;
+import com.minecolonies.api.util.BlockStateUtils;
 
 import com.google.common.collect.Lists;
 import com.ldtteam.structurize.util.RotationMirror;
@@ -168,7 +169,7 @@ public final class ShipBasedRaiderUtils
 
         allowedShipMaterials.add(BlockBehaviour.BlockStateBase::liquid);
         allowedShipMaterials.add(state -> state.is(BlockTags.ICE));
-        allowedShipMaterials.add(state -> !state.blocksMotion() && state.getFluidState().is(FluidTags.WATER));
+        allowedShipMaterials.add(state -> !BlockStateUtils.blocksMotion(state) && state.getFluidState().is(FluidTags.WATER));
 
         if (MineColonies.getConfig().getServer().skyRaiders.get())
         {
@@ -251,7 +252,7 @@ public final class ShipBasedRaiderUtils
                 {
                     for (int i = 1; i <= 5; i++)
                     {
-                        if (world.getBlockState(new BlockPos(from.getX() + (x * xDir), baseY + i, from.getZ() + (z * zDir))).blocksMotion())
+                        if (BlockStateUtils.blocksMotion(world.getBlockState(new BlockPos(from.getX() + (x * xDir), baseY + i, from.getZ() + (z * zDir)))))
                         {
                             suitableBlock = false;
                             break;
@@ -330,8 +331,8 @@ public final class ShipBasedRaiderUtils
                   startPos,
                   30,
                   3,
-                  (world, pos) -> (world.getBlockState(pos).isSolid() || world.getBlockState(pos).liquid()) && !world.getBlockState(
-                    pos.above()).blocksMotion() && !world.getBlockState(pos.above(2)).blocksMotion());
+                  (world, pos) -> (world.getBlockState(pos).isSolid() || world.getBlockState(pos).liquid()) && !BlockStateUtils.blocksMotion(world.getBlockState(
+                    pos.above())) && !BlockStateUtils.blocksMotion(world.getBlockState(pos.above(2))));
             }
             else
             {
@@ -350,7 +351,7 @@ public final class ShipBasedRaiderUtils
         final int sqMaxDist = maxDistance * maxDistance;
         final int sqMinDist = minDistance * minDistance;
 
-        BlockPos tempPos = new BlockPos(startPos);
+        BlockPos tempPos = startPos.immutable();
 
         for (int i = 0; i < accuracy; i++)
         {
@@ -385,7 +386,7 @@ public final class ShipBasedRaiderUtils
             {
                 for (int z = -radius; z <= radius; z++)
                 {
-                    if (!world.getBlockState(spawnPos.offset(x, y, z)).blocksMotion() && !world.getBlockState(spawnPos.offset(x, y + 1, z)).blocksMotion())
+                    if (!BlockStateUtils.blocksMotion(world.getBlockState(spawnPos.offset(x, y, z))) && !BlockStateUtils.blocksMotion(world.getBlockState(spawnPos.offset(x, y + 1, z))))
                     {
                         return spawnPos.offset(x, y, z);
                     }

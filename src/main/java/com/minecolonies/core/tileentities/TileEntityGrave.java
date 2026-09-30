@@ -30,7 +30,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.items.ItemStackHandler;
+import com.ldtteam.structurize.api.compat.itemhandler.ItemStackHandler;
 import java.util.Optional;
 
 import org.jetbrains.annotations.NotNull;

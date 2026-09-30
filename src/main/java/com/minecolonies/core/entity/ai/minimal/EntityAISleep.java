@@ -196,7 +196,7 @@ public class EntityAISleep implements IStateAI
             {
                 bedTicks++;
                 final BlockState state = citizen.level().getBlockState(usedBed);
-                if (state.isBed(citizen.level(), usedBed, citizen) && state.getValue(BedBlock.OCCUPIED))
+                if (state.getBlock() instanceof BedBlock && state.getValue(BedBlock.OCCUPIED))
                 {
                     if (!this.citizen.level().getEntitiesOfClass(LivingEntity.class, new AABB(usedBed), LivingEntity::isSleeping).isEmpty())
                     {

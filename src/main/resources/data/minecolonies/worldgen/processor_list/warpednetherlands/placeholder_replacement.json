@@ -3,9 +3,7 @@
     {
       "rules": [
         {
-          "output_state": {
-            "Name": "minecraft:netherrack"
-          },
+          "output_state": "minecraft:netherrack",
           "input_predicate": {
             "block": "structurize:blocksolidsubstitution",
             "predicate_type": "minecraft:block_match"
@@ -15,9 +13,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:cobweb"
-          },
+          "output_state": "minecraft:cobweb",
           "input_predicate": {
             "block": "minecraft:netherrack",
             "probability": 0.08,
@@ -28,9 +24,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:cobweb"
-          },
+          "output_state": "minecraft:cobweb",
           "input_predicate": {
             "block": "minecraft:netherrack",
             "probability": 0.04,
@@ -41,9 +35,7 @@
           }
         },
         {
-          "output_state": {
-            "Name": "minecraft:cobweb"
-          },
+          "output_state": "minecraft:cobweb",
           "input_predicate": {
             "block": "minecraft:netherrack",
             "probability": 0.02,
@@ -57,14 +49,11 @@
       "processor_type": "minecraft:rule"
     },
     {
-      "blocks":[
-        {
-          "Name":"structurize:blocksubstitution"
-        },
-        {
-          "Name":"minecolonies:blockwaypoint"
-        }
+      "blocks": [
+        "structurize:blocksubstitution",
+        "minecolonies:blockwaypoint"
       ],
       "processor_type": "minecraft:block_ignore"
-    }  ]
+    }
+  ]
 }

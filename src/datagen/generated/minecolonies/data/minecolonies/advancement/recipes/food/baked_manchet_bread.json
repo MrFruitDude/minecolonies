@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:baked_manchet_bread"
+        "recipes": "minecolonies:baked_manchet_bread"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

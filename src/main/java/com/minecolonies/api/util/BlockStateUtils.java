@@ -1,6 +1,7 @@
 package com.minecolonies.api.util;
 
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 import org.jetbrains.annotations.NotNull;
@@ -183,5 +184,18 @@ public class BlockStateUtils
             }
         }
         return true;
+    }
+
+    /**
+     * Whether the state blocks entity motion.
+     * MC 26.3 removed BlockState#blocksMotion(); this reproduces the 26.2 definition
+     * (solid, and neither cobweb nor bamboo sapling).
+     *
+     * @param state the state to check.
+     * @return true if it blocks motion.
+     */
+    public static boolean blocksMotion(@NotNull final BlockState state)
+    {
+        return state.getBlock() != Blocks.COBWEB && state.getBlock() != Blocks.BAMBOO_SAPLING && state.isSolid();
     }
 }

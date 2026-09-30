@@ -13,7 +13,7 @@
     },
     "has_the_recipe": {
       "conditions": {
-        "recipe": "minecolonies:blockwaypoint"
+        "recipes": "minecolonies:blockwaypoint"
       },
       "trigger": "minecraft:recipe_unlocked"
     }

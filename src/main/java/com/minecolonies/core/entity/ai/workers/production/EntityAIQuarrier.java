@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.workers.production;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.ldtteam.structurize.util.RotationMirror;
 import com.ldtteam.structurize.api.util.Tuple;
@@ -581,7 +582,7 @@ public class EntityAIQuarrier extends AbstractEntityAIStructureWithWorkOrder<Job
 
         if (!mineBlock(blockToMine, getCurrentWorkingPosition()))
         {
-            worker.swing(InteractionHand.MAIN_HAND);
+            worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
             return getState();
         }
 
@@ -627,7 +628,7 @@ public class EntityAIQuarrier extends AbstractEntityAIStructureWithWorkOrder<Job
      */
     private void setBlockFromInventory(@NotNull final BlockPos location, final Block block)
     {
-        worker.swing(worker.getUsedItemHand());
+        worker.swing(worker.getUsedItemHand(), SwingAnimation.DEFAULT, false);
 
         final int slot = worker.getCitizenInventoryHandler().findFirstSlotInInventoryWith(block);
         if (slot != -1)

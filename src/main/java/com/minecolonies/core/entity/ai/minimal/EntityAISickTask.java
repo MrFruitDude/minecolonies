@@ -1,4 +1,5 @@
 package com.minecolonies.core.entity.ai.minimal;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
@@ -252,7 +253,7 @@ public class EntityAISickTask implements IStateAI
             citizen.setItemInHand(InteractionHand.MAIN_HAND, list.get(citizen.getRandom().nextInt(list.size())).getItemStack());
         }
 
-        citizen.swing(InteractionHand.MAIN_HAND);
+        citizen.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
         citizen.playSound(SoundEvents.NOTE_BLOCK_HARP.value(), (float) BASIC_VOLUME, (float) SoundUtils.getRandomPentatonic(citizen.getRandom()));
         new CircleParticleEffectMessage(citizen.position().add(0, 2, 0), ParticleTypes.HAPPY_VILLAGER, waitingTicks)
             .sendToTrackingEntity(citizen);

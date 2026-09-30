@@ -1,4 +1,5 @@
 package com.minecolonies.core.util.citizenutils;
+import net.minecraft.world.item.component.SwingAnimation;
 
 import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
 import com.minecolonies.api.util.*;
@@ -158,7 +159,7 @@ public class CitizenItemUtils
 
         citizen.getLookControl().setLookAt(blockPos.getX(), blockPos.getY(), blockPos.getZ(), FACING_DELTA_YAW, citizen.getMaxHeadXRot());
 
-        citizen.swing(citizen.getUsedItemHand());
+        citizen.swing(citizen.getUsedItemHand(), SwingAnimation.DEFAULT, false);
 
         final BlockState blockState = CompatibilityUtils.getWorldFromCitizen(citizen).getBlockState(blockPos);
         final Block block = blockState.getBlock();
