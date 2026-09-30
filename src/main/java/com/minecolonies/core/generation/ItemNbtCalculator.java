@@ -132,6 +132,16 @@ public class ItemNbtCalculator implements DataProvider
             typesToRemove.add(DataComponents.MAX_STACK_SIZE);
             typesToRemove.add(DataComponents.RARITY);
             typesToRemove.add(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
+            // Since 1.21.2 every item carries these by default (DataComponents.COMMON_ITEM_COMPONENTS plus the
+            // id-derived model/name). They describe the item type, not the stack, so like max_stack_size above they
+            // are not worth matching. (enchantments, repair_cost and attribute_modifiers are handled per item below.)
+            typesToRemove.add(DataComponents.USE_EFFECTS);
+            typesToRemove.add(DataComponents.BREAK_SOUND);
+            typesToRemove.add(DataComponents.TOOLTIP_DISPLAY);
+            typesToRemove.add(DataComponents.ATTACK_ANIMATION);
+            typesToRemove.add(DataComponents.INTERACT_ANIMATION);
+            typesToRemove.add(DataComponents.ITEM_MODEL);
+            typesToRemove.add(DataComponents.ITEM_NAME);
             ModDataComponents.REGISTRY.getEntries().forEach(t -> typesToRemove.add(t.get()));
 
             for (final ItemStack stack : allStacks)

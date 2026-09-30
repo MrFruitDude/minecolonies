@@ -2376,6 +2376,49 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review CP-ENCH: every Enchanter loot table must hand out enchanted books that actually
+     * carry stored enchantments. The port's datagen bound empty default components, so enchanting a book was a no-op
+     * and all five tables generated bare books.
+     */
+    public static void enchanterBooksHaveEnchantments(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final net.minecraft.world.level.storage.loot.LootParams params =
+          new net.minecraft.world.level.storage.loot.LootParams.Builder(level)
+            .create(net.minecraft.world.level.storage.loot.parameters.LootContextParamSets.EMPTY);
+        for (int buildingLevel = 1; buildingLevel <= 5; buildingLevel++)
+        {
+            final net.minecraft.resources.ResourceKey<net.minecraft.world.level.storage.loot.LootTable> key =
+              net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.LOOT_TABLE,
+                Identifier.fromNamespaceAndPath(com.minecolonies.api.util.constant.Constants.MOD_ID, "recipes/enchanter" + buildingLevel));
+            final net.minecraft.world.level.storage.loot.LootTable table = level.getServer().reloadableRegistries().getLootTable(key);
+            helper.assertTrue(table != net.minecraft.world.level.storage.loot.LootTable.EMPTY, "Missing loot table " + key.identifier());
+            int books = 0;
+            int enchanted = 0;
+            final java.util.Set<String> seen = new java.util.TreeSet<>();
+            for (int roll = 0; roll < 200; roll++)
+            {
+                for (final ItemStack stack : table.getRandomItems(params))
+                {
+                    books++;
+                    final net.minecraft.world.item.enchantment.ItemEnchantments stored =
+                      stack.getOrDefault(net.minecraft.core.component.DataComponents.STORED_ENCHANTMENTS,
+                        net.minecraft.world.item.enchantment.ItemEnchantments.EMPTY);
+                    if (stack.is(Items.ENCHANTED_BOOK) && !stored.isEmpty())
+                    {
+                        enchanted++;
+                        stored.keySet().forEach(e -> seen.add(e.getRegisteredName()));
+                    }
+                }
+            }
+            Log.getLogger().info("CP-ENCH enchanter{}: {} books, {} with stored enchantments, {} distinct: {}", buildingLevel, books, enchanted, seen.size(), seen);
+            helper.assertTrue(books > 0 && enchanted == books,
+              "enchanter" + buildingLevel + ": only " + enchanted + " of " + books + " books carry stored enchantments");
+        }
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review MC-C07: since 1.21.2 the server sends clients only the recipe types a mod requests, so
      * without JEI the Domum crafting window, restaurant menu and brewing lookups had no recipes. Also checks the restaurant's
      * dish lookup key is the item's registry id (1.21 behaviour), not its description id.
