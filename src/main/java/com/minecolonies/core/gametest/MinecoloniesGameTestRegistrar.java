@@ -68,5 +68,9 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "container_contents_drop_on_break"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::containerContentsDropOnBreak),
           data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "survival_placement_handlers_registered"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::survivalPlacementHandlersRegistered),
+          data);
     }
 }

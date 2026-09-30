@@ -210,11 +210,9 @@ public class MineColonies
 
         MineColoniesStructures.DEFERRED_REGISTRY_STRUCTURE.register(modBus);
 
-        if (dist.isClient())
-        {
-            SurvivalBlueprintHandlers.registerHandler(new SurvivalHandler());
-            SurvivalBlueprintHandlers.registerHandler(new SuppliesHandler());
-        }
+        // Both sides: the server resolves the handler by id when a BuildToolPlacementMessage arrives.
+        SurvivalBlueprintHandlers.registerHandler(new SurvivalHandler());
+        SurvivalBlueprintHandlers.registerHandler(new SuppliesHandler());
 
         logIncompatibilities();
     }

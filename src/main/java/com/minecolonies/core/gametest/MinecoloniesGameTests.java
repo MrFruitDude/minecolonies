@@ -34,6 +34,7 @@ import com.minecolonies.core.colony.workorders.WorkOrderBuilding;
 import com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder;
 import com.minecolonies.core.util.WorkerUtil;
 import com.minecolonies.core.network.messages.server.CreateColonyMessage;
+import com.minecolonies.core.placementhandlers.main.SuppliesHandler;
 import com.minecolonies.core.placementhandlers.main.SurvivalHandler;
 import com.ldtteam.structurize.blueprints.v1.Blueprint;
 import com.ldtteam.structurize.storage.StructurePacks;
@@ -2194,6 +2195,22 @@ public final class MinecoloniesGameTests
         }
         Log.getLogger().info("MC-C01 dropped contents on break: {}", dropped);
         dropped.forEach((name, count) -> helper.assertTrue(count == 7, "Breaking the " + name + " dropped " + count + "/7 stored items"));
+        helper.succeed();
+    }
+
+    /**
+     * Regression fixture for review MC-C03: the server resolves survival placement handlers by id
+     * ({@code BlueprintPlacementHandling#process}). If they are registered client-only, hut and town
+     * hall placement is a silent no-op on a dedicated server. GameTest servers run as DEDICATED_SERVER.
+     */
+    public static void survivalPlacementHandlersRegistered(final GameTestHelper helper)
+    {
+        for (final String id : new String[] { new SurvivalHandler().getId(), new SuppliesHandler().getId() })
+        {
+            final boolean registered = com.ldtteam.structurize.storage.SurvivalBlueprintHandlers.getHandler(id) != null;
+            Log.getLogger().info("MC-C03 survival handler '{}' registered on server: {}", id, registered);
+            helper.assertTrue(registered, "Survival placement handler '" + id + "' is not registered on the server");
+        }
         helper.succeed();
     }
 
