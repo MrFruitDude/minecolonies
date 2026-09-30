@@ -2277,6 +2277,44 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review MC-C06: the citizen inventory menu built from the open packet must have the server's slot layout
+     * even when the citizen (or its colony view) is not known on the receiving side yet. The server's content packet sets every
+     * server slot by index, so a 0-slot menu threw IndexOutOfBounds and disconnected the client.
+     */
+    public static void citizenInventoryMenuLayout(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final ServerPlayer player = FakePlayerFactory.getMinecraft(level);
+        final int citizenSlots = new com.minecolonies.api.inventory.InventoryCitizen("", false).getSlots();
+        // What the server sends for a default citizen: citizen slots, 4 armor slots, 27 + 9 player slots.
+        final int serverSlots = citizenSlots + 4 + 36;
+
+        // Open data in the menu's wire format: colony id (unknown here), citizen id, citizen inventory size, work building level.
+        final net.minecraft.network.RegistryFriendlyByteBuf buf =
+          new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), level.registryAccess());
+        buf.writeVarInt(Integer.MAX_VALUE).writeVarInt(1).writeVarInt(citizenSlots).writeVarInt(0);
+        final com.minecolonies.api.inventory.container.ContainerCitizenInventory menu =
+          com.minecolonies.api.inventory.container.ContainerCitizenInventory.fromFriendlyByteBuf(1, player.getInventory(), buf);
+
+        final List<ItemStack> contents = new java.util.ArrayList<>(java.util.Collections.nCopies(serverSlots, ItemStack.EMPTY));
+        contents.set(0, new ItemStack(Items.OAK_LOG, 3));
+        Log.getLogger().info("MC-C06 menu without citizen has {} slots (server sends {})", menu.slots.size(), serverSlots);
+        String error = null;
+        try
+        {
+            menu.initializeContents(0, contents, ItemStack.EMPTY);
+        }
+        catch (final RuntimeException e)
+        {
+            error = e.toString();
+        }
+        helper.assertTrue(error == null, "Applying the server's menu contents failed: " + error);
+        helper.assertTrue(menu.slots.size() == serverSlots, "Menu has " + menu.slots.size() + " slots, server sends " + serverSlots);
+        helper.assertTrue(menu.getSlot(0).getItem().is(Items.OAK_LOG), "Citizen slot 0 did not receive the synced stack");
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review MC-C03: the server resolves survival placement handlers by id
      * ({@code BlueprintPlacementHandling#process}). If they are registered client-only, hut and town
      * hall placement is a silent no-op on a dedicated server. GameTest servers run as DEDICATED_SERVER.

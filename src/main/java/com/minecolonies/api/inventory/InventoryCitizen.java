@@ -41,7 +41,7 @@ public class InventoryCitizen implements IItemHandlerModifiable, Nameable
     /**
      * The default inv size.
      */
-    private static final int DEFAULT_INV_SIZE = 27;
+    public static final int DEFAULT_INV_SIZE = 27;
     private static final int ROW_SIZE         = 9;
 
     /**
@@ -99,6 +99,20 @@ public class InventoryCitizen implements IItemHandlerModifiable, Nameable
         {
             customName = title;
         }
+    }
+
+    /**
+     * Creates an empty, unowned inventory with the given number of main slots, e.g. to back a menu before its citizen is known.
+     *
+     * @param slots the number of main inventory slots.
+     * @return the empty inventory.
+     */
+    public static InventoryCitizen empty(final int slots)
+    {
+        final InventoryCitizen inventory = new InventoryCitizen("", false);
+        inventory.mainInventory = NonNullList.withSize(slots, ItemStackUtils.EMPTY);
+        inventory.freeSlots = slots;
+        return inventory;
     }
 
     /**

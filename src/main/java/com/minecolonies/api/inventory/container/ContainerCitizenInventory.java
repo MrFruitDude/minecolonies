@@ -2,6 +2,7 @@ package com.minecolonies.api.inventory.container;
 
 import com.minecolonies.api.colony.*;
 import com.minecolonies.api.colony.buildings.IBuilding;
+import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
 import com.minecolonies.api.entity.ai.workers.util.GuardGear;
 import com.minecolonies.api.entity.ai.workers.util.GuardGearBuilder;
 import com.minecolonies.api.inventory.InventoryCitizen;
@@ -68,11 +69,33 @@ public class ContainerCitizenInventory extends AbstractContainerMenu
     {
         final int colonyId = packetBuffer.readVarInt();
         final int citizenId = packetBuffer.readVarInt();
-        return new ContainerCitizenInventory(windowId, inv, colonyId, citizenId);
+        final int inventorySlots = packetBuffer.readVarInt();
+        final int workBuildingLevel = packetBuffer.readVarInt();
+        return new ContainerCitizenInventory(windowId, inv, colonyId, citizenId, inventorySlots, workBuildingLevel);
     }
 
     /**
-     * Creating the citizen inventory container.
+     * Write the open data read by {@link #fromFriendlyByteBuf}. The client builds its slot layout from the server's inventory size,
+     * because the server's content packet addresses every server slot and the client's colony view may be missing or stale.
+     *
+     * @param packetBuffer the open-menu buffer.
+     * @param citizen      the citizen whose inventory is opened.
+     */
+    public static void writeOpenData(final RegistryFriendlyByteBuf packetBuffer, final AbstractEntityCitizen citizen)
+    {
+        packetBuffer.writeVarInt(citizen.getCitizenColonyHandler().getColonyId());
+        packetBuffer.writeVarInt(citizen.getCivilianID());
+        packetBuffer.writeVarInt(citizen.getInventoryCitizen().getSlots());
+        packetBuffer.writeVarInt(workBuildingLevel(citizen.getCitizenData()));
+    }
+
+    private static int workBuildingLevel(final ICitizenData data)
+    {
+        return data == null || data.getWorkBuilding() == null ? 0 : data.getWorkBuilding().getBuildingLevel();
+    }
+
+    /**
+     * Creating the citizen inventory container (server side).
      *
      * @param windowId  the window id.
      * @param inv       the inventory.
@@ -80,6 +103,21 @@ public class ContainerCitizenInventory extends AbstractContainerMenu
      * @param citizenId citizen id
      */
     public ContainerCitizenInventory(final int windowId, final Inventory inv, final int colonyId, final int citizenId)
+    {
+        this(windowId, inv, colonyId, citizenId, -1, 0);
+    }
+
+    /**
+     * @param syncedSlots             the server's citizen inventory size (client side), or -1 when unknown.
+     * @param syncedWorkBuildingLevel the server's work building level (client side).
+     */
+    private ContainerCitizenInventory(
+        final int windowId,
+        final Inventory inv,
+        final int colonyId,
+        final int citizenId,
+        final int syncedSlots,
+        final int syncedWorkBuildingLevel)
     {
         super(ModContainers.citizenInv.get(), windowId);
         this.playerInventory = inv;
@@ -94,60 +132,45 @@ public class ContainerCitizenInventory extends AbstractContainerMenu
             colony = IColonyManager.getInstance().getColonyByWorld(colonyId, inv.player.level());
         }
 
-        if (colony == null)
-        {
-            inventorySize = 0;
-            return;
-        }
+        InventoryCitizen inventory = null;
+        BlockPos workBuildingPos = null;
+        int workBuildingLevel = syncedWorkBuildingLevel;
+        this.displayName = "";
 
-        final InventoryCitizen inventory;
-        final BlockPos workBuilding;
-
-        int workBuildingLevel = 0;
-        if (inv.player.level().isClientSide())
+        if (colony != null && inv.player.level().isClientSide())
         {
+            // The menu packet can arrive before the colony view or entity is synchronized.
             final ICitizenDataView data = ((IColonyView) colony).getCitizen(citizenId);
-            // The menu packet can arrive before the colony-view/entity synchronization on
-            // the client.  Do not turn that normal loading window into a client crash by
-            // passing a missing view/entity through Optional.of(...).
-            if (data == null)
+            if (data != null)
             {
-                inventorySize = 0;
-                displayName = "";
-                return;
-            }
-            this.entity = Optional.ofNullable(inv.player.level().getEntity(data.getEntityId()));
-            this.citizenData = data;
-            inventory = data.getInventory();
-            this.displayName = data.getName();
-            workBuilding = data.getWorkBuilding();
-            if (workBuilding != null)
-            {
-                workBuildingLevel = colony.getCommonBuildingManager().getBuilding(workBuilding).getBuildingLevel();
+                this.entity = Optional.ofNullable(inv.player.level().getEntity(data.getEntityId()));
+                this.citizenData = data;
+                inventory = data.getInventory();
+                this.displayName = data.getName();
+                workBuildingPos = data.getWorkBuilding();
             }
         }
-        else
+        else if (colony != null)
         {
-            final ICitizenData data;
-            if (citizenId > 0)
+            final ICitizenData data = citizenId > 0 ? colony.getCitizenManager().getCivilian(citizenId) : colony.getVisitorManager().getCivilian(citizenId);
+            if (data != null)
             {
-                data = colony.getCitizenManager().getCivilian(citizenId);
-            }
-            else
-            {
-                data = colony.getVisitorManager().getCivilian(citizenId);
-            }
-            this.entity = data.getEntity();
-            this.citizenData = data;
-
-            inventory = data.getInventory();
-            this.displayName = data.getName();
-            workBuilding = data.getWorkBuilding() == null ? null : data.getWorkBuilding().getID();
-            if (workBuilding != null)
-            {
-                workBuildingLevel = data.getWorkBuilding().getBuildingLevel();
+                this.entity = data.getEntity();
+                this.citizenData = data;
+                inventory = data.getInventory();
+                this.displayName = data.getName();
+                workBuildingPos = data.getWorkBuilding() == null ? null : data.getWorkBuilding().getID();
+                workBuildingLevel = workBuildingLevel(data);
             }
         }
+
+        // The slot layout must match the server's exactly: the server's content packet sets every one of its slots by index.
+        // Without a (matching) citizen inventory, back the layout with an empty one; the server syncs the contents into it.
+        if (inventory == null || (syncedSlots >= 0 && inventory.getSlots() != syncedSlots))
+        {
+            inventory = InventoryCitizen.empty(syncedSlots >= 0 ? syncedSlots : InventoryCitizen.DEFAULT_INV_SIZE);
+        }
+        final BlockPos workBuilding = workBuildingPos;
 
         this.inventorySize = inventory.getSlots() / INVENTORY_COLUMNS;
         final int size = inventory.getSlots();

@@ -5,6 +5,7 @@ import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
+import com.minecolonies.api.inventory.container.ContainerCitizenInventory;
 import com.minecolonies.api.util.BlockPosUtil;
 import com.minecolonies.api.util.CompatibilityUtils;
 import com.minecolonies.api.util.constant.Constants;
@@ -137,7 +138,7 @@ public class OpenInventoryMessage extends AbstractColonyServerMessage
                 citizen.getInventoryCitizen().setCustomName(name);
             }
 
-            player.openMenu(citizen, packetBuffer -> packetBuffer.writeVarInt(citizen.getCitizenColonyHandler().getColonyId()).writeVarInt(citizen.getCivilianID()));
+            player.openMenu(citizen, packetBuffer -> ContainerCitizenInventory.writeOpenData(packetBuffer, citizen));
         }
     }
 
