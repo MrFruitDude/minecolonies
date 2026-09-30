@@ -497,6 +497,14 @@ public final class MinecoloniesGameTests
                         final int[] pumpTicks = {0};
                         final Runnable[] pump = new Runnable[1];
                         pump[0] = () -> {
+                            // Keep the bounded fixture in daylight, like the
+                            // courier and restart tests.  It has no beds, so
+                            // the normal night transition parks the builder in
+                            // its sleep routine for ~12k ticks; whether the
+                            // 30k-tick budget then covers the build depends on
+                            // where in the job night falls (X-263-SLABSTALL).
+                            level.getServer().clockManager().setTotalTicks(
+                              level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
                             deliverFiniteBuilderResources(builderBuilding, citizen, level, delivered);
                             if (builderBuilding.getBuildingLevel() >= 1)
                             {
