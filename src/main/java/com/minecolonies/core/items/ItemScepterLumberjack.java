@@ -9,6 +9,7 @@ import com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack
 import com.minecolonies.core.entity.ai.workers.production.EntityAIWorkLumberjack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
@@ -59,9 +60,24 @@ public class ItemScepterLumberjack extends AbstractItemMinecolonies implements I
         return InteractionResult.FAIL;
     }
 
+    /**
+     * Left-click sets position A and never breaks the block (1.21 canAttackBlock; checked server-side by NeoForge's break event).
+     */
     @Override
-    public boolean isCorrectToolForDrops(@NotNull final ItemStack stack, @NotNull final BlockState state)
+    public boolean canDestroyBlock(
+      @NotNull final ItemStack scepter,
+      @NotNull final BlockState state,
+      @NotNull final Level world,
+      @NotNull final BlockPos pos,
+      @NotNull final LivingEntity entity)
     {
+        if (!world.isClientSide() && entity instanceof final Player player)
+        {
+            MessageUtils.format(TOOL_LUMBERJACK_SCEPTER_POSITION_A_SET).sendTo(player);
+            setSelection(scepter, null, pos);
+            storeRestrictedArea(player, scepter, world);
+        }
+
         return false;
     }
 

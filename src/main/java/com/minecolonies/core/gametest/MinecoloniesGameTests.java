@@ -2247,6 +2247,36 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review MC-C05: left-clicking a block with the lumberjack scepter sets position A (the selection end)
+     * and must not break the block. The server break path consults {@code Item#canDestroyBlock} via NeoForge's break event.
+     */
+    public static void lumberjackScepterLeftClick(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos target = helper.absolutePos(new BlockPos(2, 2, 2));
+        level.setBlockAndUpdate(target, Blocks.OAK_LOG.defaultBlockState());
+
+        final ServerPlayer player = FakePlayerFactory.getMinecraft(level);
+        final ItemStack scepter = new ItemStack(com.minecolonies.api.items.ModItems.scepterLumberjack);
+        player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, scepter);
+        try
+        {
+            player.gameMode.destroyBlock(target);
+        }
+        finally
+        {
+            player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+        }
+
+        final boolean survived = level.getBlockState(target).is(Blocks.OAK_LOG);
+        final com.ldtteam.structurize.api.util.Tuple<BlockPos, BlockPos> bounds = com.ldtteam.structurize.items.AbstractItemWithPosSelector.getBounds(scepter);
+        Log.getLogger().info("MC-C05 block survived left-click: {}, scepter pos A={}", survived, bounds.getB());
+        helper.assertTrue(survived, "Left-clicking with the lumberjack scepter broke the block");
+        helper.assertTrue(target.equals(bounds.getB()), "Left-clicking with the lumberjack scepter did not set position A (got " + bounds.getB() + ")");
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review MC-C03: the server resolves survival placement handlers by id
      * ({@code BlueprintPlacementHandling#process}). If they are registered client-only, hut and town
      * hall placement is a silent no-op on a dedicated server. GameTest servers run as DEDICATED_SERVER.
