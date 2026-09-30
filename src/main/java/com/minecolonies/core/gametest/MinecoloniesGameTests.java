@@ -2331,6 +2331,38 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review MC-C07: since 1.21.2 the server sends clients only the recipe types a mod requests, so
+     * without JEI the Domum crafting window, restaurant menu and brewing lookups had no recipes. Also checks the restaurant's
+     * dish lookup key is the item's registry id (1.21 behaviour), not its description id.
+     */
+    public static void clientRecipeSync(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final net.neoforged.neoforge.event.OnDatapackSyncEvent event =
+          new net.neoforged.neoforge.event.OnDatapackSyncEvent(level.getServer().getPlayerList(), FakePlayerFactory.getMinecraft(level));
+        com.minecolonies.core.event.DataPackSyncEventHandler.ServerEvents.onDataPackSync(event);
+        final java.util.Set<net.minecraft.world.item.crafting.RecipeType<?>> sent = event.getRecipeTypesToSend();
+        Log.getLogger().info("MC-C07 recipe types sent to client: {}", sent);
+        for (final net.minecraft.world.item.crafting.RecipeType<?> type : java.util.List.of(
+          net.minecraft.world.item.crafting.RecipeType.CRAFTING,
+          net.minecraft.world.item.crafting.RecipeType.SMELTING,
+          net.minecraft.world.item.crafting.RecipeType.BREWING,
+          com.ldtteam.domumornamentum.recipe.ModRecipeTypes.ARCHITECTS_CUTTER.get()))
+        {
+            helper.assertTrue(sent.contains(type), "Recipe type " + type + " is not sent to clients");
+        }
+
+        for (final net.minecraft.world.item.Item dish : new net.minecraft.world.item.Item[] { Items.BREAD, Items.COOKED_BEEF })
+        {
+            final var key = com.minecolonies.api.crafting.RecipeUtils.itemRecipeKey(dish);
+            final boolean found = level.recipeAccess().recipeMap().byKey(key) != null;
+            Log.getLogger().info("MC-C07 restaurant recipe key {} found: {}", key.identifier(), found);
+            helper.assertTrue(found, "No recipe for restaurant lookup key " + key.identifier());
+        }
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review BS-C1: Structurize scan-tool state (bounds, anchor, name, slot storage) must persist on the
      * item stack. Since item data became immutable components, writing into a copied tag silently drops the change.
      */

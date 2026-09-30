@@ -1,6 +1,12 @@
 package com.minecolonies.api.crafting;
 
+import com.ldtteam.domumornamentum.recipe.ModRecipeTypes;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
@@ -144,6 +150,33 @@ public final class RecipeUtils
             return List.of(singleItemRecipe.input());
         }
         return recipe.placementInfo().ingredients();
+    }
+
+    /**
+     * The recipe id that shares an item's registry id (for example {@code minecraft:bread}), the
+     * lookup 1.21 did with {@code RecipeManager#byKey(itemId)}.
+     *
+     * @param item the item.
+     * @return the recipe key.
+     */
+    @NotNull
+    public static ResourceKey<Recipe<?>> itemRecipeKey(@NotNull final Item item)
+    {
+        return ResourceKey.create(Registries.RECIPE, BuiltInRegistries.ITEM.getKey(item));
+    }
+
+    /**
+     * Recipe types that client screens read from {@link #clientSyncedRecipes()}. Since 1.21.2 the
+     * server only sends the recipe types a mod asks for, so these are requested on datapack sync:
+     * crafting + smelting (restaurant menu ingredient lookup), brewing ({@code BrewingUtils}) and
+     * the Architect's Cutter (Domum crafting window).
+     *
+     * @return the recipe types to send to clients.
+     */
+    @NotNull
+    public static List<RecipeType<?>> clientRecipeTypes()
+    {
+        return List.of(RecipeType.CRAFTING, RecipeType.SMELTING, RecipeType.BREWING, ModRecipeTypes.ARCHITECTS_CUTTER.get());
     }
 
     /**

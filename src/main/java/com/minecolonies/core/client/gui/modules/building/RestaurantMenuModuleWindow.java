@@ -431,9 +431,7 @@ public class RestaurantMenuModuleWindow extends AbstractModuleWindow<RestaurantM
         {
             return false;
         }
-        final ResourceKey<Recipe<?>> recipeKey = ResourceKey.create(Registries.RECIPE,
-          Identifier.withDefaultNamespace(dish.getItem().getDescriptionId()));
-        final RecipeHolder<?> recipe = recipeMap.byKey(recipeKey);
+        final RecipeHolder<?> recipe = recipeMap.byKey(RecipeUtils.itemRecipeKey(dish.getItem()));
         if (recipe != null)
         {
             if (depth == 0)

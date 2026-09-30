@@ -96,8 +96,8 @@ public class DataPackSyncEventHandler
         @SubscribeEvent(priority = EventPriority.LOWEST)
         public static void onDataPackSync(final OnDatapackSyncEvent event)
         {
-            // MC 26.3: brewing is recipe-driven; send those recipes so client-side brewing lookups (BrewingUtils) work.
-            event.sendRecipes(RecipeType.BREWING);
+            // Since 1.21.2 only requested recipe types reach the client; request the ones MineColonies screens read.
+            event.sendRecipes(RecipeUtils.clientRecipeTypes());
             final CustomRecipeManager recipeManager = CustomRecipeManager.getInstance();
             final MinecraftServer server = event.getPlayerList().getServer();
             final GameProfile owner = server.getSingleplayerProfile();
