@@ -2676,6 +2676,107 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Regression fixture for review BS-C5: Structurize must (de)serialize items that reference datapack registries (enchantments,
+     * banner patterns, trims) with the live registries. With only the built-in registries these items were dropped from scanned
+     * blueprints, broke the builder's chest-content lookup, and could not be sent in Structurize packets.
+     */
+    public static void structurizeDynamicRegistryItems(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final net.minecraft.core.Holder<net.minecraft.world.item.enchantment.Enchantment> sharpness = level.registryAccess()
+          .lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
+          .getOrThrow(net.minecraft.world.item.enchantment.Enchantments.SHARPNESS);
+        final ItemStack sword = new ItemStack(Items.IRON_SWORD);
+        sword.enchant(sharpness, 3);
+        final List<String> failures = new java.util.ArrayList<>();
+
+        // 1. Item NBT helpers (tag substitution replacement item, builder resource lists).
+        try
+        {
+            final ItemStack parsed = com.ldtteam.structurize.api.util.ItemStackUtils.getItemStackFromNbt(
+              com.ldtteam.structurize.api.util.ItemStackUtils.writeToNbt(sword));
+            Log.getLogger().info("BS-C5 item nbt round trip -> {} {}", parsed, parsed.getEnchantments());
+            if (!ItemStack.isSameItemSameComponents(sword, parsed))
+            {
+                failures.add("item nbt round trip lost the enchantment (" + parsed + ")");
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            failures.add("item nbt round trip threw " + e);
+        }
+
+        // 2. Scan a chest holding the sword, then read the chest contents back from the blueprint like the builder does.
+        final BlockPos chestPos = helper.absolutePos(new BlockPos(1, 1, 1));
+        level.setBlockAndUpdate(chestPos, Blocks.CHEST.defaultBlockState());
+        if (level.getBlockEntity(chestPos) instanceof final ChestBlockEntity chest)
+        {
+            chest.setItem(0, sword.copy());
+        }
+        try
+        {
+            final com.ldtteam.structurize.blueprints.v1.Blueprint blueprint = com.ldtteam.structurize.blueprints.v1.BlueprintUtil.createBlueprint(
+              level, chestPos, false, (short) 1, (short) 1, (short) 1, "bsc5", java.util.Optional.empty());
+            final CompoundTag chestTag = blueprint.getTileEntities()[0][0][0];
+            final List<ItemStack> contents = com.ldtteam.structurize.api.util.ItemStackUtils.getItemStacksOfTileEntity(chestTag,
+              Blocks.CHEST.defaultBlockState());
+            Log.getLogger().info("BS-C5 scanned chest tag={} contents={}", chestTag, contents);
+            if (contents.size() != 1 || !ItemStack.isSameItemSameComponents(sword, contents.get(0)))
+            {
+                failures.add("scanned chest lost the enchanted sword (" + contents + ")");
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            failures.add("scanning / reading the chest threw " + e);
+        }
+
+        // 3. Tag substitution replacement block holding that chest.
+        try
+        {
+            final com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock replacement =
+              new com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock(Blocks.CHEST.defaultBlockState(),
+                level.getBlockEntity(chestPos), new ItemStack(Items.CHEST));
+            final BlockEntity restored = replacement.createBlockEntity(chestPos);
+            final ItemStack restoredItem = restored instanceof final ChestBlockEntity restoredChest ? restoredChest.getItem(0) : ItemStack.EMPTY;
+            Log.getLogger().info("BS-C5 replacement block restored {}", restoredItem);
+            if (!ItemStack.isSameItemSameComponents(sword, restoredItem))
+            {
+                failures.add("tag substitution replacement lost the chest's enchanted sword (" + restoredItem + ")");
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            failures.add("tag substitution replacement threw " + e);
+        }
+
+        // 4. Network item codec used by AbsorbBlock / ReplaceBlock messages.
+        final RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
+        try
+        {
+            com.ldtteam.structurize.util.ItemStackNbtHelper.writeNetworkStack(buf, sword);
+            final ItemStack decoded = com.ldtteam.structurize.util.ItemStackNbtHelper.readNetworkStack(buf);
+            Log.getLogger().info("BS-C5 network round trip -> {}", decoded);
+            if (!ItemStack.isSameItemSameComponents(sword, decoded))
+            {
+                failures.add("network round trip lost the enchantment (" + decoded + ")");
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            failures.add("network round trip threw " + e);
+        }
+        finally
+        {
+            buf.release();
+        }
+
+        Log.getLogger().info("BS-C5 failures={}", failures);
+        helper.assertTrue(failures.isEmpty(), "dynamic-registry items dropped: " + failures);
+        helper.succeed();
+    }
+
     private static final class TestCreateColonyMessage extends CreateColonyMessage
     {
         private TestCreateColonyMessage(
