@@ -70,7 +70,9 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.world.Container;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.item.ItemStack;
@@ -84,6 +86,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.common.util.FakePlayerFactory;
 import net.neoforged.neoforge.network.registration.NetworkRegistry;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -2114,6 +2117,61 @@ public final class MinecoloniesGameTests
         helper.assertTrue(legacyRestored.getInventory().getStackInSlot(8).is(Items.COBBLESTONE)
             && legacyRestored.getInventory().getStackInSlot(8).getCount() == 17,
           "legacy rack load corrupted a later populated slot: " + legacyRestored.getInventory().getStackInSlot(8));
+        helper.succeed();
+    }
+
+    /**
+     * Regression fixture for Domum Ornamentum material tinting (review DPT-C02).
+     * A block skinned with grass/leaves must take the skin's tint, not white. The
+     * fixture resolves each retextured quad's tint index the way the renderer
+     * does (index into the block's tint values) and compares it with the skin
+     * block's own tint source, for the item colours (level-independent) of a
+     * shingle skinned with grass block + oak planks and one skinned with birch +
+     * oak leaves. (Grass reads the colour map, which a server never loads, so
+     * its expected colour is 0 here; it still must not be the old white.)
+     */
+    public static void domumMaterialTints(final GameTestHelper helper)
+    {
+        final net.minecraft.client.color.block.BlockColors colors = net.minecraft.client.color.block.BlockColors.createDefault();
+        final Identifier roof = Identifier.withDefaultNamespace("block/clay");
+        final Identifier support = Identifier.withDefaultNamespace("block/oak_planks");
+        final List<String> failures = new ArrayList<>();
+
+        final Block[][] skins = {{Blocks.GRASS_BLOCK, Blocks.OAK_PLANKS}, {Blocks.BIRCH_LEAVES, Blocks.OAK_LEAVES}};
+        for (final Block[] pair : skins)
+        {
+            final com.ldtteam.domumornamentum.client.model.data.MaterialTextureData data =
+              new com.ldtteam.domumornamentum.client.model.data.MaterialTextureData.Builder().setComponent(roof, pair[0]).setComponent(support, pair[1]).build();
+            final it.unimi.dsi.fastutil.ints.IntArrayList tintValues = new it.unimi.dsi.fastutil.ints.IntArrayList();
+            com.ldtteam.domumornamentum.client.color.MaterialTints.collect(data, colors, null, null, tintValues);
+
+            for (final Block skin : pair)
+            {
+                final BlockState skinState = skin.defaultBlockState();
+                final net.minecraft.client.color.block.BlockTintSource source = colors.getTintSource(skinState, 0);
+                final int index = com.ldtteam.domumornamentum.client.color.MaterialTints.remapTintIndex(data, skin, source == null ? -1 : 0);
+                if (source == null)
+                {
+                    if (index != -1)
+                    {
+                        failures.add(skin + ": untinted skin got tint index " + index);
+                    }
+                    continue;
+                }
+                final int expected = source.color(skinState);
+                final int actual = index >= 0 && index < tintValues.size() ? tintValues.getInt(index) : -1;
+                if (actual != expected)
+                {
+                    failures.add(String.format("%s: tint index %d -> %08x, expected skin colour %08x", skin, index, actual, expected));
+                }
+            }
+        }
+
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException("Domum material tint wrong: " + String.join("; ", failures));
+        }
+        Log.getLogger().info("[domum_material_tints] grass/birch/oak leaves skins resolve to their own tint colours");
         helper.succeed();
     }
 
