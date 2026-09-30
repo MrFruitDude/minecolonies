@@ -2176,6 +2176,48 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for Domum Ornamentum's extra blocks' tool tags (review DPT-C06).
+     * 1.21 put every extra block into its category's mineable tag (bricks/slates:
+     * pickaxe, thatched: hoe, paper/cactus: axe); the port's tag rewrite dropped that
+     * loop, so tools mined them at hand speed. Checks each extra block is in its tag
+     * and the matching iron tool is faster than a bare hand on it.
+     */
+    public static void domumExtraBlockMineableTags(final GameTestHelper helper)
+    {
+        final List<String> failures = new ArrayList<>();
+        final List<com.ldtteam.domumornamentum.block.decorative.ExtraBlock> extras =
+          com.ldtteam.domumornamentum.block.ModBlocks.getInstance().getExtraTopBlocks();
+        for (final com.ldtteam.domumornamentum.block.decorative.ExtraBlock block : extras)
+        {
+            final BlockState state = block.defaultBlockState();
+            final net.minecraft.tags.TagKey<Block> tag = block.getType().getCategory().getMineableTag();
+            final String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).toString();
+            if (!state.is(tag))
+            {
+                failures.add(id + " not in " + tag.location());
+                continue;
+            }
+            final net.minecraft.world.item.Item tool = tag == net.minecraft.tags.BlockTags.MINEABLE_WITH_PICKAXE ? net.minecraft.world.item.Items.IRON_PICKAXE
+              : tag == net.minecraft.tags.BlockTags.MINEABLE_WITH_AXE ? net.minecraft.world.item.Items.IRON_AXE : net.minecraft.world.item.Items.IRON_HOE;
+            if (new ItemStack(tool).getDestroySpeed(state) <= 1.0F)
+            {
+                failures.add(id + " " + tool + " mines at hand speed");
+            }
+        }
+        if (extras.size() != 27)
+        {
+            failures.add("expected 27 extra blocks, found " + extras.size());
+        }
+
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException("Domum extra block tool tags wrong (" + failures.size() + "): " + String.join("; ", failures));
+        }
+        Log.getLogger().info("[domum_extra_block_mineable_tags] all " + extras.size() + " extra blocks are in their mineable tag");
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for Domum Ornamentum's placement ghost (review DPT-C03/04).
      * The ghost must show the held stack's materials at the position the block will
      * be placed: the port built a block entity from the stack and then ignored it,
