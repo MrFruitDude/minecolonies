@@ -2121,6 +2121,85 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for Domum Ornamentum's placement ghost (review DPT-C03/04).
+     * The ghost must show the held stack's materials at the position the block will
+     * be placed: the port built a block entity from the stack and then ignored it,
+     * reading model data from the looked-at block instead, and drew the quads white
+     * at a quarter alpha. The fixture aims a shingle skinned with grass block + oak
+     * planks at the top of a stone block and checks where the preview goes, that the
+     * preview's model data there is the stack's, and the ghost's tint colours.
+     */
+    public static void domumPlacementGhost(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        helper.setBlock(new BlockPos(2, 1, 2), Blocks.STONE);
+        final BlockPos target = helper.absolutePos(new BlockPos(2, 1, 2));
+
+        final Block shingle = com.ldtteam.domumornamentum.block.ModBlocks.getInstance()
+          .getShingle(com.ldtteam.domumornamentum.shingles.ShingleHeightType.DEFAULT);
+        final com.ldtteam.domumornamentum.client.model.data.MaterialTextureData.Builder builder =
+          com.ldtteam.domumornamentum.client.model.data.MaterialTextureData.builder();
+        final Block[] skins = {Blocks.GRASS_BLOCK, Blocks.OAK_PLANKS};
+        int skin = 0;
+        for (final com.ldtteam.domumornamentum.block.IMateriallyTexturedBlockComponent component :
+          ((com.ldtteam.domumornamentum.block.IMateriallyTexturedBlock) shingle).getComponents())
+        {
+            builder.setComponent(component.getId(), skins[skin++ % skins.length]);
+        }
+        final com.ldtteam.domumornamentum.client.model.data.MaterialTextureData data = builder.build();
+        final ItemStack stack = new ItemStack(shingle);
+        stack.set(com.ldtteam.domumornamentum.component.ModDataComponents.TEXTURE_DATA.get(), data);
+
+        final ServerPlayer player = FakePlayerFactory.getMinecraft(level);
+        player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        final net.minecraft.world.phys.BlockHitResult hit =
+          new net.minecraft.world.phys.BlockHitResult(net.minecraft.world.phys.Vec3.atCenterOf(target).add(0, 0.5, 0), Direction.UP, target, false);
+
+        final com.ldtteam.domumornamentum.client.render.ModelGhostRenderer.Preview preview =
+          com.ldtteam.domumornamentum.client.render.ModelGhostRenderer.prepare(player, InteractionHand.MAIN_HAND, stack, hit,
+            net.minecraft.client.renderer.block.BlockAndTintGetter.EMPTY);
+        final List<String> failures = new ArrayList<>();
+        if (preview == null)
+        {
+            throw helper.assertionException("Domum placement ghost: no preview for a shingle aimed at stone");
+        }
+        if (!preview.pos().equals(target.above()))
+        {
+            failures.add("preview at " + preview.pos() + ", expected placement position " + target.above());
+        }
+        if (preview.state().getBlock() != shingle)
+        {
+            failures.add("preview state " + preview.state());
+        }
+        final com.ldtteam.domumornamentum.client.model.data.MaterialTextureData previewData = preview.level().getModelData(preview.pos())
+          .get(com.ldtteam.domumornamentum.client.model.properties.ModProperties.MATERIAL_TEXTURE_PROPERTY);
+        if (previewData == null || !data.getTexturedComponents().equals(previewData.getTexturedComponents()))
+        {
+            failures.add("model data at the preview position is " + (previewData == null ? "none" : previewData.getTexturedComponents())
+              + ", expected the stack's " + data.getTexturedComponents());
+        }
+
+        final it.unimi.dsi.fastutil.ints.IntList tints = it.unimi.dsi.fastutil.ints.IntList.of(0xFF112233, 0xFF445566);
+        final int untinted = com.ldtteam.domumornamentum.client.render.ModelGhostRenderer.ghostColor(-1, tints);
+        final int tinted = com.ldtteam.domumornamentum.client.render.ModelGhostRenderer.ghostColor(1, tints);
+        if (untinted != 0x80FFFFFF)
+        {
+            failures.add(String.format("untinted quad colour %08x, expected 80ffffff", untinted));
+        }
+        if (tinted != 0x80445566)
+        {
+            failures.add(String.format("tint index 1 colour %08x, expected 80445566", tinted));
+        }
+
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException("Domum placement ghost wrong: " + String.join("; ", failures));
+        }
+        Log.getLogger().info("[domum_placement_ghost] preview at {} with the stack's materials; tinted quads keep their tint at half alpha", preview.pos());
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for Domum Ornamentum material tinting (review DPT-C02).
      * A block skinned with grass/leaves must take the skin's tint, not white. The
      * fixture resolves each retextured quad's tint index the way the renderer
