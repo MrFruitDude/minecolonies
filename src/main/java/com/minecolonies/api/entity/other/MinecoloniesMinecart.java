@@ -1,7 +1,9 @@
 package com.minecolonies.api.entity.other;
 
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
@@ -33,6 +35,36 @@ public class MinecoloniesMinecart extends Minecart
     public InteractionResult interact(final Player player, final InteractionHand hand, final Vec3 location)
     {
         return InteractionResult.FAIL;
+    }
+
+    /**
+     * Citizen carts are spawned per rail trip, so breaking one must not drop a minecart item (free carts).
+     */
+    @Override
+    protected void destroy(@NotNull final ServerLevel level, @NotNull final DamageSource source)
+    {
+        this.kill(level);
+    }
+
+    @Override
+    public void tick()
+    {
+        super.tick();
+        // One cart is spawned per rail trip; an empty one is left over and must not pile up in chunks.
+        if (!this.level().isClientSide() && this.tickCount % 20 == 19 && this.getPassengers().isEmpty())
+        {
+            this.discard();
+        }
+    }
+
+    /**
+     * Not rideable for vanilla purposes: stops the rail behaviour from scooping nearby mobs into a moving empty cart.
+     * Citizens mount it explicitly through {@code startRiding}.
+     */
+    @Override
+    public boolean isRideable()
+    {
+        return false;
     }
 
     @Override

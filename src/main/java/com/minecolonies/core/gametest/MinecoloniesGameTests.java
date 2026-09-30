@@ -2208,6 +2208,45 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review MC-C04: citizen rail travel spawns a fresh {@code MinecoloniesMinecart} per trip.
+     * An empty cart must clean itself up, and destroying one must not drop a vanilla minecart item (free carts).
+     */
+    public static void citizenMinecartCleanup(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos idlePos = helper.absolutePos(new BlockPos(1, 2, 1));
+        final BlockPos brokenPos = helper.absolutePos(new BlockPos(5, 2, 1));
+
+        final com.minecolonies.api.entity.other.MinecoloniesMinecart idle =
+          com.minecolonies.api.entity.ModEntities.MINECART.create(level, net.minecraft.world.entity.EntitySpawnReason.EVENT);
+        idle.setPos(idlePos.getX() + 0.5, idlePos.getY(), idlePos.getZ() + 0.5);
+        final boolean idleAdded = level.addFreshEntity(idle);
+
+        final com.minecolonies.api.entity.other.MinecoloniesMinecart broken =
+          com.minecolonies.api.entity.ModEntities.MINECART.create(level, net.minecraft.world.entity.EntitySpawnReason.EVENT);
+        broken.setPos(brokenPos.getX() + 0.5, brokenPos.getY(), brokenPos.getZ() + 0.5);
+        level.addFreshEntity(broken);
+        broken.hurtServer(level, level.damageSources().generic(), 100.0F);
+
+        final int freeCarts = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new net.minecraft.world.phys.AABB(brokenPos).inflate(3))
+          .stream()
+          .map(net.minecraft.world.entity.item.ItemEntity::getItem)
+          .filter(stack -> stack.is(Items.MINECART))
+          .mapToInt(ItemStack::getCount)
+          .sum();
+        Log.getLogger().info("MC-C04 destroyed cart removed: {}, minecart items dropped: {}", broken.isRemoved(), freeCarts);
+        helper.assertTrue(broken.isRemoved(), "Destroyed citizen minecart was not removed");
+        helper.assertTrue(freeCarts == 0, "Destroying a citizen minecart dropped " + freeCarts + " minecart item(s)");
+
+        helper.assertTrue(idleAdded, "Could not spawn the idle citizen minecart");
+        // Retried every tick until the test times out; an empty cart should go on its first 20-tick check.
+        helper.succeedWhen(() -> {
+            helper.assertTrue(idle.isRemoved(), "Empty citizen minecart still in the world after " + idle.tickCount + " ticks");
+            Log.getLogger().info("MC-C04 empty cart removed after {} ticks", idle.tickCount);
+        });
+    }
+
+    /**
      * Regression fixture for review MC-C03: the server resolves survival placement handlers by id
      * ({@code BlueprintPlacementHandling#process}). If they are registered client-only, hut and town
      * hall placement is a silent no-op on a dedicated server. GameTest servers run as DEDICATED_SERVER.
