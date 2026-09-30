@@ -66,7 +66,6 @@ import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent;
@@ -233,21 +232,9 @@ public class ClientEventHandler
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
-    public static void renderWorldAfterOpaqueFeatures(@NotNull final RenderLevelStageEvent.AfterOpaqueFeatures event)
+    public static void submitColonyWorldRendering(@NotNull final SubmitCustomGeometryEvent event)
     {
-        WorldEventContext.INSTANCE.renderWorldLastEvent(event);
-    }
-
-    @SubscribeEvent(priority = EventPriority.LOWEST)
-    public static void submitColonyBlueprints(@NotNull final SubmitCustomGeometryEvent event)
-    {
-        WorldEventContext.INSTANCE.submitBlueprints(event);
-    }
-
-    @SubscribeEvent(priority = EventPriority.LOWEST)
-    public static void renderWorldAfterTranslucentBlocks(@NotNull final RenderLevelStageEvent.AfterTranslucentBlocks event)
-    {
-        WorldEventContext.INSTANCE.renderWorldLastEvent(event);
+        WorldEventContext.INSTANCE.submit(event);
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)

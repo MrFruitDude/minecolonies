@@ -11,13 +11,13 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.gizmos.Gizmos;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.ARGB;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent;
 import org.jetbrains.annotations.Nullable;
 
@@ -34,7 +34,6 @@ public class WorldEventContext
     {
     }
 
-    public RenderLevelStageEvent stageEvent;
     public SubmitCustomGeometryEvent submitEvent;
     public BufferSourceCompat bufferSource;
     public PoseStack poseStack;
@@ -51,76 +50,57 @@ public class WorldEventContext
         return nearestColony != null;
     }
 
-    public void renderWorldLastEvent(final RenderLevelStageEvent event)
-    {
-        stageEvent = event;
-        submitEvent = null;
-        bufferSource = WorldRenderMacros.getBufferSource();
-        poseStack = event.getPoseStack();
-        clientLevel = Minecraft.getInstance().level;
-        clientPlayer = Minecraft.getInstance().player;
-        if (clientPlayer == null || clientLevel == null)
-        {
-            return;
-        }
-
-        mainHandItem = clientPlayer.getMainHandItem();
-        clientRenderDist = Minecraft.getInstance().options.renderDistance().get();
-        checkNearbyColony(clientLevel);
-
-        final Vec3 cameraPosition = Minecraft.getInstance().gameRenderer.mainCamera().position();
-        poseStack.pushPose();
-        poseStack.translate(-cameraPosition.x(), -cameraPosition.y(), -cameraPosition.z());
-
-        renderWithinContext(event);
-
-        bufferSource.endBatch();
-        poseStack.popPose();
-    }
-
     /**
-     * Submit colony blueprint geometry while Minecraft is collecting the
-     * feature nodes for the current frame. RenderLevelStageEvent is too late
-     * for SubmitNodeCollector submissions on Minecraft 26.2.
+     * Submits colony blueprints and every colony overlay (borders, waypoints, boxes, debug text) while
+     * Minecraft collects the current frame's feature nodes. Since 26.x anything submitted from a
+     * RenderLevelStageEvent is too late for the frame and is never drawn.
      */
-    public void submitBlueprints(final SubmitCustomGeometryEvent event)
+    public void submit(final SubmitCustomGeometryEvent event)
     {
-        submitEvent = event;
-        stageEvent = null;
-        bufferSource = null;
-        poseStack = event.getPoseStack();
-        clientLevel = Minecraft.getInstance().level;
-        clientPlayer = Minecraft.getInstance().player;
+        final Minecraft mc = Minecraft.getInstance();
+        clientLevel = mc.level;
+        clientPlayer = mc.player;
         if (clientPlayer == null || clientLevel == null)
         {
-            submitEvent = null;
             return;
         }
 
+        submitEvent = event;
+        poseStack = event.getPoseStack();
         mainHandItem = clientPlayer.getMainHandItem();
-        clientRenderDist = Minecraft.getInstance().options.renderDistance().get();
+        clientRenderDist = mc.options.renderDistance().get();
         checkNearbyColony(clientLevel);
-        ColonyBlueprintRenderer.renderBlueprints(this);
-        submitEvent = null;
+
+        try (final Gizmos.TemporaryCollection ignored = mc.levelRenderer.collectPerFrameRenderThreadGizmos())
+        {
+            ColonyBlueprintRenderer.renderBlueprints(this);
+
+            bufferSource = WorldRenderMacros.getBufferSource();
+            final Vec3 cameraPosition = mc.gameRenderer.mainCamera().position();
+            poseStack.pushPose();
+            poseStack.translate(-cameraPosition.x(), -cameraPosition.y(), -cameraPosition.z());
+            renderOverlays();
+            poseStack.popPose();
+            bufferSource.endBatch(event.getSubmitNodeCollector());
+        }
+        finally
+        {
+            bufferSource = null;
+            submitEvent = null;
+        }
     }
 
-    private void renderWithinContext(final RenderLevelStageEvent event)
+    private void renderOverlays()
     {
-        if (event instanceof RenderLevelStageEvent.AfterOpaqueFeatures)
-        {
-            ColonyBorderRenderer.render(this);
-            ColonyWaypointRenderer.render(this);
-            ColonyPatrolPointRenderer.render(this);
-            GuardTowerRallyBannerRenderer.render(this);
-            PathfindingDebugRenderer.render(this);
-            ColonyBlueprintRenderer.renderBoxes(this);
-            ItemOverlayBoxesRenderer.render(this);
-            HighlightManager.render(this);
-        }
-        else if (event instanceof RenderLevelStageEvent.AfterTranslucentBlocks)
-        {
-            TileEntityColonySignRenderer.renderSignHover(this);
-        }
+        ColonyBorderRenderer.render(this);
+        ColonyWaypointRenderer.render(this);
+        ColonyPatrolPointRenderer.render(this);
+        GuardTowerRallyBannerRenderer.render(this);
+        PathfindingDebugRenderer.render(this);
+        ColonyBlueprintRenderer.renderBoxes(this);
+        ItemOverlayBoxesRenderer.render(this);
+        HighlightManager.render(this);
+        TileEntityColonySignRenderer.renderSignHover(this);
     }
 
     public void checkNearbyColony(final Level level)
