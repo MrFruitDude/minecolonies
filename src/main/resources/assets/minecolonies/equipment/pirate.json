@@ -1,0 +1,14 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "minecolonies:pirate"
+      }
+    ],
+    "humanoid_leggings": [
+      {
+        "texture": "minecolonies:pirate"
+      }
+    ]
+  }
+}

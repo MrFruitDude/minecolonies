@@ -93,6 +93,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::itemNbtMatchingTable),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "armor_equipment_assets"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::armorEquipmentAssets),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "client_recipe_sync"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::clientRecipeSync),
           data);

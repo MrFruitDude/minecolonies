@@ -1,0 +1,9 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "minecolonies:build_goggles"
+      }
+    ]
+  }
+}

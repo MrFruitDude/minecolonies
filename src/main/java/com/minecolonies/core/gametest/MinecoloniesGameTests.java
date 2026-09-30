@@ -2467,6 +2467,69 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review CP-ARMOR: since 1.21.4 worn armor is drawn from an equipment asset
+     * (assets/<ns>/equipment/<asset>.json) whose layers point at textures/entity/equipment/<layer>/<texture>.png. The port
+     * kept only the 1.21 textures/models/armor/*_layer_N.png files, so every MineColonies armor piece rendered untextured.
+     * Checks each MineColonies item with an equippable asset has the asset file, the layer its slot draws, and that layer's
+     * texture in the mod's client resources.
+     */
+    public static void armorEquipmentAssets(final GameTestHelper helper)
+    {
+        final java.util.List<String> problems = new java.util.ArrayList<>();
+        int checked = 0;
+        try (final net.minecraft.server.packs.PackResources pack = com.minecolonies.core.generation.ItemNbtCalculator.openModPack(Constants.MOD_ID))
+        {
+            for (final net.minecraft.world.item.Item item : net.minecraft.core.registries.BuiltInRegistries.ITEM)
+            {
+                final Identifier itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item);
+                final net.minecraft.world.item.equipment.Equippable equippable =
+                  new ItemStack(item).get(net.minecraft.core.component.DataComponents.EQUIPPABLE);
+                if (!itemId.getNamespace().equals(Constants.MOD_ID) || equippable == null || equippable.assetId().isEmpty())
+                {
+                    continue;
+                }
+                checked++;
+                final Identifier asset = equippable.assetId().get().identifier();
+                final String layer = equippable.slot() == net.minecraft.world.entity.EquipmentSlot.LEGS ? "humanoid_leggings" : "humanoid";
+                final Identifier assetFile = asset.withPath(p -> "equipment/" + p + ".json");
+                final net.minecraft.server.packs.resources.IoSupplier<java.io.InputStream> json =
+                  pack.getResource(net.minecraft.server.packs.PackType.CLIENT_RESOURCES, assetFile);
+                if (json == null)
+                {
+                    problems.add(itemId + ": missing " + assetFile);
+                    continue;
+                }
+                try (final java.io.Reader reader = new java.io.InputStreamReader(json.get(), java.nio.charset.StandardCharsets.UTF_8))
+                {
+                    final com.google.gson.JsonObject layers = com.google.gson.JsonParser.parseReader(reader).getAsJsonObject().getAsJsonObject("layers");
+                    if (layers == null || !layers.has(layer) || layers.getAsJsonArray(layer).isEmpty())
+                    {
+                        problems.add(itemId + ": " + assetFile + " has no " + layer + " layer");
+                        continue;
+                    }
+                    for (final com.google.gson.JsonElement entry : layers.getAsJsonArray(layer))
+                    {
+                        final Identifier texture = Identifier.parse(entry.getAsJsonObject().get("texture").getAsString())
+                          .withPath(p -> "textures/entity/equipment/" + layer + "/" + p + ".png");
+                        if (pack.getResource(net.minecraft.server.packs.PackType.CLIENT_RESOURCES, texture) == null)
+                        {
+                            problems.add(itemId + ": missing " + texture);
+                        }
+                    }
+                }
+            }
+        }
+        catch (final java.io.IOException e)
+        {
+            throw new IllegalStateException("Could not read equipment assets", e);
+        }
+        Log.getLogger().info("CP-ARMOR checked {} equippable MineColonies items; problems: {}", checked, problems);
+        helper.assertTrue(checked > 0, "no MineColonies equippable items found");
+        helper.assertTrue(problems.isEmpty(), "armor equipment assets broken: " + problems);
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review MC-C07: since 1.21.2 the server sends clients only the recipe types a mod requests, so
      * without JEI the Domum crafting window, restaurant menu and brewing lookups had no recipes. Also checks the restaurant's
      * dish lookup key is the item's registry id (1.21 behaviour), not its description id.
