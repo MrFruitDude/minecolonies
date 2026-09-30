@@ -2214,6 +2214,45 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Regression fixture for review BS-C1: Structurize scan-tool state (bounds, anchor, name, slot storage) must persist on the
+     * item stack. Since item data became immutable components, writing into a copied tag silently drops the change.
+     */
+    public static void structurizeToolDataPersists(final GameTestHelper helper)
+    {
+        final ItemStack tool = new ItemStack(com.ldtteam.structurize.items.ModItems.scanTool.get());
+        final BlockPos start = new BlockPos(1, 2, 3);
+        final BlockPos end = new BlockPos(4, 5, 6);
+        final BlockPos anchor = new BlockPos(2, 3, 4);
+
+        com.ldtteam.structurize.items.AbstractItemWithPosSelector.setBounds(tool, start, end);
+        com.ldtteam.structurize.items.ItemScanTool.setAnchorPos(tool, anchor);
+        com.ldtteam.structurize.items.ItemScanTool.setStructureName(tool, "bsc1");
+        final com.ldtteam.structurize.api.util.Tuple<BlockPos, BlockPos> bounds = com.ldtteam.structurize.items.AbstractItemWithPosSelector.getBounds(tool);
+        Log.getLogger().info("BS-C1 bounds={}..{} anchor={} name='{}'", bounds.getA(), bounds.getB(),
+          com.ldtteam.structurize.items.ItemScanTool.getAnchorPos(tool), com.ldtteam.structurize.items.ItemScanTool.getStructureName(tool));
+        helper.assertTrue(start.equals(bounds.getA()) && end.equals(bounds.getB()), "scan tool bounds were not saved on the stack");
+        helper.assertTrue(anchor.equals(com.ldtteam.structurize.items.ItemScanTool.getAnchorPos(tool)), "scan tool anchor was not saved on the stack");
+        helper.assertTrue("bsc1".equals(com.ldtteam.structurize.items.ItemScanTool.getStructureName(tool)), "scan tool name was not saved on the stack");
+
+        // Slot switch as done by scroll / command-block copy: select slot 3 and store a slot there, then read it back from the stack.
+        final com.ldtteam.structurize.util.ScanToolData data = new com.ldtteam.structurize.util.ScanToolData(
+          tool.getOrDefault(net.minecraft.core.component.DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.EMPTY).copyTag());
+        data.moveTo(3);
+        data.setCurrentSlotData(new com.ldtteam.structurize.util.ScanToolData.Slot("slot3",
+          new com.ldtteam.structurize.client.rendertask.tasks.BoxPreviewData(end, start, java.util.Optional.empty())));
+        com.ldtteam.structurize.items.ModItems.scanTool.get().loadSlot(data, tool);
+
+        final com.ldtteam.structurize.util.ScanToolData reloaded = new com.ldtteam.structurize.util.ScanToolData(
+          tool.getOrDefault(net.minecraft.core.component.DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.EMPTY).copyTag());
+        Log.getLogger().info("BS-C1 reloaded slot={} name='{}' anchor={}", reloaded.getCurrentSlotId(), reloaded.getCurrentSlotData().getName(),
+          com.ldtteam.structurize.items.ItemScanTool.getAnchorPos(tool));
+        helper.assertTrue(reloaded.getCurrentSlotId() == 3, "scan tool current slot was not saved on the stack");
+        helper.assertTrue("slot3".equals(reloaded.getCurrentSlotData().getName()), "scan tool slot data was not saved on the stack");
+        helper.assertTrue(com.ldtteam.structurize.items.ItemScanTool.getAnchorPos(tool) == null, "loading an anchor-less slot must clear the anchor");
+        helper.succeed();
+    }
+
     private static final class TestCreateColonyMessage extends CreateColonyMessage
     {
         private TestCreateColonyMessage(

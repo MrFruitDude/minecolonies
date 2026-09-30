@@ -164,10 +164,10 @@ public class ItemScanAnalyzer extends AbstractItemWithPosSelector
         Timestamp.updateItemStack(stack, component -> {
             if (component.hasTime() && (level.getGameTime() - component.time()) > TIMEOUT_DELAY)
             {
-                final CompoundTag tag = ItemStackNbtHelper.getOrCreateCustomTag(stack);
-                tag.remove("structurize:start_pos");
-                tag.remove("structurize:end_pos");
-                ItemStackNbtHelper.setCustomTag(stack, tag);
+                ItemStackNbtHelper.updateCustomTag(stack, tag -> {
+                    tag.remove("structurize:start_pos");
+                    tag.remove("structurize:end_pos");
+                });
             }
 
             return new Timestamp(level.getGameTime());
