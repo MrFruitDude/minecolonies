@@ -2261,6 +2261,54 @@ public final class MinecoloniesGameTests
             Log.getLogger().info("[multipiston_recipe_and_loot] recipe crafts {}, broken block dropped {}", crafted, drops.get(0).getItem());
         });
     }
+    /**
+     * Regression fixture for review X-263-COMPATSYNC: the dev client logged "Synchronized 0 flowers", "Synchronized 0 monsters" and
+     * "getCopyOfCompostRecipes when empty" after joining, although the server had discovered them. This runs the server's compat
+     * manager through the same serialize -> deserialize path UpdateClientWithCompatibilityMessage uses, into a fresh manager, and
+     * requires the flowers, monsters and compost recipes to survive the trip.
+     */
+    public static void compatSyncRoundTrip(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final com.minecolonies.api.compatibility.ICompatibilityManager server = IColonyManager.getInstance().getCompatibilityManager();
+        final List<String> failures = new ArrayList<>();
+        final int serverFlowers = server.getImmutableFlowers().size();
+        final int serverMonsters = server.getAllMonsters().size();
+        final int serverCompost = server.getCopyOfCompostRecipes().size();
+        if (serverFlowers == 0 || serverMonsters == 0 || serverCompost == 0)
+        {
+            failures.add("server manager empty before sync: flowers=" + serverFlowers + " monsters=" + serverMonsters + " compost=" + serverCompost);
+        }
+
+        final RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(new net.minecraft.network.FriendlyByteBuf(Unpooled.buffer()), level.registryAccess());
+        server.serialize(buf);
+        final com.minecolonies.api.compatibility.CompatibilityManager client = new com.minecolonies.api.compatibility.CompatibilityManager();
+        client.deserialize(buf, level);
+
+        if (client.getImmutableFlowers().size() != serverFlowers)
+        {
+            failures.add("flowers " + client.getImmutableFlowers().size() + " != server " + serverFlowers);
+        }
+        if (client.getAllMonsters().size() != serverMonsters)
+        {
+            failures.add("monsters " + client.getAllMonsters().size() + " != server " + serverMonsters);
+        }
+        if (client.getCopyOfCompostRecipes().size() != serverCompost)
+        {
+            failures.add("compost recipes " + client.getCopyOfCompostRecipes().size() + " != server " + serverCompost);
+        }
+        if (buf.readableBytes() != 0)
+        {
+            failures.add(buf.readableBytes() + " bytes left unread");
+        }
+        if (!failures.isEmpty())
+        {
+            helper.fail("compat sync lost data: " + String.join("; ", failures));
+            return;
+        }
+        helper.succeed();
+    }
+
 
     /**
      * Regression fixture for review X-263-COMPOST: MineColonies foods, crop seeds, mistletoe and composted dirt go into a vanilla

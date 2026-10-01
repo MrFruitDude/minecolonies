@@ -141,6 +141,9 @@ public class DataPackSyncEventHandler
             if (!event.getEntity().level().isClientSide() && event.getEntity() instanceof ServerPlayer)
             {
                 final MinecraftServer server = event.getEntity().level().getServer();
+                // Since 26.x an integrated-server player logs in while the server processes packets, before the first server
+                // tick that runs the initial discovery, so discover now if that has not happened yet (no-op once loaded).
+                load(server);
                 sendPackets((ServerPlayer) event.getEntity(), new UpdateClientWithCompatibilityMessage(server.registryAccess()));
             }
         }
