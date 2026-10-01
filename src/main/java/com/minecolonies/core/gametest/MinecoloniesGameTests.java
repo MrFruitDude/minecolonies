@@ -3175,6 +3175,66 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for X-STZ121 upstream #723 (unify entity logic): block placement spawns the blueprint entities at that
+     * position through the same rules as handleEntitySpawn. The port kept a second inline copy in handleBlockPlacement that
+     * missed #652's rule (text displays paste only in plain creative paste, never in fancy/survival placement), so a fancy paste
+     * (and builders) spawned schematic label text displays into the world. Item frames still spawn, and only once.
+     */
+    public static void structurizeEntityPlacementRules(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final java.util.function.BiFunction<net.minecraft.world.entity.Entity, net.minecraft.world.phys.Vec3, net.minecraft.nbt.CompoundTag> save = (entity, pos) -> {
+            entity.setPos(pos.x, pos.y, pos.z);
+            final net.minecraft.nbt.CompoundTag tag = com.ldtteam.structurize.util.EntityNbtHelper.save(entity, level.registryAccess());
+            entity.discard();
+            return tag;
+        };
+        final net.minecraft.world.entity.Display.TextDisplay label =
+          net.minecraft.world.entity.EntityTypes.TEXT_DISPLAY.create(level, net.minecraft.world.entity.EntitySpawnReason.STRUCTURE);
+        final net.minecraft.world.entity.decoration.ItemFrame frame =
+          net.minecraft.world.entity.EntityTypes.ITEM_FRAME.create(level, net.minecraft.world.entity.EntitySpawnReason.STRUCTURE);
+        frame.setItem(new ItemStack(Items.DIAMOND));
+        final net.minecraft.nbt.CompoundTag labelTag = save.apply(label, new net.minecraft.world.phys.Vec3(0.5, 0.5, 0.5));
+        final net.minecraft.nbt.CompoundTag frameTag = save.apply(frame, new net.minecraft.world.phys.Vec3(0.5, 0.5, 0.5));
+        helper.assertTrue(labelTag != null && frameTag != null, "could not serialize fixture entities");
+
+        final int[] results = new int[4];
+        final String[] names = {"fancy creative labels", "fancy creative frames", "plain creative labels", "plain creative frames"};
+        for (int run = 0; run < 2; run++)
+        {
+            final boolean fancy = run == 0;
+            final BlockPos rel = new BlockPos(1 + run * 3, 2, 2);
+            final BlockPos worldPos = helper.absolutePos(rel);
+            final Blueprint blueprint = new Blueprint((short) 1, (short) 1, (short) 1)
+              .setName("STZ121 entity rules")
+              .setFileName("stz121_entity_rules")
+              .setPackName("Minecolonies Original");
+            blueprint.addBlockState(BlockPos.ZERO, Blocks.AIR.defaultBlockState());
+            blueprint.setEntities(new net.minecraft.nbt.CompoundTag[] {labelTag.copy(), frameTag.copy()});
+            blueprint.setCachePrimaryOffset(BlockPos.ZERO);
+            final com.ldtteam.structurize.placement.structure.CreativeStructureHandler handler =
+              new com.ldtteam.structurize.placement.structure.CreativeStructureHandler(level, worldPos, blueprint, new PlacementSettings(), fancy);
+            final com.ldtteam.structurize.placement.StructurePlacer placer = new com.ldtteam.structurize.placement.StructurePlacer(handler);
+            placer.getIterator().includeEntities();
+            // Place the same position twice: the second pass must find the frame already there.
+            for (int pass = 0; pass < 2; pass++)
+            {
+                placer.handleBlockPlacement(level, worldPos, null,
+                  new com.ldtteam.structurize.util.BlockInfo(BlockPos.ZERO, Blocks.AIR.defaultBlockState(), null));
+            }
+            final net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(worldPos).inflate(1.5);
+            results[run * 2] = level.getEntitiesOfClass(net.minecraft.world.entity.Display.TextDisplay.class, box).size();
+            results[run * 2 + 1] = level.getEntitiesOfClass(net.minecraft.world.entity.decoration.ItemFrame.class, box).size();
+        }
+        Log.getLogger().info("STZ121-723 {}={} {}={} {}={} {}={}", names[0], results[0], names[1], results[1], names[2], results[2], names[3], results[3]);
+        helper.assertTrue(results[0] == 0, "fancy placement must not paste text display labels (1.21 #652), got " + results[0]);
+        helper.assertTrue(results[1] == 1, "fancy placement should place the item frame exactly once, got " + results[1]);
+        helper.assertTrue(results[2] == 1, "plain creative paste should paste the text display once, got " + results[2]);
+        helper.assertTrue(results[3] == 1, "plain creative paste should place the item frame exactly once, got " + results[3]);
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for X-STZ121 upstream #814 (Structurize #813): rotating a blueprint holding a tag substitution block
      * whose replacement carries a blank block-entity tag crashed 1.21 (CapturedBlock palette index). The port rotates through
      * BlockEntityTagSubstitution.ReplacementBlock instead; guard that blank and real replacement data both rotate cleanly.
