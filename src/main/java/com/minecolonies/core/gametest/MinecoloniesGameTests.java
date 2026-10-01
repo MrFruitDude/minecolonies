@@ -4445,6 +4445,9 @@ public final class MinecoloniesGameTests
         // networked mock player fires Structurize's login sync path, which is
         // a separate channel-direction fixture and would obscure this test.
         final ServerPlayer player = FakePlayerFactory.getMinecraft(level);
+        // Stand next to the piston like a player whose piston window is open: the packet is only accepted within container
+        // reach (DPT-C13), and the rejection checks below must fail on the payload, not on the distance.
+        player.setPos(pistonPos.getX() + 0.5, pistonPos.getY() + 1, pistonPos.getZ() + 2.5);
         final IPayloadContext context = new ImmediatePayloadContext(player);
 
         // A normal serverbound update is accepted and applied on the main
@@ -4532,6 +4535,51 @@ public final class MinecoloniesGameTests
             && persistent.getRange() == 1
             && persistent.getSpeed() == TileEntityMultiPiston.MIN_SPEED,
           "multipiston persistent save/load did not preserve configuration");
+        helper.succeed();
+    }
+
+    /**
+     * Regression fixture for review DPT-C13: the serverbound MultiPiston change packet must only be accepted from a player within
+     * container reach of the piston, like vanilla's container stillValid check. Without it any client could reconfigure every loaded
+     * piston in the world from any distance. A player standing next to the piston must still be able to change it.
+     */
+    public static void multiPistonPacketReach(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos relativePistonPos = new BlockPos(5, 1, 5);
+        final BlockPos pistonPos = helper.absolutePos(relativePistonPos);
+        helper.setBlock(relativePistonPos, com.ldtteam.multipiston.ModBlocks.multipiston.value().defaultBlockState());
+        final BlockEntity blockEntity = level.getBlockEntity(pistonPos);
+        helper.assertTrue(blockEntity instanceof TileEntityMultiPiston, "multipiston placement did not create its block entity");
+        final TileEntityMultiPiston piston = (TileEntityMultiPiston) blockEntity;
+        piston.setInput(Direction.WEST);
+        piston.setOutput(Direction.EAST);
+        piston.setRange(1);
+        piston.setSpeed(TileEntityMultiPiston.MAX_SPEED);
+
+        final ServerPlayer player = FakePlayerFactory.get(level,
+          new GameProfile(UUID.nameUUIDFromBytes("minecolonies:multipiston_packet_reach".getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+            "mp-reach-test"));
+        final IPayloadContext context = new ImmediatePayloadContext(player);
+        final MultiPistonChangeMessage change =
+          new MultiPistonChangeMessage(pistonPos, Direction.NORTH, Direction.SOUTH, 2, TileEntityMultiPiston.MIN_SPEED);
+
+        // 64 blocks away: far outside any interaction range.
+        player.setPos(pistonPos.getX() + 64.5, pistonPos.getY(), pistonPos.getZ() + 0.5);
+        MultiPistonChangeMessage.onExecute(change, context);
+        final boolean farChanged = piston.getSpeed() != TileEntityMultiPiston.MAX_SPEED || piston.getInput() != Direction.WEST
+          || piston.getRange() != 1;
+        Log.getLogger().info("[multipiston_packet_reach] far player (64 blocks) changed piston: {} (speed={}, input={}, range={})",
+          farChanged, piston.getSpeed(), piston.getInput(), piston.getRange());
+        helper.assertTrue(!farChanged, "a player 64 blocks away reconfigured the multipiston");
+
+        // Two blocks away, as when the player has just right-clicked the piston and its window is open.
+        player.setPos(pistonPos.getX() + 2.5, pistonPos.getY(), pistonPos.getZ() + 0.5);
+        MultiPistonChangeMessage.onExecute(change, context);
+        final boolean nearChanged = piston.getSpeed() == TileEntityMultiPiston.MIN_SPEED && piston.getInput() == Direction.NORTH
+          && piston.getOutput() == Direction.SOUTH && piston.getRange() == 2;
+        Log.getLogger().info("[multipiston_packet_reach] near player (2 blocks) changed piston: {}", nearChanged);
+        helper.assertTrue(nearChanged, "a player next to the multipiston could not reconfigure it");
         helper.succeed();
     }
 
