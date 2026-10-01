@@ -5476,6 +5476,154 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * BS-S7 / BS-C16: Structurize's point-to-point send path (sendToServer / sendToPlayer) frames every message.
+     * A message that writes no bytes (the scan tool teleport key) must still produce one frame, small messages go out
+     * as one direct frame, and a message too big for one client packet is split and reassembles to the same bytes.
+     */
+    @SuppressWarnings("unchecked")
+    public static void structurizeNetworkFraming(final GameTestHelper helper)
+    {
+        final com.ldtteam.structurize.network.NetworkChannel channel = com.ldtteam.structurize.Network.getNetwork();
+        final net.minecraft.core.RegistryAccess registries = helper.getLevel().registryAccess();
+        final java.lang.reflect.Method split;
+        try
+        {
+            split = com.ldtteam.structurize.network.NetworkChannel.class.getDeclaredMethod("handleSplitting",
+              com.ldtteam.structurize.network.messages.IMessage.class, java.util.function.Consumer.class);
+            split.setAccessible(true);
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            throw new IllegalStateException(e);
+        }
+
+        final java.util.function.Function<com.ldtteam.structurize.network.messages.IMessage, List<com.ldtteam.structurize.network.WrappedMessage>> frames = msg ->
+        {
+            final List<com.ldtteam.structurize.network.WrappedMessage> out = new ArrayList<>();
+            try
+            {
+                split.invoke(channel, msg, (java.util.function.Consumer<net.minecraft.network.protocol.common.custom.CustomPacketPayload>) payload ->
+                {
+                    // Real wire round trip through the payload codec.
+                    final net.minecraft.network.RegistryFriendlyByteBuf buf =
+                      new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), registries);
+                    com.ldtteam.structurize.network.WrappedMessage.CODEC.encode(buf, (com.ldtteam.structurize.network.WrappedMessage) payload);
+                    out.add(com.ldtteam.structurize.network.WrappedMessage.CODEC.decode(buf));
+                    helper.assertTrue(buf.readableBytes() == 0, "payload codec left " + buf.readableBytes() + " bytes");
+                    buf.release();
+                });
+            }
+            catch (final java.lang.reflect.InvocationTargetException e)
+            {
+                throw new IllegalStateException("handleSplitting threw " + e.getCause(), e.getCause());
+            }
+            catch (final ReflectiveOperationException e)
+            {
+                throw new IllegalStateException(e);
+            }
+            return out;
+        };
+
+        // Reassemble frames into (inner message id, bytes) the way the receiver does.
+        final java.util.function.Function<List<com.ldtteam.structurize.network.WrappedMessage>, com.ldtteam.structurize.network.messages.IMessage> receive = list ->
+        {
+            int innerId = -1;
+            final java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            for (int i = 0; i < list.size(); i++)
+            {
+                final com.ldtteam.structurize.network.WrappedMessage frame = list.get(i);
+                if (frame.messageId() != 0)
+                {
+                    helper.assertTrue(list.size() == 1, "direct frame mixed with " + (list.size() - 1) + " others");
+                    innerId = frame.messageId();
+                    bytes.writeBytes(frame.data());
+                    continue;
+                }
+                final net.minecraft.network.FriendlyByteBuf buf = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.wrappedBuffer(frame.data()));
+                buf.readVarInt();
+                helper.assertTrue(buf.readVarInt() == i, "split frame " + i + " out of order");
+                helper.assertTrue(buf.readBoolean() == (i == list.size() - 1), "split frame " + i + " terminator wrong");
+                innerId = buf.readVarInt();
+                bytes.writeBytes(buf.readByteArray());
+                helper.assertTrue(buf.readableBytes() == 0, "split frame " + i + " has trailing bytes");
+            }
+            helper.assertTrue(innerId > 0, "no frame named an inner message");
+            final net.minecraft.network.RegistryFriendlyByteBuf in =
+              new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.wrappedBuffer(bytes.toByteArray()), registries);
+            final com.ldtteam.structurize.network.messages.IMessage msg = channel.getMessagesTypes().get(innerId).getCreator().apply(in);
+            helper.assertTrue(in.readableBytes() == 0, msg.getClass().getSimpleName() + " left " + in.readableBytes() + " bytes");
+            return msg;
+        };
+
+        // 1. Zero-byte message (scan tool teleport key).
+        final List<com.ldtteam.structurize.network.WrappedMessage> empty = frames.apply(new com.ldtteam.structurize.network.messages.ScanToolTeleportMessage());
+        Log.getLogger().info("[structurize_network_framing] teleport frames={}", empty.size());
+        helper.assertTrue(empty.size() == 1, "zero-byte ScanToolTeleportMessage produced " + empty.size() + " frames (expected 1)");
+        helper.assertTrue(receive.apply(empty) instanceof com.ldtteam.structurize.network.messages.ScanToolTeleportMessage, "teleport frame decoded to the wrong message");
+
+        // 2. Small message: one direct frame, no split wrapper.
+        final net.minecraft.network.FriendlyByteBuf settings = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        settings.writeBoolean(true);
+        final List<com.ldtteam.structurize.network.WrappedMessage> small = frames.apply(new com.ldtteam.structurize.network.messages.SyncSettingsToServer(settings));
+        Log.getLogger().info("[structurize_network_framing] settings frames={} ids={}", small.size(), small.stream().map(com.ldtteam.structurize.network.WrappedMessage::messageId).toList());
+        helper.assertTrue(small.size() == 1 && small.get(0).messageId() != 0, "small message was not sent as one direct frame");
+        helper.assertTrue(receive.apply(small) instanceof com.ldtteam.structurize.network.messages.SyncSettingsToServer, "settings frame decoded to the wrong message");
+
+        // 3. Large serverbound message: split under the client packet limit, reassembles exactly.
+        final net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
+        final java.util.Random random = new java.util.Random(7);
+        for (int s = 0; s < 4; s++)
+        {
+            final StringBuilder text = new StringBuilder();
+            for (int i = 0; i < 25_000; i++)
+            {
+                text.append((char) ('a' + random.nextInt(26)));
+            }
+            tag.putString("big" + s, text.toString());
+        }
+        tag.putInt("n", 42);
+        final List<com.ldtteam.structurize.network.WrappedMessage> large =
+          frames.apply(new com.ldtteam.structurize.network.messages.UpdateScanToolMessage(new com.ldtteam.structurize.util.ScanToolData(tag)));
+        final int biggest = large.stream().mapToInt(f -> f.data().length).max().orElse(0);
+        Log.getLogger().info("[structurize_network_framing] large frames={} biggest={}", large.size(), biggest);
+        helper.assertTrue(large.size() >= 4, "100 KB message produced only " + large.size() + " frames");
+        helper.assertTrue(biggest <= 30_100, "split frame of " + biggest + " bytes exceeds the serverbound budget");
+        final com.ldtteam.structurize.network.messages.IMessage back = receive.apply(large);
+        final net.minecraft.network.FriendlyByteBuf reencoded = new net.minecraft.network.FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        back.toBytes(reencoded);
+        helper.assertTrue(tag.equals(reencoded.readNbt()), "reassembled scan tool tag differs from the sent one");
+
+        // 4. Receiver reassembly of many chunks (timing only, logged).
+        final java.util.Map<Integer, byte[]> chunks = new java.util.HashMap<>();
+        for (int i = 0; i < 200; i++)
+        {
+            chunks.put(i, new byte[30_000]);
+        }
+        long t0 = System.nanoTime();
+        final byte[] reduced = chunks.entrySet().stream().sorted(java.util.Map.Entry.comparingByKey()).map(java.util.Map.Entry::getValue)
+          .reduce(new byte[0], com.google.common.primitives.Bytes::concat);
+        final long reduceUs = (System.nanoTime() - t0) / 1000;
+        try
+        {
+            final java.lang.reflect.Method assemble =
+              com.ldtteam.structurize.network.messages.splitting.SplitPacketMessage.class.getDeclaredMethod("assemble", java.util.Map.class);
+            t0 = System.nanoTime();
+            final byte[] joined = (byte[]) assemble.invoke(null, chunks);
+            Log.getLogger().info("[structurize_network_framing] 200x30000 bytes: reduce(concat) {} us, assemble {} us", reduceUs, (System.nanoTime() - t0) / 1000);
+            helper.assertTrue(java.util.Arrays.equals(joined, reduced), "assemble differs from ordered concatenation");
+        }
+        catch (final NoSuchMethodException e)
+        {
+            Log.getLogger().info("[structurize_network_framing] 200x30000 bytes: reduce(concat) {} us, no assemble method", reduceUs);
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            throw new IllegalStateException(e);
+        }
+        helper.succeed();
+    }
+
+    /**
      * VanillaParticleMessage must survive a real network encode/decode (dedicated server path; an integrated
      * server hands payloads over in memory). Covers every particle option MineColonies sends.
      */

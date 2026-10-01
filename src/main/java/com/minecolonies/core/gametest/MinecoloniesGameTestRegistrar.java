@@ -297,6 +297,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeScanToolTeleport),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_network_framing"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeNetworkFraming),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "vanilla_particle_message_round_trip"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::vanillaParticleMessageRoundTrip),
           data);
