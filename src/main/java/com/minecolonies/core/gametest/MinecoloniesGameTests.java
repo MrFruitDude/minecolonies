@@ -2422,6 +2422,42 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Guard for review BS-C17: in a packaged mod FML 12's content root is the jar FILE, so the built-in structure packs
+     * (blueprints/&lt;modid&gt;) must be found inside the jar. The port only looked for a folder under each root, which
+     * exists in dev runs only, so a dedicated server/client running the release jars had no MineColonies packs at all.
+     */
+    public static void structurizePackFolderInJar(final GameTestHelper helper)
+    {
+        try
+        {
+            final java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("bs-c17");
+            final java.nio.file.Path jar = dir.resolve("packmod.jar");
+            try (final java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(java.nio.file.Files.newOutputStream(jar)))
+            {
+                zip.putNextEntry(new java.util.zip.ZipEntry("blueprints/packmod/demo/pack.json"));
+                zip.write("{\"name\":\"Demo\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+            final java.nio.file.Path folderRoot = java.nio.file.Files.createDirectories(dir.resolve("classes/blueprints/packmod/demo")).getParent().getParent().getParent();
+
+            final java.nio.file.Path inJar = com.ldtteam.structurize.storage.ModBlueprintFolders.find(java.util.List.of(jar), "packmod");
+            final java.nio.file.Path inFolder = com.ldtteam.structurize.storage.ModBlueprintFolders.find(java.util.List.of(folderRoot), "packmod");
+            final java.nio.file.Path missing = com.ldtteam.structurize.storage.ModBlueprintFolders.find(java.util.List.of(jar, folderRoot), "othermod");
+            Log.getLogger().info("[structurize_pack_folder_in_jar] jar {} folder {} missing {}", inJar, inFolder, missing);
+            helper.assertTrue(inJar != null && java.nio.file.Files.isRegularFile(inJar.resolve("demo/pack.json")),
+              "pack folder inside a jar content root not found: " + inJar);
+            helper.assertTrue(inFolder != null && java.nio.file.Files.isDirectory(inFolder.resolve("demo")),
+              "pack folder inside a folder content root not found: " + inFolder);
+            helper.assertTrue(missing == null, "found a pack folder for a mod that ships none: " + missing);
+            helper.succeed();
+        }
+        catch (final java.io.IOException e)
+        {
+            helper.fail("cannot build the test jar: " + e);
+        }
+    }
+
 
     /**
      * Guard for review MC-S07: the data listeners that build ItemStacks (crafter recipes, research, visitors, quests,
@@ -2463,7 +2499,8 @@ public final class MinecoloniesGameTests
         }
 
         int recruitCosts = 0;
-        for (int level = 1; level <= 5; level++)
+        // Tavern levels 1-3 only (tavern max level 3): above that the rarity roll can exceed MAX_RARITY 9, as in 1.21.
+        for (int level = 1; level <= 3; level++)
         {
             final var cost = com.minecolonies.core.datalistener.RecruitmentItemsListener.getRandomRecruitCost(level);
             recruitCosts++;
