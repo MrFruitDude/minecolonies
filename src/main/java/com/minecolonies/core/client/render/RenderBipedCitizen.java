@@ -31,22 +31,6 @@ import org.jetbrains.annotations.NotNull;
 public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, CitizenRenderState, CitizenModel<CitizenRenderState>>
 {
     private static final double  SHADOW_SIZE   = 0.5F;
-    private static final String RENDER_META_WORKING = "working";
-    private static final String RENDER_META_STUDYING = "study";
-    private static final String RENDER_META_BOOK = "book";
-    private static final String RENDER_META_FLOWERS = "flowers";
-    private static final String RENDER_META_POTION = "potion";
-    private static final String RENDER_META_CARROT = "carrot";
-    private static final String RENDER_META_LOGS = "logs";
-    private static final String RENDER_META_ARROW = "arrow";
-    private static final String RENDER_META_BUCKET = "bucket";
-    private static final String RENDER_META_BACKPACK = "backpack";
-    private static final String RENDER_META_STONE = "stone";
-    private static final String RENDER_META_TORCH = "torch";
-    private static final String RENDER_META_SHOVEL = "shovel";
-    private static final String RENDER_META_PICKAXE = "pickaxe";
-    private static final String RENDER_META_ROD = "rod";
-    private static final String RENDER_META_FISH = "fish";
     public static        boolean isItGhostTime = false;
     private final CitizenModel<CitizenRenderState> defaultModel;
 
@@ -83,24 +67,24 @@ public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, Citiz
         state.setCitizen(citizen);
         state.rightArmPose = RenderUtils.getArmPose(citizen, InteractionHand.MAIN_HAND);
         state.leftArmPose = RenderUtils.getArmPose(citizen, InteractionHand.OFF_HAND);
-        final String renderMetadata = citizen.getRenderMetadata();
-        state.working = hasRenderMetadata(renderMetadata, RENDER_META_WORKING);
-        state.studying = hasRenderMetadata(renderMetadata, RENDER_META_STUDYING);
-        state.bookVisible = hasRenderMetadata(renderMetadata, RENDER_META_BOOK);
-        state.flowersVisible = hasRenderMetadata(renderMetadata, RENDER_META_FLOWERS);
-        state.potionVisible = hasRenderMetadata(renderMetadata, RENDER_META_POTION);
-        state.carrotVisible = hasRenderMetadata(renderMetadata, RENDER_META_CARROT);
-        state.logsVisible = hasRenderMetadata(renderMetadata, RENDER_META_LOGS);
-        state.arrowVisible = hasRenderMetadata(renderMetadata, RENDER_META_ARROW);
-        state.bucketVisible = hasRenderMetadata(renderMetadata, RENDER_META_BUCKET);
-        state.backpackVisible = hasRenderMetadata(renderMetadata, RENDER_META_BACKPACK);
+        final int flags = CitizenRenderFlags.of(citizen.getRenderMetadata());
+        state.working = (flags & CitizenRenderFlags.WORKING) != 0;
+        state.studying = (flags & CitizenRenderFlags.STUDYING) != 0;
+        state.bookVisible = (flags & CitizenRenderFlags.BOOK) != 0;
+        state.flowersVisible = (flags & CitizenRenderFlags.FLOWERS) != 0;
+        state.potionVisible = (flags & CitizenRenderFlags.POTION) != 0;
+        state.carrotVisible = (flags & CitizenRenderFlags.CARROT) != 0;
+        state.logsVisible = (flags & CitizenRenderFlags.LOGS) != 0;
+        state.arrowVisible = (flags & CitizenRenderFlags.ARROW) != 0;
+        state.bucketVisible = (flags & CitizenRenderFlags.BUCKET) != 0;
+        state.backpackVisible = (flags & CitizenRenderFlags.BACKPACK) != 0;
         state.mainHandEmpty = citizen.getMainHandItem().isEmpty();
-        state.stoneLidHidden = !hasRenderMetadata(renderMetadata, RENDER_META_STONE);
-        state.torchesVisible = hasRenderMetadata(renderMetadata, RENDER_META_TORCH);
-        state.shovelVisible = hasRenderMetadata(renderMetadata, RENDER_META_SHOVEL);
-        state.pickaxeVisible = hasRenderMetadata(renderMetadata, RENDER_META_PICKAXE);
-        state.fishingPoleVisible = hasRenderMetadata(renderMetadata, RENDER_META_ROD);
-        state.fishVisible = hasRenderMetadata(renderMetadata, RENDER_META_FISH);
+        state.stoneLidHidden = (flags & CitizenRenderFlags.STONE) == 0;
+        state.torchesVisible = (flags & CitizenRenderFlags.TORCH) != 0;
+        state.shovelVisible = (flags & CitizenRenderFlags.SHOVEL) != 0;
+        state.pickaxeVisible = (flags & CitizenRenderFlags.PICKAXE) != 0;
+        state.fishingPoleVisible = (flags & CitizenRenderFlags.ROD) != 0;
+        state.fishVisible = (flags & CitizenRenderFlags.FISH) != 0;
         state.customHeadHidden = citizen.getCitizenDataView() != null
             && citizen.getCitizenDataView().getCustomTextureUUID() != null;
         state.actualBodyRotation = 0.0F;
@@ -203,10 +187,5 @@ public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, Citiz
             return citizen.getCitizenDataView().getCustomTexture();
         }
         return citizen == null ? Identifier.withDefaultNamespace("textures/entity/citizen/default/settlermale1_b.png") : citizen.getTexture();
-    }
-
-    private static boolean hasRenderMetadata(final String renderMetadata, final String key)
-    {
-        return renderMetadata != null && renderMetadata.contains(key);
     }
 }

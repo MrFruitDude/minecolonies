@@ -5228,4 +5228,91 @@ public final class MinecoloniesGameTests
         helper.assertTrue(failures.isEmpty(), "client recipe watcher: " + failures);
         helper.succeed();
     }
+
+    /**
+     * Guard for MC-S13: the citizen renderer reads prop visibility from {@link com.minecolonies.core.client.render.CitizenRenderFlags}
+     * instead of 16 substring checks per frame. Bits must equal the substring checks they replace, keys must be the
+     * strings the worker AIs write, and the cached lookup must equal the uncached parse.
+     */
+    public static void citizenRenderFlags(final GameTestHelper helper)
+    {
+        final List<String> failures = new ArrayList<>();
+        final String[] keys = com.minecolonies.core.client.render.CitizenRenderFlags.KEYS;
+        final String[] aiKeys = {
+            com.minecolonies.core.entity.ai.workers.AbstractEntityAIInteract.RENDER_META_WORKING,
+            com.minecolonies.core.entity.ai.workers.education.EntityAIStudy.RENDER_META_STUDYING,
+            com.minecolonies.core.entity.ai.workers.education.EntityAIStudy.RENDER_META_BOOK,
+            com.minecolonies.core.entity.ai.workers.production.agriculture.EntityAIWorkFlorist.RENDER_META_FLOWERS,
+            com.minecolonies.core.entity.ai.workers.guard.EntityAIDruid.RENDER_META_POTION,
+            com.minecolonies.core.entity.ai.workers.production.herders.EntityAIWorkRabbitHerder.RENDER_META_CARROT,
+            com.minecolonies.core.entity.ai.workers.production.EntityAIWorkLumberjack.RENDER_META_LOGS,
+            com.minecolonies.core.entity.ai.workers.guard.EntityAIRange.RENDER_META_ARROW,
+            com.minecolonies.core.entity.ai.workers.production.herders.EntityAIWorkCowboy.RENDER_META_BUCKET,
+            com.minecolonies.core.entity.ai.workers.service.EntityAIWorkDeliveryman.RENDER_META_BACKPACK,
+            com.minecolonies.core.entity.ai.workers.production.EntityAIStructureMiner.RENDER_META_STONE,
+            com.minecolonies.core.entity.ai.workers.production.EntityAIStructureMiner.RENDER_META_TORCH,
+            com.minecolonies.core.entity.ai.workers.production.EntityAIStructureMiner.RENDER_META_SHOVEL,
+            com.minecolonies.core.entity.ai.workers.production.EntityAIStructureMiner.RENDER_META_PICKAXE,
+            com.minecolonies.core.entity.ai.workers.production.agriculture.EntityAIWorkFisherman.RENDER_META_ROD,
+            com.minecolonies.core.entity.ai.workers.production.agriculture.EntityAIWorkFisherman.RENDER_META_FISH};
+        if (!java.util.Arrays.equals(keys, aiKeys))
+        {
+            failures.add("keys " + java.util.Arrays.toString(keys) + " != AI keys " + java.util.Arrays.toString(aiKeys));
+        }
+        if (com.minecolonies.core.client.render.CitizenRenderFlags.of(null) != 0) failures.add("null metadata has flags");
+        if (com.minecolonies.core.client.render.CitizenRenderFlags.of("") != 0) failures.add("empty metadata has flags");
+        final java.util.Random random = new java.util.Random(1337);
+        final List<String> samples = new ArrayList<>(List.of("bowl", "bucketbowl", "rodfish", "torchstoneshovelpickaxe", "studybook", "working"));
+        for (int i = 0; i < 2000; i++)
+        {
+            final StringBuilder sb = new StringBuilder();
+            for (final String key : aiKeys)
+            {
+                if (random.nextInt(4) == 0) sb.append(key);
+            }
+            if (random.nextInt(8) == 0) sb.append("bowl");
+            samples.add(sb.toString());
+        }
+        for (final String sample : samples)
+        {
+            for (int bit = 0; bit < aiKeys.length; bit++)
+            {
+                // Expected = the substring check the renderer did before MC-S13.
+                final boolean expected = sample.contains(aiKeys[bit]);
+                // Fresh String instance each time so the cache is hit by value, not identity.
+                final int cached = com.minecolonies.core.client.render.CitizenRenderFlags.of(new String(sample));
+                if (((cached >> bit) & 1) != (expected ? 1 : 0))
+                {
+                    failures.add("'" + sample + "' bit " + aiKeys[bit] + " expected " + expected);
+                }
+            }
+            if (com.minecolonies.core.client.render.CitizenRenderFlags.of(sample) != com.minecolonies.core.client.render.CitizenRenderFlags.parse(sample))
+            {
+                failures.add("cached != parse for '" + sample + "'");
+            }
+        }
+        // Timing note only (not asserted): 16 contains per extraction vs one cached lookup, as the renderer does it.
+        final String[] frame = {"torchstoneshovelpickaxe", "rodfish", "working", "backpack", "studybook", "logs", "", "bucketbowl"};
+        long sink = 0;
+        for (int warm = 0; warm < 3; warm++)
+        {
+            long t0 = System.nanoTime();
+            for (int i = 0; i < 1_000_000; i++)
+            {
+                final String m = frame[i & 7];
+                for (final String key : aiKeys) if (m.contains(key)) sink++;
+            }
+            long t1 = System.nanoTime();
+            for (int i = 0; i < 1_000_000; i++)
+            {
+                sink += Integer.bitCount(com.minecolonies.core.client.render.CitizenRenderFlags.of(frame[i & 7]));
+            }
+            long t2 = System.nanoTime();
+            Log.getLogger().info("[citizen_render_flags] round {} per 1M extractions: contains={} ms cached={} ms (sink {})",
+                warm, (t1 - t0) / 1_000_000, (t2 - t1) / 1_000_000, sink);
+        }
+        Log.getLogger().info("[citizen_render_flags] samples={} failures={}", samples.size(), failures.size() > 20 ? failures.subList(0, 20) : failures);
+        helper.assertTrue(failures.isEmpty(), "citizen render flags: " + failures.size() + " failures, first " + (failures.isEmpty() ? "" : failures.get(0)));
+        helper.succeed();
+    }
 }
