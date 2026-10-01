@@ -85,3 +85,23 @@ tasks.matching { it.name == 'neoFormRecompile' }.configureEach {
         if (fixed != text) holderSet.text = fixed
     }
 }
+
+// Port 26.3: the 1.21 build expanded the ${...} placeholders in neoforge.mods.toml
+// through OperaPublicaCreator's mod.gradle. Tableau does not, so the jars shipped them
+// literally: FML then skipped every version check and printed messages like
+// "requires structurize ${structurize_version} or above". Fill them from
+// gradle.properties here; FML itself resolves ${file.jarVersion} from the manifest.
+tasks.named('processResources', ProcessResources).configure {
+    def modsTomlValues = ['fml_range', 'neoforge_range', 'minecraft_range', 'structurizeRange', 'blockUiRange', 'domumOrnamentumRange', 'multiPistonRange', 'jeiRange', 'journeymapRange', 'dynamicTreesRange'].collectEntries { [(it): project.property(it).toString()] }
+    inputs.properties(modsTomlValues)
+    filesMatching('META-INF/neoforge.mods.toml') {
+        filter { String line ->
+            modsTomlValues.each { k, v -> line = line.replace('${' + k + '}', v) }
+            def unresolved = line =~ /\$\{(?!file\.jarVersion\})[^}]*\}/
+            if (unresolved.find()) {
+                throw new GradleException("Unresolved neoforge.mods.toml placeholder ${unresolved.group()} in: ${line.trim()}")
+            }
+            line
+        }
+    }
+}
