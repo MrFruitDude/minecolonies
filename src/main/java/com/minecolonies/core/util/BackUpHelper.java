@@ -588,10 +588,10 @@ public final class BackUpHelper
             }
 
             // Save config
-            final File config = new File(topworldDir, "serverconfig" + File.separator + "minecolonies-server.toml");
+            final File config = new File(topworldDir, "syncedconfig" + File.separator + "minecolonies-synced.toml");
             if (config.exists())
             {
-                addFileToZipWithPath(worldname + File.separator + "serverconfig" + File.separator + "minecolonies-server.toml", zos, config);
+                addFileToZipWithPath(worldname + File.separator + "syncedconfig" + File.separator + "minecolonies-synced.toml", zos, config);
             }
 
             // Mod list

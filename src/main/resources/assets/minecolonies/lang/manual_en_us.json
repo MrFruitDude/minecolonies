@@ -1635,7 +1635,7 @@
   "com.minecolonies.coremod.info.composter.1.name": "Restrictions",
   "com.minecolonies.coremod.info.composter.1": "Now let's cover restrictions:\n\n 1. You must choose which items you want the Composter to use to make compost with. This is found on page two of the hut GUI. \n   Be careful using food items if you have a large colony but not many food production huts!",
   "com.minecolonies.coremod.info.composter.2.name": "FAQ",
-  "com.minecolonies.coremod.info.composter.2": "Now let's cover some frequently asked questions:\n\n Q 1. Can I use items from other mods?\n   A 1. Yes, but these must be added in the MineColonies configuration file. This is found in (your instance folder)/config/minecolonies-common.toml.",
+  "com.minecolonies.coremod.info.composter.2": "Now let's cover some frequently asked questions:\n\n Q 1. Can I use items from other mods?\n   A 1. Yes, but these must be added in the MineColonies configuration file. This is found in (your instance folder)/config/minecolonies-local.toml.",
   "com.minecolonies.coremod.info.composter.3.name": "Leveling",
   "com.minecolonies.coremod.info.composter.3": "As all workers do, the Composter levels up while working.\n At higher levels, a Composter's speed increases. The higher their hut level and Intelligence skill, the quicker they level up. \n However, their level is capped by the level of their home. Thus, if they are unhappy with their living conditions, they will stop leveling until you provide them with better housing.",
 
