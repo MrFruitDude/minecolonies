@@ -3305,4 +3305,24 @@ public final class MinecoloniesGameTests
         {
         }
     }
+
+    /**
+     * X-263-TESTSYNC: a world with MineColonies' GameTests loaded (any dev run) sends every test instance to
+     * joining clients. Its type must be in the test_instance_type registry, otherwise encoding throws
+     * "Unregistered holder" and the client never gets past the loading screen.
+     */
+    public static void gameTestInstanceTypeRegistered(final GameTestHelper helper)
+    {
+        final net.minecraft.core.RegistryAccess access = helper.getLevel().registryAccess();
+        final net.minecraft.gametest.framework.GameTestInstance instance = access.lookupOrThrow(net.minecraft.core.registries.Registries.TEST_INSTANCE)
+          .getValue(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_lifecycle"));
+        helper.assertTrue(instance != null, "Test instance minecolonies:colony_lifecycle not registered");
+        helper.assertTrue(net.minecraft.core.registries.BuiltInRegistries.TEST_INSTANCE_TYPE.getKey(instance.codec()) != null,
+          "MineColonies test instance type is not in the test_instance_type registry");
+        final var encoded = net.minecraft.gametest.framework.GameTestInstance.DIRECT_CODEC.encodeStart(
+          net.minecraft.resources.RegistryOps.create(net.minecraft.nbt.NbtOps.INSTANCE, access), instance);
+        helper.assertTrue(encoded.isSuccess(), "Test instance cannot be encoded for clients: "
+          + encoded.error().map(e -> e.message()).orElse(""));
+        helper.succeed();
+    }
 }

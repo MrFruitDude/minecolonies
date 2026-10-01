@@ -196,7 +196,7 @@ public class MineColonies
         if (Boolean.getBoolean("neoforge.enableGameTest")
               || System.getProperty("forge.enabledGameTestNamespaces", "").contains(Constants.MOD_ID))
         {
-            modBus.addListener(new MinecoloniesGameTestRegistrar());
+            MinecoloniesGameTestRegistrar.register(modBus);
         }
 
         modBus.register(this.getClass());

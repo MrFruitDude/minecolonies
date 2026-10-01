@@ -1,12 +1,17 @@
 package com.minecolonies.core.gametest;
 
 import com.minecolonies.api.util.constant.Constants;
+import com.mojang.serialization.MapCodec;
 import net.minecraft.core.Holder;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.gametest.framework.GameTestInstance;
 import net.minecraft.gametest.framework.TestData;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Rotation;
+import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
 import java.util.function.Consumer;
 
@@ -15,6 +20,27 @@ import java.util.function.Consumer;
  */
 public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGameTestsEvent>
 {
+    /**
+     * The custom instance type must be in the test_instance_type registry: worlds with GameTests loaded sync every
+     * test instance to joining clients, and encoding an unregistered type throws, leaving the client on the loading screen.
+     */
+    private static final DeferredRegister<MapCodec<? extends GameTestInstance>> INSTANCE_TYPES =
+      DeferredRegister.create(Registries.TEST_INSTANCE_TYPE, Constants.MOD_ID);
+
+    static
+    {
+        INSTANCE_TYPES.register("minecolonies_function", () -> MinecoloniesGameTestInstance.CODEC);
+    }
+
+    /**
+     * Hooks the GameTest registrations onto the mod bus. Call during mod construction only.
+     */
+    public static void register(final IEventBus modBus)
+    {
+        INSTANCE_TYPES.register(modBus);
+        modBus.addListener(new MinecoloniesGameTestRegistrar());
+    }
+
     @Override
     public void accept(final RegisterGameTestsEvent event)
     {
@@ -135,6 +161,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_dynamic_registry_items"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeDynamicRegistryItems),
+          data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest_instance_type_registered"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::gameTestInstanceTypeRegistered),
           data);
     }
 }
