@@ -2861,6 +2861,13 @@ public final class MinecoloniesGameTests
         final ServerLevel level = helper.getLevel();
         final BlockPos idlePos = helper.absolutePos(new BlockPos(1, 2, 1));
         final BlockPos brokenPos = helper.absolutePos(new BlockPos(5, 2, 1));
+        // In a full batch the test cell can sit in a chunk that holds no entity-ticking ticket, so the idle cart never ticks and
+        // never reaches its 20-tick cleanup check (seen as "after 0 ticks"). Force both carts' chunks like
+        // container_contents_drop_on_break does; succeedWhen below gives a chunk still being promoted its ticks.
+        for (final BlockPos pos : List.of(idlePos, brokenPos))
+        {
+            level.setChunkForced(pos.getX() >> 4, pos.getZ() >> 4, true);
+        }
 
         final com.minecolonies.api.entity.other.MinecoloniesMinecart idle =
           com.minecolonies.api.entity.ModEntities.MINECART.create(level, net.minecraft.world.entity.EntitySpawnReason.EVENT);
@@ -3611,6 +3618,55 @@ public final class MinecoloniesGameTests
         final Object chestHandler = IItemHandlerCapProvider.wrap(chest).getItemHandlerCap();
         Log.getLogger().info("MC-C08 chest -> {}", chestHandler);
         helper.assertTrue(chestHandler != null, "wrap(chest) lost its item handler");
+        helper.succeed();
+    }
+
+    /**
+     * Regression fixture for review MC-G05: MineColonies' global loot modifiers (supply camp/ship items in structure chests,
+     * crop seeds in dungeon chests and from grass) must be loaded by NeoForge and must actually fire when a vanilla chest
+     * table is rolled. 1.21 listed them in data/forge/loot_modifiers/global_loot_modifiers.json; NeoForge 26.x instead
+     * discovers every file under data/&lt;ns&gt;/loot_modifiers.
+     */
+    public static void globalLootModifiersActive(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final net.neoforged.neoforge.common.loot.LootModifierManager manager = level.getServer().getServerResources().managers()
+          .getListener(net.neoforged.neoforge.resource.NeoForgeReloadListeners.LOOT_MODIFIERS_KEY);
+        final java.util.List<String> expected = java.util.List.of("supplycamp_loot", "supplyship_loot", "crops/dungeon",
+          "crops/blocks/short_grass", "crops/blocks/tall_grass", "crops/blocks/fern", "crops/blocks/dead_bush",
+          "crops/blocks/seagrass", "crops/blocks/small_dripleaf");
+        for (final String path : expected)
+        {
+            final Identifier id = Identifier.fromNamespaceAndPath(com.minecolonies.api.util.constant.Constants.MOD_ID, path);
+            final net.neoforged.neoforge.common.loot.IGlobalLootModifier modifier = manager.getModifier(id);
+            helper.assertTrue(modifier != null, "Global loot modifier " + id + " is not loaded");
+            if (modifier instanceof net.neoforged.neoforge.common.loot.AddTableLootModifier addTable)
+            {
+                helper.assertTrue(level.getServer().reloadableRegistries().getLootTable(addTable.table()) != net.minecraft.world.level.storage.loot.LootTable.EMPTY,
+                  "Loot modifier " + id + " adds missing table " + addTable.table().identifier());
+            }
+        }
+
+        final net.minecraft.world.level.storage.loot.LootTable dungeon =
+          level.getServer().reloadableRegistries().getLootTable(net.minecraft.world.level.storage.loot.BuiltInLootTables.SIMPLE_DUNGEON);
+        final net.minecraft.world.level.storage.loot.LootParams params = new net.minecraft.world.level.storage.loot.LootParams.Builder(level)
+          .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.ORIGIN, net.minecraft.world.phys.Vec3.atCenterOf(helper.absolutePos(BlockPos.ZERO)))
+          .create(net.minecraft.world.level.storage.loot.parameters.LootContextParamSets.CHEST);
+        final java.util.Map<String, Integer> modded = new java.util.TreeMap<>();
+        for (int roll = 0; roll < 2000; roll++)
+        {
+            for (final ItemStack stack : dungeon.getRandomItems(params))
+            {
+                final Identifier itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem());
+                if (itemId.getNamespace().equals(com.minecolonies.api.util.constant.Constants.MOD_ID))
+                {
+                    modded.merge(itemId.getPath(), stack.getCount(), Integer::sum);
+                }
+            }
+        }
+        Log.getLogger().info("MC-G05 simple_dungeon x2000 MineColonies items: {}", modded);
+        helper.assertTrue(modded.containsKey("supplycampdeployer"), "simple_dungeon never produced a supply camp: " + modded);
+        helper.assertTrue(modded.keySet().stream().anyMatch(p -> !p.startsWith("supply")), "simple_dungeon never produced a MineColonies crop: " + modded);
         helper.succeed();
     }
 
