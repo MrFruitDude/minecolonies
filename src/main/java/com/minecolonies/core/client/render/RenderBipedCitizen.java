@@ -172,8 +172,15 @@ public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, Citiz
         super.submitNameDisplay(state, poseStack, submitNodeCollector, camera);
 
         final AbstractEntityCitizen citizen = state.getCitizen();
-        if (citizen != null && citizen.getCitizenDataView() != null && citizen.getCitizenDataView().hasVisibleStatus())
+        if (citizen != null && citizen.getCitizenDataView() != null && citizen.getCitizenDataView().hasVisibleStatus()
+              && state.distanceToCameraSq <= 4096.0D)
         {
+            // Same placement as 1.21: above the head, facing the camera, at name-tag pixel scale.
+            // Scale follows 26.3's own name tags (positive x) so the quad faces the camera instead of being culled.
+            poseStack.pushPose();
+            poseStack.translate(0, state.boundingBoxHeight + (state.isBaby ? 0.5f : 0.8f), 0);
+            poseStack.rotate(camera.orientation);
+            poseStack.scale(0.025F, -0.025F, 0.025F);
             submitNodeCollector.submitCustomGeometry(poseStack,
                 RenderTypes.worldEntityIcon(citizen.getCitizenDataView().getStatusIcon()),
                 (matrix, vertices) -> {
@@ -182,6 +189,7 @@ public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, Citiz
                     vertices.addVertex(matrix, 5, 10, 0).setUv(1, 1);
                     vertices.addVertex(matrix, 5, 0, 0).setUv(1, 0);
                 });
+            poseStack.popPose();
         }
     }
 
