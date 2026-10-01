@@ -205,4 +205,34 @@ public final class RecipeUtils
     {
         return clientRecipeGeneration;
     }
+
+    /**
+     * Tracks the client recipe snapshot for a screen that may open before the recipe payload arrives.
+     */
+    public static final class ClientRecipeWatch
+    {
+        private long observedGeneration = Long.MIN_VALUE;
+
+        /**
+         * Records the current snapshot as seen (call when the screen opens and builds its lists).
+         */
+        public void markSeen()
+        {
+            observedGeneration = clientRecipeGeneration;
+        }
+
+        /**
+         * @return true once for each snapshot replaced or cleared since the last call or {@link #markSeen()}.
+         */
+        public boolean changed()
+        {
+            final long current = clientRecipeGeneration;
+            if (current == observedGeneration)
+            {
+                return false;
+            }
+            observedGeneration = current;
+            return true;
+        }
+    }
 }

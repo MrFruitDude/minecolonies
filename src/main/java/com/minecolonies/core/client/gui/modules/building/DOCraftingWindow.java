@@ -74,7 +74,7 @@ public class DOCraftingWindow extends AbstractModuleWindow<DOCraftingModuleView>
      * Recipe snapshot generation used to refresh a screen that opened while
      * the client recipe payload was still loading.
      */
-    private long observedRecipeGeneration = Long.MIN_VALUE;
+    private final RecipeUtils.ClientRecipeWatch recipeWatch = new RecipeUtils.ClientRecipeWatch();
 
     /**
      * Constructor for the minimum stock window view.
@@ -239,7 +239,7 @@ public class DOCraftingWindow extends AbstractModuleWindow<DOCraftingModuleView>
     public void onOpened()
     {
         super.onOpened();
-        observedRecipeGeneration = RecipeUtils.clientSyncedRecipesGeneration();
+        recipeWatch.markSeen();
         updateStockList();
     }
 
@@ -247,10 +247,8 @@ public class DOCraftingWindow extends AbstractModuleWindow<DOCraftingModuleView>
     public void onUpdate()
     {
         super.onUpdate();
-        final long currentRecipeGeneration = RecipeUtils.clientSyncedRecipesGeneration();
-        if (currentRecipeGeneration != observedRecipeGeneration)
+        if (recipeWatch.changed())
         {
-            observedRecipeGeneration = currentRecipeGeneration;
             updateStockList();
         }
     }

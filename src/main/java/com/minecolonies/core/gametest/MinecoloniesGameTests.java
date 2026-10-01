@@ -5191,4 +5191,41 @@ public final class MinecoloniesGameTests
             bufB.release();
         }
     }
+
+    /**
+     * Guard for the shared client recipe watcher used by the Domum crafting and restaurant menu windows:
+     * a screen refreshes once per replaced/cleared snapshot and not on every update.
+     */
+    public static void clientRecipeWatch(final GameTestHelper helper)
+    {
+        final net.minecraft.world.item.crafting.RecipeMap previous = com.minecolonies.api.crafting.RecipeUtils.clientSyncedRecipes();
+        final com.minecolonies.api.crafting.RecipeUtils.ClientRecipeWatch watch = new com.minecolonies.api.crafting.RecipeUtils.ClientRecipeWatch();
+        final List<String> failures = new ArrayList<>();
+        try
+        {
+            if (!watch.changed()) failures.add("fresh watcher reported no change");
+            if (watch.changed()) failures.add("second call without a new snapshot reported a change");
+            watch.markSeen();
+            if (watch.changed()) failures.add("change reported right after markSeen");
+            com.minecolonies.api.crafting.RecipeUtils.setClientSyncedRecipes(net.minecraft.world.item.crafting.RecipeMap.EMPTY);
+            if (!watch.changed()) failures.add("new snapshot not reported");
+            if (watch.changed()) failures.add("new snapshot reported twice");
+            com.minecolonies.api.crafting.RecipeUtils.clearClientSyncedRecipes();
+            if (!watch.changed()) failures.add("cleared snapshot not reported");
+        }
+        finally
+        {
+            if (previous == null)
+            {
+                com.minecolonies.api.crafting.RecipeUtils.clearClientSyncedRecipes();
+            }
+            else
+            {
+                com.minecolonies.api.crafting.RecipeUtils.setClientSyncedRecipes(previous);
+            }
+        }
+        Log.getLogger().info("[client_recipe_watch] failures={}", failures);
+        helper.assertTrue(failures.isEmpty(), "client recipe watcher: " + failures);
+        helper.succeed();
+    }
 }

@@ -108,7 +108,7 @@ public class RestaurantMenuModuleWindow extends AbstractModuleWindow<RestaurantM
     /**
      * Recipe snapshot generation observed by this screen.
      */
-    private long observedRecipeGeneration = Long.MIN_VALUE;
+    private final RecipeUtils.ClientRecipeWatch recipeWatch = new RecipeUtils.ClientRecipeWatch();
 
     /**
      * Constructor for the minimum stock window view.
@@ -174,7 +174,7 @@ public class RestaurantMenuModuleWindow extends AbstractModuleWindow<RestaurantM
     public void onOpened()
     {
         super.onOpened();
-        observedRecipeGeneration = RecipeUtils.clientSyncedRecipesGeneration();
+        recipeWatch.markSeen();
         updateStockList();
         updateResources();
     }
@@ -183,10 +183,8 @@ public class RestaurantMenuModuleWindow extends AbstractModuleWindow<RestaurantM
     public void onUpdate()
     {
         super.onUpdate();
-        final long currentRecipeGeneration = RecipeUtils.clientSyncedRecipesGeneration();
-        if (currentRecipeGeneration != observedRecipeGeneration)
+        if (recipeWatch.changed())
         {
-            observedRecipeGeneration = currentRecipeGeneration;
             recipeMapping.clear();
             updateStockList();
             updateResources();
