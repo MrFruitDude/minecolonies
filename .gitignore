@@ -55,4 +55,6 @@ gradle/local.gradle
 gradle/local.configuration.gradle
 
 /src/main/resources/assets/minecolonies/lang/**
+# port26.3: no Crowdin download in the port build, so en_us and the locales restored from the 1.21 release are tracked.
+!/src/main/resources/assets/minecolonies/lang/*.json
 !src/main/assets/minecolonies/lang/manual_en_us.json

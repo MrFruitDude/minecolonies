@@ -1,0 +1,18 @@
+{
+  "advancements.minecolonies.build.composter.description": "A Composter will take your leftover saplings, leaves, and like items and expose them to the elements to make fertiliser.",
+  "advancements.minecolonies.build.library.description": "If you want more skilled labour, you'd best build a Library to educate your citizens!",
+  "com.minecolonies.coremod.gui.flag.choose": "Choose a colour and pattern for up to 6 layers",
+  "com.minecolonies.coremod.gui.townhall.currentspecialization": "Current Specialisation:",
+  "com.minecolonies.coremod.info.baker.0": "The Baker is part of the food production of your colony. They will bake bread, biscuits, pumpkin pie, and/or cake. On page two of the Bakery GUI, you can select which items you want them to make.",
+  "com.minecolonies.coremod.info.barrackstower.0": "The Barracks Tower is the heart of your military defence. Each Barracks Tower employs 1 Guard per level for a total of 5. However, the Guards will also live in the tower, freeing up beds for more citizens.\nThere are two different types of Guards, Knights and Archers. Knights use swords, while Archers use bows.",
+  "com.minecolonies.coremod.info.citizen.2": "Workers have their level capped by the level of their House. Thus, if they are unhappy with their living conditions, they will stop levelling until you provide them with better housing.",
+  "com.minecolonies.coremod.info.guardtower.0": "The Guard Tower is the basic hut for your military defence. Each Guard Tower employs one Guard. However, the Guard will also live in the tower, freeing up a bed for more citizens.\nThere are two different types of Guards, Knights and Archers. Knights use swords, while Archers use bows.",
+  "com.minecolonies.coremod.info.shepherd.0": "The Shepherd is part of the food production of your colony. The Shepherd breeds, raises, shears, and butchers sheep. They will collect the meat and wool, as well as any drops from other mods. The Shepherd will keep two sheep alive per level of their hut. If you choose, on the second page of the GUI you can tell the Shepherd to randomly dye sheep to get coloured wool.",
+  "com.minecolonies.coremod.request.fertilizer": "Fertiliser",
+  "com.minecolonies.coremod.setting.minecolonies:fertilize": "Request Fertiliser",
+  "com.minecolonies.research.civilian.theater.name": "Theatre",
+  "com.minecolonies.research.technology.fertilizer.name": "Fertiliser",
+  "com.minecolonies.research.technology.rainbowheaven.subtitle": "Now in colour! And 3D!",
+  "item.minecolonies.cookie_dough": "Biscuit Dough",
+  "minecolonies.config.neighborbuildingrendering": "Neighbour Building Rendering"
+}

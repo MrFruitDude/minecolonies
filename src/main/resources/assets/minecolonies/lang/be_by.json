@@ -1,0 +1,20 @@
+{
+  "com.minecolonies.command.citizentrack.success.disable": "Адсочванне выключана",
+  "com.minecolonies.command.citizentrack.success.enable": "Адсочванне ўключана",
+  "com.minecolonies.configgui.title": "MineColonies Канфігурацыя",
+  "com.minecolonies.coremod.action.builder.building": "Будоўля %s",
+  "com.minecolonies.coremod.colony.notfound": "Не ўдалося знайсці калонію.",
+  "com.minecolonies.coremod.item.permissionscepter.mode.block": "заблакаваць",
+  "com.minecolonies.coremod.item.permissionscepter.mode.location": "месцазнаходжанне",
+  "com.minecolonies.coremod.permission.map_border": "Адлюстроўваць мяжу на картах",
+  "com.minecolonies.coremod.permission.map_deaths": "Адлюстроўваць кропкі смерці на картах",
+  "com.minecolonies.job.rabbitherder": "Трусавод",
+  "key.minecolonies.toggle_goggles": "",
+  "minecolonies.config.claims": "Прымяніць налады",
+  "minecolonies.config.combat": "Налады бою",
+  "minecolonies.config.combat.comment": "Усе элементы наладаў, звязаныя з баявымі элементамі MineColonies",
+  "minecolonies.config.compatibility.comment": "Усе наладкі звязаныя з сумяшчальнасцю да модаў",
+  "minecolonies.config.gameplay": "Налады гульнявога гульні",
+  "minecolonies.config.gameplay.comment": "Усе элементы канфігурацыі, звязаныя з асноўным гульнявым спісам",
+  "minecolonies.config.permissions": "Настройкі доступу"
+}

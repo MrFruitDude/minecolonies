@@ -3876,6 +3876,85 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * CP-LOCALE / P01-007: the 1.21 jar shipped 95 Crowdin locales next to en_us; the port shipped en_us only, so every
+     * non-English player saw English. The restored locales hold only real translations, for keys en_us still has, and the
+     * 26.x item.* key of every hut takes the translation of its block.* key.
+     */
+    public static void localeFilesPresent(final GameTestHelper helper)
+    {
+        final java.util.List<String> failures = new java.util.ArrayList<>();
+        final com.google.gson.JsonObject english = readLang("en_us");
+        if (english == null || english.size() < 3900)
+        {
+            throw helper.assertionException("en_us missing or short: " + (english == null ? "absent" : english.size() + " keys"));
+        }
+        // Locales that 1.21 translated almost completely, plus their expected town hall item name.
+        final java.util.Map<String, String> townHall = java.util.Map.of(
+          "de_de", "Rathaus", "fr_fr", "", "ru_ru", "", "zh_cn", "", "ja_jp", "", "es_es", "", "pt_br", "", "pl_pl", "", "ko_kr", "", "it_it", "");
+        final String hutItem = "item.minecolonies.blockhuttownhall";
+        int present = 0;
+        for (final String locale : java.util.List.of("af_za", "ar_sa", "bg_bg", "cs_cz", "da_dk", "de_at", "de_de", "el_gr", "en_gb", "en_ud",
+          "es_ar", "es_es", "es_mx", "fi_fi", "fr_ca", "fr_fr", "he_il", "hu_hu", "id_id", "it_it", "ja_jp", "ko_kr", "lol_us", "nl_nl", "no_no",
+          "pl_pl", "pt_br", "pt_pt", "ru_ru", "sv_se", "th_th", "tr_tr", "uk_ua", "vi_vn", "zh_cn", "zh_tw"))
+        {
+            final com.google.gson.JsonObject lang = readLang(locale);
+            if (lang == null)
+            {
+                failures.add(locale + " missing");
+                continue;
+            }
+            present++;
+            final java.util.List<String> stale = lang.keySet().stream().filter(k -> !english.has(k)).limit(3).toList();
+            if (!stale.isEmpty())
+            {
+                failures.add(locale + " has keys en_us lacks: " + stale);
+            }
+            final java.util.List<String> english_copies = lang.entrySet().stream()
+              .filter(e -> e.getValue().getAsString().equals(english.get(e.getKey()).getAsString()) && e.getValue().getAsString().length() > 20)
+              .map(java.util.Map.Entry::getKey).limit(3).toList();
+            if (!english_copies.isEmpty() && !locale.startsWith("en_"))
+            {
+                failures.add(locale + " pins English text over en_us: " + english_copies);
+            }
+            final String expected = townHall.get(locale);
+            if (expected != null)
+            {
+                if (lang.size() < 2000)
+                {
+                    failures.add(locale + " has only " + lang.size() + " translations");
+                }
+                if (!lang.has(hutItem) || lang.get(hutItem).getAsString().equals(english.get(hutItem).getAsString())
+                      || (!expected.isEmpty() && !lang.get(hutItem).getAsString().equals(expected)))
+                {
+                    failures.add(locale + " " + hutItem + " = " + lang.get(hutItem));
+                }
+            }
+        }
+        Log.getLogger().info("CP-LOCALE: {} of 36 locales present, failures {}", present, failures);
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException(failures.size() + " locale checks failed: " + String.join("; ", failures.subList(0, Math.min(8, failures.size()))));
+        }
+        helper.succeed();
+    }
+
+    private static com.google.gson.JsonObject readLang(final String locale)
+    {
+        try (final java.io.InputStream in = MinecoloniesGameTests.class.getResourceAsStream("/assets/minecolonies/lang/" + locale + ".json"))
+        {
+            if (in == null)
+            {
+                return null;
+            }
+            return com.google.gson.JsonParser.parseReader(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+        }
+        catch (final java.io.IOException e)
+        {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
     private static String readServerData(final GameTestHelper helper, final net.minecraft.server.MinecraftServer server, final String path)
     {
         final Identifier id = Identifier.fromNamespaceAndPath(com.minecolonies.api.util.constant.Constants.MOD_ID, path);

@@ -1,0 +1,22 @@
+{
+  "com.minecolonies.research.combat.agilearcher.name": "Arqueiro Áxil",
+  "com.minecolonies.research.combat.diamondskin.name": "Piel de Diamante",
+  "com.minecolonies.research.combat.dodge.name": "Esquivar",
+  "com.minecolonies.research.combat.duelist.name": "Duelista",
+  "com.minecolonies.research.combat.evasion.name": "Evasión",
+  "com.minecolonies.research.combat.multishot.name": "Tiro Multiple",
+  "com.minecolonies.research.combat.name": "Combate",
+  "com.minecolonies.research.combat.parry.name": "Desviar",
+  "com.minecolonies.research.combat.penetratingshot.name": "Tiro Penetrante",
+  "com.minecolonies.research.combat.piercingshot.name": "Tiro Perforante",
+  "com.minecolonies.research.combat.powerattack.name": "Poder de Ataque",
+  "com.minecolonies.research.combat.rapidshot.name": "Tiro Rapido",
+  "com.minecolonies.research.combat.regeneration.name": "Rexeneración",
+  "com.minecolonies.research.combat.savagestrike.name": "Golpe Salvaje",
+  "com.minecolonies.research.combat.steelarmor.name": "Armadura de Aceiro",
+  "com.minecolonies.research.combat.tactictraining.name": "Entrenamiento Tactico",
+  "com.minecolonies.research.effects.blockhutcombatacademy.description": "Desbloquea Academia de Combate",
+  "minecolonies.config.maxtreesize": "Tamaño máximo de arbore",
+  "minecolonies.config.nosupplyplacementrestrictions": "Sen restricións para colocar campamentos de provisión",
+  "minecolonies.config.research": "Opciones de Investigación"
+}
