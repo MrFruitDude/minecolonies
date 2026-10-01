@@ -20,9 +20,8 @@ public class DefaultDataMapsProvider extends DataMapProvider
     @Override
     protected void gather(@NotNull final HolderLookup.Provider provider)
     {
-        // MC 26.3: compostability is the vanilla COMPOSTABLE item component (a registry-keyed layer provider) and
-        // NeoForge dropped its compostables data map, so MineColonies' nutrition-based compost values no longer
-        // belong here. Tracked as backlog X-263-COMPOST (set the component on the items instead).
+        // MC 26.3: NeoForge dropped its compostables data map; MineColonies' compost values are the vanilla
+        // COMPOSTABLE item component now, see ModCompostablesInitializer.
         bindDefaultComponentsForDatagen(provider);
     }
 

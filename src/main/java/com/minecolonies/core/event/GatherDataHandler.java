@@ -41,6 +41,7 @@ public class GatherDataHandler
             .add(Registries.ENCHANTMENT, DefaultEnchantmentProvider::bootstrap), namespaces);
         event.createReloadableRegistryObjects(new RegistrySetBuilder()
             .add(Registries.ADVANCEMENT, DefaultAdvancementsProvider::bootstrap)
+            .add(Registries.CONTEXT_INT_PROVIDER, com.minecolonies.apiimp.initializer.ModCompostablesInitializer::bootstrap)
             .add(RecipeProvider.asBootstrap(DefaultRecipeProvider::new)), namespaces);
         final CompletableFuture<HolderLookup.Provider> provider = event.getReloadableLookupProvider()
             .thenApply(p -> new DatagenLootTableManager(p, event.getResourceManager(PackType.SERVER_DATA)));

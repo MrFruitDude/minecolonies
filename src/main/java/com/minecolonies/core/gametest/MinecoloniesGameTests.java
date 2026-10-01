@@ -2263,6 +2263,93 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review X-263-COMPOST: MineColonies foods, crop seeds, mistletoe and composted dirt go into a vanilla
+     * composter with 1.21's chances. 1.21 declared them in NeoForge's compostables data map (generated
+     * data_maps/item/compostables.json); NeoForge 26.3 dropped that map in favour of the vanilla COMPOSTABLE item component, which the
+     * port never set. The expected ids/chances below are copied from 1.21's generated file. Each item must carry the component, a
+     * hopper-style insert into an empty composter must add a layer, and the layer chance on a non-empty composter must match 1.21.
+     */
+    public static void compostableItems(final GameTestHelper helper)
+    {
+        final Map<String, Double> expected = new java.util.LinkedHashMap<>();
+        for (final String id : ("apple_pie baked_salmon borscht cabochis cheddar_cheese cheese_pizza cheese_ravioli chicken_broth composted_dirt "
+          + "congee cooked_rice corn_chowder eggdrop_soup eggplant_dolma feta_cheese fish_dinner fish_n_chips flatbread fried_rice hand_pie "
+          + "kebab kimchi lamb_stew lembas_scone manchet_bread meat_ravioli mint_jelly mint_tea mintchoco_cheesecake muffin mushroom_pizza "
+          + "mutton_dinner pasta_plain pasta_tomato pea_soup pepper_hummus pierogi pita_hummus plain_cheesecake polenta potato_soup pottage "
+          + "ramen rice_ball schnitzel spicy_eggplant spicy_grilled_chicken squash_soup steak_dinner stew_trencher stuffed_pepper stuffed_pita "
+          + "sugary_bread sushi_roll tacos tofu tortillas veggie_quiche veggie_ravioli veggie_soup yogurt yogurt_with_berries").split(" "))
+        {
+            expected.put(id, 1.0);
+        }
+        for (final String id : ("bell_pepper butternut_squash cabbage chickpea corn durum eggplant garlic mint mistletoe nether_pepper onion "
+          + "peas rice soybean tomato").split(" "))
+        {
+            expected.put(id, 0.5);
+        }
+        for (final String id : "chorus_bread golden_bread milky_bread".split(" "))
+        {
+            expected.put(id, 5.0 / 6.0);
+        }
+
+        final ServerLevel level = helper.getLevel();
+        final BlockPos abs = helper.absolutePos(new BlockPos(1, 2, 1));
+        final net.minecraft.util.RandomSource random = net.minecraft.util.RandomSource.create(42L);
+        final List<String> failures = new ArrayList<>();
+        final int samples = 4000;
+        for (final Map.Entry<String, Double> entry : expected.entrySet())
+        {
+            final net.minecraft.world.item.Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Constants.MOD_ID, entry.getKey()));
+            if (item == Items.AIR)
+            {
+                failures.add(entry.getKey() + ": not registered");
+                continue;
+            }
+            final ItemStack stack = new ItemStack(item);
+            final net.minecraft.world.item.component.Compostable compostable = stack.get(net.minecraft.core.component.DataComponents.COMPOSTABLE);
+            if (compostable == null)
+            {
+                failures.add(entry.getKey() + ": no compostable component");
+                continue;
+            }
+
+            final BlockState empty = Blocks.COMPOSTER.defaultBlockState();
+            level.setBlockAndUpdate(abs, empty);
+            final BlockState afterInsert = net.minecraft.world.level.block.ComposterBlock.insertItem(null, empty, level, stack.copy(), abs);
+            if (afterInsert.getValue(net.minecraft.world.level.block.ComposterBlock.LEVEL) != 1)
+            {
+                failures.add(entry.getKey() + ": insert into an empty composter gave level "
+                  + afterInsert.getValue(net.minecraft.world.level.block.ComposterBlock.LEVEL));
+            }
+
+            final BlockState oneLayer = empty.setValue(net.minecraft.world.level.block.ComposterBlock.LEVEL, 1);
+            final net.minecraft.world.level.storage.loot.LootContext context = new net.minecraft.world.level.storage.loot.LootContext.Builder(
+              new net.minecraft.world.level.storage.loot.LootParams.Builder(level)
+                .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.BLOCK_STATE, oneLayer)
+                .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.ORIGIN, net.minecraft.world.phys.Vec3.atCenterOf(abs))
+                .create(net.minecraft.world.level.storage.loot.parameters.LootContextParamSets.BLOCK_INTERACT))
+              .withOptionalRandomSource(random)
+              .create(java.util.Optional.empty());
+            int added = 0;
+            for (int i = 0; i < samples; i++)
+            {
+                added += compostable.layers().get(context, 0) > 0 ? 1 : 0;
+            }
+            final double observed = added / (double) samples;
+            if (Math.abs(observed - entry.getValue()) > 0.03)
+            {
+                failures.add(String.format("%s: layer chance %.3f, 1.21 had %.3f", entry.getKey(), observed, entry.getValue()));
+            }
+        }
+        level.setBlockAndUpdate(abs, Blocks.AIR.defaultBlockState());
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException(failures.size() + "/" + expected.size() + " compostables wrong: " + String.join("; ", failures));
+        }
+        Log.getLogger().info("[compostable_items] {} MineColonies items compost with 1.21's chances", expected.size());
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for Domum Ornamentum's extra blocks' tool tags (review DPT-C06).
      * 1.21 put every extra block into its category's mineable tag (bricks/slates:
      * pickaxe, thatched: hoe, paper/cactus: axe); the port's tag rewrite dropped that

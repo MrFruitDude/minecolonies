@@ -191,6 +191,7 @@ public class MineColonies
              }
         }
 
+        modBus.addListener(com.minecolonies.apiimp.initializer.ModCompostablesInitializer::onModifyDefaultComponents);
         modBus.addListener(GatherDataHandler::dataGeneratorSetupServer);
         modBus.addListener(GatherDataHandler::dataGeneratorSetupClient);
         if (Boolean.getBoolean("neoforge.enableGameTest")
