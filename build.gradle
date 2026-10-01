@@ -100,3 +100,13 @@ tasks.named('processResources', ProcessResources).configure {
         }
     }
 }
+
+// The port's GameTests (com.minecolonies.core.gametest, ~370 KB of classes plus the
+// colony_plot test structure) live in the main source set so runGameTestServer picks
+// them up, but they must not ship. Dev runs use the class/resource dirs, not this jar.
+// MineColonies#<init> only touches the registrar when GameTests are enabled, so the
+// shipped jar never links it.
+tasks.named('jar', Jar).configure {
+    exclude 'com/minecolonies/core/gametest/**'
+    exclude 'data/minecolonies/structure/gametest/**'
+}
