@@ -25,47 +25,42 @@ tasks.withType(Javadoc).configureEach {
     options.addStringOption('Xdoclint:none', '-Xdoclint:none')
 }
 
-// NeoGradle 7.1.x does not strip @OnlyIn annotations that Vineflower adds back
-// during decompilation for MC 26.x. The NeoForm and UserDev patches expect them
-// removed before nested type declarations.
-tasks.matching { it.name == 'neoFormPatch' }.configureEach {
+// NeoGradle 7.1.x (Tableau pins 7.1.37; checked up to 7.1.39) does not pass
+// NeoForm's `--no-dist-annotations` to its preProcessJar step, so the MC 26.x
+// decompile keeps @OnlyIn on nested types and the NeoForm/UserDev patches fail
+// (9 rejected hunks). 7.1.38+ only fixes this on the userdev setup path, not
+// the NeoForm runtime used here. Strip those annotations from the decompiled
+// sources before patching. Remove when Tableau moves off NeoGradle 7.1.
+tasks.matching { it.name == 'neoFormPatch' }.configureEach { patchTask ->
     doFirst {
-        def decompileJar = project.file("build/neoForm/neoFormJoined26.3-1/steps/decompile/outputs.jar")
-        if (!decompileJar.exists()) return
+        def decompileJar = project.tasks.getByName('neoFormDecompile').outputs.files.files
+                .find { it.name == 'outputs.jar' }
+        if (decompileJar == null || !decompileJar.exists()) {
+            throw new GradleException("neoFormPatch @OnlyIn fix: decompile output not found (${decompileJar})")
+        }
+
+        def nestedOnlyIn = /(?m)^( +)@OnlyIn\s*\([^)]*\)\n(\1(?:public |private |protected )?(?:static |final |abstract )?(?:class |interface |record |enum |@interface ))/
+        def collapsedNested = /(?m)^(\}+)\n( +(?:public|private|protected)\s+(?:static\s+)?(?:class |interface |enum ))/
 
         def workDir = new File(project.buildDir, "onlyin-fix")
         workDir.deleteDir()
         workDir.mkdirs()
-
-        def zipTree = project.zipTree(decompileJar)
-        def javaFiles = []
-        zipTree.visit { details ->
+        int changed = 0
+        project.zipTree(decompileJar).matching { include '**/*.java' }.visit { details ->
+            if (details.directory) return
+            def text = details.file.getText('UTF-8')
+            if (!text.contains('@OnlyIn')) return
+            def fixed = text.replaceAll(nestedOnlyIn, '$2').replaceAll(collapsedNested, '$1\n\n$2')
+            if (fixed == text) return
             def dest = new File(workDir, details.path)
-            if (details.directory) {
-                return
-            }
-            if (!dest.name.endsWith('.java')) {
-                return
-            }
-
             dest.parentFile.mkdirs()
-            details.copyTo(dest)
-            javaFiles << dest
+            dest.setText(fixed, 'UTF-8')
+            changed++
         }
-
-        javaFiles.each { f ->
-            def text = f.text
-            def fixed = text.replaceAll(
-                /(?m)^( +)@OnlyIn\s*\([^)]*\)\n(\1(?:public |private |protected )?(?:static |final |abstract )?(?:class |interface |record |enum |@interface ))/,
-                '$2')
-            fixed = fixed.replaceAll(
-                /(?m)^(\}+)\n( +(?:public|private|protected)\s+(?:static\s+)?(?:class |interface |enum ))/,
-                '$1\n\n$2')
-            if (fixed != text) f.text = fixed
+        if (changed > 0) {
+            ant.jar(destfile: decompileJar.absolutePath, basedir: workDir, update: true)
         }
-
-        def ant = new groovy.ant.AntBuilder()
-        ant.jar(destfile: decompileJar.absolutePath, basedir: workDir, update: true)
+        logger.lifecycle("neoFormPatch @OnlyIn fix: rewrote ${changed} decompiled sources")
         workDir.deleteDir()
     }
 }
