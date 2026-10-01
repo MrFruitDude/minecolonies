@@ -68,8 +68,7 @@ public class SurvivalHandler implements ISurvivalBlueprintHandler
     {
         if (IMinecoloniesAPI.getInstance().getConfig().getServer().blueprintBuildMode.get())
         {
-            final IColonyView colonyView = IColonyManager.getInstance().getClosestColonyView(clientLevel, blockPos);
-            return colonyView != null;
+            return SurvivalHandlerClient.hasColonyViewNear(clientLevel, blockPos);
         }
 
         return true;
