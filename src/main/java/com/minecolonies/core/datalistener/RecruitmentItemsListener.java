@@ -113,6 +113,18 @@ public class RecruitmentItemsListener extends SimpleJsonResourceReloadListener<J
         final @NotNull ResourceManager resourceManager,
         final @NotNull ProfilerFiller profiler)
     {
+        // Builds ItemStacks: parse once default item components are bound (MC 1.21.2+ binds them after all listeners).
+        DeferredDataApply.defer(this, getContext(), getRegistryLookup(), () -> load(jsonElementMap, resourceManager, profiler));
+    }
+
+    /**
+     * Parse the loaded json; runs from {@link DeferredDataApply}.
+     */
+    private void load(
+        final @NotNull Map<Identifier, JsonElement> jsonElementMap,
+        final @NotNull ResourceManager resourceManager,
+        final @NotNull ProfilerFiller profiler)
+    {
         final Map<Integer, List<RecruitCost>> recruitCosts = new HashMap<>();
 
         if (jsonElementMap.isEmpty())

@@ -2424,6 +2424,67 @@ public final class MinecoloniesGameTests
 
 
     /**
+     * Guard for review MC-S07: the data listeners that build ItemStacks (crafter recipes, research, visitors, quests,
+     * diseases, recruit costs) parse after default item components are bound (DeferredDataApply) instead of the port's
+     * global pre-apply of component defaults before the reload. Every listener must have loaded data, nothing may still be
+     * pending, and the stacks they built must carry their default components.
+     */
+    public static void dataListenersBuildStacks(final GameTestHelper helper)
+    {
+        helper.assertTrue(com.minecolonies.core.datalistener.DeferredDataApply.pendingCount() == 0,
+          "deferred data listeners still pending: " + com.minecolonies.core.datalistener.DeferredDataApply.pendingCount());
+
+        final var recipes = com.minecolonies.core.colony.crafting.CustomRecipeManager.getInstance().getAllRecipes();
+        int recipeCount = 0;
+        int inputs = 0;
+        for (final var byCrafter : recipes.values())
+        {
+            for (final var recipe : byCrafter.values())
+            {
+                recipeCount++;
+                for (final ItemStorage input : recipe.getInputs())
+                {
+                    inputs++;
+                    helper.assertTrue(input.getItemStack().getComponents().has(net.minecraft.core.component.DataComponents.MAX_STACK_SIZE),
+                      "crafter recipe " + recipe.getRecipeId() + " input without default components: " + input);
+                }
+            }
+        }
+
+        int cureItems = 0;
+        for (final var disease : com.minecolonies.core.datalistener.DiseasesListener.getDiseases())
+        {
+            for (final ItemStorage cure : disease.cureItems())
+            {
+                cureItems++;
+                helper.assertTrue(!cure.getItemStack().isEmpty() && cure.getItemStack().getComponents().has(net.minecraft.core.component.DataComponents.MAX_STACK_SIZE),
+                  "disease " + disease.id() + " cure item empty or without default components: " + cure);
+            }
+        }
+
+        int recruitCosts = 0;
+        for (int level = 1; level <= 5; level++)
+        {
+            final var cost = com.minecolonies.core.datalistener.RecruitmentItemsListener.getRandomRecruitCost(level);
+            recruitCosts++;
+            helper.assertTrue(!cost.recruitItem().isEmpty() && cost.recruitItem().getComponents().has(net.minecraft.core.component.DataComponents.MAX_STACK_SIZE),
+              "recruit cost at level " + level + " empty or without default components: " + cost.recruitItem());
+        }
+
+        final int branches = com.minecolonies.api.research.IGlobalResearchTree.getInstance().getBranches().size();
+        final int quests = com.minecolonies.api.quests.IQuestManager.GLOBAL_SERVER_QUESTS.size();
+        final int visitors = com.minecolonies.core.datalistener.CustomVisitorListener.visitorDataPack.size();
+        Log.getLogger().info("[data_listeners_build_stacks] recipes {} (inputs {}), cure items {}, recruit costs {}, research branches {}, quests {}, visitors {}",
+          recipeCount, inputs, cureItems, recruitCosts, branches, quests, visitors);
+        helper.assertTrue(recipeCount > 0 && inputs > 0, "no crafter recipes loaded");
+        helper.assertTrue(cureItems > 0, "no disease cure items loaded");
+        helper.assertTrue(branches > 0, "no research branches loaded");
+        helper.assertTrue(quests > 0, "no quests loaded");
+        helper.assertTrue(visitors > 0, "no custom visitors loaded");
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review X-263-COMPOST: MineColonies foods, crop seeds, mistletoe and composted dirt go into a vanilla
      * composter with 1.21's chances. 1.21 declared them in NeoForge's compostables data map (generated
      * data_maps/item/compostables.json); NeoForge 26.3 dropped that map in favour of the vanilla COMPOSTABLE item component, which the

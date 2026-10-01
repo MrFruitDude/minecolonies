@@ -157,6 +157,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::compatSyncRoundTrip),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "data_listeners_build_stacks"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::dataListenersBuildStacks),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "compat_message_clientbound_only"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::compatMessageClientboundOnly),
           data);

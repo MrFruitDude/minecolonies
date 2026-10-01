@@ -163,6 +163,15 @@ public class ResearchListener extends SimpleJsonResourceReloadListener<JsonEleme
     @Override
     protected void apply(@NotNull final Map<Identifier, JsonElement> object, @NotNull final ResourceManager resourceManagerIn, @NotNull final ProfilerFiller profilerIn)
     {
+        // Builds ItemStacks: parse once default item components are bound (MC 1.21.2+ binds them after all listeners).
+        DeferredDataApply.defer(this, getContext(), getRegistryLookup(), () -> load(object, resourceManagerIn, profilerIn));
+    }
+
+    /**
+     * Parse the loaded json; runs from {@link DeferredDataApply}.
+     */
+    private void load(@NotNull final Map<Identifier, JsonElement> object, @NotNull final ResourceManager resourceManagerIn, @NotNull final ProfilerFiller profilerIn)
+    {
         Log.getLogger().info("Research loading...");
 
         // First, index and map out all research effects.  We need to be able to map them before creating Researches themselves.

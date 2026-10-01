@@ -75,6 +75,16 @@ public class CustomVisitorListener extends SimpleJsonResourceReloadListener<Json
     protected void apply(
       final Map<Identifier, JsonElement> jsonElementMap, final ResourceManager resourceManager, final ProfilerFiller profiler)
     {
+        // Builds ItemStacks: parse once default item components are bound (MC 1.21.2+ binds them after all listeners).
+        DeferredDataApply.defer(this, getContext(), getRegistryLookup(), () -> load(jsonElementMap, resourceManager, profiler));
+    }
+
+    /**
+     * Parse the loaded json; runs from {@link DeferredDataApply}.
+     */
+    private void load(
+      final Map<Identifier, JsonElement> jsonElementMap, final ResourceManager resourceManager, final ProfilerFiller profiler)
+    {
         visitorDataPack = ImmutableList.of();
         for (final Map.Entry<Identifier, JsonElement> entry : jsonElementMap.entrySet())
         {
