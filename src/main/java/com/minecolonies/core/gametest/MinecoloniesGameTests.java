@@ -3602,13 +3602,54 @@ public final class MinecoloniesGameTests
         final net.minecraft.nbt.CompoundTag frameTag = save.apply(frame, new net.minecraft.world.phys.Vec3(0.5, 0.5, 0.5));
         helper.assertTrue(labelTag != null && frameTag != null, "could not serialize fixture entities");
 
+        // The test structure (minecraft:empty) is 1x1x1, so the framework only waits for the ORIGIN chunk's entities to load. The
+        // two placements sit a few blocks away and can fall in the next chunk, whose entity section may not be loaded yet: the
+        // spawned entities then stay invisible to getEntitiesOfClass on tick 0 and both counts read 0 (X-FLAKY-STZENT). Force-load
+        // the placement chunks and wait for their entities, like GameTestInfo does for the structure bounds, before placing.
+        final BlockPos[] worldPositions = {helper.absolutePos(new BlockPos(1, 2, 2)), helper.absolutePos(new BlockPos(4, 2, 2))};
+        final List<net.minecraft.world.level.ChunkPos> chunks = new ArrayList<>();
+        final List<net.minecraft.world.level.ChunkPos> forced = new ArrayList<>();
+        for (final BlockPos worldPos : worldPositions)
+        {
+            final net.minecraft.world.level.ChunkPos chunk = net.minecraft.world.level.ChunkPos.containing(worldPos);
+            if (!chunks.contains(chunk))
+            {
+                chunks.add(chunk);
+                if (level.setChunkForced(chunk.x(), chunk.z(), true))
+                {
+                    forced.add(chunk);
+                }
+            }
+        }
+        helper.startSequence()
+          .thenWaitUntil(() -> chunks.forEach(chunk ->
+            helper.assertTrue(level.areEntitiesActuallyLoadedAndTicking(chunk), "entities of placement chunk " + chunk + " not loaded yet")))
+          .thenExecute(() -> {
+              try
+              {
+                  placeAndCountEntityRules(helper, level, worldPositions, labelTag, frameTag);
+              }
+              finally
+              {
+                  forced.forEach(chunk -> level.setChunkForced(chunk.x(), chunk.z(), false));
+              }
+          })
+          .thenSucceed();
+    }
+
+    private static void placeAndCountEntityRules(
+      final GameTestHelper helper,
+      final ServerLevel level,
+      final BlockPos[] worldPositions,
+      final net.minecraft.nbt.CompoundTag labelTag,
+      final net.minecraft.nbt.CompoundTag frameTag)
+    {
         final int[] results = new int[4];
         final String[] names = {"fancy creative labels", "fancy creative frames", "plain creative labels", "plain creative frames"};
         for (int run = 0; run < 2; run++)
         {
             final boolean fancy = run == 0;
-            final BlockPos rel = new BlockPos(1 + run * 3, 2, 2);
-            final BlockPos worldPos = helper.absolutePos(rel);
+            final BlockPos worldPos = worldPositions[run];
             final Blueprint blueprint = new Blueprint((short) 1, (short) 1, (short) 1)
               .setName("STZ121 entity rules")
               .setFileName("stz121_entity_rules")
@@ -3635,7 +3676,6 @@ public final class MinecoloniesGameTests
         helper.assertTrue(results[1] == 1, "fancy placement should place the item frame exactly once, got " + results[1]);
         helper.assertTrue(results[2] == 1, "plain creative paste should paste the text display once, got " + results[2]);
         helper.assertTrue(results[3] == 1, "plain creative paste should place the item frame exactly once, got " + results[3]);
-        helper.succeed();
     }
 
     /**
