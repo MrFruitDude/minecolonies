@@ -3120,6 +3120,107 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for X-STZ121 upstream #714 (bug 1): the Structurize manager must drain more than one queued scan-tool
+     * operation per world tick (up to maxOperationsPerTick apply calls), so rapid clicks on "remove" do not wait one tick each
+     * and an operation that needs several apply passes is not limited to one pass per tick.
+     */
+    public static void structurizeManagerDrainsQueuePerTick(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final int[] applies = new int[4];
+        final boolean[] done = new boolean[4];
+        for (int i = 0; i < 4; i++)
+        {
+            final int index = i;
+            final int needed = i == 3 ? 3 : 1;
+            final com.ldtteam.structurize.util.ChangeStorage storage = new com.ldtteam.structurize.util.ChangeStorage(
+              net.minecraft.network.chat.Component.literal("stz121-714-" + i), java.util.UUID.randomUUID());
+            com.ldtteam.structurize.management.Manager.addToQueue(new com.ldtteam.structurize.operations.ITickedWorldOperation()
+            {
+                @Override
+                public boolean apply(final ServerLevel world)
+                {
+                    applies[index]++;
+                    done[index] = applies[index] >= needed;
+                    return done[index];
+                }
+
+                @Override
+                public com.ldtteam.structurize.util.ChangeStorage getChangeStorage()
+                {
+                    return storage;
+                }
+            });
+        }
+        com.ldtteam.structurize.management.Manager.onWorldTick(level);
+        Log.getLogger().info("STZ121-714 after one tick applies {} done {}", java.util.Arrays.toString(applies), java.util.Arrays.toString(done));
+        if (!(done[0] && done[1] && done[2] && done[3]))
+        {
+            // Let the regular server ticks drain the rest so later tests start with an empty queue.
+            throw helper.assertionException("one manager tick finished only " + java.util.Arrays.toString(done)
+              + " of 4 queued operations (apply calls " + java.util.Arrays.toString(applies) + ")");
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Regression fixture for X-STZ121 upstream #721: BlockUtils.handleCorrectBlockPlacement (replace tool / shape and fill
+     * operations) must apply the placed stack's data components to the new block entity, like vanilla block placement.
+     * Without it a named chest loses its name and a Domum block placed from a textured stack loses its materials.
+     */
+    public static void structurizeReplaceAppliesItemComponents(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final net.neoforged.neoforge.common.util.FakePlayer player = FakePlayerFactory.getMinecraft(level);
+        final List<String> failures = new ArrayList<>();
+
+        final BlockPos chestRel = new BlockPos(1, 2, 1);
+        helper.setBlock(chestRel, Blocks.STONE);
+        final ItemStack chestStack = new ItemStack(Items.CHEST);
+        chestStack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("STZ121 721 chest"));
+        com.ldtteam.structurize.util.BlockUtils.handleCorrectBlockPlacement(level, player, chestStack,
+          level.getBlockState(helper.absolutePos(chestRel)), helper.absolutePos(chestRel));
+        final net.minecraft.world.level.block.entity.ChestBlockEntity chest =
+          helper.getBlockEntity(chestRel, net.minecraft.world.level.block.entity.ChestBlockEntity.class);
+        Log.getLogger().info("STZ121-721 chest name {}", chest.getCustomName());
+        if (chest.getCustomName() == null || !"STZ121 721 chest".equals(chest.getCustomName().getString()))
+        {
+            failures.add("chest custom name lost: " + chest.getCustomName());
+        }
+
+        final BlockPos shingleRel = new BlockPos(3, 2, 1);
+        helper.setBlock(shingleRel, Blocks.STONE);
+        final Block shingle = com.ldtteam.domumornamentum.block.ModBlocks.getInstance()
+          .getShingle(com.ldtteam.domumornamentum.shingles.ShingleHeightType.DEFAULT);
+        final com.ldtteam.domumornamentum.client.model.data.MaterialTextureData.Builder builder =
+          com.ldtteam.domumornamentum.client.model.data.MaterialTextureData.builder();
+        for (final com.ldtteam.domumornamentum.block.IMateriallyTexturedBlockComponent component :
+          ((com.ldtteam.domumornamentum.block.IMateriallyTexturedBlock) shingle).getComponents())
+        {
+            builder.setComponent(component.getId(), Blocks.BIRCH_PLANKS);
+        }
+        final com.ldtteam.domumornamentum.client.model.data.MaterialTextureData data = builder.build();
+        final ItemStack shingleStack = new ItemStack(shingle);
+        shingleStack.set(com.ldtteam.domumornamentum.component.ModDataComponents.TEXTURE_DATA.get(), data);
+        com.ldtteam.structurize.util.BlockUtils.handleCorrectBlockPlacement(level, player, shingleStack,
+          level.getBlockState(helper.absolutePos(shingleRel)), helper.absolutePos(shingleRel));
+        final net.minecraft.world.level.block.entity.BlockEntity shingleBe = level.getBlockEntity(helper.absolutePos(shingleRel));
+        final Object placedData = shingleBe instanceof com.ldtteam.domumornamentum.entity.block.MateriallyTexturedBlockEntity mtbe
+          ? mtbe.getTextureData() : shingleBe;
+        Log.getLogger().info("STZ121-721 shingle block {} data {}", level.getBlockState(helper.absolutePos(shingleRel)), placedData);
+        if (!data.equals(placedData))
+        {
+            failures.add("Domum shingle texture data lost: expected " + data + " got " + placedData);
+        }
+
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException("replace placement dropped item components: " + String.join("; ", failures));
+        }
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for X-STZ121 upstream #710: TransferStructurePackToClient must send exactly the zipped bytes. The
      * server zips into a growable heap buffer, whose backing array is longer than its content, so writing payload.array()
      * shipped the unused capacity too (and the release made a second encode fail).

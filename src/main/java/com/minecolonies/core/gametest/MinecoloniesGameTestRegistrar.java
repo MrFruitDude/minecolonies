@@ -189,6 +189,14 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeContainerPlacement),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_replace_applies_item_components"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeReplaceAppliesItemComponents),
+          data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_manager_drains_queue_per_tick"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeManagerDrainsQueuePerTick),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_pack_transfer_payload"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizePackTransferPayload),
           data);
