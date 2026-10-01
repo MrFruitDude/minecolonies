@@ -5,12 +5,7 @@ import com.ldtteam.common.network.PlayMessageType;
 import com.minecolonies.api.util.constant.Constants;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
-import net.minecraft.core.particles.PowerParticleOption;
-import net.minecraft.core.particles.SimpleParticleType;
-import net.minecraft.core.particles.SpellParticleOption;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -54,65 +49,16 @@ public class VanillaParticleMessage extends AbstractClientPlayMessage
         x = byteBuf.readDouble();
         y = byteBuf.readDouble();
         z = byteBuf.readDouble();
-        this.type = decode(bufId(byteBuf), byteBuf);
+        this.type = ParticleTypes.STREAM_CODEC.decode(byteBuf);
     }
 
-    private static Identifier bufId(final RegistryFriendlyByteBuf buf)
-    {
-        return buf.readIdentifier();
-    }
-
-    private static ParticleOptions decode(final Identifier id, final RegistryFriendlyByteBuf buf)
-    {
-        if (id.equals(BuiltInRegistries.PARTICLE_TYPE.getKey(ParticleTypes.HEART)))
-        {
-            return ParticleTypes.HEART;
-        }
-        if (id.equals(BuiltInRegistries.PARTICLE_TYPE.getKey(ParticleTypes.ENCHANT)))
-        {
-            return ParticleTypes.ENCHANT;
-        }
-        if (id.equals(BuiltInRegistries.PARTICLE_TYPE.getKey(ParticleTypes.HAPPY_VILLAGER)))
-        {
-            return ParticleTypes.HAPPY_VILLAGER;
-        }
-        if (id.equals(BuiltInRegistries.PARTICLE_TYPE.getKey(ParticleTypes.INSTANT_EFFECT)))
-        {
-            return SpellParticleOption.streamCodec(ParticleTypes.INSTANT_EFFECT).decode(buf);
-        }
-        if (id.equals(BuiltInRegistries.PARTICLE_TYPE.getKey(ParticleTypes.DRAGON_BREATH)))
-        {
-            return PowerParticleOption.streamCodec(ParticleTypes.DRAGON_BREATH).decode(buf);
-        }
-        throw new IllegalArgumentException("Unsupported particle type: " + id);
-    }
-
-    private static void encode(final RegistryFriendlyByteBuf buf, final ParticleOptions option)
-    {
-        if (option instanceof final SimpleParticleType simple)
-        {
-            buf.writeIdentifier(BuiltInRegistries.PARTICLE_TYPE.getKey(simple));
-            simple.streamCodec().encode(buf, simple);
-            return;
-        }
-        if (option instanceof final SpellParticleOption spell)
-        {
-            buf.writeIdentifier(BuiltInRegistries.PARTICLE_TYPE.getKey(spell.getType()));
-            spell.getType().streamCodec().encode(buf, spell);
-            return;
-        }
-        if (option instanceof final PowerParticleOption power)
-        {
-            buf.writeIdentifier(BuiltInRegistries.PARTICLE_TYPE.getKey(power.getType()));
-            power.getType().streamCodec().encode(buf, power);
-            return;
-        }
-        throw new IllegalArgumentException("Unsupported particle option: " + option);
-    }
     @Override
     protected void toBytes(final RegistryFriendlyByteBuf byteBuf)
     {
-        encode(byteBuf, this.type);
+        byteBuf.writeDouble(x);
+        byteBuf.writeDouble(y);
+        byteBuf.writeDouble(z);
+        ParticleTypes.STREAM_CODEC.encode(byteBuf, this.type);
     }
 
     @Override

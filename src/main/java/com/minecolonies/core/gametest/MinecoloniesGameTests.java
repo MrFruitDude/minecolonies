@@ -5106,4 +5106,89 @@ public final class MinecoloniesGameTests
         helper.succeedWhen(() -> helper.assertTrue(!player.blockPosition().closerThan(start, 2.0),
           "scan tool teleport accepted but the player did not move from " + start.toShortString()));
     }
+
+    /**
+     * VanillaParticleMessage must survive a real network encode/decode (dedicated server path; an integrated
+     * server hands payloads over in memory). Covers every particle option MineColonies sends.
+     */
+    @SuppressWarnings("unchecked")
+    public static void vanillaParticleMessageRoundTrip(final GameTestHelper helper)
+    {
+        final List<net.minecraft.core.particles.ParticleOptions> options = List.of(
+          net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER,
+          net.minecraft.core.particles.ParticleTypes.ENCHANT,
+          net.minecraft.core.particles.ParticleTypes.HEART,
+          net.minecraft.core.particles.SpellParticleOption.create(net.minecraft.core.particles.ParticleTypes.INSTANT_EFFECT, 0.5F, 1.0F, 0.5F, 1.0F),
+          net.minecraft.core.particles.PowerParticleOption.create(net.minecraft.core.particles.ParticleTypes.DRAGON_BREATH, 0.75F));
+        final net.minecraft.network.codec.StreamCodec<RegistryFriendlyByteBuf, com.minecolonies.core.network.messages.client.VanillaParticleMessage> codec =
+          (net.minecraft.network.codec.StreamCodec<RegistryFriendlyByteBuf, com.minecolonies.core.network.messages.client.VanillaParticleMessage>)
+            com.minecolonies.core.network.messages.client.VanillaParticleMessage.TYPE.codec();
+        final List<String> failures = new ArrayList<>();
+        final double x = 12.5, y = 64.25, z = -7.75;
+        for (final net.minecraft.core.particles.ParticleOptions option : options)
+        {
+            final RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), helper.getLevel().registryAccess());
+            try
+            {
+                codec.encode(buf, new com.minecolonies.core.network.messages.client.VanillaParticleMessage(x, y, z, option));
+                final com.minecolonies.core.network.messages.client.VanillaParticleMessage decoded = codec.decode(buf);
+                final double[] pos = new double[3];
+                final String[] names = {"x", "y", "z"};
+                for (int i = 0; i < 3; i++)
+                {
+                    final java.lang.reflect.Field f = decoded.getClass().getDeclaredField(names[i]);
+                    f.setAccessible(true);
+                    pos[i] = f.getDouble(decoded);
+                }
+                final java.lang.reflect.Field typeField = decoded.getClass().getDeclaredField("type");
+                typeField.setAccessible(true);
+                final Object type = typeField.get(decoded);
+                Log.getLogger().info("[vanilla_particle_message_round_trip] {} -> pos=({}, {}, {}) type={} leftover={}",
+                  option, pos[0], pos[1], pos[2], type, buf.readableBytes());
+                if (pos[0] != x || pos[1] != y || pos[2] != z)
+                {
+                    failures.add(option.getType() + ": position decoded as (" + pos[0] + ", " + pos[1] + ", " + pos[2] + ")");
+                }
+                if (!(type instanceof final net.minecraft.core.particles.ParticleOptions decodedOption) || !sameParticle(helper, option, decodedOption))
+                {
+                    failures.add(option.getType() + ": particle decoded as " + type);
+                }
+                if (buf.readableBytes() != 0)
+                {
+                    failures.add(option.getType() + ": " + buf.readableBytes() + " bytes left unread");
+                }
+            }
+            catch (final Exception e)
+            {
+                failures.add(option.getType() + ": round trip threw " + e);
+            }
+            finally
+            {
+                buf.release();
+            }
+        }
+        Log.getLogger().info("[vanilla_particle_message_round_trip] failures={}", failures);
+        helper.assertTrue(failures.isEmpty(), "particle message round trip broken: " + failures);
+        helper.succeed();
+    }
+
+    /**
+     * Spell/power particle options have no equals(); compare their vanilla network encoding instead.
+     */
+    private static boolean sameParticle(final GameTestHelper helper, final net.minecraft.core.particles.ParticleOptions a, final net.minecraft.core.particles.ParticleOptions b)
+    {
+        final RegistryFriendlyByteBuf bufA = new RegistryFriendlyByteBuf(Unpooled.buffer(), helper.getLevel().registryAccess());
+        final RegistryFriendlyByteBuf bufB = new RegistryFriendlyByteBuf(Unpooled.buffer(), helper.getLevel().registryAccess());
+        try
+        {
+            net.minecraft.core.particles.ParticleTypes.STREAM_CODEC.encode(bufA, a);
+            net.minecraft.core.particles.ParticleTypes.STREAM_CODEC.encode(bufB, b);
+            return a.getType() == b.getType() && io.netty.buffer.ByteBufUtil.equals(bufA, bufB);
+        }
+        finally
+        {
+            bufA.release();
+            bufB.release();
+        }
+    }
 }
