@@ -3939,6 +3939,102 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Regression fixture for review X-263-HUTFIELDBAKE: since 1.21.4 a block-state model is baked inside
+     * ModelBakery$ModelBakerImpl.compute, a ConcurrentHashMap.computeIfAbsent shared by the parallel bake. A block model
+     * whose parent chain reaches item/generated bakes its geometry through ItemModelGenerator.bake, which calls compute again
+     * from inside that computeIfAbsent. Nested updates of one ConcurrentHashMap are illegal and throw "Recursive update"
+     * whenever the two keys share a bin or the map is resizing, so the field hut (block model parent item/generated) failed to
+     * bake now and then and lost its model. No MineColonies block-state model may use generated item geometry.
+     */
+    public static void blockModelsNoItemGeometry(final GameTestHelper helper)
+    {
+        final java.util.List<String> failures = new java.util.ArrayList<>();
+        int blocks = 0;
+        int models = 0;
+        final java.util.Set<String> seen = new java.util.HashSet<>();
+        for (final net.minecraft.resources.Identifier id : net.minecraft.core.registries.BuiltInRegistries.BLOCK.keySet())
+        {
+            if (!id.getNamespace().equals(Constants.MOD_ID))
+            {
+                continue;
+            }
+            final com.google.gson.JsonObject blockState = readAssetJson(id.getNamespace(), "blockstates/" + id.getPath());
+            if (blockState == null)
+            {
+                continue;
+            }
+            blocks++;
+            final java.util.List<String> roots = new java.util.ArrayList<>();
+            collectModelRefs(blockState, roots);
+            for (final String root : roots)
+            {
+                if (!seen.add(root))
+                {
+                    continue;
+                }
+                models++;
+                String current = root;
+                for (int depth = 0; depth < 16 && current != null; depth++)
+                {
+                    final net.minecraft.resources.Identifier modelId = net.minecraft.resources.Identifier.parse(current);
+                    final String path = modelId.getPath();
+                    if (path.equals("item/generated") || path.equals("builtin/generated"))
+                    {
+                        failures.add(id + " -> " + root + " reaches " + current);
+                        break;
+                    }
+                    final com.google.gson.JsonObject model = readAssetJson(modelId.getNamespace(), "models/" + path);
+                    current = model != null && model.has("parent") ? model.get("parent").getAsString() : null;
+                }
+            }
+        }
+        Log.getLogger().info("X-263-HUTFIELDBAKE: {} block states, {} block models checked, failures {}", blocks, models, failures);
+        if (blocks < 80 || !failures.isEmpty())
+        {
+            throw helper.assertionException(blocks + " block states checked; block models with generated item geometry: " + failures);
+        }
+        helper.succeed();
+    }
+
+    private static void collectModelRefs(final com.google.gson.JsonElement element, final java.util.List<String> out)
+    {
+        if (element.isJsonArray())
+        {
+            element.getAsJsonArray().forEach(e -> collectModelRefs(e, out));
+        }
+        else if (element.isJsonObject())
+        {
+            for (final java.util.Map.Entry<String, com.google.gson.JsonElement> entry : element.getAsJsonObject().entrySet())
+            {
+                if (entry.getKey().equals("model") && entry.getValue().isJsonPrimitive())
+                {
+                    out.add(entry.getValue().getAsString());
+                }
+                else
+                {
+                    collectModelRefs(entry.getValue(), out);
+                }
+            }
+        }
+    }
+
+    private static com.google.gson.JsonObject readAssetJson(final String namespace, final String path)
+    {
+        try (final java.io.InputStream in = MinecoloniesGameTests.class.getResourceAsStream("/assets/" + namespace + "/" + path + ".json"))
+        {
+            if (in == null)
+            {
+                return null;
+            }
+            return com.google.gson.JsonParser.parseReader(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+        }
+        catch (final java.io.IOException e)
+        {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
     private static com.google.gson.JsonObject readLang(final String locale)
     {
         try (final java.io.InputStream in = MinecoloniesGameTests.class.getResourceAsStream("/assets/minecolonies/lang/" + locale + ".json"))
