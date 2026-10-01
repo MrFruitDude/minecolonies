@@ -22,8 +22,10 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 import static com.minecolonies.api.util.constant.WindowConstants.*;
@@ -37,6 +39,11 @@ public class ExpeditionLogModuleWindow extends AbstractModuleWindow<ExpeditionLo
      * Tick function for updating every second.
      */
     private int tick = 1;
+
+    /**
+     * Mob icon render states, built once per entity type for this window.
+     */
+    private final Map<EntityType<?>, EntityIcon.StaticState<?>> mobIconStates = new HashMap<>();
 
     public ExpeditionLogModuleWindow(@NotNull final ExpeditionLogModuleView module)
     {
@@ -204,7 +211,18 @@ public class ExpeditionLogModuleWindow extends AbstractModuleWindow<ExpeditionLo
         clearChildren(lootView, size);
     }
 
-    private static <T extends Entity> void setEntityIcon(final EntityIcon icon, final EntityType<T> entityType)
+    private void setEntityIcon(final EntityIcon icon, final EntityType<?> entityType)
+    {
+        // The log refreshes on every server update while the window is open; build each mob type's
+        // icon state once per window instead of spawning a client entity per row per refresh.
+        final EntityIcon.StaticState<?> state = mobIconStates.computeIfAbsent(entityType, ExpeditionLogModuleWindow::createMobIconState);
+        if (icon.getEntityState() != state)
+        {
+            icon.setEntityState(state);
+        }
+    }
+
+    private static <T extends Entity> EntityIcon.StaticState<?> createMobIconState(final EntityType<T> entityType)
     {
         final Minecraft minecraft = Minecraft.getInstance();
         final T previewEntity = minecraft.level == null
@@ -212,19 +230,15 @@ public class ExpeditionLogModuleWindow extends AbstractModuleWindow<ExpeditionLo
             : entityType.create(minecraft.level, net.minecraft.world.entity.EntitySpawnReason.COMMAND);
         if (previewEntity != null)
         {
-            icon.setEntityState(new EntityIcon.StaticState<>(
-                minecraft.getEntityRenderDispatcher().extractEntity(previewEntity, 1.0F)));
+            return new EntityIcon.StaticState<>(minecraft.getEntityRenderDispatcher().extractEntity(previewEntity, 1.0F));
         }
-        else
-        {
-            // Keep a renderer-specific empty state only for entity types that
-            // cannot be instantiated in the client preview level.
-            final EntityRenderState template = new EntityRenderState();
-            template.entityType = entityType;
-            final EntityRenderer<?, ?> renderer = minecraft.getEntityRenderDispatcher().getRenderer(template);
-            @SuppressWarnings("unchecked") final EntityRenderer<Entity, EntityRenderState> typedRenderer =
-                (EntityRenderer<Entity, EntityRenderState>) renderer;
-            icon.setEntityState(new EntityIcon.StaticState<>(typedRenderer.createRenderState()));
-        }
+        // Keep a renderer-specific empty state only for entity types that
+        // cannot be instantiated in the client preview level.
+        final EntityRenderState template = new EntityRenderState();
+        template.entityType = entityType;
+        final EntityRenderer<?, ?> renderer = minecraft.getEntityRenderDispatcher().getRenderer(template);
+        @SuppressWarnings("unchecked") final EntityRenderer<Entity, EntityRenderState> typedRenderer =
+            (EntityRenderer<Entity, EntityRenderState>) renderer;
+        return new EntityIcon.StaticState<>(typedRenderer.createRenderState());
     }
 }
