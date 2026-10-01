@@ -4059,6 +4059,85 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for X-263-WGREAD: 26.x WorldGenRegion logs every block read outside the generating step's write zone as an
+     * "unsafe terrain read". DynamicTrees branch shapes read their neighbours through ChunkTreeHelper.canAccessStateSafely, which only
+     * asked hasChunk (true for the whole dependency ring), so a mob collision check next to a branch on a chunk edge during the spawn
+     * step (write radius -1) read the neighbouring chunk. The helper must report only the center chunk / the write zone as readable.
+     * DynamicTrees is not a compile dependency of MineColonies, hence the reflective call.
+     */
+    public static void dynamicTreesWorldgenReadZone(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final java.lang.reflect.Method canAccess;
+        try
+        {
+            canAccess = Class.forName("com.dtteam.dynamictrees.tree.ChunkTreeHelper")
+              .getMethod("canAccessStateSafely", net.minecraft.world.level.BlockGetter.class, BlockPos.class);
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            throw helper.assertionException("DynamicTrees ChunkTreeHelper.canAccessStateSafely not found: " + e);
+        }
+
+        // Far from the test area; the region is never read from, only asked whether a read would be safe.
+        final net.minecraft.world.level.ChunkPos center = new net.minecraft.world.level.ChunkPos(20000, 20000);
+        final net.minecraft.util.StaticCache2D<net.minecraft.server.level.GenerationChunkHolder> cache =
+          net.minecraft.util.StaticCache2D.create(center.x(), center.z(), 8,
+            (x, z) -> new net.minecraft.server.level.GenerationChunkHolder(new net.minecraft.world.level.ChunkPos(x, z))
+            {
+                // Empty holders: the region is only asked whether a read is safe, it never loads a chunk.
+                @Override
+                protected void addSaveDependency(final java.util.concurrent.CompletableFuture<?> sync) {}
+
+                @Override
+                public int getTicketLevel() { return 0; }
+
+                @Override
+                public int getQueueLevel() { return 0; }
+            });
+        final net.minecraft.world.level.chunk.ProtoChunk centerChunk = new net.minecraft.world.level.chunk.ProtoChunk(center,
+          net.minecraft.world.level.chunk.UpgradeData.EMPTY, level, net.minecraft.world.level.chunk.PalettedContainerFactory.create(level.registryAccess()), null);
+
+        final BlockPos inCenter = new BlockPos(center.getMinBlockX() + 15, 64, center.getMinBlockZ() + 8);
+        final BlockPos eastNeighbour = inCenter.east();       // first block of chunk x+1
+        final BlockPos twoAway = inCenter.east(17);           // chunk x+2
+
+        final java.util.List<String> failures = new java.util.ArrayList<>();
+        final Object[][] cases = {
+          // step, pos, expected
+          {net.minecraft.world.level.chunk.status.ChunkStatus.SPAWN, inCenter, true},
+          {net.minecraft.world.level.chunk.status.ChunkStatus.SPAWN, eastNeighbour, false},
+          {net.minecraft.world.level.chunk.status.ChunkStatus.FEATURES, inCenter, true},
+          {net.minecraft.world.level.chunk.status.ChunkStatus.FEATURES, eastNeighbour, true},
+          {net.minecraft.world.level.chunk.status.ChunkStatus.FEATURES, twoAway, false},
+        };
+        for (final Object[] c : cases)
+        {
+            final net.minecraft.world.level.chunk.status.ChunkStatus status = (net.minecraft.world.level.chunk.status.ChunkStatus) c[0];
+            final net.minecraft.server.level.WorldGenRegion region = new net.minecraft.server.level.WorldGenRegion(level, cache,
+              net.minecraft.world.level.chunk.status.ChunkPyramid.GENERATION_PYRAMID.getStepTo(status), centerChunk);
+            final boolean actual;
+            try
+            {
+                actual = (boolean) canAccess.invoke(null, region, c[1]);
+            }
+            catch (final ReflectiveOperationException e)
+            {
+                throw helper.assertionException("canAccessStateSafely threw: " + e);
+            }
+            if (actual != (boolean) c[2])
+            {
+                failures.add(status + " " + c[1] + ": expected " + c[2] + " got " + actual);
+            }
+        }
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException("DynamicTrees worldgen read zone: " + failures);
+        }
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for X-263-BEDBE: beds stopped being block entities in 26.x (vanilla data version 4885 drops their block-entity
      * tags from chunks, structures and items). Shipped blueprints are older and still carry {id:"minecraft:bed"} tile entities, which
      * the standalone BLOCK_ENTITY data fixer cannot convert ("Unsupported key: minecraft:bed") and which then fail to load
