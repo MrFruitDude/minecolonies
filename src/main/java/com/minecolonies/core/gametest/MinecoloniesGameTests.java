@@ -4131,6 +4131,45 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review DPT-C10: Domum must itself ask the server to send Architect's Cutter recipes to clients
+     * (MineColonies asking for them does not help a Domum-only server), and its JEI category must read them from the synced
+     * recipe map instead of reflecting into JEI internals. Looked up by name so the unfixed Domum jar fails the test instead of
+     * the build.
+     */
+    public static void domumCutterRecipeSync(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final net.minecraft.world.item.crafting.RecipeType<?> cutter = com.ldtteam.domumornamentum.recipe.ModRecipeTypes.ARCHITECTS_CUTTER.get();
+        try
+        {
+            final net.neoforged.neoforge.event.OnDatapackSyncEvent event =
+              new net.neoforged.neoforge.event.OnDatapackSyncEvent(level.getServer().getPlayerList(), FakePlayerFactory.getMinecraft(level));
+            Class.forName("com.ldtteam.domumornamentum.event.handlers.RecipeSyncEventHandler")
+              .getMethod("onDatapackSync", net.neoforged.neoforge.event.OnDatapackSyncEvent.class)
+              .invoke(null, event);
+            Log.getLogger().info("DPT-C10 Domum requests recipe types: {}", event.getRecipeTypesToSend());
+            helper.assertTrue(event.getRecipeTypesToSend().contains(cutter), "Domum does not request architects_cutter recipes");
+
+            final int serverCount = level.recipeAccess().recipeMap().byType(
+              com.ldtteam.domumornamentum.recipe.ModRecipeTypes.ARCHITECTS_CUTTER.get()).size();
+            final Class<?> cache = Class.forName("com.ldtteam.domumornamentum.recipe.architectscutter.ClientArchitectsCutterRecipes");
+            cache.getMethod("update", net.minecraft.world.item.crafting.RecipeMap.class).invoke(null, level.recipeAccess().recipeMap());
+            final int cached = ((java.util.List<?>) cache.getMethod("get").invoke(null)).size();
+            cache.getMethod("update", net.minecraft.world.item.crafting.RecipeMap.class).invoke(null, (Object) null);
+            final int cleared = ((java.util.List<?>) cache.getMethod("get").invoke(null)).size();
+            Log.getLogger().info("DPT-C10 cutter recipes server {} cached {} after clear {}", serverCount, cached, cleared);
+            helper.assertTrue(serverCount > 0, "no architects_cutter recipes on the server");
+            helper.assertTrue(cached == serverCount, "client cutter cache holds " + cached + " of " + serverCount + " recipes");
+            helper.assertTrue(cleared == 0, "client cutter cache not cleared on disconnect");
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            throw new IllegalStateException("DPT-C10 Domum cutter recipe sync missing: " + e, e);
+        }
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review BS-C1: Structurize scan-tool state (bounds, anchor, name, slot storage) must persist on the
      * item stack. Since item data became immutable components, writing into a copied tag silently drops the change.
      */

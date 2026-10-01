@@ -253,6 +253,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::clientRecipeSync),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "domum_cutter_recipe_sync"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::domumCutterRecipeSync),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "survival_placement_handlers_registered"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::survivalPlacementHandlersRegistered),
           data);
