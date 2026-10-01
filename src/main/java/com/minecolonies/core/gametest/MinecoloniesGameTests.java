@@ -5432,6 +5432,61 @@ public final class MinecoloniesGameTests
     /**
      * A7 guard: Structurize's server UUID is created once, stored in the overworld saved data, and stays the same.
      */
+    /**
+     * BS-S10: Structurize renders blueprints through BlockUI's shared FakeLevel (as upstream 1.21 does) instead of its own
+     * copy. Guards the contract the blueprint preview relies on: inclusive max bounds like vanilla LevelHeightAccessor,
+     * blueprint blocks readable at every corner, air outside, and non-zero distinct entity ids (26.x EntityLookup needs them).
+     */
+    public static void structurizeBlueprintFakeLevel(final GameTestHelper helper)
+    {
+        final Blueprint blueprint = new Blueprint((short) 3, (short) 2, (short) 4);
+        final BlockPos max = new BlockPos(2, 1, 3);
+        blueprint.addBlockState(BlockPos.ZERO, Blocks.STONE.defaultBlockState());
+        blueprint.addBlockState(max, Blocks.OAK_PLANKS.defaultBlockState());
+
+        helper.assertTrue(blueprint.getMaxX() == 2 && blueprint.getMaxY() == 1 && blueprint.getMaxZ() == 3,
+          "Blueprint max should be inclusive (2,1,3), was " + blueprint.getMaxX() + "," + blueprint.getMaxY() + "," + blueprint.getMaxZ());
+        helper.assertTrue(blueprint.isPosInside(max), "Max corner should be inside");
+        helper.assertTrue(!blueprint.isPosInside(max.east()) && !blueprint.isPosInside(max.above()) && !blueprint.isPosInside(max.south()),
+          "Positions past the max corner should be outside");
+
+        final com.ldtteam.common.fakelevel.FakeLevel<Blueprint> fakeLevel = new com.ldtteam.common.fakelevel.FakeLevel<>(blueprint,
+          new com.ldtteam.common.fakelevel.IFakeLevelLightProvider()
+          {
+              @Override
+              public boolean forceOwnLightLevel()
+              {
+                  return true;
+              }
+
+              @Override
+              public int getBlockLight(final BlockPos pos)
+              {
+                  return 15;
+              }
+
+              @Override
+              public int getSkyDarken()
+              {
+                  return 0;
+              }
+          },
+          helper.getLevel(), null, true);
+
+        helper.assertTrue(fakeLevel.getBlockState(BlockPos.ZERO).is(Blocks.STONE), "Min corner should be stone, was " + fakeLevel.getBlockState(BlockPos.ZERO));
+        helper.assertTrue(fakeLevel.getBlockState(max).is(Blocks.OAK_PLANKS), "Max corner should be planks, was " + fakeLevel.getBlockState(max));
+        helper.assertTrue(fakeLevel.getBlockState(max.east()).isAir(), "Outside the blueprint should be air, was " + fakeLevel.getBlockState(max.east()));
+
+        final net.minecraft.world.entity.Entity first = net.minecraft.world.entity.EntityTypes.ARMOR_STAND.create(fakeLevel, net.minecraft.world.entity.EntitySpawnReason.LOAD);
+        final net.minecraft.world.entity.Entity second = net.minecraft.world.entity.EntityTypes.ARMOR_STAND.create(fakeLevel, net.minecraft.world.entity.EntitySpawnReason.LOAD);
+        helper.assertTrue(first != null && second != null, "Armor stands could not be created in the fake level");
+        helper.assertTrue(first.getId() != 0 && second.getId() != 0 && first.getId() != second.getId(),
+          "Fake level entity ids should be non-zero and distinct, were " + first.getId() + " and " + second.getId());
+        fakeLevel.setEntities(List.of(first, second));
+        helper.assertTrue(fakeLevel.getEntity(first.getId()) == first && fakeLevel.getEntity(second.getId()) == second, "Entity lookup by id failed");
+        helper.succeed();
+    }
+
     public static void structurizeServerUuid(final GameTestHelper helper)
     {
         final java.util.UUID first = com.ldtteam.structurize.management.Manager.getServerUUID();
