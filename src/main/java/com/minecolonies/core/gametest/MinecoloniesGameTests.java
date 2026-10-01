@@ -2599,6 +2599,50 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review BS-C7 (found on screen in the dev client): a plain (not sneaking) left-click with a Structurize
+     * position selector (scan tool, caliper) must set the selection start and leave the block alone, like 1.21's canAttackBlock.
+     * The port only did that while sneaking, so a plain left-click broke the block and set nothing.
+     */
+    public static void structurizePosSelectorLeftClick(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final ServerPlayer player = FakePlayerFactory.getMinecraft(level);
+        player.setShiftKeyDown(false);
+        final List<String> failures = new java.util.ArrayList<>();
+        int x = 1;
+        for (final net.minecraft.world.item.Item tool : List.of(com.ldtteam.structurize.items.ModItems.scanTool.get(),
+          com.ldtteam.structurize.items.ModItems.caliper.get()))
+        {
+            final BlockPos target = helper.absolutePos(new BlockPos(x++, 2, 2));
+            level.setBlockAndUpdate(target, Blocks.GOLD_BLOCK.defaultBlockState());
+            final ItemStack stack = new ItemStack(tool);
+            player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, stack);
+            try
+            {
+                player.gameMode.destroyBlock(target);
+            }
+            finally
+            {
+                player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            }
+            final boolean survived = level.getBlockState(target).is(Blocks.GOLD_BLOCK);
+            final BlockPos start = com.ldtteam.structurize.items.AbstractItemWithPosSelector.getBounds(stack).getA();
+            final String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(tool).toString();
+            Log.getLogger().info("BS-C7 {}: block survived plain left-click: {}, start pos={}", id, survived, start);
+            if (!survived)
+            {
+                failures.add(id + " broke the block");
+            }
+            if (!target.equals(start))
+            {
+                failures.add(id + " did not set the start position (got " + start + ")");
+            }
+        }
+        helper.assertTrue(failures.isEmpty(), String.join("; ", failures));
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review MC-C06: the citizen inventory menu built from the open packet must have the server's slot layout
      * even when the citizen (or its colony view) is not known on the receiving side yet. The server's content packet sets every
      * server slot by index, so a 0-slot menu threw IndexOutOfBounds and disconnected the client.
