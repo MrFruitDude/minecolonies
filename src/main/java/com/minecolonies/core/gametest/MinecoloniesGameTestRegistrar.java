@@ -91,6 +91,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::architectsCutterRecipeLookup),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "domum_texture_data_load"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::domumTextureDataLoad),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "domum_material_tints"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::domumMaterialTints),
           data);

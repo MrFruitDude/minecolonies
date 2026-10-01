@@ -2176,6 +2176,52 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review DPT-C13 (found on screen with the dev harness): a Domum block entity loaded
+     * from a tag (world load, /setblock, the client's block entity data packet) must go through
+     * updateTextureDataWith like 1.21. The port assigned the field directly, so unknown components were kept and,
+     * on the client, the chunk section was never re-rendered: placed shingles kept their default clay look.
+     * The server-observable half is the component filter; the re-render half is checked in the dev client.
+     */
+    public static void domumTextureDataLoad(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos rel = new BlockPos(1, 1, 1);
+        helper.setBlock(rel, com.ldtteam.domumornamentum.block.IModBlocks.getInstance().getShingle(com.ldtteam.domumornamentum.shingles.ShingleHeightType.DEFAULT));
+        final BlockPos pos = helper.absolutePos(rel);
+        if (!(level.getBlockEntity(pos) instanceof final com.ldtteam.domumornamentum.entity.block.MateriallyTexturedBlockEntity be))
+        {
+            throw helper.assertionException("shingle has no materially textured block entity");
+        }
+        final Identifier roof = Identifier.withDefaultNamespace("block/clay");
+        final Identifier support = Identifier.withDefaultNamespace("block/oak_planks");
+        final Identifier bogus = Identifier.withDefaultNamespace("block/not_a_shingle_component");
+        final CompoundTag textures = new CompoundTag();
+        textures.putString(roof.toString(), "minecraft:grass_block");
+        textures.putString(support.toString(), "minecraft:oak_planks");
+        textures.putString(bogus.toString(), "minecraft:stone");
+        final CompoundTag tag = new CompoundTag();
+        tag.put("textureData", textures);
+        be.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), tag));
+
+        final Map<Identifier, Block> loaded = be.getTextureData().getTexturedComponents();
+        final List<String> failures = new ArrayList<>();
+        if (loaded.get(roof) != Blocks.GRASS_BLOCK || loaded.get(support) != Blocks.OAK_PLANKS)
+        {
+            failures.add("valid components not loaded: " + loaded);
+        }
+        if (loaded.containsKey(bogus))
+        {
+            failures.add("unknown component kept, load bypassed updateTextureDataWith: " + loaded);
+        }
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException("Domum texture data load wrong: " + String.join("; ", failures));
+        }
+        Log.getLogger().info("[domum_texture_data_load] tag load goes through updateTextureDataWith");
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review DPT-C12: MultiPiston's recipe and block loot table must load on 26.3. The port kept them in the
      * pre-1.21 folders (recipes/, loot_tables/) and the pre-1.21 recipe result format, so the block had no recipe and dropped nothing.
      */
