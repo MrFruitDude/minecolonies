@@ -3817,6 +3817,99 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Review MC-S02/S03: worker code reaches MineColonies' own block entities through {@link IItemHandlerCapProvider#wrap}; that
+     * must hand back the block entity's native item handler, not a capability adapter wrapped back into an item handler. The
+     * resource-handler adapter other mods see through the capability must still revert every slot it touched when a
+     * transaction (or a nested one) is aborted, keep them on commit, and keep working across transactions.
+     */
+    public static void itemHandlerOwnProviderDirect(final GameTestHelper helper)
+    {
+        final BlockPos rackPos = new BlockPos(1, 2, 1);
+        helper.setBlock(rackPos, ModBlocks.blockRack.defaultBlockState());
+        final BlockEntity rack = helper.getBlockEntity(rackPos, BlockEntity.class);
+        helper.assertTrue(rack instanceof TileEntityRack, "rack fixture has no rack block entity: " + rack);
+
+        final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler direct =
+          ((IItemHandlerCapProvider) rack).getItemHandlerCap((net.minecraft.core.Direction) null);
+        final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler wrapped =
+          IItemHandlerCapProvider.wrap(rack).getItemHandlerCap((net.minecraft.core.Direction) null);
+        Log.getLogger().info("MC-S02 rack own handler {} wrap -> {}", direct, wrapped);
+        helper.assertTrue(direct != null, "rack has no item handler");
+        helper.assertTrue(wrapped == direct, "wrap(rack) returned " + wrapped + " instead of the rack's own handler " + direct);
+
+        final net.neoforged.neoforge.transfer.ResourceHandler<net.neoforged.neoforge.transfer.item.ItemResource> cap =
+          net.neoforged.neoforge.capabilities.Capabilities.Item.BLOCK.getCapability(helper.getLevel(), helper.absolutePos(rackPos),
+            rack.getBlockState(), rack, null);
+        helper.assertTrue(cap != null && cap.size() == direct.getSlots(), "rack capability missing or wrong size: " + cap);
+
+        final net.neoforged.neoforge.transfer.item.ItemResource stone = net.neoforged.neoforge.transfer.item.ItemResource.of(Items.STONE);
+        final net.neoforged.neoforge.transfer.item.ItemResource dirt = net.neoforged.neoforge.transfer.item.ItemResource.of(Items.DIRT);
+        direct.insertItem(0, new ItemStack(Items.STONE, 5), false);
+        final java.util.function.Supplier<String> slots = () -> direct.getStackInSlot(0) + "|" + direct.getStackInSlot(1) + "|" + direct.getStackInSlot(2);
+
+        try (var tx = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot())
+        {
+            helper.assertTrue(cap.insert(1, dirt, 3, tx) == 3 && cap.insert(1, dirt, 4, tx) == 4 && cap.extract(0, stone, 2, tx) == 2,
+              "adapter insert/extract moved the wrong amount: " + slots.get());
+            try (var inner = net.neoforged.neoforge.transfer.transaction.Transaction.open(tx))
+            {
+                cap.insert(2, dirt, 1, inner);
+                cap.insert(1, dirt, 1, inner);
+                cap.extract(0, stone, 1, inner);
+            }
+            final String afterInner = slots.get();
+            helper.assertTrue(direct.getStackInSlot(0).getCount() == 3 && direct.getStackInSlot(1).getCount() == 7 && direct.getStackInSlot(2).isEmpty(),
+              "aborted nested transaction was not reverted: " + afterInner);
+        }
+        final String afterAbort = slots.get();
+        Log.getLogger().info("MC-S03 after abort {}", afterAbort);
+        helper.assertTrue(direct.getStackInSlot(0).getCount() == 5 && direct.getStackInSlot(1).isEmpty() && direct.getStackInSlot(2).isEmpty(),
+          "aborted transaction was not reverted: " + afterAbort);
+
+        try (var tx = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot())
+        {
+            cap.insert(1, dirt, 3, tx);
+            cap.insert(1, dirt, 4, tx);
+            cap.extract(0, stone, 2, tx);
+            tx.commit();
+        }
+        final String afterCommit = slots.get();
+        Log.getLogger().info("MC-S03 after commit {}", afterCommit);
+        helper.assertTrue(direct.getStackInSlot(0).getCount() == 3 && direct.getStackInSlot(1).is(Items.DIRT) && direct.getStackInSlot(1).getCount() == 7,
+          "committed transaction lost changes: " + afterCommit);
+
+        try (var tx = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot())
+        {
+            cap.extract(1, dirt, 7, tx);
+            cap.extract(0, stone, 3, tx);
+        }
+        final String afterSecondAbort = slots.get();
+        Log.getLogger().info("MC-S03 after second abort {}", afterSecondAbort);
+        helper.assertTrue(direct.getStackInSlot(0).getCount() == 3 && direct.getStackInSlot(1).getCount() == 7,
+          "second aborted transaction was not reverted: " + afterSecondAbort);
+
+        // Rough cost of the worker path (warehouse/courier slot operations through wrap): logged as evidence only.
+        final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler viaWrap = IItemHandlerCapProvider.wrap(rack).getItemHandlerCap((net.minecraft.core.Direction) null);
+        final long start = System.nanoTime();
+        for (int i = 0; i < 200_000; i++)
+        {
+            viaWrap.insertItem(3, new ItemStack(Items.DIRT, 1), false);
+            viaWrap.extractItem(3, 1, false);
+        }
+        Log.getLogger().info("MC-S02 bench 200000 insert+extract via wrap(rack): {} ms", (System.nanoTime() - start) / 1_000_000);
+        final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler viaCap = com.ldtteam.structurize.api.compat.itemhandler.IItemHandler.of(cap);
+        final long capStart = System.nanoTime();
+        for (int i = 0; i < 200_000; i++)
+        {
+            viaCap.insertItem(3, new ItemStack(Items.DIRT, 1), false);
+            viaCap.extractItem(3, 1, false);
+        }
+        Log.getLogger().info("MC-S02 bench 200000 insert+extract via capability round trip: {} ms", (System.nanoTime() - capStart) / 1_000_000);
+        helper.assertTrue(direct.getStackInSlot(3).isEmpty(), "bench left items in slot 3: " + direct.getStackInSlot(3));
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review CP content items: the shipped data must match 1.21 for the Concrete Mixer hut recipe
      * (white concrete powder, the port used red), the Nether Worker trip display outputs (mob drops from adventure tokens
      * were lost because the datagen loot lookup could not resolve vanilla entity loot tables), the stonemason product

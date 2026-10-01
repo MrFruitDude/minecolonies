@@ -17,6 +17,11 @@ public class ItemHandlerResourceHandlerAdapter implements ResourceHandler<ItemRe
 {
     private final IItemHandlerModifiable handler;
 
+    /**
+     * Lazily created per-slot journals, grown when the handler gains slots.
+     */
+    private SlotJournal[] journals = new SlotJournal[0];
+
     private ItemHandlerResourceHandlerAdapter(@NotNull final IItemHandlerModifiable handler)
     {
         this.handler = handler;
@@ -116,19 +121,41 @@ public class ItemHandlerResourceHandlerAdapter implements ResourceHandler<ItemRe
 
     private void trackSlot(@NotNull final TransactionContext context, final int index)
     {
-        new SnapshotJournal<ItemStack>()
+        if (index >= journals.length)
         {
-            @Override
-            protected ItemStack createSnapshot()
-            {
-                return handler.getStackInSlot(index).copy();
-            }
+            journals = java.util.Arrays.copyOf(journals, Math.max(index + 1, handler.getSlots()));
+        }
+        SlotJournal journal = journals[index];
+        if (journal == null)
+        {
+            journal = new SlotJournal(index);
+            journals[index] = journal;
+        }
+        journal.updateSnapshots(context);
+    }
 
-            @Override
-            protected void revertToSnapshot(@NotNull final ItemStack snapshot)
-            {
-                handler.setStackInSlot(index, snapshot);
-            }
-        }.updateSnapshots(context);
+    /**
+     * One reusable journal per slot: it snapshots the slot once per transaction depth, however many operations touch it.
+     */
+    private final class SlotJournal extends SnapshotJournal<ItemStack>
+    {
+        private final int index;
+
+        private SlotJournal(final int index)
+        {
+            this.index = index;
+        }
+
+        @Override
+        protected ItemStack createSnapshot()
+        {
+            return handler.getStackInSlot(index).copy();
+        }
+
+        @Override
+        protected void revertToSnapshot(@NotNull final ItemStack snapshot)
+        {
+            handler.setStackInSlot(index, snapshot);
+        }
     }
 }

@@ -42,6 +42,12 @@ public interface IItemHandlerCapProvider
 
     public static IItemHandlerCapProvider wrap(final BlockEntity blockEntity)
     {
+        // Our own block entities register their capability as an adapter over this very handler; going through the
+        // capability would wrap it twice (IItemHandler -> ResourceHandler -> IItemHandler) for every slot operation.
+        if (blockEntity instanceof IItemHandlerCapProvider provider)
+        {
+            return provider;
+        }
         return direction -> ofNullable(Item.BLOCK.getCapability(blockEntity.getLevel(), blockEntity.getBlockPos(), blockEntity.getBlockState(), blockEntity, direction));
     }
 
@@ -50,6 +56,11 @@ public interface IItemHandlerCapProvider
      */
     public static IItemHandlerCapProvider wrap(final Entity entity, final boolean sided)
     {
+        // Citizens and visitors register only the unsided capability, as an adapter over their own handler.
+        if (!sided && entity instanceof IItemHandlerCapProvider provider)
+        {
+            return provider;
+        }
         return sided ? direction -> ofNullable(Item.ENTITY_AUTOMATION.getCapability(entity, direction)) :
             direction -> ofNullable(Item.ENTITY.getCapability(entity, null));
     }
