@@ -3164,6 +3164,107 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for X-STZ121 upstream #699: Structurize's resource lists (ItemStackUtils, used for builder
+     * requirements) must read contents like 1.21: a shulker box inside a chest also counts its own contents, block entities
+     * that keep their item under another key than "Items" (decorated pot, jukebox) count it, a glow item frame needs a glow
+     * item frame, an inventory-less vehicle (plain minecart) needs its item, and a mob never needs its spawn egg.
+     */
+    public static void structurizeItemExtraction(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final List<String> failures = new java.util.ArrayList<>();
+        final java.util.function.Function<List<ItemStack>, String> describe = stacks -> stacks.stream()
+          .map(s -> s.getCount() + "x" + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(s.getItem()))
+          .sorted()
+          .collect(java.util.stream.Collectors.joining(","));
+        final java.util.function.BiFunction<BlockPos, net.minecraft.world.level.block.state.BlockState, String> scan = (rel, state) -> {
+            final BlockPos pos = helper.absolutePos(rel);
+            final com.ldtteam.structurize.blueprints.v1.Blueprint blueprint = com.ldtteam.structurize.blueprints.v1.BlueprintUtil.createBlueprint(
+              level, pos, false, (short) 1, (short) 1, (short) 1, "stz699", java.util.Optional.empty());
+            return describe.apply(com.ldtteam.structurize.api.util.ItemStackUtils.getItemStacksOfTileEntity(blueprint.getTileEntities()[0][0][0], state));
+        };
+        final java.util.function.BiConsumer<String, String[]> check = (what, actualExpected) -> {
+            Log.getLogger().info("STZ699 {} -> {}", what, actualExpected[0]);
+            if (!actualExpected[0].equals(actualExpected[1]))
+            {
+                failures.add(what + ": got [" + actualExpected[0] + "] expected [" + actualExpected[1] + "]");
+            }
+        };
+
+        // 1. Chest holding a filled shulker box: the shulker's own contents are part of the requirement.
+        final ItemStack shulker = new ItemStack(Items.SHULKER_BOX);
+        shulker.set(net.minecraft.core.component.DataComponents.CONTAINER,
+          net.minecraft.world.item.component.ItemContainerContents.fromItems(List.of(new ItemStack(Items.DIAMOND, 5))));
+        final BlockPos chestPos = new BlockPos(1, 1, 1);
+        level.setBlockAndUpdate(helper.absolutePos(chestPos), Blocks.CHEST.defaultBlockState());
+        if (level.getBlockEntity(helper.absolutePos(chestPos)) instanceof final ChestBlockEntity chest)
+        {
+            chest.setItem(0, shulker.copy());
+            chest.setItem(1, new ItemStack(Items.STONE, 3));
+        }
+        check.accept("chest with shulker", new String[] {scan.apply(chestPos, Blocks.CHEST.defaultBlockState()),
+          "1xminecraft:shulker_box,3xminecraft:stone,5xminecraft:diamond"});
+
+        // 2. Decorated pot and jukebox keep their single item outside "Items".
+        final BlockPos potPos = new BlockPos(2, 1, 1);
+        level.setBlockAndUpdate(helper.absolutePos(potPos), Blocks.DECORATED_POT.defaultBlockState());
+        if (level.getBlockEntity(helper.absolutePos(potPos)) instanceof final net.minecraft.world.level.block.entity.DecoratedPotBlockEntity pot)
+        {
+            pot.setTheItem(new ItemStack(Items.APPLE, 2));
+        }
+        check.accept("decorated pot", new String[] {scan.apply(potPos, Blocks.DECORATED_POT.defaultBlockState()), "2xminecraft:apple"});
+
+        final BlockPos jukeboxPos = new BlockPos(3, 1, 1);
+        level.setBlockAndUpdate(helper.absolutePos(jukeboxPos), Blocks.JUKEBOX.defaultBlockState());
+        if (level.getBlockEntity(helper.absolutePos(jukeboxPos)) instanceof final net.minecraft.world.level.block.entity.JukeboxBlockEntity jukebox)
+        {
+            jukebox.setSongItemWithoutPlaying(new ItemStack(Items.MUSIC_DISC_CAT));
+        }
+        check.accept("jukebox", new String[] {scan.apply(jukeboxPos, level.getBlockState(helper.absolutePos(jukeboxPos))),
+          "1xminecraft:music_disc_cat"});
+
+        // 3. Entities.
+        final BlockPos entityPos = helper.absolutePos(new BlockPos(1, 2, 2));
+        final net.minecraft.world.entity.decoration.GlowItemFrame glowFrame =
+          net.minecraft.world.entity.EntityTypes.GLOW_ITEM_FRAME.create(level, net.minecraft.world.entity.EntitySpawnReason.STRUCTURE);
+        glowFrame.setItem(new ItemStack(Items.EMERALD));
+        check.accept("glow item frame", new String[] {describe.apply(
+          com.ldtteam.structurize.api.util.ItemStackUtils.getListOfStackForEntity(glowFrame, entityPos)),
+          "1xminecraft:emerald,1xminecraft:glow_item_frame"});
+
+        final net.minecraft.world.entity.vehicle.minecart.AbstractMinecart cart =
+          net.minecraft.world.entity.EntityTypes.MINECART.create(level, net.minecraft.world.entity.EntitySpawnReason.STRUCTURE);
+        check.accept("minecart", new String[] {describe.apply(
+          com.ldtteam.structurize.api.util.ItemStackUtils.getListOfStackForEntity(cart, entityPos)), "1xminecraft:minecart"});
+
+        final net.minecraft.world.entity.vehicle.minecart.MinecartChest chestCart =
+          net.minecraft.world.entity.EntityTypes.CHEST_MINECART.create(level, net.minecraft.world.entity.EntitySpawnReason.STRUCTURE);
+        chestCart.setItem(0, shulker.copy());
+        check.accept("chest minecart", new String[] {describe.apply(
+          com.ldtteam.structurize.api.util.ItemStackUtils.getListOfStackForEntity(chestCart, entityPos)),
+          "1xminecraft:chest_minecart,1xminecraft:shulker_box,5xminecraft:diamond"});
+
+        final net.minecraft.world.entity.decoration.ArmorStand stand =
+          net.minecraft.world.entity.EntityTypes.ARMOR_STAND.create(level, net.minecraft.world.entity.EntitySpawnReason.STRUCTURE);
+        stand.setItemSlot(net.minecraft.world.entity.EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+        check.accept("armor stand", new String[] {describe.apply(
+          com.ldtteam.structurize.api.util.ItemStackUtils.getListOfStackForEntity(stand, entityPos)),
+          "1xminecraft:armor_stand,1xminecraft:iron_helmet"});
+
+        final net.minecraft.world.entity.monster.zombie.Zombie zombie =
+          net.minecraft.world.entity.EntityTypes.ZOMBIE.create(level, net.minecraft.world.entity.EntitySpawnReason.STRUCTURE);
+        check.accept("zombie", new String[] {describe.apply(
+          com.ldtteam.structurize.api.util.ItemStackUtils.getListOfStackForEntity(zombie, entityPos)), ""});
+
+        Log.getLogger().info("STZ699 failures {}", failures);
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException(String.join("; ", failures));
+        }
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for X-STZ121 upstream #721: BlockUtils.handleCorrectBlockPlacement (replace tool / shape and fill
      * operations) must apply the placed stack's data components to the new block entity, like vanilla block placement.
      * Without it a named chest loses its name and a Domum block placed from a textured stack loses its materials.
