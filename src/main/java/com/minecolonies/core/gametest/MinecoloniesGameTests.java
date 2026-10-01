@@ -2492,6 +2492,100 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Fixture for review X-263-CUTTERIN: a player must be able to put a valid
+     * material into the Architect's Cutter inputs through the normal menu clicks
+     * (pick up + place, and shift-click from the player inventory), both before a
+     * group is chosen and after choosing a group and variant like the screen does.
+     */
+    public static void architectsCutterInputClicks(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos cutterPos = helper.absolutePos(new BlockPos(2, 1, 2));
+        helper.setBlock(new BlockPos(2, 1, 2), com.ldtteam.domumornamentum.block.IModBlocks.getInstance().getArchitectsCutter());
+        final ServerPlayer player = FakePlayerFactory.getMinecraft(level);
+        player.getInventory().clearContent();
+        final com.ldtteam.domumornamentum.container.ArchitectsCutterContainer menu =
+          new com.ldtteam.domumornamentum.container.ArchitectsCutterContainer(1, player.getInventory(),
+            net.minecraft.world.inventory.ContainerLevelAccess.create(level, cutterPos));
+        final int inputs = menu.inputInventory.getContainerSize();
+        final int output = menu.outputInventorySlot.index;
+        final java.util.List<String> failures = new java.util.ArrayList<>();
+        Log.getLogger().info("X-263-CUTTERIN inputs={} outputSlot={} totalSlots={}", inputs, output, menu.slots.size());
+
+        // 1) pick-up/place into input 0 with no group selected.
+        menu.setCarried(new ItemStack(Items.OAK_PLANKS, 8));
+        menu.clicked(0, 0, net.minecraft.world.inventory.ContainerInput.PICKUP, player);
+        Log.getLogger().info("X-263-CUTTERIN pickup slot0 -> slot={} carried={}", menu.getSlot(0).getItem(), menu.getCarried());
+        if (menu.getSlot(0).getItem().getItem() != Items.OAK_PLANKS)
+        {
+            failures.add("placing oak planks into input 0 was refused (no group)");
+        }
+        menu.setCarried(ItemStack.EMPTY);
+        menu.getSlot(0).set(ItemStack.EMPTY);
+
+        // 2) shift-click oak planks from the player's first main-inventory slot.
+        final int playerFirst = output + 1;
+        menu.getSlot(playerFirst).set(new ItemStack(Items.OAK_PLANKS, 8));
+        menu.clicked(playerFirst, 0, net.minecraft.world.inventory.ContainerInput.QUICK_MOVE, player);
+        int movedToInputs = 0;
+        for (int i = 0; i < inputs; i++)
+        {
+            movedToInputs += menu.getSlot(i).getItem().getCount();
+        }
+        Log.getLogger().info("X-263-CUTTERIN quickmove from {} -> inputs hold {}, source {}", playerFirst, movedToInputs, menu.getSlot(playerFirst).getItem());
+        if (movedToInputs == 0)
+        {
+            failures.add("shift-click of oak planks from the player inventory moved nothing into the inputs");
+        }
+        for (int i = 0; i < inputs; i++)
+        {
+            menu.getSlot(i).set(ItemStack.EMPTY);
+        }
+        menu.getSlot(playerFirst).set(ItemStack.EMPTY);
+
+        // 3) select the first group whose first variant accepts oak planks in slot 0, like the screen does, then place.
+        final java.util.Map<Identifier, java.util.List<ItemStack>> groups =
+          com.ldtteam.domumornamentum.block.ModBlocks.getInstance().getOrComputeItemGroups();
+        int groupIndex = 0;
+        for (final java.util.Map.Entry<Identifier, java.util.List<ItemStack>> group : groups.entrySet())
+        {
+            menu.clickMenuButton(player, groupIndex);
+            menu.clickMenuButton(player, groups.size());
+            menu.setCarried(new ItemStack(Items.OAK_PLANKS, 8));
+            menu.clicked(0, 0, net.minecraft.world.inventory.ContainerInput.PICKUP, player);
+            final boolean placed = menu.getSlot(0).getItem().getItem() == Items.OAK_PLANKS;
+            Log.getLogger().info("X-263-CUTTERIN group {} variant0={} placed={} output={}", group.getKey(), menu.getCurrentVariant(), placed, menu.outputInventorySlot.getItem());
+            menu.setCarried(ItemStack.EMPTY);
+            menu.getSlot(0).set(ItemStack.EMPTY);
+            if (group.getKey().getPath().contains("shingle") && !placed)
+            {
+                failures.add("shingle group " + group.getKey() + " refused oak planks in input 0");
+            }
+            // Like 1.21: the vanilla-compat stairs only take materials without vanilla stairs (stairs_materials tag),
+            // so oak planks are refused there and hay is accepted. This is the screen's default selection.
+            if (group.getKey().getPath().equals("avanilla"))
+            {
+                if (placed)
+                {
+                    failures.add("vanilla-compat stairs accepted oak planks, which already have vanilla stairs");
+                }
+                menu.setCarried(new ItemStack(Items.HAY_BLOCK, 8));
+                menu.clicked(0, 0, net.minecraft.world.inventory.ContainerInput.PICKUP, player);
+                if (menu.getSlot(0).getItem().getItem() != Items.HAY_BLOCK)
+                {
+                    failures.add("vanilla-compat stairs refused hay, which is in stairs_materials");
+                }
+                menu.setCarried(ItemStack.EMPTY);
+                menu.getSlot(0).set(ItemStack.EMPTY);
+            }
+            groupIndex++;
+        }
+
+        helper.assertTrue(failures.isEmpty(), "Architect's Cutter input clicks: " + failures);
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review MC-C01: breaking a rack or grave must drop its
      * contents. Since MC 1.21.5 the block entity is removed before
      * {@code affectNeighborsAfterRemoval}, so drops coded there silently vanished.
