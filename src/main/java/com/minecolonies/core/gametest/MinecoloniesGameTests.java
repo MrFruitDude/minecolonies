@@ -5017,4 +5017,56 @@ public final class MinecoloniesGameTests
           "End not end type");
         helper.succeed();
     }
+
+    /**
+     * A7 guard: BlockUI text builders resolve the 16 vanilla colour codes to the same RGB values as the port's old hand-written table.
+     */
+    public static void blockuiVanillaTextColors(final GameTestHelper helper)
+    {
+        final String codes = "0123456789abcdef";
+        final int[] expected = {0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA,
+          0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF};
+        for (int i = 0; i < codes.length(); i++)
+        {
+            final net.minecraft.ChatFormatting formatting = net.minecraft.ChatFormatting.getByCode(codes.charAt(i));
+            final int byCode = textColor(new com.ldtteam.blockui.controls.AbstractTextBuilder.TextBuilder().colorVanillaCode(codes.charAt(i)));
+            final int byStyle = textColor(new com.ldtteam.blockui.controls.AbstractTextBuilder.TextBuilder().style(formatting));
+            helper.assertTrue(byCode == expected[i] && byStyle == expected[i],
+              String.format("%s: code %06X style %06X, expected %06X", formatting, byCode, byStyle, expected[i]));
+        }
+        boolean threw = false;
+        try
+        {
+            new com.ldtteam.blockui.controls.AbstractTextBuilder.TextBuilder().style(net.minecraft.ChatFormatting.BOLD);
+            new com.ldtteam.blockui.controls.AbstractTextBuilder.TextBuilder().colorVanillaCode('z');
+        }
+        catch (final RuntimeException e)
+        {
+            threw = true;
+        }
+        helper.assertFalse(threw, "Non-colour formatting or unknown code threw");
+        helper.succeed();
+    }
+
+    private static int textColor(final com.ldtteam.blockui.controls.AbstractTextBuilder.TextBuilder builder)
+    {
+        final java.util.List<net.minecraft.network.chat.MutableComponent> text =
+          builder.append(net.minecraft.network.chat.Component.literal("x")).paragraphBreak().getText();
+        final net.minecraft.network.chat.TextColor color = text.get(0).getStyle().getColor();
+        return color == null ? -1 : color.getValue();
+    }
+
+    /**
+     * A7 guard: Structurize's server UUID is created once, stored in the overworld saved data, and stays the same.
+     */
+    public static void structurizeServerUuid(final GameTestHelper helper)
+    {
+        final java.util.UUID first = com.ldtteam.structurize.management.Manager.getServerUUID();
+        final com.ldtteam.structurize.management.UUIDStorage stored = helper.getLevel().getServer().overworld().getDataStorage()
+          .computeIfAbsent(com.ldtteam.structurize.management.UUIDStorage.TYPE);
+        helper.assertTrue(first != null, "Server UUID is null");
+        helper.assertTrue(first.equals(stored.getUUID()), "Server UUID " + first + " differs from stored " + stored.getUUID());
+        helper.assertTrue(first.equals(com.ldtteam.structurize.management.Manager.getServerUUID()), "Server UUID changed between calls");
+        helper.succeed();
+    }
 }
