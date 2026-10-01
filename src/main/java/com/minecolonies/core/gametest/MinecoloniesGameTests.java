@@ -2428,32 +2428,95 @@ public final class MinecoloniesGameTests
      * (e.g. Minecraft.getInstance().level passed as a Level), so the whole class fails with NoClassDefFoundError on the server.
      * This replays the bytecode verifier's assignability checks with ASM and fails on any that need a client class.
      * Dev runs have the client classes, so only this analysis (or a real dedicated server) can see the failure.
+     * X-263-CLIENTVERIFY: scans every class of the 6 mods. A class may need client classes only when it is client-only by
+     * design ({@link #isClientOnlyClass}); the release dedicated server loads none of those (runs/...-X-263-CLIENTVERIFY).
      */
     public static void serverClassesVerifyWithoutClient(final GameTestHelper helper)
     {
-        final List<String> guarded = List.of(
+        // Loaded by every server: must be scanned even if a mod list change drops them from the scan.
+        final List<String> required = List.of(
           "com.ldtteam.structurize.storage.rendering.types.BlueprintPreviewData",
           "com.ldtteam.structurize.network.messages.SyncPreviewCacheToServer",
           "com.ldtteam.structurize.network.messages.SyncPreviewCacheToClient",
           // Loaded by ColonyPackageManager#sendColonyViewPackets (static serializeNetworkData) on every colony update.
           "com.minecolonies.core.colony.ColonyView");
-        final List<String> problems = new ArrayList<>();
-        try
+        final java.util.Set<String> names = new java.util.TreeSet<>(required);
+        for (final String modId : List.of("minecolonies", "structurize", "blockui", "domum_ornamentum", "multipiston", "dynamictrees"))
         {
-            for (final String name : guarded)
+            final var file = net.neoforged.fml.ModList.get().getModFileById(modId);
+            if (file != null)
             {
-                problems.addAll(clientTypesNeededToVerify(name));
+                file.getFile().getScanResult().getClasses().forEach(c -> names.add(c.clazz().getClassName()));
             }
         }
-        catch (final Throwable t)
+        final List<String> problems = new ArrayList<>();
+        int clientOnly = 0;
+        int unresolvable = 0;
+        for (final String name : names)
         {
-            Log.getLogger().error("[server_classes_verify_without_client] analysis crashed", t);
-            helper.fail("analysis crashed: " + t);
-            return;
+            final List<String> found;
+            try
+            {
+                found = clientTypesNeededToVerify(name);
+            }
+            catch (final NoClassDefFoundError e)
+            {
+                // Optional compat (e.g. JourneyMap) whose API is not on the test classpath; never loaded without that mod.
+                unresolvable++;
+                continue;
+            }
+            catch (final Throwable t)
+            {
+                Log.getLogger().error("[server_classes_verify_without_client] analysis crashed on " + name, t);
+                helper.fail("analysis crashed on " + name + ": " + t);
+                return;
+            }
+            if (found.isEmpty())
+            {
+                continue;
+            }
+            if (!required.contains(name) && isClientOnlyClass(name, found))
+            {
+                clientOnly++;
+                continue;
+            }
+            problems.addAll(found);
         }
-        Log.getLogger().info("[server_classes_verify_without_client] {} problems: {}", problems.size(), problems);
-        helper.assertTrue(problems.isEmpty(), "server-loaded classes need client classes to verify: " + problems);
+        Log.getLogger().info("[server_classes_verify_without_client] scanned {} classes, {} client-only, {} unresolvable optional, {} problems: {}",
+          names.size(), clientOnly, unresolvable, problems.size(), problems);
+        helper.assertTrue(names.size() > 1000, "expected the 6 mods' classes, scanned " + names.size());
+        helper.assertTrue(problems.isEmpty(), "server-loadable classes need client classes to verify: " + problems);
         helper.succeed();
+    }
+
+    /**
+     * Classes reviewed as client-only although their package does not say so (X-263-CLIENTVERIFY): BlockUI's widget tree is
+     * the GUI library itself, datagen providers run in data runs only, SoundManager is only built in ColonyManager#onClientTick.
+     */
+    private static final java.util.Set<String> REVIEWED_CLIENT_ONLY = java.util.Set.of(
+      "com.ldtteam.blockui.Pane", "com.ldtteam.blockui.UiRenderMacros", "com.ldtteam.blockui.controls.Button",
+      "com.ldtteam.blockui.controls.ButtonImage", "com.ldtteam.blockui.controls.CheckBox", "com.ldtteam.blockui.controls.EntityIcon",
+      "com.ldtteam.blockui.controls.Gradient", "com.ldtteam.blockui.controls.Image", "com.ldtteam.blockui.controls.ItemIcon",
+      "com.ldtteam.blockui.controls.Scrollbar", "com.ldtteam.blockui.controls.TextField", "com.ldtteam.blockui.controls.TextFieldVanilla",
+      "com.ldtteam.blockui.controls.Tooltip", "com.ldtteam.blockui.mod.item.BlockStateRenderingData", "com.ldtteam.blockui.util.cursor.Cursor",
+      "com.ldtteam.blockui.views.Box", "com.minecolonies.api.sounds.SoundManager",
+      "com.minecolonies.core.generation.defaults.DefaultEntityIconProvider", "com.dtteam.dynamictrees.data.provider.DTSpriteSourceProvider");
+
+    /**
+     * A class that needs client classes to verify is acceptable only if it is client-only by design: a client package or
+     * naming convention, a subclass of a client type, or reviewed in {@link #REVIEWED_CLIENT_ONLY}.
+     */
+    private static boolean isClientOnlyClass(final String name, final List<String> problems)
+    {
+        final String outer = name.contains("$") ? name.substring(0, name.indexOf('$')) : name;
+        if (REVIEWED_CLIENT_ONLY.contains(outer)
+              || java.util.regex.Pattern.compile("\\.(client|gui|render|model|screens|jei|journeymap)\\.").matcher(name).find()
+              || java.util.regex.Pattern.compile("Client|Window|Renderer|Screen").matcher(name.substring(name.lastIndexOf('.') + 1)).find())
+        {
+            return true;
+        }
+        // Extends/implements a client type: its own constructor assigns 'this' to the client supertype.
+        return problems.stream().anyMatch(p -> p.startsWith(name + "#<init>: " + name + " -> "));
     }
 
     /**
