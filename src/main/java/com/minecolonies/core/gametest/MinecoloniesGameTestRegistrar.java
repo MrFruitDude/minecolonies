@@ -257,6 +257,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::domumShingleItemNames),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "domum_cycled_material_cache"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::domumCycledMaterialCache),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "legacy_config_migration"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::legacyConfigMigration),
           data);

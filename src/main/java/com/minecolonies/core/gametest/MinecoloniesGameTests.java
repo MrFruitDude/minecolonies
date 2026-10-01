@@ -4244,6 +4244,88 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Guard for review DPT-S05: Domum's cycling preview materials (items/blocks without data) are cached per block and second.
+     * The cached answer must equal the uncached 1.21 computation for every materially textured block over many seconds, and
+     * the preview must still cycle.
+     */
+    public static void domumCycledMaterialCache(final GameTestHelper helper)
+    {
+        final java.util.List<String> failures = new java.util.ArrayList<>();
+        int blocks = 0;
+        int comparisons = 0;
+        int nonEmpty = 0;
+        int cycling = 0;
+        final java.util.List<net.minecraft.world.level.block.Block> textured = new java.util.ArrayList<>();
+        for (final net.minecraft.world.level.block.Block block : net.minecraft.core.registries.BuiltInRegistries.BLOCK)
+        {
+            if (block instanceof com.ldtteam.domumornamentum.block.IMateriallyTexturedBlock)
+            {
+                textured.add(block);
+            }
+        }
+        for (final net.minecraft.world.level.block.Block block : textured)
+        {
+            blocks++;
+            final java.util.Set<com.ldtteam.domumornamentum.client.model.data.MaterialTextureData> seen = new java.util.HashSet<>();
+            for (long second = 0; second < 64; second++)
+            {
+                final com.ldtteam.domumornamentum.client.model.data.MaterialTextureData fresh =
+                  com.ldtteam.domumornamentum.util.MaterialTextureDataUtil.computeRandomTextureData(block, second);
+                // Twice: the first call may compute, the second must hit the cache.
+                final com.ldtteam.domumornamentum.client.model.data.MaterialTextureData first =
+                  com.ldtteam.domumornamentum.util.MaterialTextureDataUtil.generateRandomTextureDataFrom(block, second);
+                final com.ldtteam.domumornamentum.client.model.data.MaterialTextureData second2 =
+                  com.ldtteam.domumornamentum.util.MaterialTextureDataUtil.generateRandomTextureDataFrom(block, second);
+                comparisons++;
+                if (fresh == null || !fresh.equals(first) || !fresh.equals(second2))
+                {
+                    if (failures.size() < 10)
+                    {
+                        failures.add(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block) + "@" + second + ": fresh " + fresh + " cached " + first + "/" + second2);
+                    }
+                }
+                if (fresh != null && !fresh.isEmpty())
+                {
+                    nonEmpty++;
+                }
+                seen.add(fresh);
+            }
+            if (seen.size() > 1)
+            {
+                cycling++;
+            }
+        }
+
+        // Timing: one block, many lookups in the same second (what a frame-rate render loop does).
+        final net.minecraft.world.level.block.Block probe = textured.isEmpty() ? null : textured.get(0);
+        long uncachedNs = 0;
+        long cachedNs = 0;
+        if (probe != null)
+        {
+            final int n = 200_000;
+            long t = System.nanoTime();
+            for (int i = 0; i < n; i++)
+            {
+                com.ldtteam.domumornamentum.util.MaterialTextureDataUtil.computeRandomTextureData(probe, 7);
+            }
+            uncachedNs = System.nanoTime() - t;
+            t = System.nanoTime();
+            for (int i = 0; i < n; i++)
+            {
+                com.ldtteam.domumornamentum.util.MaterialTextureDataUtil.generateRandomTextureDataFrom(probe, 7);
+            }
+            cachedNs = System.nanoTime() - t;
+        }
+        Log.getLogger().info("DPT-S05: {} blocks, {} comparisons, {} non-empty, {} blocks cycle, 200k lookups uncached {} ms cached {} ms, failures {}",
+          blocks, comparisons, nonEmpty, cycling, uncachedNs / 1_000_000, cachedNs / 1_000_000, failures);
+        if (blocks < 20 || nonEmpty == 0 || cycling == 0 || !failures.isEmpty())
+        {
+            throw helper.assertionException("cycled material cache: blocks " + blocks + ", non-empty " + nonEmpty + ", cycling " + cycling + ", " + String.join("; ", failures));
+        }
+        helper.succeed();
+    }
+
+    /**
      * X-263-CFGMIG: values from a pre-.37 config (1.21 <mod>-server.toml / <mod>-common.toml) are carried into the renamed config.
      * Known keys keep the player's value, keys the spec no longer has are dropped, out-of-range values are corrected like any loaded file.
      */
