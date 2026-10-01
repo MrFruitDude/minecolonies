@@ -2176,6 +2176,47 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review DPT-C12: MultiPiston's recipe and block loot table must load on 26.3. The port kept them in the
+     * pre-1.21 folders (recipes/, loot_tables/) and the pre-1.21 recipe result format, so the block had no recipe and dropped nothing.
+     */
+    public static void multipistonRecipeAndLoot(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final Block piston = com.ldtteam.multipiston.ModBlocks.multipiston.value();
+        final net.minecraft.world.item.Item pistonItem = piston.asItem();
+
+        final net.minecraft.resources.ResourceKey<net.minecraft.world.item.crafting.Recipe<?>> recipeKey =
+          net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.RECIPE,
+            Identifier.fromNamespaceAndPath("multipiston", "multiblock"));
+        helper.assertTrue(level.recipeAccess().recipeMap().byKey(recipeKey) != null, "Missing recipe multipiston:multiblock");
+
+        final ItemStack s = new ItemStack(Items.STONE);
+        final ItemStack r = new ItemStack(Items.REDSTONE_BLOCK);
+        final ItemStack p = new ItemStack(Items.PISTON);
+        final net.minecraft.world.item.crafting.CraftingInput grid = net.minecraft.world.item.crafting.CraftingInput.of(3, 3,
+          List.of(s, s, s, r, ItemStack.EMPTY, r, p, p, p));
+        final var match = level.recipeAccess().getRecipeFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING, grid, level);
+        helper.assertTrue(match.isPresent(), "Crafting grid stone/redstone block/piston matches no recipe");
+        final ItemStack crafted = match.get().value().assemble(grid);
+        helper.assertTrue(crafted.is(pistonItem) && crafted.getCount() == 1, "Recipe crafts " + crafted + " instead of 1 multipiston");
+
+        final net.minecraft.resources.ResourceKey<net.minecraft.world.level.storage.loot.LootTable> lootKey = piston.getLootTable().orElseThrow();
+        helper.assertTrue(level.getServer().reloadableRegistries().getLootTable(lootKey) != net.minecraft.world.level.storage.loot.LootTable.EMPTY,
+          "Missing loot table " + lootKey.identifier());
+
+        final BlockPos rel = new BlockPos(1, 2, 1);
+        helper.setBlock(rel, piston.defaultBlockState());
+        final BlockPos abs = helper.absolutePos(rel);
+        level.destroyBlock(abs, true);
+        helper.succeedWhen(() -> {
+            final List<net.minecraft.world.entity.item.ItemEntity> drops = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+              new net.minecraft.world.phys.AABB(abs).inflate(2), e -> e.getItem().is(pistonItem));
+            helper.assertTrue(!drops.isEmpty(), "Broken multipiston dropped no item");
+            Log.getLogger().info("[multipiston_recipe_and_loot] recipe crafts {}, broken block dropped {}", crafted, drops.get(0).getItem());
+        });
+    }
+
+    /**
      * Regression fixture for Domum Ornamentum's extra blocks' tool tags (review DPT-C06).
      * 1.21 put every extra block into its category's mineable tag (bricks/slates:
      * pickaxe, thatched: hoe, paper/cactus: axe); the port's tag rewrite dropped that
