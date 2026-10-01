@@ -209,6 +209,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeTagSubstitutionRotation),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_tag_substitution_legacy_formats"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeTagSubstitutionLegacyFormats),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "item_handler_wrap_null_capability"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::itemHandlerWrapNullCapability),
           data);

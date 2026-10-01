@@ -3402,6 +3402,74 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for X-STZ121 #704: tag substitution replacements stored in blueprints must load. Shipped packs store them as
+     * "replacement":{b:{Name,Properties},e,i} (pre-26.x block-state keys) and Structurize 1.21 after #704 writes
+     * "captured_block":{state:{Name,Properties},entity,item}; both must give the captured block, not air.
+     */
+    public static void structurizeTagSubstitutionLegacyFormats(final GameTestHelper helper)
+    {
+        final Blueprint blueprint = StructurePacks.getBlueprintFuture("Medieval Spruce", "infrastructure/mineshafts/minerx3topright.blueprint").join();
+        helper.assertTrue(blueprint != null, "pack blueprint could not be loaded");
+        final String tagId = com.ldtteam.structurize.blockentities.ModBlockEntities.TAG_SUBSTITUTION.getId().toString();
+        int total = 0;
+        final List<String> air = new ArrayList<>();
+        for (final net.minecraft.nbt.CompoundTag[][] plane : blueprint.getTileEntities())
+        {
+            for (final net.minecraft.nbt.CompoundTag[] row : plane)
+            {
+                for (final net.minecraft.nbt.CompoundTag tag : row)
+                {
+                    if (tag == null || !tagId.equals(tag.getStringOr("id", "")) || !tag.contains("replacement"))
+                    {
+                        continue;
+                    }
+                    total++;
+                    final com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock replacement =
+                      new com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock(tag);
+                    if (replacement.getBlockState().isAir())
+                    {
+                        air.add(tag.getCompoundOrEmpty("replacement").getCompoundOrEmpty("b").toString());
+                    }
+                    else if (!replacement.getBlockEntityTag().isEmpty() && replacement.createBlockEntity(BlockPos.ZERO) == null)
+                    {
+                        air.add("block entity lost for " + replacement.getBlockState() + ": " + replacement.getBlockEntityTag());
+                    }
+                }
+            }
+        }
+        Log.getLogger().info("STZ121-704 pack replacements: {} total, {} read as air, e.g. {}", total, air.size(), air.stream().limit(3).toList());
+        helper.assertTrue(total > 0, "fixture blueprint has no tag substitution replacements");
+        helper.assertTrue(air.isEmpty(), air.size() + " of " + total + " pack replacements read as air or lost their block entity, e.g. " + (air.isEmpty() ? "" : air.get(0)));
+
+        // Structurize 1.21 (#704) format, as written by CapturedBlock.CODEC on 1.21.1.
+        final net.minecraft.nbt.CompoundTag compound = new net.minecraft.nbt.CompoundTag();
+        compound.putString("id", tagId);
+        final net.minecraft.nbt.CompoundTag captured = new net.minecraft.nbt.CompoundTag();
+        final net.minecraft.nbt.CompoundTag state = new net.minecraft.nbt.CompoundTag();
+        state.putString("Name", "minecraft:oak_stairs");
+        final net.minecraft.nbt.CompoundTag props = new net.minecraft.nbt.CompoundTag();
+        props.putString("facing", "east");
+        props.putString("half", "bottom");
+        props.putString("shape", "straight");
+        props.putString("waterlogged", "false");
+        state.put("Properties", props);
+        captured.put("state", state);
+        final net.minecraft.nbt.CompoundTag item = new net.minecraft.nbt.CompoundTag();
+        item.putString("id", "minecraft:oak_stairs");
+        item.putInt("count", 1);
+        captured.put("item", item);
+        compound.put("captured_block", captured);
+        final com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock modern =
+          new com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock(compound);
+        final BlockState expected = Blocks.OAK_STAIRS.defaultBlockState()
+          .setValue(net.minecraft.world.level.block.StairBlock.FACING, net.minecraft.core.Direction.EAST);
+        Log.getLogger().info("STZ121-704 captured_block: state {} item {}", modern.getBlockState(), modern.getItemStack());
+        helper.assertTrue(modern.getBlockState().equals(expected), "captured_block state " + modern.getBlockState() + " expected " + expected);
+        helper.assertTrue(modern.getItemStack().is(Items.OAK_STAIRS), "captured_block item lost: " + modern.getItemStack());
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review MC-C08: IItemHandlerCapProvider.wrap must return null for targets without an item capability
      * (1.21 behaviour, callers null-check), not throw from IItemHandler.of(null). A chest is the positive control.
      */
