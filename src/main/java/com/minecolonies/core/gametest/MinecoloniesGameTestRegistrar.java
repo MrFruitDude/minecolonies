@@ -301,6 +301,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::blockuiVanillaTextColors),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_blueprint_bed_block_entities"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeBlueprintBedBlockEntities),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_blueprint_fake_level"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeBlueprintFakeLevel),
           data);

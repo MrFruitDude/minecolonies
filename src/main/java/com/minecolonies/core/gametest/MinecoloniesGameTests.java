@@ -4059,6 +4059,99 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for X-263-BEDBE: beds stopped being block entities in 26.x (vanilla data version 4885 drops their block-entity
+     * tags from chunks, structures and items). Shipped blueprints are older and still carry {id:"minecraft:bed"} tile entities, which
+     * the standalone BLOCK_ENTITY data fixer cannot convert ("Unsupported key: minecraft:bed") and which then fail to load
+     * ("Skipping block entity with invalid type"). Loading must drop those tags and keep the bed blocks.
+     */
+    public static void structurizeBlueprintBedBlockEntities(final GameTestHelper helper)
+    {
+        final String bedId = "minecraft:bed";
+        final String tagId = com.ldtteam.structurize.blockentities.ModBlockEntities.TAG_SUBSTITUTION.getId().toString();
+
+        // Synthetic 1.21.1 blueprint (data version 3955): a red bed (foot + head) with bed block entities, plus a tag substitution
+        // block whose captured replacement is a bed with its old block entity.
+        final Blueprint source = new Blueprint((short) 1, (short) 1, (short) 3);
+        final net.minecraft.world.level.block.state.BlockState foot = net.minecraft.world.level.block.Blocks.BED.pick(net.minecraft.world.item.DyeColor.RED).defaultBlockState()
+          .setValue(net.minecraft.world.level.block.BedBlock.FACING, net.minecraft.core.Direction.SOUTH)
+          .setValue(net.minecraft.world.level.block.BedBlock.PART, net.minecraft.world.level.block.state.properties.BedPart.FOOT);
+        final net.minecraft.world.level.block.state.BlockState head = foot.setValue(net.minecraft.world.level.block.BedBlock.PART,
+          net.minecraft.world.level.block.state.properties.BedPart.HEAD);
+        source.addBlockState(new BlockPos(0, 0, 0), foot);
+        source.addBlockState(new BlockPos(0, 0, 1), head);
+        source.addBlockState(new BlockPos(0, 0, 2), com.ldtteam.structurize.blocks.ModBlocks.blockTagSubstitution.get().defaultBlockState());
+        final net.minecraft.nbt.CompoundTag nbt = com.ldtteam.structurize.blueprints.v1.BlueprintUtil.writeBlueprintToNBT(source);
+        nbt.putInt("mcversion", 3955);
+        final net.minecraft.nbt.ListTag tes = new net.minecraft.nbt.ListTag();
+        for (int z = 0; z < 2; z++)
+        {
+            final net.minecraft.nbt.CompoundTag bed = new net.minecraft.nbt.CompoundTag();
+            bed.putString("id", bedId);
+            bed.putInt("x", 0);
+            bed.putInt("y", 0);
+            bed.putInt("z", z);
+            tes.add(bed);
+        }
+        final net.minecraft.nbt.CompoundTag substitution = new net.minecraft.nbt.CompoundTag();
+        substitution.putString("id", tagId);
+        substitution.putInt("x", 0);
+        substitution.putInt("y", 0);
+        substitution.putInt("z", 2);
+        final net.minecraft.nbt.CompoundTag replacement = new net.minecraft.nbt.CompoundTag();
+        final net.minecraft.nbt.CompoundTag oldState = new net.minecraft.nbt.CompoundTag();
+        oldState.putString("Name", "minecraft:red_bed");
+        final net.minecraft.nbt.CompoundTag oldProps = new net.minecraft.nbt.CompoundTag();
+        oldProps.putString("facing", "south");
+        oldProps.putString("occupied", "false");
+        oldProps.putString("part", "foot");
+        oldState.put("Properties", oldProps);
+        replacement.put("b", oldState);
+        final net.minecraft.nbt.CompoundTag oldBed = new net.minecraft.nbt.CompoundTag();
+        oldBed.putString("id", bedId);
+        replacement.put("e", oldBed);
+        substitution.put("replacement", replacement);
+        tes.add(substitution);
+        nbt.put("tile_entities", tes);
+
+        final Blueprint loaded = com.ldtteam.structurize.blueprints.v1.BlueprintUtil.readBlueprintFromNBT(nbt);
+        helper.assertTrue(loaded != null, "synthetic bed blueprint did not load");
+        helper.assertTrue(loaded.getBlockState(new BlockPos(0, 0, 0)).equals(foot), "bed foot lost: " + loaded.getBlockState(new BlockPos(0, 0, 0)));
+        helper.assertTrue(loaded.getBlockState(new BlockPos(0, 0, 1)).equals(head), "bed head lost: " + loaded.getBlockState(new BlockPos(0, 0, 1)));
+        for (int z = 0; z < 2; z++)
+        {
+            final net.minecraft.nbt.CompoundTag left = loaded.getTileEntities()[0][z][0];
+            helper.assertTrue(left == null, "bed block entity tag kept at z=" + z + ": " + left);
+        }
+        final net.minecraft.nbt.CompoundTag loadedSubstitution = loaded.getTileEntities()[0][2][0];
+        helper.assertTrue(loadedSubstitution != null && tagId.equals(loadedSubstitution.getStringOr("id", "")), "tag substitution lost: " + loadedSubstitution);
+        final com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock captured =
+          new com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock(loadedSubstitution);
+        helper.assertTrue(captured.getBlockState().equals(foot), "tag substitution replacement state " + captured.getBlockState() + " expected " + foot);
+        helper.assertTrue(!captured.getBlockEntityTag().toString().contains(bedId), "tag substitution kept the bed block entity: " + captured.getBlockEntityTag());
+
+        // A shipped blueprint with beds (Medieval Spruce tavern level 1).
+        final Blueprint tavern = StructurePacks.getBlueprintFuture("Medieval Spruce", "fundamentals/tavern1.blueprint").join();
+        helper.assertTrue(tavern != null, "pack tavern blueprint could not be loaded");
+        int bedBlocks = 0;
+        int bedTags = 0;
+        for (final com.ldtteam.structurize.util.BlockInfo info : tavern.getBlockInfoAsList())
+        {
+            if (info.getState() != null && info.getState().getBlock() instanceof net.minecraft.world.level.block.AbstractBedBlock)
+            {
+                bedBlocks++;
+            }
+            if (info.getTileEntityData() != null && bedId.equals(info.getTileEntityData().getStringOr("id", "")))
+            {
+                bedTags++;
+            }
+        }
+        Log.getLogger().info("X-263-BEDBE tavern1: {} bed blocks, {} bed block entity tags", bedBlocks, bedTags);
+        helper.assertTrue(bedBlocks > 0, "tavern blueprint has no beds");
+        helper.assertTrue(bedTags == 0, "tavern blueprint kept " + bedTags + " bed block entity tags");
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for X-STZ121 #704: tag substitution replacements stored in blueprints must load. Shipped packs store them as
      * "replacement":{b:{Name,Properties},e,i} (pre-26.x block-state keys) and Structurize 1.21 after #704 writes
      * "captured_block":{state:{Name,Properties},entity,item}; both must give the captured block, not air.
