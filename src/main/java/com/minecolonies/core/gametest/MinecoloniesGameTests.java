@@ -5120,6 +5120,72 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * DPT-S09: a block entity moved by the Multi-Piston is copied through a save/load round trip. Problems in that
+     * round trip (here a chest stack above the codec's 99 count limit, which cannot be encoded and is dropped) must be
+     * logged as a warning, not silently discarded. The valid stack must still arrive.
+     */
+    public static void multiPistonMoveReportsProblems(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos relativePistonPos = new BlockPos(5, 1, 5);
+        final BlockPos pistonPos = helper.absolutePos(relativePistonPos);
+        final BlockPos relativeWestPos = relativePistonPos.relative(Direction.WEST);
+        final BlockPos relativeEastPos = relativePistonPos.relative(Direction.EAST);
+
+        helper.setBlock(relativePistonPos, com.ldtteam.multipiston.ModBlocks.multipiston.value().defaultBlockState());
+        helper.setBlock(relativeEastPos, Blocks.CHEST.defaultBlockState());
+        final TileEntityMultiPiston piston = (TileEntityMultiPiston) level.getBlockEntity(pistonPos);
+        final ChestBlockEntity chest = (ChestBlockEntity) level.getBlockEntity(helper.absolutePos(relativeEastPos));
+        chest.setItem(0, new ItemStack(Items.DIAMOND, 3));
+        chest.setItem(1, new ItemStack(Items.STONE, 1));
+        // setItem caps a stack at 64; grow the live stack past the item codec's 99 limit so it cannot be encoded.
+        chest.getItem(1).setCount(200);
+
+        piston.setInput(Direction.WEST);
+        piston.setOutput(Direction.EAST);
+        piston.setRange(1);
+        piston.setSpeed(TileEntityMultiPiston.MAX_SPEED);
+
+        final java.util.List<String> warnings = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final org.apache.logging.log4j.core.Logger pistonLogger =
+          (org.apache.logging.log4j.core.Logger) org.apache.logging.log4j.LogManager.getLogger(TileEntityMultiPiston.class);
+        final org.apache.logging.log4j.core.appender.AbstractAppender capture =
+          new org.apache.logging.log4j.core.appender.AbstractAppender("dpt-s09-capture", null, null, true,
+            org.apache.logging.log4j.core.config.Property.EMPTY_ARRAY)
+          {
+              @Override
+              public void append(final org.apache.logging.log4j.core.LogEvent event)
+              {
+                  if (event.getLevel().isMoreSpecificThan(org.apache.logging.log4j.Level.WARN))
+                  {
+                      warnings.add(event.getMessage().getFormattedMessage());
+                  }
+              }
+          };
+        capture.start();
+        pistonLogger.addAppender(capture);
+        try
+        {
+            piston.handleRedstone(true);
+            piston.tick();
+        }
+        finally
+        {
+            pistonLogger.removeAppender(capture);
+            capture.stop();
+        }
+
+        helper.assertBlockPresent(Blocks.CHEST, relativeWestPos);
+        final Container moved = (Container) level.getBlockEntity(helper.absolutePos(relativeWestPos));
+        helper.assertTrue(moved.getItem(0).is(Items.DIAMOND) && moved.getItem(0).getCount() == 3,
+          "valid stack lost during the move: " + moved.getItem(0));
+        helper.assertTrue(warnings.stream().anyMatch(w -> w.contains("Serialization errors")),
+          "moved chest's unencodable stack was dropped without a warning; warnings=" + warnings);
+        Log.getLogger().info("[multipiston_move_reports_problems] warning logged: {}", warnings.get(0).replace('\n', ' '));
+        helper.succeed();
+    }
+
+    /**
      * The piston must leave both the source inventory and the obstruction
      * untouched when its destination is occupied. This is intentionally a
      * one-tick fixture: range one should attempt exactly one move and then

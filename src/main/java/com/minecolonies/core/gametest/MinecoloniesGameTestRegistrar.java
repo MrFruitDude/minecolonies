@@ -117,6 +117,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::multiPistonPacketReach),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multipiston_move_reports_problems"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::multiPistonMoveReportsProblems),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multipiston_obstruction"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::multiPistonObstruction),
           data);
