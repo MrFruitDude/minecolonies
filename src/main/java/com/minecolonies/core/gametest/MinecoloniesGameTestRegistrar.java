@@ -177,6 +177,18 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::citizenInventoryMenuLayout),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_safe_pack_name"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeSafePackName),
+          data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_falling_block_support"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeFallingBlockSupport),
+          data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_container_placement"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizeContainerPlacement),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "item_handler_wrap_null_capability"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::itemHandlerWrapNullCapability),
           data);

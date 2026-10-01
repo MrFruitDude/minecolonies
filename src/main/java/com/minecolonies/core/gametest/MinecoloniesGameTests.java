@@ -3020,6 +3020,106 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for X-STZ121 upstream #852: a structure pack name received from a server is used as a folder under the
+     * client's blueprints directory and that folder is deleted first. Names that resolve to the folder itself or its parent
+     * ("", ".", "..") or exceed a file-name length must be rejected (empty), otherwise a server could wipe the game directory.
+     */
+    public static void structurizeSafePackName(final GameTestHelper helper)
+    {
+        final java.util.Map<String, String> expected = new java.util.LinkedHashMap<>();
+        expected.put("..", "");
+        expected.put(".", "");
+        expected.put("  ..  ", "");
+        expected.put("", "");
+        expected.put("a".repeat(256), "");
+        expected.put("../evil", ".._evil");
+        expected.put("Medieval Oak", "Medieval Oak");
+        for (final var entry : expected.entrySet())
+        {
+            final String actual = com.ldtteam.structurize.api.util.Utils.getSafePackName(entry.getKey());
+            Log.getLogger().info("STZ121-852 getSafePackName('{}') -> '{}'", entry.getKey().length() > 20 ? entry.getKey().length() + " chars" : entry.getKey(), actual);
+            helper.assertTrue(entry.getValue().equals(actual),
+              "getSafePackName('" + entry.getKey() + "') should be '" + entry.getValue() + "' but was '" + actual + "'");
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Regression fixture for X-STZ121 upstream #847: a falling block (sand) over air gets its support block from the placement
+     * context's solid block. Non-blueprint contexts (SimplePlacementContext: scan window resource list, assistant hammer, ticked
+     * world operations) have no blueprint, so the support lookup must not dereference one.
+     */
+    public static void structurizeFallingBlockSupport(final GameTestHelper helper)
+    {
+        final BlockPos sandRel = new BlockPos(1, 4, 1);
+        final BlockPos sandPos = helper.absolutePos(sandRel);
+        final ServerLevel level = helper.getLevel();
+        final BlockState sand = Blocks.SAND.defaultBlockState();
+        final com.ldtteam.structurize.placement.handlers.placement.IPlacementHandler handler =
+          com.ldtteam.structurize.placement.handlers.placement.PlacementHandlers.getHandler(level, sandPos, sand);
+        helper.assertTrue(handler instanceof com.ldtteam.structurize.placement.handlers.placement.PlacementHandlers.FallingBlockPlacementHandler,
+          "sand should use the falling block handler but got " + handler);
+        final com.ldtteam.structurize.placement.SimplePlacementContext context =
+          new com.ldtteam.structurize.placement.SimplePlacementContext(false, new PlacementSettings());
+        final List<ItemStack> items;
+        final com.ldtteam.structurize.placement.handlers.placement.IPlacementHandler.ActionProcessingResult result;
+        try
+        {
+            items = handler.getRequiredItems(level, sandPos, sand, null, context);
+            result = handler.handle(level, sandPos, sand, null, context);
+        }
+        catch (final RuntimeException e)
+        {
+            Log.getLogger().info("STZ121-847 falling block handler threw {}", e.toString());
+            helper.fail("falling block handler threw " + e);
+            return;
+        }
+        Log.getLogger().info("STZ121-847 required {} result {} below {}", items, result, level.getBlockState(sandPos.below()));
+        helper.assertTrue(items.stream().anyMatch(s -> s.is(Items.SAND)), "required items should contain sand: " + items);
+        helper.assertTrue(items.stream().anyMatch(s -> s.is(Items.DIRT)), "required items should contain the dirt support: " + items);
+        helper.assertBlockPresent(Blocks.DIRT, sandRel.below());
+        helper.assertBlockPresent(Blocks.SAND, sandRel);
+        helper.succeed();
+    }
+
+    /**
+     * Regression fixture for X-STZ121 upstream #855: the container handler places the block together with its block entity
+     * data (then setPlacedBy) instead of placing a bare block first. Contents and custom name from the blueprint must survive.
+     */
+    public static void structurizeContainerPlacement(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos sourceRel = new BlockPos(1, 2, 1);
+        final BlockPos targetRel = new BlockPos(3, 2, 1);
+        helper.setBlock(sourceRel, Blocks.CHEST);
+        final net.minecraft.world.level.block.entity.ChestBlockEntity source =
+          helper.getBlockEntity(sourceRel, net.minecraft.world.level.block.entity.ChestBlockEntity.class);
+        source.setItem(0, new ItemStack(Items.DIAMOND, 3));
+        source.setItem(26, new ItemStack(Items.OAK_LOG, 64));
+        final net.minecraft.nbt.CompoundTag data = source.saveWithFullMetadata(level.registryAccess());
+        data.putString("CustomName", "STZ121 chest");
+        final BlockState chest = Blocks.CHEST.defaultBlockState();
+        final BlockPos targetPos = helper.absolutePos(targetRel);
+        data.putInt("x", targetPos.getX());
+        data.putInt("y", targetPos.getY());
+        data.putInt("z", targetPos.getZ());
+        final com.ldtteam.structurize.placement.handlers.placement.IPlacementHandler handler =
+          com.ldtteam.structurize.placement.handlers.placement.PlacementHandlers.getHandler(level, targetPos, chest);
+        helper.assertTrue(handler instanceof com.ldtteam.structurize.placement.handlers.placement.PlacementHandlers.ContainerPlacementHandler,
+          "chest should use the container handler but got " + handler);
+        final com.ldtteam.structurize.placement.handlers.placement.IPlacementHandler.ActionProcessingResult result =
+          handler.handle(level, targetPos, chest, data, new com.ldtteam.structurize.placement.SimplePlacementContext(false, new PlacementSettings()));
+        final net.minecraft.world.level.block.entity.ChestBlockEntity placed =
+          helper.getBlockEntity(targetRel, net.minecraft.world.level.block.entity.ChestBlockEntity.class);
+        Log.getLogger().info("STZ121-855 result {} slot0 {} slot26 {} name {}", result, placed.getItem(0), placed.getItem(26), placed.getCustomName());
+        helper.assertTrue(result == com.ldtteam.structurize.placement.handlers.placement.IPlacementHandler.ActionProcessingResult.SUCCESS, "container placement should succeed, got " + result);
+        helper.assertTrue(placed.getItem(0).is(Items.DIAMOND) && placed.getItem(0).getCount() == 3, "slot 0 lost: " + placed.getItem(0));
+        helper.assertTrue(placed.getItem(26).is(Items.OAK_LOG) && placed.getItem(26).getCount() == 64, "slot 26 lost: " + placed.getItem(26));
+        helper.assertTrue(placed.getCustomName() != null && "STZ121 chest".equals(placed.getCustomName().getString()), "custom name lost: " + placed.getCustomName());
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review MC-C08: IItemHandlerCapProvider.wrap must return null for targets without an item capability
      * (1.21 behaviour, callers null-check), not throw from IItemHandler.of(null). A chest is the positive control.
      */
