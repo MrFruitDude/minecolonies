@@ -113,7 +113,7 @@ public final class LootTableAnalyzer
             return drops;
         }
 
-        final JsonArray pools = GsonHelper.getAsJsonArray(lootTableJson, "pools");
+        final JsonArray pools = GsonHelper.getAsJsonArray(toLegacyShape(lootTableJson), "pools");
         for (final JsonElement pool : pools)
         {
             final float rolls = processNumber(pool.getAsJsonObject().get("rolls"), 1.0f);
@@ -145,6 +145,98 @@ public final class LootTableAnalyzer
 
         drops.sort(Comparator.comparing(LootDrop::getProbability).reversed());
         return drops;
+    }
+
+    /**
+     * Since 26.1 loot tables serialize an entry's or pool's functions as {@code "modifier"} (one object or a list, each
+     * named by {@code "type"}) and their conditions as {@code "condition"} (one object, a list, or a named predicate
+     * string; several conditions become one {@code minecraft:all_of}), where 1.21 used {@code "functions"} /
+     * {@code "function"} and {@code "conditions"} / {@code "condition"}. The parser below reads the 1.21 shape, so the
+     * pools and entries are rewritten into it first; anything already in that shape is left alone.
+     *
+     * @param lootTableJson the loot table json
+     * @return a copy of the table json with its pools and entries in the 1.21 shape
+     */
+    @NotNull
+    private static JsonObject toLegacyShape(@NotNull final JsonObject lootTableJson)
+    {
+        final JsonObject table = lootTableJson.deepCopy();
+        for (final JsonElement pool : GsonHelper.getAsJsonArray(table, "pools", new JsonArray()))
+        {
+            legacyNode(pool.getAsJsonObject());
+            for (final JsonElement entry : GsonHelper.getAsJsonArray(pool.getAsJsonObject(), "entries", new JsonArray()))
+            {
+                legacyEntry(entry.getAsJsonObject());
+            }
+        }
+        return table;
+    }
+
+    private static void legacyEntry(@NotNull final JsonObject entry)
+    {
+        legacyNode(entry);
+        for (final JsonElement child : GsonHelper.getAsJsonArray(entry, "children", new JsonArray()))
+        {
+            legacyEntry(child.getAsJsonObject());
+        }
+    }
+
+    private static void legacyNode(@NotNull final JsonObject node)
+    {
+        if (node.has("modifier") && !node.has("functions"))
+        {
+            final JsonArray functions = new JsonArray();
+            final JsonElement modifier = node.remove("modifier");
+            for (final JsonElement fe : modifier.isJsonArray() ? (Iterable<JsonElement>) modifier.getAsJsonArray() : List.of(modifier))
+            {
+                if (fe.isJsonObject())
+                {
+                    final JsonObject function = fe.getAsJsonObject();
+                    if (function.has("type") && !function.has("function"))
+                    {
+                        function.add("function", function.remove("type"));
+                    }
+                    functions.add(function);
+                }
+            }
+            node.add("functions", functions);
+        }
+        if (node.has("condition") && !node.has("conditions"))
+        {
+            final JsonArray conditions = new JsonArray();
+            legacyConditions(node.remove("condition"), conditions);
+            node.add("conditions", conditions);
+        }
+    }
+
+    private static void legacyConditions(@NotNull final JsonElement element, @NotNull final JsonArray out)
+    {
+        if (element.isJsonArray())
+        {
+            element.getAsJsonArray().forEach(c -> legacyConditions(c, out));
+        }
+        else if (element.isJsonPrimitive())
+        {
+            // a reference to a named predicate; keep its id so the text checks still see it
+            final JsonObject reference = new JsonObject();
+            reference.addProperty("condition", "minecraft:reference");
+            reference.add("name", element);
+            out.add(reference);
+        }
+        else if (element.isJsonObject())
+        {
+            final JsonObject condition = element.getAsJsonObject();
+            if (GsonHelper.getAsString(condition, "type", "").equals("minecraft:all_of"))
+            {
+                legacyConditions(GsonHelper.getAsJsonArray(condition, "terms", new JsonArray()), out);
+                return;
+            }
+            if (condition.has("type") && !condition.has("condition"))
+            {
+                condition.add("condition", condition.remove("type"));
+            }
+            out.add(condition);
+        }
     }
 
     /**

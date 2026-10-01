@@ -98,7 +98,7 @@ public class DefaultRecipeProvider extends RecipeProvider
         registerHutRecipe1(recipeOutput, ModBlocks.blockHutHome, Items.TORCH);
         registerHutRecipe3(recipeOutput, ModBlocks.blockHutCombatAcademy, Items.IRON_SWORD);
         registerHutRecipe1(recipeOutput, ModBlocks.blockHutComposter, ModBlocks.blockBarrel);
-        registerHutRecipe1(recipeOutput, ModBlocks.blockHutConcreteMixer, Items.CONCRETE_POWDER.red());
+        registerHutRecipe1(recipeOutput, ModBlocks.blockHutConcreteMixer, Items.CONCRETE_POWDER.white());
         registerHutRecipe1(recipeOutput, ModBlocks.blockHutCook, Items.APPLE);
         registerHutRecipe1(recipeOutput, ModBlocks.blockHutCowboy, Items.BEEF);
         registerHutRecipe1(recipeOutput, ModBlocks.blockHutDeliveryman, Items.LEATHER_BOOTS);

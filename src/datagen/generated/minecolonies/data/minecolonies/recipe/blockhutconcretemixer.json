@@ -1,7 +1,7 @@
 {
   "type": "minecraft:crafting_shaped",
   "key": {
-    "B": "minecraft:red_concrete_powder",
+    "B": "minecraft:white_concrete_powder",
     "T": "structurize:sceptergold",
     "X": "#minecraft:planks"
   },

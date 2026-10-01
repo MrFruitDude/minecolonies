@@ -3812,6 +3812,90 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review CP content items: the shipped data must match 1.21 for the Concrete Mixer hut recipe
+     * (white concrete powder, the port used red), the Nether Worker trip display outputs (mob drops from adventure tokens
+     * were lost because the datagen loot lookup could not resolve vanilla entity loot tables), the stonemason product
+     * exclusions (trim templates; 26.x has no trim_templates tag) and the normal compostables (all of #minecraft:fishes,
+     * the port narrowed it to raw fish).
+     */
+    public static void contentParityItems(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final net.minecraft.server.MinecraftServer server = level.getServer();
+        final java.util.List<String> failures = new java.util.ArrayList<>();
+        final java.util.function.BiConsumer<Boolean, String> check = (ok, msg) -> { if (!ok) { failures.add(msg); } };
+
+        final String mixer = readServerData(helper, server, "recipe/blockhutconcretemixer.json");
+        check.accept(mixer.contains("minecraft:white_concrete_powder") && !mixer.contains("minecraft:red_concrete_powder"),
+          "Concrete Mixer hut recipe does not use white concrete powder: " + mixer);
+
+        // The datagen loot lookup must resolve an adventure token to the mob's own loot table.
+        final net.minecraft.core.HolderLookup.Provider datagenLookup =
+          new com.minecolonies.core.generation.DatagenLootTableManager(server.registryAccess(), server.getResourceManager());
+        final ItemStack token = new ItemStack(com.minecolonies.api.items.ModItems.adventureToken);
+        new com.minecolonies.api.items.component.AdventureData(net.minecraft.world.entity.EntityTypes.ZOMBIFIED_PIGLIN, 5, 5).writeToItemStack(token);
+        final net.minecraft.world.level.storage.loot.LootTable tokenTable = net.minecraft.world.level.storage.loot.LootTable.lootTable()
+          .withPool(net.minecraft.world.level.storage.loot.LootPool.lootPool().add(com.minecolonies.core.generation.SimpleLootTableProvider.itemStack(token)))
+          .build();
+        final java.util.Set<String> tokenDrops = new java.util.TreeSet<>();
+        for (final com.minecolonies.core.colony.crafting.LootTableAnalyzer.LootDrop drop :
+          com.minecolonies.core.colony.crafting.LootTableAnalyzer.toDrops(datagenLookup, net.minecraft.core.Holder.direct(tokenTable)))
+        {
+            drop.getItemStacks().forEach(s -> tokenDrops.add(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(s.getItem()).toString()));
+        }
+        Log.getLogger().info("CP adventure token (zombified piglin) drops: {}", tokenDrops);
+        check.accept(tokenDrops.contains("minecraft:rotten_flesh") && tokenDrops.contains("minecraft:gold_nugget"),
+          "Adventure token did not expand to zombified piglin drops: " + tokenDrops);
+
+        final String trip3 = readServerData(helper, server, "crafterrecipes/netherworker/trip3.json");
+        for (final String drop : java.util.List.of("rotten_flesh", "gold_nugget", "porkchop", "leather", "gunpowder", "ghast_tear", "ender_pearl", "magma_cream"))
+        {
+            check.accept(trip3.contains("minecraft:" + drop), "Nether Worker trip3 display outputs miss " + drop);
+        }
+
+        final java.util.List<net.minecraft.world.item.Item> templates = net.minecraft.core.registries.BuiltInRegistries.ITEM.stream()
+          .filter(item -> net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).getPath().endsWith("_armor_trim_smithing_template"))
+          .toList();
+        check.accept(templates.size() >= 18, "Expected the vanilla armor trim templates, found " + templates.size());
+        for (final net.minecraft.world.item.Item template : templates)
+        {
+            check.accept(new ItemStack(template).is(com.minecolonies.api.items.ModTags.crafterProductExclusions.get(com.minecolonies.api.util.constant.TagConstants.CRAFTING_STONEMASON)),
+              "Stonemason product exclusions miss " + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(template));
+        }
+
+        for (final net.minecraft.world.item.Item fish : java.util.List.of(Items.COD, Items.COOKED_COD, Items.SALMON, Items.COOKED_SALMON, Items.PUFFERFISH, Items.TROPICAL_FISH))
+        {
+            check.accept(new ItemStack(fish).is(com.minecolonies.api.items.ModTags.compostables),
+              "Normal compostables miss " + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(fish));
+        }
+        Log.getLogger().info("CP content parity failures: {}", failures);
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException(failures.size() + " content parity checks failed: " + String.join("; ", failures));
+        }
+        helper.succeed();
+    }
+
+    private static String readServerData(final GameTestHelper helper, final net.minecraft.server.MinecraftServer server, final String path)
+    {
+        final Identifier id = Identifier.fromNamespaceAndPath(com.minecolonies.api.util.constant.Constants.MOD_ID, path);
+        try (final java.io.Reader reader = server.getResourceManager().getResourceOrThrow(id).openAsReader())
+        {
+            final StringBuilder out = new StringBuilder();
+            final char[] buffer = new char[4096];
+            for (int read; (read = reader.read(buffer)) > 0; )
+            {
+                out.append(buffer, 0, read);
+            }
+            return out.toString();
+        }
+        catch (final java.io.IOException e)
+        {
+            throw helper.assertionException("Missing server data " + id + ": " + e);
+        }
+    }
+
+    /**
      * Regression fixture for review MC-G05: MineColonies' global loot modifiers (supply camp/ship items in structure chests,
      * crop seeds in dungeon chests and from grass) must be loaded by NeoForge and must actually fire when a vanilla chest
      * table is rolled. 1.21 listed them in data/forge/loot_modifiers/global_loot_modifiers.json; NeoForge 26.x instead

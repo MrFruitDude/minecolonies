@@ -237,6 +237,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::globalLootModifiersActive),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "content_parity_items"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::contentParityItems),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "item_nbt_matching_table"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::itemNbtMatchingTable),
           data);

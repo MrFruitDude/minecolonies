@@ -229,8 +229,8 @@ public class DefaultItemTagsProvider extends BlockTagCopyingItemTagProvider
           .add(Items.CAKE, Items.MELON, Items.RABBIT_FOOT, Items.FERMENTED_SPIDER_EYE)
           .add(Items.MOSS_BLOCK, Items.MOSS_CARPET, Items.SHROOMLIGHT)
           .add(Items.NETHER_WART_BLOCK, Items.WARPED_WART_BLOCK, Items.NETHER_SPROUTS, Items.MANGROVE_ROOTS, Items.HANGING_ROOTS, Items.CRIMSON_ROOTS, Items.WARPED_ROOTS)
-          .addTags(Tags.Items.CROPS, Tags.Items.EGGS, BlockItemTags.FLOWERS.item(), Tags.Items.FOODS_RAW_FISH, ItemTags.LEAVES, ItemTags.WOOL)
-          .addTags(Tags.Items.FOODS_RAW_MEAT, Tags.Items.MUSHROOMS, ModTags.fungi);
+          .addTags(Tags.Items.CROPS, Tags.Items.EGGS, BlockItemTags.FLOWERS.item(), ItemTags.FISHES, ItemTags.LEAVES, ItemTags.WOOL)
+          .addTags(Tags.Items.FOODS_RAW_FISH, Tags.Items.FOODS_RAW_MEAT, Tags.Items.MUSHROOMS, ModTags.fungi);
         tag(ModTags.compostables_rich, "Rich-Quality Compostables")
                 .add(Items.PODZOL, ModBlocks.blockCompostedDirt.asItem());
 
@@ -643,6 +643,11 @@ public class DefaultItemTagsProvider extends BlockTagCopyingItemTagProvider
           .addTag(ModTags.crafterProduct.get(TagConstants.CRAFTING_MECHANIC))
           .addTag(ModTags.crafterProduct.get(TagConstants.CRAFTING_DYER))
           .addTag(ModTags.crafterProduct.get(TagConstants.CRAFTING_SAWMILL))
+          // 1.21 excluded #minecraft:trim_templates; 26.x has no such tag, so list the vanilla armor trim templates
+          .add(BuiltInRegistries.ITEM.stream()
+                 .filter(item -> BuiltInRegistries.ITEM.getKey(item).getNamespace().equals("minecraft")
+                                   && BuiltInRegistries.ITEM.getKey(item).getPath().endsWith("_armor_trim_smithing_template"))
+                 .toArray(Item[]::new))
           .add(Items.LECTERN, Items.PISTON, Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE)
           .add(Items.PRISMARINE, Items.PRISMARINE_BRICKS)
           .add(paperExtras);
