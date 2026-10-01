@@ -11,6 +11,13 @@ import net.minecraft.core.component.BlockTransformer;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.tags.TagKey;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.core.HolderSet;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.item.component.ItemAttributeModifiers;
+import net.minecraft.world.item.component.Tool;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.util.Log;
@@ -35,7 +42,10 @@ import net.neoforged.neoforge.common.ItemAbility;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -223,11 +233,20 @@ public class ModEquipmentTypes
             return Compatibility.getToolLevel(itemStack);
         }
         final int registeredLevel = Compatibility.getItemLevel(itemStack);
-        // Item-material tags are the 26.2 replacement for the removed
-        // TieredItem/Tier metadata.  They may be unavailable when the one-time
-        // common setup registry is populated, so resolve them lazily as a
-        // runtime fallback as well.
-        return registeredLevel >= 0 ? registeredLevel : getToolMaterialLevel(itemStack);
+        if (registeredLevel >= 0)
+        {
+            return registeredLevel;
+        }
+        // Item-material data is the 26.x replacement for the removed
+        // TieredItem/Tier metadata.  Some of it (custom block tags) is only
+        // readable once tags are bound, after the one-time common setup scan,
+        // so resolve it lazily here and remember it for unmodified stacks.
+        final int level = getToolMaterialLevel(itemStack);
+        if (level >= 0 && itemStack.isComponentsPatchEmpty())
+        {
+            Compatibility.registerItemTierIfAbsent(itemStack.getItem(), level);
+        }
+        return level;
     }
 
     /**
@@ -326,41 +345,161 @@ public class ModEquipmentTypes
     }
 
     /**
-     * Resolve the MineColonies equipment level for a 26.2 ToolMaterial item.
-     * ToolMaterial applies its repair tag as a REPAIRABLE component; reading
-     * the tag key (rather than the tag contents) preserves the material even
-     * when the data pack has not populated the tag's item members yet.  This
-     * also covers MineColonies' own ToolMaterial-based weapons and compatible
-     * third-party tools without requiring the removed TieredItem class.
+     * Vanilla ToolMaterial repair tags and "incorrect for drops" block tags, mapped to the level 1.21 derived from the
+     * tier's attack-damage bonus (wood/gold 0, stone/copper 1, iron 2, diamond 3, netherite 4).
+     */
+    private static final Map<TagKey<Item>, Integer> REPAIR_TAG_LEVELS = Map.of(
+      ItemTags.WOODEN_TOOL_MATERIALS, 0,
+      ItemTags.GOLD_TOOL_MATERIALS, 0,
+      ItemTags.STONE_TOOL_MATERIALS, 1,
+      ItemTags.COPPER_TOOL_MATERIALS, 1,
+      ItemTags.IRON_TOOL_MATERIALS, 2,
+      ItemTags.DIAMOND_TOOL_MATERIALS, 3,
+      ItemTags.NETHERITE_TOOL_MATERIALS, 4);
+
+    private static final Map<TagKey<Block>, Integer> INCORRECT_TAG_LEVELS = Map.of(
+      BlockTags.INCORRECT_FOR_WOODEN_TOOL, 0,
+      BlockTags.INCORRECT_FOR_GOLD_TOOL, 0,
+      BlockTags.INCORRECT_FOR_STONE_TOOL, 1,
+      BlockTags.INCORRECT_FOR_COPPER_TOOL, 1,
+      BlockTags.INCORRECT_FOR_IRON_TOOL, 2,
+      BlockTags.INCORRECT_FOR_DIAMOND_TOOL, 3,
+      BlockTags.INCORRECT_FOR_NETHERITE_TOOL, 4);
+
+    /**
+     * Vanilla sword attack-damage baseline ({@code Items.*_SWORD} use {@code sword(material, 3.0F, ...)}); a sword's base
+     * attack damage minus this is its material's attack-damage bonus.
+     */
+    private static final double SWORD_DAMAGE_BASELINE = 3.0D;
+
+    /**
+     * Non-vanilla materials already reported, so each is logged once.
+     */
+    private static final Set<TagKey<Item>> LOGGED_MATERIALS = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Resolve the MineColonies equipment level for a 26.x ToolMaterial item. 1.21 used the {@code TieredItem}'s tier
+     * attack-damage bonus; 26.x has no tier object on the item, only the components {@code ToolMaterial} wrote:
+     * <ol>
+     * <li>a vanilla material's repair tag (REPAIRABLE), read by key so it works before tags are bound;</li>
+     * <li>otherwise (modded material) the TOOL component's "denies drops" rule: a vanilla {@code incorrect_for_*}
+     * tag gives that tier, a custom block set is probed with the blocks that separate the vanilla tiers;</li>
+     * <li>swords and spears carry no drop rule, so their level is the material's attack-damage bonus recovered
+     * from the base attack damage, as in 1.21.</li>
+     * </ol>
      *
      * @param stack item stack to inspect
-     * @return level 0-4, or -1 when the stack is not a material-tagged tool
+     * @return the level, or -1 when the stack is not a material-based tool (or its material is not readable yet)
      */
-    private static int getToolMaterialLevel(final ItemStack stack)
+    public static int getToolMaterialLevel(final ItemStack stack)
     {
         final Repairable repairable = stack.get(DataComponents.REPAIRABLE);
-        if (repairable != null && repairable.items().unwrapKey().isPresent())
+        final Optional<TagKey<Item>> repairTag = repairable == null ? Optional.empty() : repairable.items().unwrapKey();
+        if (repairTag.isPresent() && REPAIR_TAG_LEVELS.containsKey(repairTag.get()))
         {
-            final var repairTag = repairable.items().unwrapKey().get();
-            if (repairTag.equals(ItemTags.NETHERITE_TOOL_MATERIALS))
+            return REPAIR_TAG_LEVELS.get(repairTag.get());
+        }
+        if (repairTag.isEmpty())
+        {
+            // ToolMaterial always repairs from an item tag. Items repaired from a direct item list (mace, trident)
+            // are not material tools and had no tier in 1.21 either.
+            return -1;
+        }
+
+        final int level = moddedMaterialLevel(stack);
+        if (level >= 0 && LOGGED_MATERIALS.add(repairTag.get()))
+        {
+            Log.getLogger().info("Non-vanilla tool material {} ({}): using MineColonies tool level {}",
+              repairTag.get().location(), BuiltInRegistries.ITEM.getKey(stack.getItem()), level);
+        }
+        return level;
+    }
+
+    /**
+     * Level of a tool whose material is not one of vanilla's, from the components {@code ToolMaterial} applied.
+     *
+     * @param stack the stack.
+     * @return the level, or -1.
+     */
+    private static int moddedMaterialLevel(final ItemStack stack)
+    {
+        final Tool tool = stack.get(DataComponents.TOOL);
+        if (tool != null)
+        {
+            for (final Tool.Rule rule : tool.rules())
             {
-                return 4;
+                if (rule.correctForDrops().isPresent() && !rule.correctForDrops().get() && rule.speed().isEmpty())
+                {
+                    final Optional<TagKey<Block>> key = rule.blocks().unwrapKey();
+                    if (key.isPresent() && INCORRECT_TAG_LEVELS.containsKey(key.get()))
+                    {
+                        return INCORRECT_TAG_LEVELS.get(key.get());
+                    }
+                    return probeDeniedBlocks(rule.blocks());
+                }
             }
-            if (repairTag.equals(ItemTags.DIAMOND_TOOL_MATERIALS))
+            // Sword shape (ToolMaterial#applySwordProperties): no drop rule, 2 damage per block, no creative breaking.
+            if (tool.damagePerBlock() == 2 && !tool.canDestroyBlocksInCreative())
             {
-                return 3;
+                return attackBonusLevel(stack, SWORD_DAMAGE_BASELINE);
             }
-            if (repairTag.equals(ItemTags.IRON_TOOL_MATERIALS))
+            return -1;
+        }
+        // Spear shape (Item.Properties#spear): base attack damage is the material bonus alone.
+        if (stack.has(DataComponents.KINETIC_WEAPON) && stack.has(DataComponents.REPAIRABLE))
+        {
+            return attackBonusLevel(stack, 0.0D);
+        }
+        return -1;
+    }
+
+    /**
+     * Level from a custom "denies drops" block set: obsidian needs diamond (level 3), diamond ore needs iron (2),
+     * iron ore needs stone (1). A tag that is not bound yet gives -1 so the lazy runtime lookup retries.
+     *
+     * @param denied the blocks the tool cannot harvest.
+     * @return the level, or -1.
+     */
+    private static int probeDeniedBlocks(final HolderSet<Block> denied)
+    {
+        if (denied instanceof HolderSet.Named<Block> named && !named.isBound())
+        {
+            return -1;
+        }
+        if (denied.contains(Blocks.IRON_ORE.builtInRegistryHolder()))
+        {
+            return 0;
+        }
+        if (denied.contains(Blocks.DIAMOND_ORE.builtInRegistryHolder()))
+        {
+            return 1;
+        }
+        if (denied.contains(Blocks.OBSIDIAN.builtInRegistryHolder()))
+        {
+            return 2;
+        }
+        return 3;
+    }
+
+    /**
+     * Material attack-damage bonus as a level, like 1.21's {@code (int) tier.getAttackDamageBonus()}.
+     *
+     * @param stack    the stack.
+     * @param baseline the attack-damage baseline of this tool shape.
+     * @return the level (at least 0), or -1 without a base attack damage modifier.
+     */
+    private static int attackBonusLevel(final ItemStack stack, final double baseline)
+    {
+        final ItemAttributeModifiers modifiers = stack.get(DataComponents.ATTRIBUTE_MODIFIERS);
+        if (modifiers == null)
+        {
+            return -1;
+        }
+        for (final ItemAttributeModifiers.Entry entry : modifiers.modifiers())
+        {
+            if (entry.matches(Attributes.ATTACK_DAMAGE, Item.BASE_ATTACK_DAMAGE_ID))
             {
-                return 2;
-            }
-            if (repairTag.equals(ItemTags.COPPER_TOOL_MATERIALS) || repairTag.equals(ItemTags.STONE_TOOL_MATERIALS))
-            {
-                return 1;
-            }
-            if (repairTag.equals(ItemTags.GOLD_TOOL_MATERIALS) || repairTag.equals(ItemTags.WOODEN_TOOL_MATERIALS))
-            {
-                return 0;
+                return Math.max(0, (int) (entry.modifier().amount() - baseline));
             }
         }
         return -1;

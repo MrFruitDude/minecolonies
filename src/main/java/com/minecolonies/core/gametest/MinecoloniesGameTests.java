@@ -2899,6 +2899,122 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review MC-C11/G07: 1.21 gave every {@code TieredItem} a MineColonies tool level from its
+     * tier's attack-damage bonus, so modded tools worked. 26.x removed {@code TieredItem}/{@code Tier}; the port only
+     * recognised the seven vanilla repair tags, so a tool made from a modded {@code ToolMaterial} got level -1 and
+     * workers rejected it. Builds tool-shaped stacks the way {@code ToolMaterial} does (modded repair tag, TOOL rules,
+     * base attack damage) on a plain stick, so no real item's registered level is touched, and checks the level each
+     * kind resolves to. Vanilla tools are the control. Also checks the {@code ToolMaterial} registration overload that
+     * replaces 1.21's removed {@code registerItemTier(Item, Tier, int)} addon API.
+     */
+    public static void moddedToolMaterialLevels(final GameTestHelper helper)
+    {
+        final net.minecraft.core.HolderLookup.RegistryLookup<net.minecraft.world.level.block.Block> blocks =
+          helper.getLevel().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.BLOCK);
+        final net.minecraft.core.HolderLookup.RegistryLookup<net.minecraft.world.item.Item> items =
+          helper.getLevel().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ITEM);
+        final net.minecraft.tags.TagKey<net.minecraft.world.item.Item> steel =
+          net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, Identifier.fromNamespaceAndPath("gametest", "steel_tool_materials"));
+
+        final java.util.function.BiFunction<net.minecraft.core.HolderSet<net.minecraft.world.level.block.Block>, Boolean, ItemStack> tool = (deny, sword) -> {
+            final ItemStack stack = new ItemStack(Items.STICK);
+            stack.set(net.minecraft.core.component.DataComponents.REPAIRABLE,
+              new net.minecraft.world.item.enchantment.Repairable(net.minecraft.core.HolderSet.emptyNamed(items, steel)));
+            final java.util.List<net.minecraft.world.item.component.Tool.Rule> rules = new java.util.ArrayList<>();
+            if (deny != null)
+            {
+                rules.add(net.minecraft.world.item.component.Tool.Rule.deniesDrops(deny));
+                rules.add(net.minecraft.world.item.component.Tool.Rule.minesAndDrops(blocks.getOrThrow(net.minecraft.tags.BlockTags.MINEABLE_WITH_PICKAXE), 7.0F));
+            }
+            else
+            {
+                rules.add(net.minecraft.world.item.component.Tool.Rule.minesAndDrops(net.minecraft.core.HolderSet.direct(Blocks.COBWEB.builtInRegistryHolder()), 15.0F));
+            }
+            stack.set(net.minecraft.core.component.DataComponents.TOOL,
+              new net.minecraft.world.item.component.Tool(rules, 1.0F, sword ? 2 : 1, !sword));
+            return stack;
+        };
+        final java.util.function.BiFunction<ItemStack, Float, ItemStack> damage = (stack, amount) -> {
+            stack.set(net.minecraft.core.component.DataComponents.ATTRIBUTE_MODIFIERS, net.minecraft.world.item.component.ItemAttributeModifiers.builder()
+              .add(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE,
+                new net.minecraft.world.entity.ai.attributes.AttributeModifier(net.minecraft.world.item.Item.BASE_ATTACK_DAMAGE_ID, amount,
+                  net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADD_VALUE),
+                net.minecraft.world.entity.EquipmentSlotGroup.MAINHAND)
+              .build());
+            return stack;
+        };
+
+        final java.util.Map<String, Integer> results = new java.util.LinkedHashMap<>();
+        final java.util.List<String> failures = new java.util.ArrayList<>();
+        final java.util.function.BiConsumer<String, Object[]> check = (name, args) -> {
+            final ItemStack stack = (ItemStack) args[0];
+            final int expected = (Integer) args[1];
+            @SuppressWarnings("unchecked")
+            final com.minecolonies.api.equipment.registry.EquipmentTypeEntry type =
+              ((java.util.function.Supplier<com.minecolonies.api.equipment.registry.EquipmentTypeEntry>) args[2]).get();
+            // The level function itself: a real modded tool is also in the vanilla tool tag (#minecraft:pickaxes ...),
+            // which a test stack built on a stick cannot be, so getMiningLevel's tag gate is bypassed here.
+            final int actual = ModEquipmentTypes.vanillaToolLevel(stack, type);
+            results.put(name, actual);
+            if (actual != expected)
+            {
+                failures.add(name + " expected " + expected + " got " + actual);
+            }
+        };
+
+        // Modded material that reuses a vanilla "incorrect for drops" tag (the common case: steel = iron tier).
+        check.accept("modded iron-tier pickaxe", new Object[] {tool.apply(blocks.getOrThrow(net.minecraft.tags.BlockTags.INCORRECT_FOR_IRON_TOOL), false), 2, ModEquipmentTypes.pickaxe});
+        check.accept("modded wood-tier pickaxe", new Object[] {tool.apply(blocks.getOrThrow(net.minecraft.tags.BlockTags.INCORRECT_FOR_WOODEN_TOOL), false), 0, ModEquipmentTypes.pickaxe});
+        check.accept("modded diamond-tier pickaxe", new Object[] {tool.apply(blocks.getOrThrow(net.minecraft.tags.BlockTags.INCORRECT_FOR_DIAMOND_TOOL), false), 3, ModEquipmentTypes.pickaxe});
+        check.accept("modded netherite-tier pickaxe", new Object[] {tool.apply(blocks.getOrThrow(net.minecraft.tags.BlockTags.INCORRECT_FOR_NETHERITE_TOOL), false), 4, ModEquipmentTypes.pickaxe});
+        // Modded material with its own block list: obsidian denied, diamond ore allowed = iron tier.
+        check.accept("modded custom-tag pickaxe", new Object[] {tool.apply(net.minecraft.core.HolderSet.direct(Blocks.OBSIDIAN.builtInRegistryHolder(),
+          Blocks.CRYING_OBSIDIAN.builtInRegistryHolder()), false), 2, ModEquipmentTypes.pickaxe});
+        // Swords carry no drop rule: level = base attack damage - vanilla sword baseline 3 (1.21: tier attack bonus).
+        check.accept("modded diamond-bonus sword", new Object[] {damage.apply(tool.apply(null, true), 6.0F), 3, ModEquipmentTypes.sword});
+        // Spears (26.x) carry no TOOL component: base attack damage = material bonus.
+        final ItemStack spear = damage.apply(new ItemStack(Items.STICK), 2.0F);
+        spear.set(net.minecraft.core.component.DataComponents.REPAIRABLE,
+          new net.minecraft.world.item.enchantment.Repairable(net.minecraft.core.HolderSet.emptyNamed(items, steel)));
+        spear.set(net.minecraft.core.component.DataComponents.KINETIC_WEAPON, new ItemStack(Items.IRON_SPEAR).get(net.minecraft.core.component.DataComponents.KINETIC_WEAPON));
+        check.accept("modded iron-bonus spear", new Object[] {spear, 2, ModEquipmentTypes.sword});
+        // Vanilla controls must not change.
+        check.accept("iron pickaxe", new Object[] {new ItemStack(Items.IRON_PICKAXE), 2, ModEquipmentTypes.pickaxe});
+        check.accept("golden hoe", new Object[] {new ItemStack(Items.GOLDEN_HOE), 0, ModEquipmentTypes.hoe});
+        check.accept("diamond sword", new Object[] {new ItemStack(Items.DIAMOND_SWORD), 3, ModEquipmentTypes.sword});
+        check.accept("netherite axe", new Object[] {new ItemStack(Items.NETHERITE_AXE), 4, ModEquipmentTypes.axe});
+        check.accept("stone shovel", new Object[] {new ItemStack(Items.STONE_SHOVEL), 1, ModEquipmentTypes.shovel});
+        // A component-patched stack must not register its derived level for the whole item.
+        results.put("plain stick registered level", com.minecolonies.api.compatibility.Compatibility.getItemLevel(new ItemStack(Items.STICK)));
+        if (results.get("plain stick registered level") != -1)
+        {
+            failures.add("plain stick picked up a level from a patched stack: " + results.get("plain stick registered level"));
+        }
+
+        // Addon API: register an item by ToolMaterial (1.21 registerItemTier(Item, Tier, int) replacement).
+        try
+        {
+            final java.lang.reflect.Method register = com.minecolonies.api.compatibility.Compatibility.class.getMethod("registerItemTier",
+              net.minecraft.world.item.Item.class, net.minecraft.world.item.ToolMaterial.class);
+            register.invoke(null, Items.DEBUG_STICK, net.minecraft.world.item.ToolMaterial.DIAMOND);
+            final int level = com.minecolonies.api.compatibility.Compatibility.getItemLevel(new ItemStack(Items.DEBUG_STICK));
+            results.put("api registerItemTier(debug_stick, DIAMOND)", level);
+            if (level != 3)
+            {
+                failures.add("registerItemTier(Item, ToolMaterial) registered level " + level + " instead of 3");
+            }
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            failures.add("addon API Compatibility.registerItemTier(Item, ToolMaterial) missing: " + e);
+        }
+
+        Log.getLogger().info("MC-C11 tool levels {}", results);
+        helper.assertTrue(failures.isEmpty(), "Tool material levels wrong: " + failures);
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review MC-G03/S14: MineColonies entities (citizens, visitors, raiders, camp barbarians) throttle
      * the per-tick fluid scan to one tick in ten, spread by {@code randomVariance}, like 1.21's
      * {@code updateInWaterStateAndDoFluidPushing}/{@code updateFluidOnEyes} overrides. 26.x folds both into

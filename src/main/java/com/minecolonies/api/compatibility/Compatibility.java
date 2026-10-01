@@ -10,6 +10,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ToolMaterial;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Block;
@@ -18,9 +19,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 
 /**
@@ -36,7 +37,8 @@ public final class Compatibility
 
     private record TierEntry(int level) {}
 
-    private static final Map<ItemStorage, TierEntry> itemTierRegistry = new HashMap<>();
+    // Concurrent: filled at common setup and lazily from worker/render threads (review C12).
+    private static final Map<ItemStorage, TierEntry> itemTierRegistry = new ConcurrentHashMap<>();
     private static final List<Predicate<ItemStack>> customWeaponRecognizers = new ArrayList<>();
 
     /**
@@ -49,6 +51,21 @@ public final class Compatibility
     public static void registerItemTier(@NotNull final Item item, final int level)
     {
         itemTierRegistry.put(new ItemStorage(new ItemStack(item), true, true), new TierEntry(level));
+    }
+
+    /**
+     * Register an item by its {@link ToolMaterial}, the 26.x replacement for 1.21's
+     * {@code registerItemTier(Item, Tier, int)} (the {@code Tier} class no longer exists).
+     * The level is the material's attack-damage bonus, as 1.21 derived it from the tier
+     * (wood/gold 0, stone/copper 1, iron 2, diamond 3, netherite 4).
+     * Always overwrites any existing entry — intended for mod compat hooks.
+     *
+     * @param item     the item to register.
+     * @param material the tool material the item is made of.
+     */
+    public static void registerItemTier(@NotNull final Item item, @NotNull final ToolMaterial material)
+    {
+        registerItemTier(item, Math.max(0, (int) material.attackDamageBonus()));
     }
 
     /**
