@@ -197,7 +197,16 @@ public class MineColonies
         if (Boolean.getBoolean("neoforge.enableGameTest")
               || System.getProperty("forge.enabledGameTestNamespaces", "").contains(Constants.MOD_ID))
         {
-            MinecoloniesGameTestRegistrar.register(modBus);
+            // The shipped jar leaves the GameTests out (build.gradle), but other mods' dev runs and test servers
+            // still enable GameTests globally: only link the registrar when its class is actually present.
+            if (MineColonies.class.getResource("/com/minecolonies/core/gametest/MinecoloniesGameTestRegistrar.class") != null)
+            {
+                MinecoloniesGameTestRegistrar.register(modBus);
+            }
+            else
+            {
+                Log.getLogger().info("GameTests are enabled, but this MineColonies jar ships without its GameTests; none registered.");
+            }
         }
 
         modBus.register(this.getClass());
