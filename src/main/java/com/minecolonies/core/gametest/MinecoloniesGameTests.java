@@ -4009,6 +4009,67 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * X-263-CFGMIG: values from a pre-.37 config (1.21 <mod>-server.toml / <mod>-common.toml) are carried into the renamed config.
+     * Known keys keep the player's value, keys the spec no longer has are dropped, out-of-range values are corrected like any loaded file.
+     */
+    public static void legacyConfigMigration(final GameTestHelper helper)
+    {
+        final net.neoforged.neoforge.common.ModConfigSpec.Builder builder = new net.neoforged.neoforge.common.ModConfigSpec.Builder();
+        builder.push("gameplay");
+        builder.defineInRange("initialcitizenamount", 4, 1, 10);
+        builder.defineInRange("maxcitizenpercolony", 250, 25, 500);
+        builder.define("allowinfinitesupplychests", false);
+        builder.define("untouched", "default");
+        builder.pop();
+        final net.neoforged.neoforge.common.ModConfigSpec spec = builder.build();
+
+        final com.electronwill.nightconfig.core.CommentedConfig target = com.electronwill.nightconfig.core.CommentedConfig.inMemory();
+        spec.correct(target);
+
+        final com.electronwill.nightconfig.core.CommentedConfig legacy = new com.electronwill.nightconfig.toml.TomlParser().parse(
+          "[gameplay]\n\tinitialcitizenamount = 7\n\tmaxcitizenpercolony = 9000\n\tallowinfinitesupplychests = true\n\tremovedin26 = 3\n");
+
+        final int applied = com.ldtteam.common.config.LegacyConfigMigration.applyLegacyValues(spec, target, legacy);
+        final java.util.List<String> failures = new java.util.ArrayList<>();
+        if (applied != 3)
+        {
+            failures.add("applied " + applied + " values, expected 3");
+        }
+        final Object citizens = target.get("gameplay.initialcitizenamount");
+        if (!(citizens instanceof Number n) || n.intValue() != 7)
+        {
+            failures.add("initialcitizenamount " + citizens + ", expected the legacy 7");
+        }
+        final Object max = target.get("gameplay.maxcitizenpercolony");
+        if (!(max instanceof Number n2) || n2.intValue() != 500)
+        {
+            failures.add("maxcitizenpercolony " + max + ", expected out-of-range 9000 clamped to the max 500 (NeoForge range correction)");
+        }
+        if (!Boolean.TRUE.equals(target.get("gameplay.allowinfinitesupplychests")))
+        {
+            failures.add("allowinfinitesupplychests " + target.get("gameplay.allowinfinitesupplychests") + ", expected the legacy true");
+        }
+        if (!"default".equals(target.get("gameplay.untouched")))
+        {
+            failures.add("untouched " + target.get("gameplay.untouched") + ", expected the default");
+        }
+        if (target.contains("gameplay.removedin26"))
+        {
+            failures.add("removed key copied into the new config");
+        }
+        if (!spec.isCorrect(target))
+        {
+            failures.add("migrated config is not valid for the spec");
+        }
+        Log.getLogger().info("X-263-CFGMIG: applied {}, failures {}", applied, failures);
+        if (!failures.isEmpty())
+        {
+            throw helper.assertionException("legacy config migration: " + String.join("; ", failures));
+        }
+        helper.succeed();
+    }
+
     private static String readServerData(final GameTestHelper helper, final net.minecraft.server.MinecraftServer server, final String path)
     {
         final Identifier id = Identifier.fromNamespaceAndPath(com.minecolonies.api.util.constant.Constants.MOD_ID, path);
