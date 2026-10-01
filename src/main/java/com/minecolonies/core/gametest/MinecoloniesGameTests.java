@@ -3120,6 +3120,127 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for X-STZ121 upstream #710: TransferStructurePackToClient must send exactly the zipped bytes. The
+     * server zips into a growable heap buffer, whose backing array is longer than its content, so writing payload.array()
+     * shipped the unused capacity too (and the release made a second encode fail).
+     */
+    public static void structurizePackTransferPayload(final GameTestHelper helper)
+    {
+        final io.netty.buffer.ByteBuf source = io.netty.buffer.Unpooled.buffer();
+        final byte[] content = new byte[300];
+        for (int i = 0; i < content.length; i++)
+        {
+            content[i] = (byte) (i * 31 + 7);
+        }
+        source.writeBytes(content);
+        final com.ldtteam.structurize.network.messages.TransferStructurePackToClient message =
+          new com.ldtteam.structurize.network.messages.TransferStructurePackToClient("stz121pack", source, true);
+        final java.util.List<Integer> received = new java.util.ArrayList<>();
+        for (int round = 0; round < 2; round++)
+        {
+            final net.minecraft.network.RegistryFriendlyByteBuf buf =
+              new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer(), helper.getLevel().registryAccess());
+            try
+            {
+                message.toBytes(buf);
+            }
+            catch (final RuntimeException e)
+            {
+                helper.fail("encoding round " + round + " threw " + e);
+                return;
+            }
+            final com.ldtteam.structurize.network.messages.TransferStructurePackToClient decoded =
+              new com.ldtteam.structurize.network.messages.TransferStructurePackToClient(buf);
+            final io.netty.buffer.ByteBuf payload;
+            try
+            {
+                final java.lang.reflect.Field field =
+                  com.ldtteam.structurize.network.messages.TransferStructurePackToClient.class.getDeclaredField("payload");
+                field.setAccessible(true);
+                payload = (io.netty.buffer.ByteBuf) field.get(decoded);
+            }
+            catch (final ReflectiveOperationException e)
+            {
+                helper.fail("cannot read payload: " + e);
+                return;
+            }
+            final byte[] got = new byte[payload.readableBytes()];
+            payload.getBytes(payload.readerIndex(), got);
+            received.add(got.length);
+            Log.getLogger().info("STZ121-710 round {} source capacity {} received {} bytes, leftover {}", round, source.capacity(), got.length, buf.readableBytes());
+            helper.assertTrue(java.util.Arrays.equals(content, got), "round " + round + ": received " + got.length + " bytes, expected exactly the 300 written");
+            helper.assertTrue(buf.readableBytes() == 0, "round " + round + ": " + buf.readableBytes() + " bytes left unread");
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Regression fixture for X-STZ121 upstream #814 (Structurize #813): rotating a blueprint holding a tag substitution block
+     * whose replacement carries a blank block-entity tag crashed 1.21 (CapturedBlock palette index). The port rotates through
+     * BlockEntityTagSubstitution.ReplacementBlock instead; guard that blank and real replacement data both rotate cleanly.
+     */
+    public static void structurizeTagSubstitutionRotation(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos chestRel = new BlockPos(1, 2, 1);
+        helper.setBlock(chestRel, Blocks.CHEST);
+        final net.minecraft.world.level.block.entity.ChestBlockEntity chest =
+          helper.getBlockEntity(chestRel, net.minecraft.world.level.block.entity.ChestBlockEntity.class);
+        chest.setItem(4, new ItemStack(Items.EMERALD, 5));
+        final net.minecraft.nbt.CompoundTag chestData = chest.saveWithFullMetadata(level.registryAccess());
+
+        final BlockState stairs = Blocks.OAK_STAIRS.defaultBlockState()
+          .setValue(net.minecraft.world.level.block.StairBlock.FACING, net.minecraft.core.Direction.NORTH);
+        final BlockState chestState = Blocks.CHEST.defaultBlockState()
+          .setValue(net.minecraft.world.level.block.ChestBlock.FACING, net.minecraft.core.Direction.NORTH);
+
+        final String[] cases = {"blank BE tag", "chest BE tag"};
+        for (final String name : cases)
+        {
+            final boolean blank = name.startsWith("blank");
+            final net.minecraft.nbt.CompoundTag compound = new net.minecraft.nbt.CompoundTag();
+            compound.putString("id", com.ldtteam.structurize.blockentities.ModBlockEntities.TAG_SUBSTITUTION.getId().toString());
+            new com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock(
+              blank ? stairs : chestState, blank ? null : chestData, new ItemStack(blank ? Items.OAK_STAIRS : Items.CHEST)).write(compound);
+            if (blank)
+            {
+                // #813: the replacement was present but its block entity tag was "{}".
+                compound.getCompoundOrEmpty("replacement").put("e", new net.minecraft.nbt.CompoundTag());
+            }
+            final com.ldtteam.structurize.blueprints.v1.Blueprint blueprint = new com.ldtteam.structurize.blueprints.v1.Blueprint((short) 1, (short) 1, (short) 1);
+            blueprint.addBlockState(BlockPos.ZERO, com.ldtteam.structurize.blocks.ModBlocks.blockTagSubstitution.get().defaultBlockState());
+            blueprint.getTileEntities()[0][0][0] = compound;
+            blueprint.setCachePrimaryOffset(BlockPos.ZERO);
+            try
+            {
+                blueprint.setRotationMirrorRelative(com.ldtteam.structurize.util.RotationMirror.R90, level);
+            }
+            catch (final RuntimeException e)
+            {
+                Log.getLogger().error("STZ121-814 " + name + " rotation threw", e);
+                helper.fail(name + ": rotation threw " + e);
+                return;
+            }
+            final net.minecraft.nbt.CompoundTag rotated = blueprint.getTileEntities()[0][0][0];
+            helper.assertTrue(rotated != null, name + ": tag substitution data lost on rotation");
+            final com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock replacement =
+              new com.ldtteam.structurize.blockentities.BlockEntityTagSubstitution.ReplacementBlock(rotated);
+            final BlockState expected = (blank ? stairs : chestState).rotate(net.minecraft.world.level.block.Rotation.CLOCKWISE_90);
+            Log.getLogger().info("STZ121-814 {}: replacement {} be {}", name, replacement.getBlockState(), replacement.getBlockEntityTag());
+            helper.assertTrue(replacement.getBlockState().equals(expected), name + ": replacement state " + replacement.getBlockState() + " expected " + expected);
+            if (blank)
+            {
+                helper.assertTrue(replacement.getBlockEntityTag().isEmpty(), name + ": blank tag should stay empty, got " + replacement.getBlockEntityTag());
+            }
+            else
+            {
+                helper.assertTrue(replacement.getBlockEntityTag().toString().contains("minecraft:emerald"), name + ": chest contents lost: " + replacement.getBlockEntityTag());
+            }
+        }
+        helper.succeed();
+    }
+
+    /**
      * Regression fixture for review MC-C08: IItemHandlerCapProvider.wrap must return null for targets without an item capability
      * (1.21 behaviour, callers null-check), not throw from IItemHandler.of(null). A chest is the positive control.
      */
