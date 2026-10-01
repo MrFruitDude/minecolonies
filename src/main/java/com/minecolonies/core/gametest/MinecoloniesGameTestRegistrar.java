@@ -27,9 +27,28 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     private static final DeferredRegister<MapCodec<? extends GameTestInstance>> INSTANCE_TYPES =
       DeferredRegister.create(Registries.TEST_INSTANCE_TYPE, Constants.MOD_ID);
 
+    /**
+     * Environment types are registry entries too, synced to joining clients like the instance types above.
+     */
+    private static final DeferredRegister<MapCodec<? extends TestEnvironmentDefinition<?>>> ENVIRONMENT_TYPES =
+      DeferredRegister.create(Registries.TEST_ENVIRONMENT_DEFINITION_TYPE, Constants.MOD_ID);
+
+    /**
+     * Empty structure big enough to hold the largest colony fixture (x -8..59, z -8..39 relative to its origin), so
+     * the test grid spaces colony tests apart from each other and from every other test.
+     */
+    private static final Identifier COLONY_PLOT = Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest/colony_plot");
+
+    /**
+     * The restart pair hands a saved world from one run to the next through this marker file; without it both tests
+     * fail on tick 0, so they are only registered for the two-run restart procedure.
+     */
+    private static final String RESTART_MARKER_ENV = "MINECOLONIES_RESTART_MARKER";
+
     static
     {
         INSTANCE_TYPES.register("minecolonies_function", () -> MinecoloniesGameTestInstance.CODEC);
+        ENVIRONMENT_TYPES.register("colony_isolation", () -> ColonyIsolationEnvironment.CODEC);
     }
 
     /**
@@ -38,6 +57,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     public static void register(final IEventBus modBus)
     {
         INSTANCE_TYPES.register(modBus);
+        ENVIRONMENT_TYPES.register(modBus);
         modBus.addListener(new MinecoloniesGameTestRegistrar());
     }
 
@@ -57,11 +77,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_lifecycle"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::colonyLifecycle),
-          data);
+          isolatedColonyData(event, "colony_lifecycle"));
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "survival_player_actions"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::survivalPlayerActions),
-          data);
+          isolatedColonyData(event, "survival_player_actions"));
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rack_inventory_round_trip"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::rackInventoryRoundTrip),
@@ -69,15 +89,19 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "production_courier_builder"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilder),
-          data);
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "production_courier_builder_restart_prepare"),
-          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilderRestartPrepare),
-          data);
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "production_courier_builder_restart_resume"),
-          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilderRestartResume),
-          data);
+          isolatedColonyData(event, "production_courier_builder"));
+        if (System.getenv(RESTART_MARKER_ENV) != null)
+        {
+            // They run one at a time in the two-run procedure, so they keep the shared default data unchanged.
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, "production_courier_builder_restart_prepare"),
+              info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilderRestartPrepare),
+              data);
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, "production_courier_builder_restart_resume"),
+              info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilderRestartResume),
+              data);
+        }
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multipiston_lifecycle"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::multiPistonLifecycle),
@@ -186,5 +210,24 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest_instance_type_registered"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::gameTestInstanceTypeRegistered),
           data);
+    }
+
+    /**
+     * Test data for a test that founds a colony: its own environment (so its own batch) that deletes every colony
+     * before and after it runs and starts at sunrise with clear weather, on a plot big enough that no other test's cell overlaps its fixture.
+     */
+    private static TestData<Holder<TestEnvironmentDefinition<?>>> isolatedColonyData(final RegisterGameTestsEvent event, final String name)
+    {
+        return plotData(event.registerEnvironment(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony/" + name),
+          new ColonyIsolationEnvironment(name),
+          // A single run starts on a fresh world with clear skies; a full batch can reach a rain cycle, and citizens
+          // stop working in the rain.
+          new TestEnvironmentDefinition.Weather(TestEnvironmentDefinition.Weather.Type.CLEAR)));
+    }
+
+    private static TestData<Holder<TestEnvironmentDefinition<?>>> plotData(final Holder<TestEnvironmentDefinition<?>> environment)
+    {
+        return new TestData<>(environment, COLONY_PLOT, 40100, 0, true, Rotation.NONE);
     }
 }

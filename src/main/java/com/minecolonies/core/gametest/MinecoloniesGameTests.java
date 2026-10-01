@@ -116,6 +116,7 @@ public final class MinecoloniesGameTests
 
         // The empty test environment has no terrain. Give the citizen spawn
         // search a small, deterministic walkable platform beside the hall.
+        clearColonyFixture(helper, -1, 40, 40);
         for (int x = -8; x < 40; x++)
         {
             for (int z = -8; z < 40; z++)
@@ -348,6 +349,7 @@ public final class MinecoloniesGameTests
             + ":miningLevel=" + ModEquipmentTypes.pickaxe.get().getMiningLevel(woodenPickaxe)
             + ":compatLevel=" + com.minecolonies.api.compatibility.Compatibility.getItemLevel(woodenPickaxe));
 
+        clearColonyFixture(helper, 0, 40, 40);
         for (int x = -8; x < 40; x++)
         {
             for (int z = -8; z < 40; z++)
@@ -620,6 +622,7 @@ public final class MinecoloniesGameTests
         final ServerLevel level = helper.getLevel();
         final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
 
+        clearColonyFixture(helper, 0, 60, 32);
         for (int x = -8; x < 60; x++)
         {
             for (int z = -8; z < 32; z++)
@@ -2003,6 +2006,25 @@ public final class MinecoloniesGameTests
         }).orElse("no-entity");
     }
 
+    /**
+     * Clears everything above a colony fixture's floor, including the strip west and north of the test's own plot
+     * that the fixture borrows. An earlier test in that strip may have left blocks behind, and a colony fixture must
+     * start from empty air so its citizens and builder see the same world in a full batch as in a single run.
+     */
+    private static void clearColonyFixture(final GameTestHelper helper, final int floorY, final int maxX, final int maxZ)
+    {
+        for (int x = -8; x < maxX; x++)
+        {
+            for (int y = floorY + 1; y < 24; y++)
+            {
+                for (int z = -8; z < maxZ; z++)
+                {
+                    helper.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState());
+                }
+            }
+        }
+    }
+
     private static ServerPlayer makeConnectedSurvivalPlayer(final GameTestHelper helper)
     {
         return makeConnectedSurvivalPlayer(helper, UUID.randomUUID());
@@ -2739,23 +2761,35 @@ public final class MinecoloniesGameTests
             final String name = (String) testCase[0];
             final BlockPos relative = (BlockPos) testCase[2];
             final net.minecraft.world.item.Item item = (net.minecraft.world.item.Item) testCase[3];
-            helper.setBlock(relative, (net.minecraft.world.level.block.Block) testCase[1]);
             final BlockPos pos = helper.absolutePos(relative);
+            // The grave sits 5 blocks into the test's neighbour cell and can land in a chunk the test holds no ticket
+            // for. Entities in a chunk below full status are hidden from entity queries, so the drops would not be
+            // found at all. Force the chunk so the count sees what was really dropped.
+            level.setChunkForced(pos.getX() >> 4, pos.getZ() >> 4, true);
+            helper.setBlock(relative, (net.minecraft.world.level.block.Block) testCase[1]);
             helper.assertTrue(level.getBlockEntity(pos) instanceof TileEntityRack, name + " has no rack-style block entity");
             final TileEntityRack container = (TileEntityRack) level.getBlockEntity(pos);
             container.getInventory().setStackInSlot(0, new ItemStack(item, 7));
             level.destroyBlock(pos, false);
-            final int count = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new net.minecraft.world.phys.AABB(pos).inflate(2))
-              .stream()
-              .map(net.minecraft.world.entity.item.ItemEntity::getItem)
-              .filter(stack -> stack.is(item))
-              .mapToInt(ItemStack::getCount)
-              .sum();
-            dropped.put(name, count);
         }
-        Log.getLogger().info("MC-C01 dropped contents on break: {}", dropped);
-        dropped.forEach((name, count) -> helper.assertTrue(count == 7, "Breaking the " + name + " dropped " + count + "/7 stored items"));
-        helper.succeed();
+        // Retried every tick until the test times out, so a forced chunk that is still being promoted gets its tick.
+        helper.succeedWhen(() -> {
+            for (final Object[] testCase : cases)
+            {
+                final String name = (String) testCase[0];
+                final BlockPos pos = helper.absolutePos((BlockPos) testCase[2]);
+                final net.minecraft.world.item.Item item = (net.minecraft.world.item.Item) testCase[3];
+                final int count = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new net.minecraft.world.phys.AABB(pos).inflate(2))
+                  .stream()
+                  .map(net.minecraft.world.entity.item.ItemEntity::getItem)
+                  .filter(stack -> stack.is(item))
+                  .mapToInt(ItemStack::getCount)
+                  .sum();
+                dropped.put(name, count);
+            }
+            dropped.forEach((name, count) -> helper.assertTrue(count == 7, "Breaking the " + name + " dropped " + count + "/7 stored items"));
+            Log.getLogger().info("MC-C01 dropped contents on break: {}", dropped);
+        });
     }
 
     /**
