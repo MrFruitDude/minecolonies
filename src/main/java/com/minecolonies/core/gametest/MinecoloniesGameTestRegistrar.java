@@ -92,11 +92,17 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           isolatedColonyData(event, "production_courier_builder"));
         if (System.getenv(RESTART_MARKER_ENV) != null)
         {
-            // They run one at a time in the two-run procedure, so they keep the shared default data unchanged.
+            // They run one at a time in the two-run procedure. Prepare builds the same 48-wide colony as
+            // production_courier_builder, so it gets the same empty plot: the framework then loads every chunk the
+            // fixture uses before the test starts, instead of the test racing chunk generation for its citizen
+            // anchors. It must NOT use the colony-isolation environment, whose teardown deletes the colony the
+            // resume run has to load.
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, "production_courier_builder_restart_prepare"),
               info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilderRestartPrepare),
-              data);
+              plotData(event.registerEnvironment(
+                Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony/restart_prepare"),
+                new TestEnvironmentDefinition.Weather(TestEnvironmentDefinition.Weather.Type.CLEAR))));
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, "production_courier_builder_restart_resume"),
               info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilderRestartResume),

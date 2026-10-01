@@ -1111,6 +1111,21 @@ public final class MinecoloniesGameTests
                       fixture.targetRequest().getDeliveries());
                     final boolean saveResult = level.getServer().saveEverything(false, true, true);
                     helper.assertTrue(saveResult, "P10C restart prepare server saveEverything returned false");
+                    /*
+                     * Since 26.x GameTestInfo#succeed discards every non-player entity inside the test bounds, and the
+                     * shutdown save that follows then writes the citizens' entity chunks back empty. Snapshot the world
+                     * right after the flushed save instead, which is exactly what a real server restart would load.
+                     */
+                    final Path savedWorld = restartSavedWorldPath(markerPath);
+                    try
+                    {
+                        copySavedWorld(level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT), savedWorld);
+                    }
+                    catch (final IOException exception)
+                    {
+                        helper.assertTrue(false,
+                          "P10C restart prepare could not snapshot the saved world to " + savedWorld + ": " + exception);
+                    }
                     try
                     {
                         writeRestartMarker(markerPath, marker);
@@ -1555,6 +1570,51 @@ public final class MinecoloniesGameTests
     {
         final String raw = System.getenv("MINECOLONIES_RESTART_MARKER");
         return raw == null || raw.isBlank() ? null : Path.of(raw);
+    }
+
+    /**
+     * Where restart prepare leaves its world snapshot: a "saved-world" folder next to the marker file. The resume run's
+     * procedure copies this folder (not the prepare universe) into its own universe.
+     */
+    private static Path restartSavedWorldPath(final Path markerPath)
+    {
+        final Path parent = markerPath.toAbsolutePath().getParent();
+        return parent.resolve("saved-world");
+    }
+
+    private static void copySavedWorld(final Path source, final Path target) throws IOException
+    {
+        final Path root = source.toAbsolutePath().normalize();
+        if (Files.exists(target))
+        {
+            try (var paths = Files.walk(target))
+            {
+                for (final Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList())
+                {
+                    Files.delete(path);
+                }
+            }
+        }
+        try (var paths = Files.walk(root))
+        {
+            for (final Path path : paths.toList())
+            {
+                final Path relative = root.relativize(path);
+                if (relative.getFileName() != null && relative.getFileName().toString().equals("session.lock"))
+                {
+                    continue;
+                }
+                final Path destination = target.resolve(relative.toString());
+                if (Files.isDirectory(path))
+                {
+                    Files.createDirectories(destination);
+                }
+                else
+                {
+                    Files.copy(path, destination, java.nio.file.StandardCopyOption.COPY_ATTRIBUTES);
+                }
+            }
+        }
     }
 
     private static void writeRestartMarker(final Path path, final RestartMarker marker) throws IOException
