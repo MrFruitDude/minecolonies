@@ -2092,6 +2092,11 @@ public final class MinecoloniesGameTests
 
     private static ServerPlayer makeConnectedSurvivalPlayer(final GameTestHelper helper, final UUID playerUuid)
     {
+        return makeConnectedPlayer(helper, playerUuid, GameType.SURVIVAL);
+    }
+
+    private static ServerPlayer makeConnectedPlayer(final GameTestHelper helper, final UUID playerUuid, final GameType gameType)
+    {
         final ServerPlayer player = new ServerPlayer(
           helper.getLevel().getServer(),
           helper.getLevel(),
@@ -2101,7 +2106,7 @@ public final class MinecoloniesGameTests
             @Override
             public GameType gameMode()
             {
-                return GameType.SURVIVAL;
+                return gameType;
             }
 
             @Override
@@ -2110,7 +2115,7 @@ public final class MinecoloniesGameTests
                 return false;
             }
         };
-        GameType.SURVIVAL.updatePlayerAbilities(player.getAbilities());
+        gameType.updatePlayerAbilities(player.getAbilities());
         final Connection connection = new Connection(PacketFlow.SERVERBOUND);
         new EmbeddedChannel(connection);
         // NeoForge provides a complete payload/channel setup for test
@@ -5068,5 +5073,37 @@ public final class MinecoloniesGameTests
         helper.assertTrue(first.equals(stored.getUUID()), "Server UUID " + first + " differs from stored " + stored.getUUID());
         helper.assertTrue(first.equals(com.ldtteam.structurize.management.Manager.getServerUUID()), "Server UUID changed between calls");
         helper.succeed();
+    }
+
+    /**
+     * BS-C15: a creative player holding a scan tool that remembers a command block in the same dimension can use the
+     * teleport key. Since 26.x CompoundTag#getString returns an Optional, so comparing the dimension name to it was
+     * always false and the server refused every teleport as "wrong dimension".
+     */
+    public static void structurizeScanToolTeleport(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final ServerPlayer player = makeConnectedPlayer(helper, UUID.randomUUID(), GameType.CREATIVE);
+        final BlockPos start = helper.absolutePos(new BlockPos(1, 2, 1));
+        player.teleportTo(start.getX() + 0.5, start.getY(), start.getZ() + 0.5);
+
+        final ItemStack tool = new ItemStack(com.ldtteam.structurize.items.ModItems.scanTool.get());
+        final BlockPos from = start.offset(6, 0, 2);
+        final BlockPos to = from.offset(3, 3, 3);
+        com.ldtteam.structurize.util.ItemStackNbtHelper.updateCustomTag(tool, tag ->
+        {
+            final com.ldtteam.structurize.util.ScanToolData data = new com.ldtteam.structurize.util.ScanToolData(tag.copy());
+            data.setCurrentSlotData(new com.ldtteam.structurize.util.ScanToolData.Slot("teleport-test",
+              new com.ldtteam.structurize.client.rendertask.tasks.BoxPreviewData(from, to, java.util.Optional.empty())));
+            data.writeTo(tag);
+            com.ldtteam.structurize.api.util.BlockPosUtil.writeToNBT(tag, "structurize:cmd_pos", start.offset(1, 0, 0));
+            tag.putString("structurize:dim", level.dimension().identifier().toString());
+        });
+
+        final boolean accepted = ((com.ldtteam.structurize.items.ItemScanTool) tool.getItem()).onTeleport(player, tool);
+        Log.getLogger().info("[structurize_scan_tool_teleport] accepted={} player now at {}", accepted, player.blockPosition().toShortString());
+        helper.assertTrue(accepted, "scan tool refused to teleport a creative player within the same dimension");
+        helper.succeedWhen(() -> helper.assertTrue(!player.blockPosition().closerThan(start, 2.0),
+          "scan tool teleport accepted but the player did not move from " + start.toShortString()));
     }
 }
