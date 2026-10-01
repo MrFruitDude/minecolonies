@@ -4996,4 +4996,25 @@ public final class MinecoloniesGameTests
           + encoded.error().map(e -> e.message()).orElse(""));
         helper.succeed();
     }
+
+    /**
+     * A7 guard: WorldUtil dimension-type checks (simplified to Holder#is) still tell the three vanilla dimensions apart.
+     */
+    public static void worldTypeChecks(final GameTestHelper helper)
+    {
+        final net.minecraft.server.MinecraftServer server = helper.getLevel().getServer();
+        final net.minecraft.server.level.ServerLevel overworld = server.getLevel(net.minecraft.world.level.Level.OVERWORLD);
+        final net.minecraft.server.level.ServerLevel nether = server.getLevel(net.minecraft.world.level.Level.NETHER);
+        final net.minecraft.server.level.ServerLevel end = server.getLevel(net.minecraft.world.level.Level.END);
+        helper.assertTrue(overworld != null && nether != null && end != null, "Missing a vanilla dimension");
+        helper.assertTrue(com.minecolonies.api.util.WorldUtil.isOverworldType(overworld), "Overworld not overworld type");
+        helper.assertFalse(com.minecolonies.api.util.WorldUtil.isNetherType(overworld), "Overworld reported as nether type");
+        helper.assertTrue(com.minecolonies.api.util.WorldUtil.isNetherType(nether), "Nether not nether type");
+        helper.assertFalse(com.minecolonies.api.util.WorldUtil.isOverworldType(nether), "Nether reported as overworld type");
+        helper.assertFalse(com.minecolonies.api.util.WorldUtil.isOverworldType(end), "End reported as overworld type");
+        helper.assertFalse(com.minecolonies.api.util.WorldUtil.isNetherType(end), "End reported as nether type");
+        helper.assertTrue(com.minecolonies.api.util.WorldUtil.isOfWorldType(end, net.minecraft.world.level.dimension.BuiltinDimensionTypes.END),
+          "End not end type");
+        helper.succeed();
+    }
 }

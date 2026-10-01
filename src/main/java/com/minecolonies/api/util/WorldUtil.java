@@ -2,10 +2,7 @@ package com.minecolonies.api.util;
 
 import com.minecolonies.api.colony.buildings.IBuilding;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.RegistryAccess;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.server.level.ServerChunkCache;
@@ -221,14 +218,7 @@ public class WorldUtil
      */
     public static boolean isOfWorldType(@NotNull final Level world, @NotNull final ResourceKey<DimensionType> type)
     {
-        RegistryAccess dynRegistries = world.registryAccess();
-        Identifier loc = dynRegistries.lookupOrThrow(Registries.DIMENSION_TYPE).getResourceKey(world.dimensionType()).map(ResourceKey::identifier).orElse(null);
-        if (loc == null)
-        {
-            return false;
-        }
-        ResourceKey<DimensionType> regKey = ResourceKey.create(Registries.DIMENSION_TYPE, loc);
-        return regKey == type;
+        return world.dimensionTypeRegistration().is(type);
     }
 
     /**

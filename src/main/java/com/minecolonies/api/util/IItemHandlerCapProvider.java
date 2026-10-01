@@ -8,7 +8,6 @@ import net.neoforged.neoforge.capabilities.Capabilities.Item;
 import net.neoforged.neoforge.transfer.ResourceHandler;
 import net.neoforged.neoforge.transfer.item.ItemResource;
 import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
-import com.minecolonies.api.util.capability.ItemHandlerResourceHandlerAdapter;
 import org.jetbrains.annotations.Nullable;
 
 /**
