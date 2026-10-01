@@ -153,6 +153,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::compatSyncRoundTrip),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "compat_message_clientbound_only"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::compatMessageClientboundOnly),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "domum_extra_block_mineable_tags"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::domumExtraBlockMineableTags),
           data);

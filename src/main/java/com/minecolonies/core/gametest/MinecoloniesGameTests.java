@@ -2396,6 +2396,32 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Regression fixture for review MC-S06: 1.21 registered UpdateClientWithCompatibilityMessage clientbound only. The port made it
+     * bidirectional with a server handler that only throws, so the server accepted the payload from clients. Requires a client handler
+     * and no server handler on the message type.
+     */
+    public static void compatMessageClientboundOnly(final GameTestHelper helper)
+    {
+        final Object type = com.minecolonies.core.network.messages.client.UpdateClientWithCompatibilityMessage.TYPE;
+        final Object client;
+        final Object server;
+        try
+        {
+            client = type.getClass().getMethod("client").invoke(type);
+            server = type.getClass().getMethod("server").invoke(type);
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            helper.fail("cannot read message type handlers: " + e);
+            return;
+        }
+        Log.getLogger().info("[compat_message_clientbound_only] client handler {}, server handler {}", client != null, server != null);
+        helper.assertTrue(client != null, "compatibility message has no client handler");
+        helper.assertTrue(server == null, "compatibility message accepts serverbound payloads (server handler registered)");
+        helper.succeed();
+    }
+
 
     /**
      * Regression fixture for review X-263-COMPOST: MineColonies foods, crop seeds, mistletoe and composted dirt go into a vanilla

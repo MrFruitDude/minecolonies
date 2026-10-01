@@ -1,6 +1,6 @@
 package com.minecolonies.core.network.messages.client;
 
-import com.ldtteam.common.network.AbstractPlayMessage;
+import com.ldtteam.common.network.AbstractClientPlayMessage;
 import com.ldtteam.common.network.PlayMessageType;
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.util.Log;
@@ -9,7 +9,6 @@ import io.netty.buffer.Unpooled;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import com.minecolonies.core.event.DataPackSyncEventHandler;
@@ -18,9 +17,9 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Message to update the recipes on the client side.
  */
-public class UpdateClientWithCompatibilityMessage extends AbstractPlayMessage
+public class UpdateClientWithCompatibilityMessage extends AbstractClientPlayMessage
 {
-    public static final PlayMessageType<?> TYPE = PlayMessageType.forBothSides(Constants.MOD_ID, "update_client_with_compatibility", UpdateClientWithCompatibilityMessage::new, true, false);
+    public static final PlayMessageType<?> TYPE = PlayMessageType.forClient(Constants.MOD_ID, "update_client_with_compatibility", UpdateClientWithCompatibilityMessage::new, true, false);
 
     private final RegistryFriendlyByteBuf buffer;
 
@@ -48,7 +47,7 @@ public class UpdateClientWithCompatibilityMessage extends AbstractPlayMessage
     }
 
     @Override
-    protected void onClientExecute(final IPayloadContext ctxIn, final Player player)
+    protected void onExecute(final IPayloadContext ctxIn, final Player player)
     {
         try
         {
@@ -58,11 +57,5 @@ public class UpdateClientWithCompatibilityMessage extends AbstractPlayMessage
         {
             Log.getLogger().error("Failed to load compatibility manager", e);
         }
-    }
-
-    @Override
-    protected void onServerExecute(final IPayloadContext ctxIn, final ServerPlayer player)
-    {
-        throw new IllegalStateException("The compatibility update payload is clientbound only");
     }
 }
