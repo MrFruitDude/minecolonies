@@ -2899,6 +2899,80 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Regression fixture for review MC-G03/S14: MineColonies entities (citizens, visitors, raiders, camp barbarians) throttle
+     * the per-tick fluid scan to one tick in ten, spread by {@code randomVariance}, like 1.21's
+     * {@code updateInWaterStateAndDoFluidPushing}/{@code updateFluidOnEyes} overrides. 26.x folds both into
+     * {@code Entity#updateFluidInteraction}. Water is toggled at the entity's feet every tick: an unthrottled entity sees
+     * its in-water state flip nearly every tick, a throttled one at most once per 10-tick slot. It must still notice
+     * standing water within one slot.
+     */
+    public static void fastEntityFluidThrottle(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos feet = helper.absolutePos(new BlockPos(2, 2, 2));
+        level.setChunkForced(feet.getX() >> 4, feet.getZ() >> 4, true);
+        // Glass basin so the water placed below never flows out.
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            for (int dz = -1; dz <= 1; dz++)
+            {
+                level.setBlockAndUpdate(feet.offset(dx, -1, dz), Blocks.GLASS.defaultBlockState());
+                if (dx != 0 || dz != 0)
+                {
+                    level.setBlockAndUpdate(feet.offset(dx, 0, dz), Blocks.GLASS.defaultBlockState());
+                    level.setBlockAndUpdate(feet.offset(dx, 1, dz), Blocks.GLASS.defaultBlockState());
+                }
+            }
+        }
+        level.setBlockAndUpdate(feet, Blocks.AIR.defaultBlockState());
+
+        final com.minecolonies.api.entity.other.AbstractFastMinecoloniesEntity entity =
+          (com.minecolonies.api.entity.other.AbstractFastMinecoloniesEntity) com.minecolonies.api.entity.ModEntities.CAMP_BARBARIAN.create(level,
+            net.minecraft.world.entity.EntitySpawnReason.EVENT);
+        entity.setNoAi(true);
+        entity.setNoGravity(true);
+        entity.setPersistenceRequired();
+        entity.setPos(feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5);
+        helper.assertTrue(level.addFreshEntity(entity), "Could not spawn the camp barbarian");
+
+        final int toggleTicks = 60;
+        final int[] state = new int[] {0, 0, -1, -1}; // toggles done, in-water flips seen, last in-water (0/1), first tick in standing water
+        helper.onEachTick(() -> {
+            if (entity.tickCount == 0)
+            {
+                return; // wait until the entity is ticking
+            }
+            final int now = entity.isInWater() ? 1 : 0;
+            if (state[0] < toggleTicks)
+            {
+                if (state[2] != -1 && now != state[2])
+                {
+                    state[1]++;
+                }
+                state[2] = now;
+                level.setBlock(feet, (state[0] % 2 == 0 ? Blocks.WATER : Blocks.AIR).defaultBlockState(), 3);
+                state[0]++;
+                if (state[0] == toggleTicks)
+                {
+                    level.setBlockAndUpdate(feet, Blocks.WATER.defaultBlockState());
+                    state[3] = entity.tickCount;
+                }
+            }
+        });
+        helper.succeedWhen(() -> {
+            helper.assertTrue(state[3] >= 0, "Still toggling water (" + state[0] + "/" + toggleTicks + ")");
+            helper.assertTrue(state[1] <= toggleTicks / 10 + 2,
+              "In-water state flipped " + state[1] + " times in " + toggleTicks + " ticks: fluid scan is not throttled");
+            helper.assertTrue(entity.isInWater(), "Entity has not noticed standing water after " + (entity.tickCount - state[3]) + " ticks");
+            final int noticed = entity.tickCount - state[3];
+            helper.assertTrue(noticed <= 11, "Entity took " + noticed + " ticks to notice standing water (expected one 10-tick slot)");
+            Log.getLogger().info("MC-G03 fluid throttle: {} in-water flips over {} toggled ticks, standing water noticed after {} ticks",
+              state[1], toggleTicks, noticed);
+            entity.discard();
+        });
+    }
+
+    /**
      * Regression fixture for review MC-C05: left-clicking a block with the lumberjack scepter sets position A (the selection end)
      * and must not break the block. The server break path consults {@code Item#canDestroyBlock} via NeoForge's break event.
      */

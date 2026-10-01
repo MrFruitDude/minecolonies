@@ -36,6 +36,11 @@ public abstract class AbstractFastMinecoloniesEntity extends PathfinderMob imple
     public final int randomVariance = ColonyConstants.rand.nextInt(20);
 
     /**
+     * Cache fluid state
+     */
+    private boolean isInFluid = false;
+
+    /**
      * Cache fire state
      */
     private boolean onFire = false;
@@ -215,6 +220,22 @@ public abstract class AbstractFastMinecoloniesEntity extends PathfinderMob imple
     public void updateSwimming()
     {
         // Noop our entities dont swim
+    }
+
+    /**
+     * Throttled fluid scan. 26.x merged 1.21's {@code updateInWaterStateAndDoFluidPushing} (every 10 ticks) and
+     * {@code updateFluidOnEyes} (every 20 ticks) into this one method, which scans every fluid block the bounding box touches.
+     * Run it on one tick in ten, spread by {@link #randomVariance}, and report the cached result in between.
+     */
+    @Override
+    protected boolean updateFluidInteraction()
+    {
+        if (tickCount % 10 == randomVariance % 10)
+        {
+            isInFluid = super.updateFluidInteraction();
+        }
+
+        return isInFluid;
     }
 
     @Override
