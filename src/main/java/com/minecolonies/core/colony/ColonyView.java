@@ -45,6 +45,7 @@ import com.minecolonies.core.quests.QuestManager;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.ChatFormatting;
+import com.ldtteam.structurize.client.ClientLevelAccess;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -1055,7 +1056,7 @@ public final class ColonyView implements IColonyView
     @Override
     public Level getWorld()
     {
-        final Level level = Minecraft.getInstance().level;
+        final Level level = ClientLevelAccess.level();
         if (level == null || !level.dimension().equals(world))
         {
             throw new IllegalStateException("Cannot get colony view level");

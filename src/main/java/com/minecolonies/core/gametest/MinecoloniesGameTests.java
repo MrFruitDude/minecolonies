@@ -2423,6 +2423,104 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Guard for review BS-C18: a dedicated server has no net.minecraft.client classes, and since 26.x {@code @OnlyIn} no longer
+     * strips client-only methods. When the JVM verifies a common class it must load a client class to check an assignment
+     * (e.g. Minecraft.getInstance().level passed as a Level), so the whole class fails with NoClassDefFoundError on the server.
+     * This replays the bytecode verifier's assignability checks with ASM and fails on any that need a client class.
+     * Dev runs have the client classes, so only this analysis (or a real dedicated server) can see the failure.
+     */
+    public static void serverClassesVerifyWithoutClient(final GameTestHelper helper)
+    {
+        final List<String> guarded = List.of(
+          "com.ldtteam.structurize.storage.rendering.types.BlueprintPreviewData",
+          "com.ldtteam.structurize.network.messages.SyncPreviewCacheToServer",
+          "com.ldtteam.structurize.network.messages.SyncPreviewCacheToClient",
+          // Loaded by ColonyPackageManager#sendColonyViewPackets (static serializeNetworkData) on every colony update.
+          "com.minecolonies.core.colony.ColonyView");
+        final List<String> problems = new ArrayList<>();
+        try
+        {
+            for (final String name : guarded)
+            {
+                problems.addAll(clientTypesNeededToVerify(name));
+            }
+        }
+        catch (final Throwable t)
+        {
+            Log.getLogger().error("[server_classes_verify_without_client] analysis crashed", t);
+            helper.fail("analysis crashed: " + t);
+            return;
+        }
+        Log.getLogger().info("[server_classes_verify_without_client] {} problems: {}", problems.size(), problems);
+        helper.assertTrue(problems.isEmpty(), "server-loaded classes need client classes to verify: " + problems);
+        helper.succeed();
+    }
+
+    /**
+     * Assignability checks in a class's methods whose verification would load a client-only class.
+     * @param className binary class name.
+     * @return "Class#method: value -> expected" entries.
+     */
+    public static List<String> clientTypesNeededToVerify(final String className)
+    {
+        final List<String> problems = new ArrayList<>();
+        final org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+        try (final java.io.InputStream in = MinecoloniesGameTests.class.getClassLoader().getResourceAsStream(className.replace('.', '/') + ".class"))
+        {
+            if (in == null)
+            {
+                problems.add(className + ": class file not found");
+                return problems;
+            }
+            new org.objectweb.asm.ClassReader(in).accept(node, org.objectweb.asm.ClassReader.SKIP_DEBUG);
+        }
+        catch (final java.io.IOException e)
+        {
+            problems.add(className + ": " + e);
+            return problems;
+        }
+        for (final org.objectweb.asm.tree.MethodNode method : node.methods)
+        {
+            final String where = className + "#" + method.name;
+            final org.objectweb.asm.tree.analysis.SimpleVerifier verifier = new org.objectweb.asm.tree.analysis.SimpleVerifier(
+              org.objectweb.asm.Opcodes.ASM9,
+              org.objectweb.asm.Type.getObjectType(node.name),
+              node.superName == null ? null : org.objectweb.asm.Type.getObjectType(node.superName),
+              node.interfaces.stream().map(org.objectweb.asm.Type::getObjectType).toList(),
+              (node.access & org.objectweb.asm.Opcodes.ACC_INTERFACE) != 0)
+            {
+                @Override
+                protected boolean isAssignableFrom(final org.objectweb.asm.Type expected, final org.objectweb.asm.Type value)
+                {
+                    if (!expected.equals(value) && expected.getSort() == org.objectweb.asm.Type.OBJECT
+                          && !"java/lang/Object".equals(expected.getInternalName())
+                          && (isClientType(expected) || isClientType(value) && !isInterface(expected)))
+                    {
+                        problems.add(where + ": " + value.getClassName() + " -> " + expected.getClassName());
+                    }
+                    return super.isAssignableFrom(expected, value);
+                }
+            };
+            verifier.setClassLoader(MinecoloniesGameTests.class.getClassLoader());
+            try
+            {
+                new org.objectweb.asm.tree.analysis.Analyzer<>(verifier).analyze(node.name, method);
+            }
+            catch (final org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException e)
+            {
+                problems.add(where + ": analysis failed " + e);
+            }
+        }
+        return problems.stream().distinct().toList();
+    }
+
+    private static boolean isClientType(final org.objectweb.asm.Type type)
+    {
+        final String name = type.getSort() == org.objectweb.asm.Type.ARRAY ? type.getElementType().getInternalName() : type.getInternalName();
+        return name.startsWith("net/minecraft/client/") || name.startsWith("com/mojang/blaze3d/");
+    }
+
+    /**
      * Guard for review X-263-ONLYIN: since 26.x {@code @OnlyIn} strips nothing at runtime, and NeoForge's
      * OnlyInWarningsHandler shows a load-warning screen in every non-production client for each mod that still carries
      * it. The port's mods must not ship the annotation (it is a no-op, so removing it changes no behaviour).

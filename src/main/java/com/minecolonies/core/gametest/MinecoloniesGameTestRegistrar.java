@@ -169,6 +169,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::noOnlyInAnnotations),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "server_classes_verify_without_client"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::serverClassesVerifyWithoutClient),
+          data);
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "structurize_pack_folder_in_jar"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::structurizePackFolderInJar),
           data);
