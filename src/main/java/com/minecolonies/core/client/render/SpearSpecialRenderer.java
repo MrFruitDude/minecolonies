@@ -11,14 +11,11 @@ import net.minecraft.client.renderer.special.NoDataSpecialModelRenderer;
 import net.minecraft.client.renderer.special.SpecialModelRenderer;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Unit;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.joml.Vector3f;
 import org.joml.Vector3fc;
 
 import java.util.function.Consumer;
 
-@OnlyIn(Dist.CLIENT)
 public class SpearSpecialRenderer implements NoDataSpecialModelRenderer
 {
     public static final Identifier TEXTURE =

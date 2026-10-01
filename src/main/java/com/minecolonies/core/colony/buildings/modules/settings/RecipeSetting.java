@@ -20,8 +20,6 @@ import com.minecolonies.core.colony.buildings.moduleviews.CraftingModuleView;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -122,7 +120,6 @@ public class RecipeSetting implements ICraftingSetting
         return Identifier.fromNamespaceAndPath("minecolonies", "gui/layouthuts/layoutcraftingsetting.xml");
     }
 
-    @OnlyIn(Dist.CLIENT)
     @Override
     public void setupHandler(
       final ISettingKey<?> key,

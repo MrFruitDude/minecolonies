@@ -13,8 +13,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.loot.LootTable;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -27,7 +25,6 @@ import static com.minecolonies.api.util.constant.TranslationConstants.PARTIAL_JE
 /**
  * The JEI recipe category for the fisherman.
  */
-@OnlyIn(Dist.CLIENT)
 public class FishermanRecipeCategory extends JobBasedRecipeCategory<FishermanRecipeCategory.FishingRecipe>
 {
     public FishermanRecipeCategory(@NotNull final IGuiHelper guiHelper)

@@ -5,11 +5,8 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.player.Player;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 
 /** Client-only implementations for common network payload callbacks. */
-@OnlyIn(Dist.CLIENT)
 public final class ClientOnlyNetworkHooks
 {
     private ClientOnlyNetworkHooks() { }

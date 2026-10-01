@@ -13,8 +13,6 @@ import com.minecolonies.core.quests.objectives.DialogueObjectiveTemplateTemplate
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 
 import static com.minecolonies.api.colony.interactionhandling.ModInteractionResponseHandlers.QUEST_ACTION;
 import static com.minecolonies.api.util.constant.Constants.TICKS_SECOND;
@@ -85,7 +83,6 @@ public class QuestDeliveryInteraction extends QuestDialogueInteraction
     }
 
     @Override
-    @OnlyIn(Dist.CLIENT)
     public boolean onClientResponseTriggered(final int responseId, final Player player, final ICitizenDataView data, final BOWindow window)
     {
         if (colonyQuest == null)
@@ -113,7 +110,6 @@ public class QuestDeliveryInteraction extends QuestDialogueInteraction
     }
 
     @Override
-    @OnlyIn(Dist.CLIENT)
     public void onOpened(final Player player)
     {
         final IQuestObjectiveTemplate objective = IQuestManager.GLOBAL_SERVER_QUESTS.get(questId).getObjective(index);

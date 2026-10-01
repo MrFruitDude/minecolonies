@@ -48,8 +48,6 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.StemBlock;
 import net.minecraft.world.level.storage.loot.LootTable;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.common.Tags;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -315,7 +313,6 @@ public class BuildingFarmer extends AbstractBuilding
     public static class FarmerFieldsModuleView extends FieldsModuleView
     {
         @Override
-        @OnlyIn(Dist.CLIENT)
         public BOWindow getWindow()
         {
             return new FarmFieldsModuleWindow(this);

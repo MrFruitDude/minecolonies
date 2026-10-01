@@ -7,8 +7,6 @@ import com.minecolonies.core.client.gui.modules.building.WorkOrderModuleWindow;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -37,7 +35,6 @@ public class WorkOrderListModuleView extends AbstractBuildingModuleView
     }
 
     @Override
-    @OnlyIn(Dist.CLIENT)
     public BOWindow getWindow()
     {
         return new WorkOrderModuleWindow(this);

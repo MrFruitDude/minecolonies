@@ -9,8 +9,6 @@ import com.minecolonies.core.network.messages.server.colony.building.AssignFilte
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -115,7 +113,6 @@ public class EntityListModuleView extends AbstractBuildingModuleView implements 
     }
 
     @Override
-    @OnlyIn(Dist.CLIENT)
     public BOWindow getWindow()
     {
         return new EntityListModuleWindow(this);

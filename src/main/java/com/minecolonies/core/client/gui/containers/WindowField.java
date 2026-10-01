@@ -34,8 +34,6 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.CropBlock;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.common.Tags;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -54,7 +52,6 @@ import static com.minecolonies.core.colony.buildingextensions.FarmField.MAX_RANG
 /**
  * Class which creates the GUI of our field inventory.
  */
-@OnlyIn(Dist.CLIENT)
 public class WindowField extends AbstractWindowSkeleton
 {
     /**

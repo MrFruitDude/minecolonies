@@ -42,8 +42,6 @@ import net.minecraft.client.renderer.entity.TippableArrowRenderer;
 import net.minecraft.client.resources.metadata.gui.GuiMetadataSection;
 import net.minecraft.client.resources.model.sprite.AtlasManager.AtlasConfig;
 import net.minecraft.resources.Identifier;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterItemDecorationsEvent;
@@ -171,7 +169,6 @@ public class ClientRegistryHandler
      * unstitch sprites (for example {@code minecolonies:citizen/smiley/full}) available to
      * BlockUI's image resolver.</p>
      */
-    @OnlyIn(Dist.CLIENT)
     @SubscribeEvent
     public static void registerTextureAtlases(final RegisterTextureAtlasesEvent event)
     {
@@ -184,7 +181,6 @@ public class ClientRegistryHandler
             Set.of(GuiMetadataSection.TYPE)));
     }
 
-    @OnlyIn(Dist.CLIENT)
     @SubscribeEvent
     public static void registerLayerDefinitions(EntityRenderersEvent.RegisterLayerDefinitions event)
     {
@@ -290,7 +286,6 @@ public class ClientRegistryHandler
         event.registerLayerDefinition(CITIZEN, CitizenModel::createMesh);
     }
 
-    @OnlyIn(Dist.CLIENT)
     @SubscribeEvent
     public static void onRegisterItemDecorations(final RegisterItemDecorationsEvent event)
     {
@@ -298,7 +293,6 @@ public class ClientRegistryHandler
         event.register(ModItems.clipboard, new ClipBoardDecorator());
     }
 
-    @OnlyIn(Dist.CLIENT)
     @SubscribeEvent
     public static void doClientStuff(final EntityRenderersEvent.RegisterRenderers event)
     {
@@ -385,14 +379,12 @@ public class ClientRegistryHandler
 
     }
 
-    @OnlyIn(Dist.CLIENT)
     @SubscribeEvent
     public static void registerKeys(final RegisterKeyMappingsEvent event)
     {
         ModKeyMappings.register(event);
     }
 
-    @OnlyIn(Dist.CLIENT)
     @SubscribeEvent
     public static void registerSpecialModels(final RegisterSpecialModelRendererEvent event)
     {

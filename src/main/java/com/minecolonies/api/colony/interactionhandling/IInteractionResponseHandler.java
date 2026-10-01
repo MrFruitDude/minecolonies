@@ -8,8 +8,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import com.minecolonies.api.util.INBTSerializable;
 import org.jetbrains.annotations.Nullable;
 
@@ -101,7 +99,6 @@ public interface IInteractionResponseHandler extends INBTSerializable<CompoundTa
      * @param window   the window it was triggered in.
      * @return if wishing to continue interacting.
      */
-    @OnlyIn(Dist.CLIENT)
     boolean onClientResponseTriggered(final int responseId, final Player player, final ICitizenDataView data, final BOWindow window);
 
     /**

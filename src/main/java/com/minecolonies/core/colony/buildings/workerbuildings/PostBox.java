@@ -22,8 +22,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import com.ldtteam.structurize.api.util.Tuple;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -140,7 +138,6 @@ public class PostBox extends AbstractBuilding implements IRSComponent
     public static class PostBoxMinimumStockModuleView extends MinimumStockModuleView
     {
         @Override
-        @OnlyIn(Dist.CLIENT)
         public BOWindow getWindow()
         {
             return new WindowPostBoxMinStock(this);

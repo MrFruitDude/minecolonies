@@ -52,8 +52,6 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.*;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.HitResult;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModList;
@@ -81,7 +79,6 @@ import static com.minecolonies.core.colony.buildings.modules.BuildingModules.RES
 /**
  * Used to handle client events.
  */
-@OnlyIn(Dist.CLIENT)
 public class ClientEventHandler
 {
     /**

@@ -34,8 +34,6 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.entity.IEntityWithComplexSpawn;
 
 import javax.annotation.Nullable;
@@ -130,7 +128,6 @@ public class NewBobberEntity extends Projectile implements IEntityWithComplexSpa
     /**
      * Checks if the entity is in range to render.
      */
-    @OnlyIn(Dist.CLIENT)
     public boolean shouldRenderAtSqrDistance(final double distance)
     {
         return distance < 4096.0D;

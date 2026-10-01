@@ -10,8 +10,6 @@ import com.minecolonies.api.colony.buildings.modules.settings.ISettingKey;
 import com.minecolonies.api.colony.buildings.modules.settings.ISettingsModuleView;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import net.minecraft.resources.Identifier;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 
 /**
  * Stores an integer setting.
@@ -73,7 +71,6 @@ public class IntSetting implements ISetting<Integer>
         return Identifier.fromNamespaceAndPath("minecolonies", "gui/layouthuts/layoutintsetting.xml");
     }
 
-    @OnlyIn(Dist.CLIENT)
     @Override
     public void setupHandler(
       final ISettingKey<?> key,

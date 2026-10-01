@@ -23,8 +23,6 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -33,7 +31,6 @@ import static com.minecolonies.api.util.constant.TranslationConstants.NEXT;
 import static com.minecolonies.api.util.constant.TranslationConstants.PREVIOUS;
 import static com.minecolonies.core.blocks.BlockColonySign.CONNECTED;
 
-@OnlyIn(Dist.CLIENT)
 public class TileEntityColonySignRenderer
     implements BlockEntityRenderer<TileEntityColonySign, ColonySignRenderState>
 {

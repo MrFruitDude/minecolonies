@@ -15,13 +15,10 @@ import net.minecraft.util.Unit;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.projectile.arrow.ThrownTrident;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 /**
  * Custom renderer for spears
  */
-@OnlyIn(Dist.CLIENT)
 public class RendererSpear extends EntityRenderer<ThrownTrident, ThrownTridentRenderState>
 {
     private final Identifier texture = Identifier.fromNamespaceAndPath(Constants.MOD_ID, "textures/entity/spear.png");

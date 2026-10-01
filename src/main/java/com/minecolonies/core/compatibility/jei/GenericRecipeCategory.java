@@ -39,8 +39,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.loot.LootTable;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 import java.time.Duration;
@@ -50,7 +48,6 @@ import java.util.stream.Collectors;
 /**
  * The main JEI recipe category GUI implementation for IGenericRecipe.
  */
-@OnlyIn(Dist.CLIENT)
 public class GenericRecipeCategory extends JobBasedRecipeCategory<IGenericRecipe>
 {
     public GenericRecipeCategory(@NotNull final BuildingEntry building,

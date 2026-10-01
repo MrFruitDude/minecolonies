@@ -30,8 +30,6 @@ import net.minecraft.network.chat.MutableComponent;
 import com.ldtteam.structurize.api.util.Tuple;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -405,7 +403,6 @@ public class BuildingPlantation extends AbstractBuilding
         }
 
         @Override
-        @OnlyIn(Dist.CLIENT)
         public BOWindow getWindow()
         {
             return new PlantationFieldsModuleWindow(this);

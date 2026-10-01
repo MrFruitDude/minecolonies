@@ -32,8 +32,6 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.entity.BannerPatternLayers;
 import net.minecraft.world.level.block.entity.BannerPatterns;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -49,7 +47,6 @@ import static net.minecraft.client.gui.components.Button.DEFAULT_NARRATION;
  * A custom rendered Screen (i.e. not blockui) that renders a picker for the banners,
  * similar to a loom. The resulting banner cannot be extracted.
  */
-@OnlyIn(Dist.CLIENT)
 public class WindowBannerPicker extends Screen
 {
     /** The Y position of the layers */

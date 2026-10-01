@@ -18,13 +18,10 @@ import com.minecolonies.core.client.render.state.NamedGraveRenderState;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.Style;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-@OnlyIn(Dist.CLIENT)
 public class TileEntityNamedGraveRenderer implements BlockEntityRenderer<TileEntityNamedGrave, NamedGraveRenderState> {
 
     /**

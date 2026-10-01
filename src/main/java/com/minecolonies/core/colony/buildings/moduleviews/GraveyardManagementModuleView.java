@@ -10,8 +10,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -51,7 +49,6 @@ public class GraveyardManagementModuleView extends AbstractBuildingModuleView
         }
     }
 
-    @OnlyIn(Dist.CLIENT)
     @Override
     public BOWindow getWindow()
     {

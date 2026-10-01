@@ -9,8 +9,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -66,7 +64,6 @@ public class EnchanterStationsModuleView extends AbstractBuildingModuleView
         new EnchanterWorkerSetMessage(buildingView, blockPos, false).sendToServer();
     }
 
-    @OnlyIn(Dist.CLIENT)
     @Override
     public BOWindow getWindow()
     {

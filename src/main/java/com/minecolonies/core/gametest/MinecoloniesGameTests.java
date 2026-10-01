@@ -2423,6 +2423,35 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Guard for review X-263-ONLYIN: since 26.x {@code @OnlyIn} strips nothing at runtime, and NeoForge's
+     * OnlyInWarningsHandler shows a load-warning screen in every non-production client for each mod that still carries
+     * it. The port's mods must not ship the annotation (it is a no-op, so removing it changes no behaviour).
+     */
+    public static void noOnlyInAnnotations(final GameTestHelper helper)
+    {
+        final org.objectweb.asm.Type onlyIn = org.objectweb.asm.Type.getType(net.neoforged.api.distmarker.OnlyIn.class);
+        final java.util.List<String> found = new java.util.ArrayList<>();
+        int scanned = 0;
+        for (final String modId : java.util.List.of("minecolonies", "structurize", "blockui", "domum_ornamentum", "multipiston", "dynamictrees"))
+        {
+            final var file = net.neoforged.fml.ModList.get().getModFileById(modId);
+            if (file == null)
+            {
+                continue;
+            }
+            scanned++;
+            file.getFile().getScanResult().getAnnotations().stream()
+              .filter(a -> onlyIn.equals(a.annotationType()))
+              .forEach(a -> found.add(modId + ":" + a.clazz().getClassName() + "#" + a.memberName()));
+        }
+        Log.getLogger().info("[no_onlyin_annotations] scanned {} mods, {} @OnlyIn uses{}", scanned, found.size(),
+          found.isEmpty() ? "" : " e.g. " + found.subList(0, Math.min(5, found.size())));
+        helper.assertTrue(scanned >= 2, "expected at least minecolonies + structurize to be loaded, scanned " + scanned);
+        helper.assertTrue(found.isEmpty(), found.size() + " @OnlyIn uses remain, e.g. " + found.subList(0, Math.min(5, found.size())));
+        helper.succeed();
+    }
+
+    /**
      * Guard for review BS-C17: in a packaged mod FML 12's content root is the jar FILE, so the built-in structure packs
      * (blueprints/&lt;modid&gt;) must be found inside the jar. The port only looked for a folder under each root, which
      * exists in dev runs only, so a dedicated server/client running the release jars had no MineColonies packs at all.

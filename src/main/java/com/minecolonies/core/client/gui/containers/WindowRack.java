@@ -9,15 +9,12 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.resources.Identifier;
 import net.minecraft.network.chat.Component;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 import com.ldtteam.structurize.api.compat.itemhandler.wrapper.CombinedInvWrapper;
 import org.jetbrains.annotations.NotNull;
 
 import static com.minecolonies.api.util.constant.InventoryConstants.*;
 
-@OnlyIn(Dist.CLIENT)
 public class WindowRack extends AbstractContainerScreen<ContainerRack>
 {
     /**

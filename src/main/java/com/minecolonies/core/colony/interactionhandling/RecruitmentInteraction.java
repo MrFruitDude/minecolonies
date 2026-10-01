@@ -24,8 +24,6 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import com.ldtteam.structurize.api.compat.itemhandler.wrapper.InvWrapper;
 import java.util.Collections;
 import java.util.List;
@@ -93,7 +91,6 @@ public class RecruitmentInteraction extends ServerCitizenInteraction
     }
 
     @Override
-    @OnlyIn(Dist.CLIENT)
     public void onWindowOpened(final BOWindow window, final ICitizenDataView dataView)
     {
         final ButtonImage recruitButton = window.findPaneOfTypeByID(BUTTON_RESPONSE_ID + 2, ButtonImage.class);
@@ -129,7 +126,6 @@ public class RecruitmentInteraction extends ServerCitizenInteraction
     }
 
     @Override
-    @OnlyIn(Dist.CLIENT)
     public boolean onClientResponseTriggered(final int responseId, final Player player, final ICitizenDataView data, final BOWindow window)
     {
         final Component response = getPossibleResponses().get(responseId);

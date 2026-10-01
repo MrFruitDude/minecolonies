@@ -23,15 +23,12 @@ import net.minecraft.core.ClientAsset;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.player.PlayerSkin;
 import net.minecraft.world.level.block.SkullBlock;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-@OnlyIn(Dist.CLIENT)
 public class CitizenArmorLayer
     extends HumanoidArmorLayer<CitizenRenderState, CitizenModel<CitizenRenderState>, HumanoidModel<CitizenRenderState>>
 {

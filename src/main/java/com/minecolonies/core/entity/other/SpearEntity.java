@@ -20,8 +20,6 @@ import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -194,7 +192,6 @@ public class SpearEntity extends ThrownTrident implements ICustomAttackSound
         return 0.9F;
     }
 
-    @OnlyIn(Dist.CLIENT)
     public boolean shouldRender(double x, double y, double z)
     {
         return true;

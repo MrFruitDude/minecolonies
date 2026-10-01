@@ -13,8 +13,6 @@ import com.minecolonies.core.network.messages.server.colony.building.ResetFilter
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -138,7 +136,6 @@ public class ItemListModuleView extends AbstractBuildingModuleView implements II
     }
 
     @Override
-    @OnlyIn(Dist.CLIENT)
     public BOWindow getWindow()
     {
         return new ItemListModuleWindow(this, Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gui/layouthuts/layoutfilterablelist.xml"));

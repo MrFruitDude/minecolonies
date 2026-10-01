@@ -6,15 +6,12 @@ import net.minecraft.client.input.InputWithModifiers;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.DyeColor;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * A custom "widget" of sorts that lays out minecraft's DyeColors as buttons to choose from.
  */
-@OnlyIn(Dist.CLIENT)
 public class ColorPalette
 {
     public static final DyeColor[] DYES = DyeColor.values();
@@ -59,11 +56,9 @@ public class ColorPalette
     }
 
     /** Used as a function processor to add the widgets to the screen */
-    @OnlyIn(Dist.CLIENT)
     public interface IWidgetAdder { void onBuild(Button toAdd); }
 
     /** A custom function to call when the color has been changed. Edit via the onchange field. */
-    @OnlyIn(Dist.CLIENT)
     public interface ChangeEvent { void onChange(DyeColor now); }
 
     public DyeColor getSelected() { return selected; }

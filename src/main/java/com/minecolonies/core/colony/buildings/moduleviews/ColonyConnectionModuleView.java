@@ -7,8 +7,6 @@ import com.minecolonies.core.client.gui.modules.building.ConnectionModuleWindow;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -36,7 +34,6 @@ public class ColonyConnectionModuleView extends AbstractBuildingModuleView
 
     }
 
-    @OnlyIn(Dist.CLIENT)
     @Override
     public BOWindow getWindow()
     {

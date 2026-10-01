@@ -11,14 +11,11 @@ import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.model.geom.builders.MeshDefinition;
 import net.minecraft.client.model.geom.builders.PartDefinition;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 /**
  * Model for the Spear. The model is a long wooden rod with an iron head and leather handle.
  */
-@OnlyIn(Dist.CLIENT)
 public class SpearModel extends Model.Simple
 {
     private final ModelPart handle;

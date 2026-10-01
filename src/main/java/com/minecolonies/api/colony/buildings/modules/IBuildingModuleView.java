@@ -9,8 +9,6 @@ import com.minecolonies.api.util.constant.Constants;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -43,7 +41,6 @@ public interface IBuildingModuleView
      * Get the matching window for the module.
      * @return the window.
      */
-    @OnlyIn(Dist.CLIENT)
     BOWindow getWindow();
 
     /**

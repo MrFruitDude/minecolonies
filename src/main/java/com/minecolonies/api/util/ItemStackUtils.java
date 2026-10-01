@@ -55,8 +55,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BrewingStandBlockEntity;
 import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
 import net.minecraft.world.phys.EntityHitResult;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.common.Tags;
 import net.neoforged.neoforge.common.crafting.SizedIngredient;
 import org.jetbrains.annotations.NotNull;
@@ -1046,7 +1044,6 @@ public final class ItemStackUtils
      * @param ingredient the ingredient to check.
      * @return the friendly name.
      */
-    @OnlyIn(Dist.CLIENT)
     public static Component getTranslatedName(@NotNull final SizedIngredient ingredient)
     {
         if (ingredient.ingredient().isEmpty())

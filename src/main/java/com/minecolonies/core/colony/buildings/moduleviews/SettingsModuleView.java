@@ -15,8 +15,6 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -93,7 +91,6 @@ public class SettingsModuleView extends AbstractBuildingModuleView implements IS
         return (T) settings.getOrDefault(key, null);
     }
 
-    @OnlyIn(Dist.CLIENT)
     @Override
     public BOWindow getWindow()
     {
