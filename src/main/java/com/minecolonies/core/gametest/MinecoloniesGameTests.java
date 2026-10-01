@@ -3955,6 +3955,60 @@ public final class MinecoloniesGameTests
         }
     }
 
+    /**
+     * Regression fixture for review DPT-C14: Domum's shingle items build their name from a per-block format key. 1.21 block
+     * items returned the block.* description id; 26.x block items return item.*, so the port looked up
+     * domum_ornamentum.shingle.name.format.item.* while Domum's lang files hold ...name.format.block.*, and every shingle
+     * item showed its raw key in every language.
+     */
+    public static void domumShingleItemNames(final GameTestHelper helper)
+    {
+        final com.google.gson.JsonObject english;
+        try (final java.io.InputStream in = com.ldtteam.domumornamentum.block.ModBlocks.class.getResourceAsStream("/assets/domum_ornamentum/lang/en_us.json"))
+        {
+            if (in == null)
+            {
+                throw helper.assertionException("Domum en_us.json not on the classpath");
+            }
+            english = com.google.gson.JsonParser.parseReader(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+        }
+        catch (final java.io.IOException e)
+        {
+            throw new java.io.UncheckedIOException(e);
+        }
+        final java.util.List<String> failures = new java.util.ArrayList<>();
+        int checked = 0;
+        for (final com.ldtteam.domumornamentum.shingles.ShingleHeightType type : com.ldtteam.domumornamentum.shingles.ShingleHeightType.values())
+        {
+            final net.minecraft.world.item.ItemStack stack = new net.minecraft.world.item.ItemStack(
+              com.ldtteam.domumornamentum.block.ModBlocks.getInstance().getShingle(type));
+            final net.minecraft.network.chat.Component name = stack.getItem().getName(stack);
+            if (!(name.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents translatable))
+            {
+                failures.add(type + ": name is not translatable: " + name.getString());
+                continue;
+            }
+            checked++;
+            final String key = translatable.getKey();
+            if (!english.has(key))
+            {
+                failures.add(type + ": key " + key + " not in Domum en_us");
+                continue;
+            }
+            final String expected = String.format(english.get(key).getAsString(), "X");
+            if (!expected.endsWith("Shingles") || !expected.startsWith("X "))
+            {
+                failures.add(type + ": " + key + " -> " + expected);
+            }
+        }
+        Log.getLogger().info("DPT-C14: {} shingle items checked, failures {}", checked, failures);
+        if (checked != 3 || !failures.isEmpty())
+        {
+            throw helper.assertionException("shingle item names: checked " + checked + ", " + String.join("; ", failures));
+        }
+        helper.succeed();
+    }
+
     private static String readServerData(final GameTestHelper helper, final net.minecraft.server.MinecraftServer server, final String path)
     {
         final Identifier id = Identifier.fromNamespaceAndPath(com.minecolonies.api.util.constant.Constants.MOD_ID, path);
