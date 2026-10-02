@@ -372,6 +372,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest_instance_type_registered"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::gameTestInstanceTypeRegistered),
           data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "variant_eggs_feed_colony"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::variantEggsFeedColony),
+          data);
     }
 
     /**

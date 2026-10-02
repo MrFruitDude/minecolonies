@@ -6285,4 +6285,113 @@ public final class MinecoloniesGameTests
         helper.assertTrue(failures.isEmpty(), "citizen render flags: " + failures.size() + " failures, first " + (failures.isEmpty() ? "" : failures.get(0)));
         helper.succeed();
     }
+
+    /**
+     * Phase C3 row 1 (V18/V19): since 1.21.5 cold and warm chickens lay blue and brown eggs, and vanilla groups all three in
+     * {@code #minecraft:eggs}. A colony in a cold or warm biome gets only those, so everything in MineColonies that takes an
+     * egg must take any egg: the cook's ingredient tag, every crafter recipe that has a plain-egg version (crafter recipe
+     * inputs are single items, so each egg needs its own recipe with otherwise identical inputs and output), MineColonies'
+     * own crafting-table food recipes, the chicken herder hut recipe, the vaccines research cost, and the chicken herder's
+     * JEI display.
+     */
+    public static void variantEggsFeedColony(final GameTestHelper helper)
+    {
+        final List<net.minecraft.world.item.Item> eggs = List.of(Items.EGG, Items.BLUE_EGG, Items.BROWN_EGG);
+        final List<ItemStack> eggStacks = eggs.stream().map(ItemStack::new).toList();
+        final List<String> failures = new ArrayList<>();
+
+        for (final ItemStack egg : eggStacks)
+        {
+            helper.assertTrue(egg.is(ItemTags.EGGS), "vanilla #minecraft:eggs lost " + egg);
+            if (!egg.is(com.minecolonies.api.items.ModTags.crafterIngredient.get(com.minecolonies.api.util.constant.TagConstants.CRAFTING_COOK)))
+            {
+                failures.add("cook ingredient tag lacks " + egg.getItem());
+            }
+        }
+
+        // Crafter recipes: per crafter, every recipe that takes a plain egg must exist for each variant egg.
+        final java.util.function.Function<com.minecolonies.core.colony.crafting.CustomRecipe, String> signature = recipe ->
+          net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(recipe.getPrimaryOutput().getItem()) + "x" + recipe.getPrimaryOutput().getCount() + " <- "
+            + recipe.getInputs().stream()
+                .map(input -> (eggs.contains(input.getItem()) ? "EGG" : net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(input.getItem()).toString()) + "x" + input.getAmount())
+                .sorted().collect(java.util.stream.Collectors.joining(","));
+        int plainEggRecipes = 0;
+        for (final Map.Entry<String, Map<Identifier, com.minecolonies.core.colony.crafting.CustomRecipe>> crafter
+          : com.minecolonies.core.colony.crafting.CustomRecipeManager.getInstance().getAllRecipes().entrySet())
+        {
+            final Map<net.minecraft.world.item.Item, java.util.Set<String>> byEgg = new java.util.HashMap<>();
+            for (final com.minecolonies.core.colony.crafting.CustomRecipe recipe : crafter.getValue().values())
+            {
+                for (final net.minecraft.world.item.Item egg : eggs)
+                {
+                    if (recipe.getInputs().stream().anyMatch(input -> input.getItem() == egg))
+                    {
+                        byEgg.computeIfAbsent(egg, k -> new java.util.TreeSet<>()).add(signature.apply(recipe));
+                    }
+                }
+            }
+            final java.util.Set<String> plain = byEgg.getOrDefault(Items.EGG, java.util.Set.of());
+            plainEggRecipes += plain.size();
+            for (final net.minecraft.world.item.Item variant : List.of(Items.BLUE_EGG, Items.BROWN_EGG))
+            {
+                final java.util.Set<String> missing = new java.util.TreeSet<>(plain);
+                missing.removeAll(byEgg.getOrDefault(variant, java.util.Set.of()));
+                if (!missing.isEmpty())
+                {
+                    failures.add(crafter.getKey() + " has no " + variant + " version of " + missing);
+                }
+            }
+        }
+        helper.assertTrue(plainEggRecipes >= 5, "expected the 1.21 baker/chef egg recipes, found " + plainEggRecipes);
+
+        // MineColonies' own crafting-table recipes (cook/chef learn these): an ingredient that takes an egg takes any egg.
+        int eggIngredients = 0;
+        for (final net.minecraft.world.item.crafting.RecipeHolder<?> holder : helper.getLevel().getServer().getRecipeManager().getRecipes())
+        {
+            if (!holder.id().identifier().getNamespace().equals(Constants.MOD_ID))
+            {
+                continue;
+            }
+            for (final net.minecraft.world.item.crafting.Ingredient ingredient : holder.value().placementInfo().ingredients())
+            {
+                if (ingredient.test(eggStacks.get(0)))
+                {
+                    eggIngredients++;
+                    if (!eggStacks.stream().allMatch(ingredient::test))
+                    {
+                        failures.add("recipe " + holder.id().identifier() + " takes only the plain egg");
+                    }
+                }
+            }
+        }
+        helper.assertTrue(eggIngredients >= 6, "expected MineColonies' egg recipes (hut, eggdrop soup, cheesecake, fried rice), found " + eggIngredients);
+
+        // Vaccines research cost.
+        final com.minecolonies.api.research.IGlobalResearch vaccines = com.minecolonies.api.research.IGlobalResearchTree.getInstance()
+          .getResearch(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "civilian"), Identifier.fromNamespaceAndPath(Constants.MOD_ID, "civilian/vaccines"));
+        helper.assertTrue(vaccines != null, "vaccines research not loaded");
+        if (!vaccines.getCostList().stream().anyMatch(cost -> eggStacks.stream().allMatch(cost.ingredient()::test)))
+        {
+            failures.add("vaccines research cost takes only the plain egg: " + vaccines.getCostList());
+        }
+
+        // Chicken herder JEI display.
+        final net.minecraft.world.entity.animal.chicken.Chicken chicken =
+          net.minecraft.world.entity.EntityTypes.CHICKEN.create(helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+        final java.util.Set<net.minecraft.world.item.Item> shown = new java.util.HashSet<>();
+        for (final com.minecolonies.api.crafting.IGenericRecipe recipe
+          : new com.minecolonies.core.colony.buildings.workerbuildings.BuildingChickenHerder.HerdingModule().getRecipesForDisplayPurposesOnly(chicken))
+        {
+            recipe.getAllMultiOutputs().forEach(stack -> shown.add(stack.getItem()));
+        }
+        if (!shown.containsAll(eggs))
+        {
+            failures.add("chicken herder display shows " + shown + ", not every egg");
+        }
+
+        Log.getLogger().info("[variant_eggs_feed_colony] plain-egg crafter recipes {}, egg ingredients {}, herder display {}, failures {}",
+          plainEggRecipes, eggIngredients, shown, failures);
+        helper.assertTrue(failures.isEmpty(), "variant eggs not usable: " + failures);
+        helper.succeed();
+    }
 }

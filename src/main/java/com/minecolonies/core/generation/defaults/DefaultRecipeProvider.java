@@ -94,7 +94,7 @@ public class DefaultRecipeProvider extends RecipeProvider
         registerHutRecipe1(recipeOutput, ModBlocks.blockHutBeekeeper, Items.BEEHIVE);
         registerHutRecipe3(recipeOutput, ModBlocks.blockHutBlacksmith, Items.IRON_INGOT);
         registerHutRecipe1(recipeOutput, ModBlocks.blockHutBuilder, ItemTags.WOODEN_DOORS);
-        registerHutRecipe1(recipeOutput, ModBlocks.blockHutChickenHerder, Items.EGG);
+        registerHutRecipe1(recipeOutput, ModBlocks.blockHutChickenHerder, ItemTags.EGGS);
         registerHutRecipe1(recipeOutput, ModBlocks.blockHutHome, Items.TORCH);
         registerHutRecipe3(recipeOutput, ModBlocks.blockHutCombatAcademy, Items.IRON_SWORD);
         registerHutRecipe1(recipeOutput, ModBlocks.blockHutComposter, ModBlocks.blockBarrel);
@@ -1013,8 +1013,8 @@ public class DefaultRecipeProvider extends RecipeProvider
         ShapelessRecipeBuilder.shapeless(items, RecipeCategory.FOOD, ModItems.eggdrop_soup, 1)
           .requires(ModBlocks.blockOnion, 2)
           .requires(ModBlocks.blockGarlic, 1)
-          .requires(Items.EGG)
-          .requires(Items.EGG)
+          .requires(ItemTags.EGGS)
+          .requires(ItemTags.EGGS)
           .requires(Items.CHICKEN)
           .requires(Items.BOWL)
           .unlockedBy("has_onion", has(ModBlocks.blockOnion))
@@ -1113,8 +1113,8 @@ public class DefaultRecipeProvider extends RecipeProvider
           .requires(ModBlocks.blockDurum)
           .requires(ModItems.butter)
           .requires(Items.SUGAR)
-          .requires(Items.EGG)
-          .requires(Items.EGG)
+          .requires(ItemTags.EGGS)
+          .requires(ItemTags.EGGS)
           .unlockedBy("has_butter", has(ModItems.butter))
           .save(recipeOutput, ResourceKey.create(Registries.RECIPE, Identifier.fromNamespaceAndPath(MOD_ID, "plain_cheesecake")));
 
@@ -1124,7 +1124,7 @@ public class DefaultRecipeProvider extends RecipeProvider
           .requires(ModBlocks.blockEggplant)
           .requires(Items.CARROT)
           .requires(ModItems.cooked_rice)
-          .requires(Items.EGG)
+          .requires(ItemTags.EGGS)
           .requires(ModTags.rawMeat)
           .unlockedBy("has_onion", has(ModBlocks.blockOnion))
           .save(recipeOutput, ResourceKey.create(Registries.RECIPE, Identifier.fromNamespaceAndPath(MOD_ID, "fried_rice")));

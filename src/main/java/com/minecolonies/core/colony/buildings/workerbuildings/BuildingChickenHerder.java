@@ -8,6 +8,8 @@ import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.core.colony.buildings.AbstractBuilding;
 import com.minecolonies.core.colony.buildings.modules.AnimalHerdingModule;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.animal.chicken.Chicken;
 import net.minecraft.world.item.ItemStack;
@@ -71,8 +73,11 @@ public class BuildingChickenHerder extends AbstractBuilding
         {
             final List<IGenericRecipe> recipes = new ArrayList<>(super.getRecipesForDisplayPurposesOnly(animal));
 
+            // Every egg a chicken lays: 1.21.5 cold/warm chicken variants lay blue/brown eggs (#minecraft:eggs).
+            final List<ItemStack> eggs = new ArrayList<>();
+            BuiltInRegistries.ITEM.getTagOrEmpty(ItemTags.EGGS).forEach(egg -> eggs.add(new ItemStack(egg.value())));
             recipes.add(GenericRecipe.builder()
-                    .withOutput(Items.EGG)
+                    .withOutputs(eggs.isEmpty() ? List.of(new ItemStack(Items.EGG)) : eggs)
                     .withRequiredEntity(animal.getType())
                     .build());
 

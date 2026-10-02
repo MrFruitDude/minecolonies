@@ -6,8 +6,8 @@
     "minecolonies:durum",
     "minecolonies:butter",
     "minecraft:sugar",
-    "minecraft:egg",
-    "minecraft:egg"
+    "#minecraft:eggs",
+    "#minecraft:eggs"
   ],
   "result": {
     "id": "minecolonies:plain_cheesecake"

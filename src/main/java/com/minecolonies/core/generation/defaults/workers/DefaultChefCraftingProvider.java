@@ -8,6 +8,7 @@ import com.minecolonies.api.items.ModTags;
 import com.minecolonies.core.generation.CustomRecipeProvider;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import org.jetbrains.annotations.NotNull;
@@ -183,19 +184,22 @@ public class DefaultChefCraftingProvider extends CustomRecipeProvider
           .minBuildingLevel(4)
           .build(consumer);
 
-        recipe(CHEF, MODULE_CRAFTING, "schnitzel")
-          .inputs(List.of(
-            new ItemStorage(new ItemStack(ModBlocks.blockDurum)),
-            new ItemStorage(new ItemStack(ModBlocks.blockDurum)),
-            new ItemStorage(new ItemStack(ModItems.manchet_bread)),
-            new ItemStorage(new ItemStack(Items.PORKCHOP)),
-            new ItemStorage(new ItemStack(Items.EGG)),
-            new ItemStorage(new ItemStack(Items.POTATO))
-          ))
-          .result(new ItemStack(ModItems.schnitzel, 1))
-          .showTooltip(true)
-          .minBuildingLevel(4)
-          .build(consumer);
+        for (final Item egg : EGGS)
+        {
+            recipe(CHEF, MODULE_CRAFTING, eggVariantId("schnitzel", egg))
+              .inputs(List.of(
+                new ItemStorage(new ItemStack(ModBlocks.blockDurum)),
+                new ItemStorage(new ItemStack(ModBlocks.blockDurum)),
+                new ItemStorage(new ItemStack(ModItems.manchet_bread)),
+                new ItemStorage(new ItemStack(Items.PORKCHOP)),
+                new ItemStorage(new ItemStack(egg)),
+                new ItemStorage(new ItemStack(Items.POTATO))
+              ))
+              .result(new ItemStack(ModItems.schnitzel, 1))
+              .showTooltip(egg == Items.EGG)
+              .minBuildingLevel(4)
+              .build(consumer);
+        }
 
         recipe(CHEF, MODULE_CRAFTING, "steak_dinner")
           .inputs(List.of(

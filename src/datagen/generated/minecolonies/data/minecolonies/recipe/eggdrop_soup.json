@@ -4,8 +4,8 @@
     "minecolonies:onion",
     "minecolonies:onion",
     "minecolonies:garlic",
-    "minecraft:egg",
-    "minecraft:egg",
+    "#minecraft:eggs",
+    "#minecraft:eggs",
     "minecraft:chicken",
     "minecraft:bowl"
   ],

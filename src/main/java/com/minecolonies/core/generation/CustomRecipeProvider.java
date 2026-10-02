@@ -15,7 +15,9 @@ import net.minecraft.data.CachedOutput;
 import net.minecraft.data.DataProvider;
 import net.minecraft.data.PackOutput;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import org.jetbrains.annotations.NotNull;
@@ -69,6 +71,24 @@ public abstract class CustomRecipeProvider implements DataProvider
 
             return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
         });
+    }
+
+    /**
+     * Vanilla's eggs ({@code #minecraft:eggs} since 1.21.5: cold and warm chickens lay blue and brown eggs). Crafter recipe
+     * inputs are single items, so a recipe that takes an egg is generated once per egg, see {@link #eggVariantId}.
+     */
+    protected static final List<Item> EGGS = List.of(Items.EGG, Items.BLUE_EGG, Items.BROWN_EGG);
+
+    /**
+     * Recipe id for one egg's version of an egg recipe: the plain egg keeps the 1.21 id, the others get the egg as suffix.
+     *
+     * @param id  the recipe id with a plain egg.
+     * @param egg one of {@link #EGGS}.
+     * @return the id for that egg.
+     */
+    protected static String eggVariantId(final String id, final Item egg)
+    {
+        return egg == Items.EGG ? id : id + "_" + BuiltInRegistries.ITEM.getKey(egg).getPath();
     }
 
     @NotNull

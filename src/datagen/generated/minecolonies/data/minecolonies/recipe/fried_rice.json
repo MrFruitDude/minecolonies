@@ -6,7 +6,7 @@
     "minecolonies:eggplant",
     "minecraft:carrot",
     "minecolonies:cooked_rice",
-    "minecraft:egg",
+    "#minecraft:eggs",
     "#minecolonies:rawmeat"
   ],
   "result": {

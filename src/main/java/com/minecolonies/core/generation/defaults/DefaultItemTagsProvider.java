@@ -380,7 +380,7 @@ public class DefaultItemTagsProvider extends BlockTagCopyingItemTagProvider
           .add(Items.KELP)
           .add(Items.DRIED_KELP)
           .add(Items.DRIED_KELP_BLOCK)
-          .add(Items.EGG)
+          .addTag(ItemTags.EGGS)
           .add(ModItems.large_milk_bottle)
           .add(ModItems.large_soy_milk_bottle)
           .add(ModItems.large_water_bottle)

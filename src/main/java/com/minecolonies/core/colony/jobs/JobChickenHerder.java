@@ -7,6 +7,7 @@ import com.minecolonies.core.colony.buildings.modules.BuildingModules;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.entity.ai.workers.production.herders.EntityAIWorkChickenHerder;
 import net.minecraft.resources.Identifier;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import org.jetbrains.annotations.NotNull;
@@ -44,7 +45,7 @@ public class JobChickenHerder extends AbstractJob<EntityAIWorkChickenHerder, Job
     @Override
     public boolean pickupSuccess(@NotNull final ItemStack pickedUpStack)
     {
-        if (pickedUpStack.getItem() == Items.FEATHER || pickedUpStack.getItem() == Items.EGG)
+        if (pickedUpStack.getItem() == Items.FEATHER || pickedUpStack.is(ItemTags.EGGS))
         {
             return getCitizen().getRandom()
               .nextInt((getCitizen().getCitizenSkillHandler().getLevel(getCitizen().getWorkBuilding().getModule(BuildingModules.CHICKENHERDER_WORK).getPrimarySkill()))) > 1;

@@ -8,6 +8,7 @@ import com.minecolonies.api.research.util.ResearchConstants;
 import com.minecolonies.core.generation.CustomRecipeProvider;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.alchemy.PotionContents;
@@ -131,14 +132,17 @@ public class DefaultBakerCraftingProvider extends CustomRecipeProvider
           .intermediate(Blocks.FURNACE)
           .build(consumer);
 
-        recipe(BAKER, MODULE_CRAFTING, "raw_pumpkin_pie")
-          .inputs(List.of(new ItemStorage(new ItemStack(Items.PUMPKIN)),
-            new ItemStorage(new ItemStack(Items.SUGAR)),
-            new ItemStorage(new ItemStack(Items.EGG))))
-          .result(new ItemStack(ModItems.rawPumpkinPie))
-          .minBuildingLevel(3)
-          .showTooltip(true)
-          .build(consumer);
+        for (final Item egg : EGGS)
+        {
+            recipe(BAKER, MODULE_CRAFTING, eggVariantId("raw_pumpkin_pie", egg))
+              .inputs(List.of(new ItemStorage(new ItemStack(Items.PUMPKIN)),
+                new ItemStorage(new ItemStack(Items.SUGAR)),
+                new ItemStorage(new ItemStack(egg))))
+              .result(new ItemStack(ModItems.rawPumpkinPie))
+              .minBuildingLevel(3)
+              .showTooltip(egg == Items.EGG)
+              .build(consumer);
+        }
 
         recipe(BAKER, MODULE_SMELTING, "pumpkin_pie")
           .inputs(List.of(new ItemStorage(new ItemStack(ModItems.rawPumpkinPie))))
@@ -147,27 +151,33 @@ public class DefaultBakerCraftingProvider extends CustomRecipeProvider
           .intermediate(Blocks.FURNACE)
           .build(consumer);
 
-        recipe(BAKER, MODULE_CRAFTING, "cake_batter")
-          .inputs(List.of(new ItemStorage(new ItemStack(Items.WHEAT, 3)),
-            new ItemStorage(new ItemStack(ModItems.large_milk_bottle, 3)),
-            new ItemStorage(new ItemStack(Items.SUGAR, 2)),
-            new ItemStorage(new ItemStack(Items.EGG))))
-          .result(new ItemStack(ModItems.cakeBatter))
-          .lootTable(DefaultRecipeLootProvider.LOOT_TABLE_LARGE_BOTTLE)
-          .minBuildingLevel(4)
-          .showTooltip(true)
-          .build(consumer);
+        for (final Item egg : EGGS)
+        {
+            recipe(BAKER, MODULE_CRAFTING, eggVariantId("cake_batter", egg))
+              .inputs(List.of(new ItemStorage(new ItemStack(Items.WHEAT, 3)),
+                new ItemStorage(new ItemStack(ModItems.large_milk_bottle, 3)),
+                new ItemStorage(new ItemStack(Items.SUGAR, 2)),
+                new ItemStorage(new ItemStack(egg))))
+              .result(new ItemStack(ModItems.cakeBatter))
+              .lootTable(DefaultRecipeLootProvider.LOOT_TABLE_LARGE_BOTTLE)
+              .minBuildingLevel(4)
+              .showTooltip(egg == Items.EGG)
+              .build(consumer);
+        }
 
-        recipe(BAKER, MODULE_CRAFTING, "scake_batter")
-          .inputs(List.of(new ItemStorage(new ItemStack(Items.WHEAT, 3)),
-            new ItemStorage(new ItemStack(ModItems.large_soy_milk_bottle, 3)),
-            new ItemStorage(new ItemStack(Items.SUGAR, 2)),
-            new ItemStorage(new ItemStack(Items.EGG))))
-          .result(new ItemStack(ModItems.cakeBatter))
-          .lootTable(DefaultRecipeLootProvider.LOOT_TABLE_LARGE_BOTTLE)
-          .minBuildingLevel(4)
-          .showTooltip(true)
-          .build(consumer);
+        for (final Item egg : EGGS)
+        {
+            recipe(BAKER, MODULE_CRAFTING, eggVariantId("scake_batter", egg))
+              .inputs(List.of(new ItemStorage(new ItemStack(Items.WHEAT, 3)),
+                new ItemStorage(new ItemStack(ModItems.large_soy_milk_bottle, 3)),
+                new ItemStorage(new ItemStack(Items.SUGAR, 2)),
+                new ItemStorage(new ItemStack(egg))))
+              .result(new ItemStack(ModItems.cakeBatter))
+              .lootTable(DefaultRecipeLootProvider.LOOT_TABLE_LARGE_BOTTLE)
+              .minBuildingLevel(4)
+              .showTooltip(egg == Items.EGG)
+              .build(consumer);
+        }
 
         recipe(BAKER, MODULE_SMELTING, "cake")
           .inputs(List.of(new ItemStorage(new ItemStack(ModItems.cakeBatter))))
@@ -195,16 +205,19 @@ public class DefaultBakerCraftingProvider extends CustomRecipeProvider
           .showTooltip(true)
           .build(consumer);
 
-        recipe(BAKER, MODULE_CRAFTING, "muffin_dough")
-          .inputs(List.of(
-            new ItemStorage(new ItemStack(ModBlocks.blockDurum)),
-            new ItemStorage(new ItemStack(ModItems.butter)),
-            new ItemStorage(new ItemStack(Items.SUGAR)),
-            new ItemStorage(new ItemStack(Items.EGG)),
-            new ItemStorage(new ItemStack(Items.SWEET_BERRIES))))
-          .result(new ItemStack(ModItems.muffin_dough))
-          .showTooltip(true)
-          .build(consumer);
+        for (final Item egg : EGGS)
+        {
+            recipe(BAKER, MODULE_CRAFTING, eggVariantId("muffin_dough", egg))
+              .inputs(List.of(
+                new ItemStorage(new ItemStack(ModBlocks.blockDurum)),
+                new ItemStorage(new ItemStack(ModItems.butter)),
+                new ItemStorage(new ItemStack(Items.SUGAR)),
+                new ItemStorage(new ItemStack(egg)),
+                new ItemStorage(new ItemStack(Items.SWEET_BERRIES))))
+              .result(new ItemStack(ModItems.muffin_dough))
+              .showTooltip(egg == Items.EGG)
+              .build(consumer);
+        }
 
         recipe(BAKER, MODULE_CRAFTING, "flatbread")
           .inputs(List.of(

@@ -491,7 +491,7 @@ public class DefaultResearchProvider extends AbstractResearchProvider
           .setTranslatedSubtitle("Obvious Measures")
           .setIcon(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "textures/icons/research/hp5.png"))
           .addBuildingRequirement(Identifier.fromNamespaceAndPath(Constants.MOD_ID, ModBuildings.HOSPITAL_ID), 3)
-          .addItemCost(Items.EGG, 64, provider)
+          .addItemCost(ItemTags.EGGS, 64, provider)
           .addEffect(VACCINES, 1)
           .addToList(r);
 
