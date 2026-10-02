@@ -588,6 +588,7 @@ public class DefaultItemTagsProvider extends BlockTagCopyingItemTagProvider
         tag(ModTags.crafterProduct.get(TagConstants.CRAFTING_SAWMILL), "Sawmill Crafting Products")
           .addTag(ItemTags.PLANKS)
           .addTags(ItemTags.WOODEN_SLABS, ItemTags.WOODEN_STAIRS)
+          .addTag(ItemTags.WOODEN_SHELVES)
           .add(Items.BAMBOO_MOSAIC, Items.BAMBOO_MOSAIC_SLAB, Items.BAMBOO_MOSAIC_STAIRS, Items.BAMBOO_HANGING_SIGN)
           .addTags(ItemTags.BOATS, ItemTags.CHEST_BOATS)
           .add(ModBlocks.blockBarrel.asItem());

@@ -7241,4 +7241,32 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Phase C3 row 12 (V39): shelves (1.21.9) are made from stripped logs, which the sawmill takes as ingredients
+     * ({@code #minecraft:logs}). The sawmill must learn every wooden shelf, and only the sawmill.
+     */
+    public static void sawmillLearnsShelf(final GameTestHelper helper)
+    {
+        final List<String> failures = new ArrayList<>();
+        final List<String> control = c3LearnableBy(helper, "oak_stairs", failures);
+        helper.assertTrue(control.equals(List.of("sawmill")), "control: oak_stairs learnable by " + control + ", expected only the sawmill");
+        final Map<String, List<String>> learnable = new java.util.TreeMap<>();
+        int shelves = 0;
+        for (final var holder : net.minecraft.core.registries.BuiltInRegistries.ITEM.getTagOrEmpty(ItemTags.WOODEN_SHELVES))
+        {
+            shelves++;
+            final String recipe = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(holder.value()).getPath();
+            final List<String> crafters = c3LearnableBy(helper, recipe, failures);
+            learnable.put(recipe, crafters);
+            if (!crafters.equals(List.of("sawmill")))
+            {
+                failures.add(recipe + " learnable by " + crafters + ", expected only the sawmill");
+            }
+        }
+        helper.assertTrue(shelves >= 13, "expected the 13 wooden shelves in #minecraft:wooden_shelves, found " + shelves);
+        Log.getLogger().info("[sawmill_learns_shelf] learnable {}, failures {}", learnable, failures);
+        helper.assertTrue(failures.isEmpty(), "shelves not learnable by the sawmill: " + failures);
+        helper.succeed();
+    }
+
 }
