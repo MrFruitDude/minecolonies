@@ -395,7 +395,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "florist_new_flowers"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::floristNewFlowers),
-          data);
+          // Its row of composted dirt is wider than the empty structure; the plot keeps neighbouring tests off it.
+          plotData(environment));
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "composter_new_plants"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::composterNewPlants),
