@@ -6532,6 +6532,118 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Phase C3 row 4: a lumberjack fells a grown pale oak (2x2 trunk) and a poplar, keeps their logs, and replants
+     * each stump with the right sapling. Both trees are grown from their saplings by vanilla's tree growers. The
+     * lumberjack carries both sapling kinds, so replanting proves it picked the sapling the tree's leaves drop.
+     */
+    public static void lumberjackNewTrees(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = foundGameTestColony(helper, "C3 lumberjack colony");
+        final IBuilding lumberjack = placeProductionBuilding(helper, colony, ModBlocks.blockHutLumberjack, new BlockPos(8, 1, 2),
+          "fundamentals/lumberjack1.blueprint");
+        final BlockPos anchor = helper.absolutePos(new BlockPos(8, 1, 10));
+
+        // Pale oak from four saplings, poplar from one, on grass.
+        final List<BlockPos> paleStumps = new ArrayList<>();
+        for (final BlockPos rel : List.of(new BlockPos(24, 1, 20), new BlockPos(25, 1, 20), new BlockPos(24, 1, 21), new BlockPos(25, 1, 21)))
+        {
+            paleStumps.add(helper.absolutePos(rel));
+        }
+        final BlockPos poplarStump = helper.absolutePos(new BlockPos(32, 1, 20));
+        final List<BlockPos> all = new ArrayList<>(paleStumps);
+        all.add(poplarStump);
+        for (final BlockPos pos : all)
+        {
+            level.setChunkForced(pos.getX() >> 4, pos.getZ() >> 4, true);
+            level.setBlockAndUpdate(pos.below(), Blocks.GRASS_BLOCK.defaultBlockState());
+        }
+        for (final BlockPos pos : paleStumps)
+        {
+            level.setBlockAndUpdate(pos, Blocks.PALE_OAK_SAPLING.defaultBlockState());
+        }
+        level.setBlockAndUpdate(poplarStump, Blocks.POPLAR_SAPLING.defaultBlockState());
+        final net.minecraft.util.RandomSource random = net.minecraft.util.RandomSource.create(4L);
+        final net.minecraft.world.level.chunk.ChunkGenerator generator = level.getChunkSource().getGenerator();
+        helper.assertTrue(net.minecraft.world.level.block.grower.TreeGrower.PALE_OAK.growTree(level, generator, paleStumps.get(0), level.getBlockState(paleStumps.get(0)), random),
+          "pale oak did not grow");
+        helper.assertTrue(net.minecraft.world.level.block.grower.TreeGrower.POPLAR.growTree(level, generator, poplarStump, level.getBlockState(poplarStump), random),
+          "poplar did not grow");
+
+        final net.minecraft.world.phys.AABB treeArea = new net.minecraft.world.phys.AABB(
+          net.minecraft.world.phys.Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(18, 1, 14))),
+          net.minecraft.world.phys.Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(38, 30, 27))));
+        final java.util.function.Function<Block, Integer> countLogs = log -> (int) BlockPos.betweenClosedStream(treeArea)
+          .filter(pos -> level.getBlockState(pos).is(log)).count();
+        final int paleLogs = countLogs.apply(Blocks.PALE_OAK_LOG);
+        final int poplarLogs = countLogs.apply(Blocks.POPLAR_LOG);
+        for (final BlockPos pos : paleStumps)
+        {
+            helper.assertTrue(level.getBlockState(pos).is(Blocks.PALE_OAK_LOG), "pale oak is not a 2x2 trunk at " + pos);
+        }
+        helper.assertTrue(level.getBlockState(poplarStump).is(Blocks.POPLAR_LOG) && poplarLogs > 3, "poplar has no trunk");
+
+        helper.runAfterDelay(20, () -> {
+            final ICitizenData worker = colony.getCitizenManager().spawnOrCreateCivilian(null, level, List.of(anchor), true);
+            helper.assertTrue(worker != null && worker.getEntity().isPresent(), "lumberjack citizen did not spawn");
+            helper.assertTrue(lumberjack.getModule(BuildingModules.FORESTER_WORK).assignCitizen(worker), "lumberjack assignment failed");
+            worker.getEntity().get().setPos(anchor.getX() + 0.5D, anchor.getY(), anchor.getZ() + 0.5D);
+            worker.getInventory().setStackInSlot(0, new ItemStack(Items.STONE_AXE));
+            worker.getInventory().setStackInSlot(1, new ItemStack(Items.STONE_HOE));
+            worker.getInventory().setStackInSlot(2, new ItemStack(Items.SHEARS));
+            worker.getInventory().setStackInSlot(3, new ItemStack(Items.POPLAR_SAPLING, 8));
+            worker.getInventory().setStackInSlot(4, new ItemStack(Items.PALE_OAK_SAPLING, 8));
+
+            final int[] ticks = {0};
+            // Latched: a replanted sapling may grow back into a tree before the other tree is done.
+            final boolean[] seen = new boolean[4];
+            final Runnable[] pump = new Runnable[1];
+            pump[0] = () -> {
+                // Daylight and a full belly: the fixture has no beds and no restaurant.
+                level.getServer().clockManager().setTotalTicks(level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
+                worker.setSaturation(20);
+                ticks[0]++;
+                final int paleLeft = countLogs.apply(Blocks.PALE_OAK_LOG);
+                final int poplarLeft = countLogs.apply(Blocks.POPLAR_LOG);
+                seen[0] |= paleLeft == 0;
+                seen[1] |= poplarLeft == 0;
+                seen[2] |= paleStumps.stream().allMatch(pos -> level.getBlockState(pos).is(Blocks.PALE_OAK_SAPLING));
+                seen[3] |= level.getBlockState(poplarStump).is(Blocks.POPLAR_SAPLING);
+                final java.util.function.Predicate<ItemStack> paleLog = stack -> stack.is(Items.PALE_OAK_LOG);
+                final java.util.function.Predicate<ItemStack> poplarLog = stack -> stack.is(Items.POPLAR_LOG);
+                final int paleKept = InventoryUtils.getItemCountInItemHandler(worker.getInventory(), paleLog) + InventoryUtils.getCountFromBuilding(lumberjack, paleLog);
+                final int poplarKept = InventoryUtils.getItemCountInItemHandler(worker.getInventory(), poplarLog) + InventoryUtils.getCountFromBuilding(lumberjack, poplarLog);
+                if (seen[0] && seen[1] && seen[2] && seen[3]
+                  && paleKept * 4 >= paleLogs * 3 && poplarKept * 4 >= poplarLogs * 3)
+                {
+                    Log.getLogger().info("[lumberjack_new_trees] felled pale oak ({} logs, kept {}) and poplar ({} logs, kept {}), replanted both in {} ticks",
+                      paleLogs, paleKept, poplarLogs, poplarKept, ticks[0]);
+                    helper.succeed();
+                    return;
+                }
+                if (ticks[0] >= 30_000)
+                {
+                    final String state = worker.getEntity().map(e -> e.getCitizenJobHandler().getWorkAI() == null ? "no-ai"
+                      : e.getCitizenJobHandler().getWorkAI().getStateAI().getState() + " history " + e.getCitizenJobHandler().getWorkAI().getStateAI().getHistory().getString()).orElse("no-entity");
+                    final com.minecolonies.core.entity.ai.workers.util.Tree tree = worker.getJob() instanceof com.minecolonies.core.colony.jobs.JobLumberjack job ? job.getTree() : null;
+                    throw helper.assertionException("lumberjack did not fell and replant both trees: seen felled/replanted "
+                      + java.util.Arrays.toString(seen) + ", pale logs left " + paleLeft + "/" + paleLogs
+                      + " kept " + paleKept + ", poplar logs left " + poplarLeft + "/" + poplarLogs + " kept " + poplarKept
+                      + ", pale stumps " + paleStumps.stream().map(pos -> level.getBlockState(pos).getBlock().toString()).toList()
+                      + ", poplar stump " + level.getBlockState(poplarStump).getBlock()
+                      + ", tree " + (tree == null ? "none" : tree.getLocation() + " sapling " + tree.getSapling() + " stumps " + tree.getStumpLocations())
+                      + ", ai " + state + ", at " + worker.getEntity().map(e -> e.blockPosition().toString()).orElse("?")
+                      + ", inventory " + describeInventory(worker.getInventory()));
+                }
+                // A fresh Runnable each time: the GameTest callback map is keyed by Runnable, so re-adding the same
+                // instance while its entry is being removed drops the next pump.
+                helper.runAfterDelay(1, () -> pump[0].run());
+            };
+            helper.runAfterDelay(1, () -> pump[0].run());
+        });
+    }
+
+    /**
      * Phase C3 row 5: a creaking bound to an active creaking heart takes no damage, so guards must not pick it as a
      * target (they would hit it all night in a pale garden). A heartless creaking and a zombie stay targets. Runs the
      * knight's real combat AI target checks ({@code isEntityValidTarget} and the nearby-target search that fills the

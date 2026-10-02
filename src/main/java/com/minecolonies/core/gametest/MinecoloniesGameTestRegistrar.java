@@ -385,6 +385,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::copperEquipmentLevels),
           data);
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "lumberjack_new_trees"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::lumberjackNewTrees),
+          isolatedColonyData(event, "lumberjack_new_trees"));
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "guard_ignores_protected_creaking"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::guardIgnoresProtectedCreaking),
           isolatedColonyData(event, "guard_ignores_protected_creaking"));
