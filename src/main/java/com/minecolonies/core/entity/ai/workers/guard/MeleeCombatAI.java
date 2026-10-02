@@ -312,6 +312,31 @@ public class MeleeCombatAI extends AttackMoveAI<EntityCitizen>
     }
 
     /**
+     * The held weapon's part of the melee damage, before enchantments and research.
+     *
+     * @param heldItem              the weapon in the main hand.
+     * @param attackDamageAttribute the attacker's attack damage attribute (includes the held item's modifiers).
+     * @return the weapon damage.
+     */
+    public static double getWeaponDamage(final ItemStack heldItem, final double attackDamageAttribute)
+    {
+        if (heldItem.is(ItemTags.SWORDS) || heldItem.is(ItemTags.SPEARS))
+        {
+            // Vanilla swords and spears (1.21.11) carry their damage as main-hand attack damage modifiers.
+            return attackDamageAttribute;
+        }
+        else if (heldItem.getItem() instanceof ItemSpear)
+        {
+            return ((ItemSpear) heldItem.getItem()).getDamage() + BASE_PHYSICAL_DAMAGE;
+        }
+        else if (heldItem.is(ItemTags.AXES))
+        {
+            return heldItem.getItem().getDamage(heldItem) + BASE_PHYSICAL_DAMAGE;
+        }
+        return TinkersToolHelper.getDamage(heldItem);
+    }
+
+    /**
      * Calculates the damage to deal
      *
      * @return attack damage
@@ -324,22 +349,7 @@ public class MeleeCombatAI extends AttackMoveAI<EntityCitizen>
 
         if (ItemStackUtils.doesItemServeAsWeapon(heldItem))
         {
-            if (heldItem.is(ItemTags.SWORDS))
-            {
-                addDmg += user.getAttribute(Attributes.ATTACK_DAMAGE).getValue();
-            }
-            else if (heldItem.getItem() instanceof ItemSpear) 
-            {
-                addDmg += ((ItemSpear) heldItem.getItem()).getDamage() + BASE_PHYSICAL_DAMAGE;
-            }
-            else if (heldItem.is(ItemTags.AXES))
-            {
-                addDmg += heldItem.getItem().getDamage(heldItem) + BASE_PHYSICAL_DAMAGE;
-            }
-            else
-            {
-                addDmg += TinkersToolHelper.getDamage(heldItem);
-            }
+            addDmg += getWeaponDamage(heldItem, user.getAttribute(Attributes.ATTACK_DAMAGE).getValue());
             addDmg += EnchantmentHelper.modifyDamage((ServerLevel) user.level(), heldItem, target, user.level().damageSources().mobAttack(user), (float) addDmg);
         }
 

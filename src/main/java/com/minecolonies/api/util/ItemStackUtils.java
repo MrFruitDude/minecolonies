@@ -420,7 +420,7 @@ public final class ItemStackUtils
     {
         return stack.is(ItemTags.SWORDS) || stack.is(ItemTags.PICKAXES) || stack.is(ItemTags.AXES)
                  || stack.is(ItemTags.SHOVELS) || stack.is(ItemTags.HOES)
-                 || Compatibility.isTinkersWeapon(stack) || stack.getItem() instanceof ItemSpear;
+                 || Compatibility.isTinkersWeapon(stack) || stack.getItem() instanceof ItemSpear || stack.is(ItemTags.SPEARS);
     }
 
     /**

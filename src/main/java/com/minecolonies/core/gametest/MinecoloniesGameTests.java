@@ -6394,4 +6394,72 @@ public final class MinecoloniesGameTests
         helper.assertTrue(failures.isEmpty(), "variant eggs not usable: " + failures);
         helper.succeed();
     }
+
+    /**
+     * Phase C3 row 2 (V42): 1.21.11 added vanilla spears (wood, stone, copper, iron, gold, diamond, netherite;
+     * {@code #minecraft:spears}). Cavalry guards fight with the {@code spear} equipment type, which only took MineColonies'
+     * own spear, so they rejected every vanilla spear. Each vanilla spear must be {@code spear} equipment at its material's
+     * tool level, serve as a weapon a guard will pick up, and deal its attack damage in melee (not the 0 a non-weapon
+     * gets). MineColonies' spear keeps its durability-based level and damage.
+     */
+    public static void vanillaSpearEquipment(final GameTestHelper helper)
+    {
+        final com.minecolonies.api.equipment.registry.EquipmentTypeEntry spear = com.minecolonies.core.colony.jobs.guard.JobCavalry.getWeaponType();
+        helper.assertTrue(spear == ModEquipmentTypes.spear.get(), "cavalry weapon type is not spear: " + spear);
+        final Map<net.minecraft.world.item.Item, Integer> expected = new java.util.LinkedHashMap<>();
+        expected.put(Items.WOODEN_SPEAR, 0);
+        expected.put(Items.STONE_SPEAR, 1);
+        expected.put(Items.COPPER_SPEAR, 1);
+        expected.put(Items.IRON_SPEAR, 2);
+        expected.put(Items.GOLDEN_SPEAR, 0);
+        expected.put(Items.DIAMOND_SPEAR, 3);
+        expected.put(Items.NETHERITE_SPEAR, 4);
+
+        final List<String> failures = new ArrayList<>();
+        final Map<String, String> results = new java.util.LinkedHashMap<>();
+        for (final Map.Entry<net.minecraft.world.item.Item, Integer> entry : expected.entrySet())
+        {
+            final ItemStack stack = new ItemStack(entry.getKey());
+            final String name = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(entry.getKey()).getPath();
+            helper.assertTrue(stack.is(ItemTags.SPEARS), name + " not in #minecraft:spears");
+            final boolean isSpear = spear.checkIsEquipment(stack);
+            final int level = spear.getMiningLevel(stack);
+            final boolean weapon = ItemStackUtils.doesItemServeAsWeapon(stack);
+            final boolean guardPicksUp = ItemStackUtils.hasEquipmentLevel(stack, spear, 0, 4);
+            // A citizen's attack damage attribute: base 1 plus the held item's main-hand modifiers.
+            final double[] attribute = {1.0D};
+            stack.forEachModifier(net.minecraft.world.entity.EquipmentSlot.MAINHAND, (attr, modifier) -> {
+                if (attr.is(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE)
+                      && modifier.operation() == net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADD_VALUE)
+                {
+                    attribute[0] += modifier.amount();
+                }
+            });
+            final double damage = com.minecolonies.core.entity.ai.workers.guard.MeleeCombatAI.getWeaponDamage(stack, attribute[0]);
+            results.put(name, "spear=" + isSpear + " level=" + level + " weapon=" + weapon + " pickup=" + guardPicksUp + " damage=" + damage + "/" + attribute[0]);
+            if (!isSpear || level != entry.getValue() || !weapon || !guardPicksUp || damage < 1.0D || damage != attribute[0])
+            {
+                failures.add(name + " expected spear level " + entry.getValue() + ", weapon, damage " + attribute[0] + ": " + results.get(name));
+            }
+        }
+
+        final ItemStack mcSpear = new ItemStack(com.minecolonies.api.items.ModItems.spear);
+        final int mcLevel = spear.getMiningLevel(mcSpear);
+        final double mcDamage = com.minecolonies.core.entity.ai.workers.guard.MeleeCombatAI.getWeaponDamage(mcSpear, 1.0D);
+        results.put("minecolonies:spear", "spear=" + spear.checkIsEquipment(mcSpear) + " level=" + mcLevel + " damage=" + mcDamage);
+        if (!spear.checkIsEquipment(mcSpear) || mcLevel != ModEquipmentTypes.durabilityBasedLevel(mcSpear, mcSpear.getMaxDamage())
+              || !ItemStackUtils.doesItemServeAsWeapon(mcSpear) || mcDamage <= 1.0D)
+        {
+            failures.add("MineColonies spear changed: " + results.get("minecolonies:spear"));
+        }
+        // Not every weapon is a spear.
+        if (spear.checkIsEquipment(new ItemStack(Items.IRON_SWORD)) || spear.checkIsEquipment(new ItemStack(Items.TRIDENT)))
+        {
+            failures.add("sword or trident accepted as spear");
+        }
+
+        Log.getLogger().info("[vanilla_spear_equipment] {} failures {}", results, failures);
+        helper.assertTrue(failures.isEmpty(), "vanilla spears not usable by cavalry: " + failures);
+        helper.succeed();
+    }
 }

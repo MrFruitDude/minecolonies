@@ -188,8 +188,11 @@ public class ModEquipmentTypes
 
         spear = register("spear",
           builder -> builder.setDisplayName(Component.translatable(ToolTranslationConstants.TOOL_TYPE_SPEAR))
-                      .setIsEquipment((itemStack, equipmentType) -> itemStack.is(ModItems.spear))
-                      .setEquipmentLevel((itemStack, equipmentType) -> durabilityBasedLevel(itemStack, ModItems.spear.getMaxDamage(itemStack)))
+                      // MineColonies' spear plus vanilla's (1.21.11, #minecraft:spears), which level by tool material.
+                      .setIsEquipment((itemStack, equipmentType) -> itemStack.is(ModItems.spear) || itemStack.is(ItemTags.SPEARS))
+                      .setEquipmentLevel((itemStack, equipmentType) -> itemStack.is(ModItems.spear)
+                                                                       ? durabilityBasedLevel(itemStack, ModItems.spear.getMaxDamage(itemStack))
+                                                                       : vanillaToolLevel(itemStack, equipmentType))
                   .build());
 
     }
