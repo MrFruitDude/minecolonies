@@ -1,5 +1,8 @@
 package com.minecolonies.core.entity.ai.minimal;
 
+import com.minecolonies.api.IMinecoloniesAPI;
+import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.entity.ai.IStateAI;
 import com.minecolonies.api.entity.ai.statemachine.AIEventTarget;
@@ -278,7 +281,7 @@ public class EntityAICitizenChild implements IStateAI
 
         if (aiActiveTime >= MIN_ACTIVE_TIME)
         {
-            final double growthModifier = (1 + child.getCitizenColonyHandler().getColonyOrRegister().getResearchManager().getResearchEffects().getEffectStrength(GROWTH));
+            final double growthModifier = getGrowthModifier(child.getCitizenColonyHandler().getColonyOrRegister());
 
             // 1/144 Chance to grow up, every 25 seconds = avg 1h. Set to half since this AI isnt always active, e.g. sleeping.  At 2h they directly grow
             if (rand.nextInt((int) (70 / growthModifier) + 1) == 0 || aiActiveTime > 70000 / growthModifier)
@@ -300,6 +303,19 @@ public class EntityAICitizenChild implements IStateAI
         }
 
         return false;
+    }
+
+    /**
+     * The child growth speed of a colony: the growth research effect times the colony's growth pace
+     * ({@link IColonyPaceProvider#growth}). Higher grows sooner.
+     *
+     * @param colony the child's colony.
+     * @return the growth modifier.
+     */
+    public static double getGrowthModifier(@NotNull final IColony colony)
+    {
+        return (1 + colony.getResearchManager().getResearchEffects().getEffectStrength(GROWTH))
+          * IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().growth(colony));
     }
 
     /**

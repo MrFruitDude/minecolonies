@@ -5,6 +5,7 @@ import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.client.render.modeltype.registry.IModelTypeRegistry;
 import com.minecolonies.api.colony.ICitizenDataManager;
 import com.minecolonies.api.colony.IColonyManager;
+import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildingextensions.registry.BuildingExtensionRegistries.BuildingExtensionEntry;
 import com.minecolonies.api.colony.buildings.registry.BuildingEntry;
 import com.minecolonies.api.colony.buildings.registry.IBuildingDataManager;
@@ -102,6 +103,11 @@ public class CommonMinecoloniesAPIImpl implements IMinecoloniesAPI
     private Registry<EquipmentTypeEntry>                               equipmentTypeRegistry;
 
     private EventBus eventBus = new DefaultEventBus();
+
+    /**
+     * Colony pace provider; another mod may replace it. Volatile: set from mod setup, read on the server thread.
+     */
+    private volatile IColonyPaceProvider colonyPaceProvider = IColonyPaceProvider.DEFAULT;
 
     @Override
     @NotNull
@@ -333,6 +339,19 @@ public class CommonMinecoloniesAPIImpl implements IMinecoloniesAPI
     public EventBus getEventBus()
     {
         return eventBus;
+    }
+
+    @Override
+    @NotNull
+    public IColonyPaceProvider getColonyPaceProvider()
+    {
+        return colonyPaceProvider;
+    }
+
+    @Override
+    public void setColonyPaceProvider(final IColonyPaceProvider provider)
+    {
+        this.colonyPaceProvider = provider == null ? IColonyPaceProvider.DEFAULT : provider;
     }
 }
 

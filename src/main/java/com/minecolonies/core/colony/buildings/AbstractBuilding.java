@@ -7,6 +7,7 @@ import com.google.common.reflect.TypeToken;
 import com.ldtteam.structurize.util.RotationMirror;
 import com.ldtteam.structurize.blueprints.v1.Blueprint;
 import com.ldtteam.structurize.storage.StructurePacks;
+import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.MinecoloniesAPIProxy;
 import com.minecolonies.api.blocks.AbstractColonyBlock;
 import com.minecolonies.api.colony.ICitizenData;
@@ -34,6 +35,7 @@ import com.minecolonies.api.colony.requestsystem.resolver.retrying.IRetryingRequ
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.colony.workorders.IWorkOrder;
 import com.minecolonies.api.colony.workorders.WorkOrderType;
+import com.minecolonies.api.eventbus.events.colony.buildings.BuildingUpgradeRequestModEvent;
 import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.items.component.HutBlockData;
 import com.minecolonies.api.tileentities.AbstractTileEntityColonyBuilding;
@@ -809,16 +811,46 @@ public abstract class AbstractBuilding extends AbstractBuildingContainer
 
         if (getBuildingLevel() == 0 && (parentBuilding == null || parentBuilding.getBuildingLevel() > 0))
         {
-            requestWorkOrder(WorkOrderType.BUILD, builder);
+            if (isUpgradeRequestAllowed(player, builder, WorkOrderType.BUILD))
+            {
+                requestWorkOrder(WorkOrderType.BUILD, builder);
+            }
         }
         else if (getBuildingLevel() < getMaxBuildingLevel() && (parentBuilding == null || getBuildingLevel() < parentBuilding.getBuildingLevel() || parentBuilding.getBuildingLevel() >= parentBuilding.getMaxBuildingLevel()))
         {
-            requestWorkOrder(WorkOrderType.UPGRADE, builder);
+            if (isUpgradeRequestAllowed(player, builder, WorkOrderType.UPGRADE))
+            {
+                requestWorkOrder(WorkOrderType.UPGRADE, builder);
+            }
         }
         else
         {
             MessageUtils.format(WARNING_NO_UPGRADE).sendTo(player);
         }
+    }
+
+    /**
+     * Posts {@link BuildingUpgradeRequestModEvent} before a build or upgrade work order is created, so another mod
+     * can refuse the request. A refusal with a message sends it to the player.
+     *
+     * @param player  the requesting player.
+     * @param builder the assigned builder.
+     * @param type    BUILD or UPGRADE.
+     * @return false if a listener cancelled the request.
+     */
+    private boolean isUpgradeRequestAllowed(final Player player, final BlockPos builder, final WorkOrderType type)
+    {
+        final BuildingUpgradeRequestModEvent event = new BuildingUpgradeRequestModEvent(this, player, builder, type, getBuildingLevel() + 1);
+        IMinecoloniesAPI.getInstance().getEventBus().post(event);
+        if (!event.isCanceled())
+        {
+            return true;
+        }
+        if (event.getCancelMessage() != null && player != null)
+        {
+            player.sendSystemMessage(event.getCancelMessage());
+        }
+        return false;
     }
 
     @Override
