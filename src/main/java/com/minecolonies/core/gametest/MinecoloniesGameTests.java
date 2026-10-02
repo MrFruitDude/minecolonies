@@ -6680,4 +6680,78 @@ public final class MinecoloniesGameTests
         townHall.setBuildingLevel(1);
         return colony;
     }
+
+    /**
+     * Phase C3 row 6: the florist grows the flowers added since 1.21.2 (wildflowers, open and closed eyeblossom,
+     * golden dandelion). Checks the florist tag, the discovered plantables, the per-level florist lists, and that
+     * composted dirt actually grows each one as a block that can stay there.
+     */
+    public static void floristNewFlowers(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final List<net.minecraft.world.item.Item> newFlowers = List.of(Items.WILDFLOWERS, Items.OPEN_EYEBLOSSOM, Items.CLOSED_EYEBLOSSOM, Items.GOLDEN_DANDELION);
+        final List<String> failures = new ArrayList<>();
+        final java.util.Set<ItemStorage> plantables = IColonyManager.getInstance().getCompatibilityManager().getCopyOfPlantables();
+        final java.util.Set<ItemStorage> level2 = com.minecolonies.core.colony.buildings.workerbuildings.BuildingFlorist.getPlantablesForBuildingLevel(2);
+        final java.util.Set<ItemStorage> level5 = com.minecolonies.core.colony.buildings.workerbuildings.BuildingFlorist.getPlantablesForBuildingLevel(5);
+        for (final net.minecraft.world.item.Item flower : newFlowers)
+        {
+            final ItemStorage storage = new ItemStorage(new ItemStack(flower));
+            if (!new ItemStack(flower).is(com.minecolonies.api.items.ModTags.floristFlowers))
+            {
+                failures.add(flower + " not in florist_flowers");
+            }
+            if (!plantables.contains(storage))
+            {
+                failures.add(flower + " not a florist plantable");
+            }
+            if (!level5.contains(storage))
+            {
+                failures.add(flower + " not grown by a level 5 florist");
+            }
+            // Level 2 grows #minecraft:small_flowers only; eyeblossoms and the golden dandelion are small flowers.
+            final boolean small = new ItemStack(flower).is(net.minecraft.tags.BlockItemTags.SMALL_FLOWERS.item());
+            if (level2.contains(storage) != small)
+            {
+                failures.add(flower + " level 2 florist list " + level2.contains(storage) + " but small flower " + small);
+            }
+        }
+
+        // Grow each new flower (and poppy as the control) on its own composted dirt block.
+        final List<net.minecraft.world.item.Item> grown = new ArrayList<>(newFlowers);
+        grown.add(Items.POPPY);
+        final List<BlockPos> dirt = new ArrayList<>();
+        for (int i = 0; i < grown.size(); i++)
+        {
+            final BlockPos pos = helper.absolutePos(new BlockPos(1 + 2 * i, 1, 1));
+            level.setBlockAndUpdate(pos.above(), Blocks.AIR.defaultBlockState());
+            level.setBlockAndUpdate(pos, ModBlocks.blockCompostedDirt.defaultBlockState());
+            ((com.minecolonies.core.tileentities.TileEntityCompostedDirt) level.getBlockEntity(pos)).compost(100, new ItemStack(grown.get(i)));
+            dirt.add(pos);
+        }
+        helper.succeedWhen(() -> {
+            final List<String> growth = new ArrayList<>(failures);
+            for (int i = 0; i < grown.size(); i++)
+            {
+                final BlockPos above = dirt.get(i).above();
+                final BlockState state = level.getBlockState(above);
+                final Block expected = ((net.minecraft.world.item.BlockItem) grown.get(i)).getBlock();
+                // Eyeblossoms open and close with the time of day, so either form counts as the grown plant.
+                final boolean eyeblossom = expected == Blocks.OPEN_EYEBLOSSOM || expected == Blocks.CLOSED_EYEBLOSSOM;
+                if (!(state.is(expected) || eyeblossom && (state.is(Blocks.OPEN_EYEBLOSSOM) || state.is(Blocks.CLOSED_EYEBLOSSOM))))
+                {
+                    growth.add(grown.get(i) + " not grown (" + state + ")");
+                }
+                else if (!state.canSurvive(level, above))
+                {
+                    growth.add(grown.get(i) + " grown but cannot stay on composted dirt");
+                }
+            }
+            if (!growth.isEmpty())
+            {
+                throw helper.assertionException("florist new flowers: " + growth);
+            }
+            Log.getLogger().info("[florist_new_flowers] {} plantables, level2 {}, all {} grown", plantables.size(), level2.size(), grown.size());
+        });
+    }
 }

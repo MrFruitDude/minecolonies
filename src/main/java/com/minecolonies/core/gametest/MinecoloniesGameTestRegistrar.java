@@ -388,6 +388,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "guard_ignores_protected_creaking"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::guardIgnoresProtectedCreaking),
           isolatedColonyData(event, "guard_ignores_protected_creaking"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "florist_new_flowers"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::floristNewFlowers),
+          data);
     }
 
     /**

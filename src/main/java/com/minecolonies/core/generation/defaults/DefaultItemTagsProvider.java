@@ -282,7 +282,11 @@ public class DefaultItemTagsProvider extends BlockTagCopyingItemTagProvider
           .add(Items.PINK_TULIP)
           .add(Items.OXEYE_DAISY)
           .add(Items.CORNFLOWER)
-          .add(Items.LILY_OF_THE_VALLEY);
+          .add(Items.LILY_OF_THE_VALLEY)
+          .add(Items.WILDFLOWERS)
+          .add(Items.OPEN_EYEBLOSSOM)
+          .add(Items.CLOSED_EYEBLOSSOM)
+          .add(Items.GOLDEN_DANDELION);
 
         copy(ModTags.fungiBlocks, ModTags.fungi, "Fungi");
 
