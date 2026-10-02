@@ -7314,4 +7314,40 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Phase C3 row 14 (V29/V30): the saddle became craftable (1.21.5) and harnesses came with the happy ghast (1.21.6).
+     * The fletcher works leather and wool, so it must learn the saddle and every harness. The stablemaster readies
+     * cavalry horses with {@code minecolonies:leather}, and its request must offer the saddle, which resets a horse's
+     * combat cooldown at once.
+     */
+    public static void fletcherSaddleHarness(final GameTestHelper helper)
+    {
+        final List<String> failures = new ArrayList<>();
+        final Map<String, List<String>> learnable = new java.util.TreeMap<>();
+        final List<String> recipes = new ArrayList<>();
+        recipes.add("saddle");
+        for (final net.minecraft.world.item.Item harness : Items.HARNESS.asList())
+        {
+            recipes.add(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(harness).getPath());
+        }
+        for (final String recipe : recipes)
+        {
+            final List<String> crafters = c3LearnableBy(helper, recipe, failures);
+            learnable.put(recipe, crafters);
+            if (!crafters.contains("fletcher"))
+            {
+                failures.add(recipe + " learnable by " + crafters + ", expected the fletcher");
+            }
+        }
+
+        final com.minecolonies.api.colony.requestsystem.requestable.StackList readying =
+          new com.minecolonies.api.colony.requestsystem.requestable.StackList(com.minecolonies.api.items.ModTags.leather, helper.getLevel(), "readying", 8, 4, 0);
+        if (readying.getStacks().stream().noneMatch(stack -> stack.is(Items.SADDLE)))
+        {
+            failures.add("stablemaster readying request does not offer a saddle: " + readying.getStacks());
+        }
+        Log.getLogger().info("[fletcher_saddle_harness] learnable {}, readying request {}, failures {}", learnable, readying.getStacks(), failures);
+        helper.assertTrue(failures.isEmpty(), "saddle/harness not craftable by the colony: " + failures);
+        helper.succeed();
+    }
 }
