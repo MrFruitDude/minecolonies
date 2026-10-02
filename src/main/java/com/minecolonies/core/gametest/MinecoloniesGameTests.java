@@ -7084,4 +7084,88 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Phase C3 row 10 (V54/V55/V15): the cinnabar and sulfur stone families (26.1) and resin bricks (1.21.4). The
+     * stonemason learns the stone and brick recipes of every other family (tuff bricks as the control); it must learn the
+     * polished, brick and chiseled blocks of these too, and no other crafter may claim them.
+     */
+    public static void stonemasonNewStone(final GameTestHelper helper)
+    {
+        final List<String> failures = new ArrayList<>();
+        final List<String> control = c3LearnableBy(helper, "tuff_bricks", failures);
+        helper.assertTrue(control.equals(List.of("stonemason")), "control: tuff_bricks learnable by " + control + ", expected only the stonemason");
+        final Map<String, List<String>> learnable = new java.util.TreeMap<>();
+        for (final String recipe : List.of(
+          "polished_cinnabar", "cinnabar_bricks", "chiseled_cinnabar", "cinnabar_stairs", "cinnabar_slab", "cinnabar_wall", "cinnabar_brick_stairs",
+          "polished_sulfur", "sulfur_bricks", "chiseled_sulfur", "sulfur_stairs", "polished_sulfur_slab", "sulfur_brick_wall",
+          "resin_bricks", "chiseled_resin_bricks", "resin_brick_stairs", "resin_brick_slab", "resin_brick_wall"))
+        {
+            final List<String> crafters = c3LearnableBy(helper, recipe, failures);
+            learnable.put(recipe, crafters);
+            if (!crafters.equals(List.of("stonemason")))
+            {
+                failures.add(recipe + " learnable by " + crafters + ", expected only the stonemason");
+            }
+        }
+        final List<String> tags = new ArrayList<>();
+        for (final net.minecraft.world.item.Item item : List.of(Items.CINNABAR, Items.SULFUR, Items.RESIN_BRICK, Items.RESIN_BRICKS))
+        {
+            tags.add(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item) + "=" + item.builtInRegistryHolder().tags().map(t -> t.location().toString()).toList());
+        }
+        Log.getLogger().info("[stonemason_new_stone] learnable {}, item tags {}, failures {}", learnable, tags, failures);
+        helper.assertTrue(failures.isEmpty(), "new stone families not learnable by the stonemason: " + failures);
+        helper.succeed();
+    }
+
+    /**
+     * Phase C3 row 10, Domum side: the new stone blocks must be materials for the Architect's Cutter (Domum's
+     * {@code domum_ornamentum:default} material tag, which the shingle, timber frame and other components take), like tuff
+     * and deepslate bricks. The stonemason's Domum module must accept them as ingredients so it can learn those cuts.
+     */
+    public static void domumNewMaterials(final GameTestHelper helper)
+    {
+        final List<String> failures = new ArrayList<>();
+        final com.ldtteam.domumornamentum.block.MateriallyTexturedBlockManager manager =
+          com.ldtteam.domumornamentum.block.MateriallyTexturedBlockManager.getInstance();
+        final ItemStack shingle = new ItemStack(com.ldtteam.domumornamentum.block.ModBlocks.getInstance()
+          .getShingle(com.ldtteam.domumornamentum.shingles.ShingleHeightType.DEFAULT));
+        final ItemStack timberFrame = new ItemStack(com.ldtteam.domumornamentum.block.ModBlocks.getInstance().getTimberFrames().get(0));
+        final com.minecolonies.api.util.OptionalPredicate<ItemStack> stonemasonDo =
+          com.minecolonies.core.colony.buildings.workerbuildings.BuildingStonemason.DOCraftingModule.getStaticIngredientValidator();
+
+        final List<Block> materials = List.of(Blocks.CINNABAR, Blocks.POLISHED_CINNABAR, Blocks.CINNABAR_BRICKS, Blocks.CHISELED_CINNABAR,
+          Blocks.SULFUR, Blocks.POLISHED_SULFUR, Blocks.SULFUR_BRICKS, Blocks.CHISELED_SULFUR,
+          Blocks.RESIN_BRICKS, Blocks.CHISELED_RESIN_BRICKS);
+        final List<Block> all = new ArrayList<>(materials);
+        // control: deepslate bricks, a Domum material and a stonemason ingredient since 1.21
+        all.add(Blocks.DEEPSLATE_BRICKS);
+        // The block of resin was already a Domum material (through a storage-block tag) and, like other storage blocks,
+        // is no stonemason ingredient; it stays in as a guard.
+        all.add(Blocks.RESIN_BLOCK);
+        for (final Block block : all)
+        {
+            final String name = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).toString();
+            final ItemStack stack = new ItemStack(block);
+            if (!block.defaultBlockState().is(com.ldtteam.domumornamentum.tag.ModTags.GLOBAL_DEFAULT))
+            {
+                failures.add(name + " not in domum_ornamentum:default");
+            }
+            if (!manager.doesItemStackContainsMaterialForSlot(0, stack, shingle))
+            {
+                failures.add(name + " not a shingle roof material");
+            }
+            if (!manager.doesItemStackContainsMaterialForSlot(0, stack, timberFrame))
+            {
+                failures.add(name + " not a timber frame material");
+            }
+            if (block != Blocks.RESIN_BLOCK && !stonemasonDo.test(stack).orElse(false))
+            {
+                failures.add(name + " not a stonemason Domum ingredient");
+            }
+        }
+        Log.getLogger().info("[domum_new_materials] checked {}, failures {}", all.size(), failures);
+        helper.assertTrue(failures.isEmpty(), "new stone families not Domum materials: " + failures);
+        helper.succeed();
+    }
+
 }

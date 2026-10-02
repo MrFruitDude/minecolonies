@@ -409,6 +409,14 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "copper_light_decorations"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::copperLightDecorations),
           data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "stonemason_new_stone"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::stonemasonNewStone),
+          data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "domum_new_materials"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::domumNewMaterials),
+          data);
     }
 
     /**
