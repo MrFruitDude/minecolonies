@@ -405,6 +405,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "crop_biome_tags_new_biomes"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::cropBiomeTagsNewBiomes),
           data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "copper_light_decorations"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::copperLightDecorations),
+          data);
     }
 
     /**

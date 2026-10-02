@@ -51,6 +51,7 @@ public class DefaultBlockTagsProvider extends BlockTagsProvider
                 .add(Blocks.TUBE_CORAL_BLOCK)
                 .add(Blocks.BELL)
                 .add(Blocks.LANTERN)
+                .add(Blocks.COPPER_LANTERN.asList().toArray(new Block[0]))
                 .add(ModBlocks.blockWoodenGate)
                 .add(ModBlocks.blockIronGate)
                 .addTag(BlockTags.BANNERS)

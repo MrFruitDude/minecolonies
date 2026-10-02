@@ -546,6 +546,8 @@ public class DefaultItemTagsProvider extends BlockTagCopyingItemTagProvider
           .add(Items.SOUL_TORCH)
           .add(Items.END_ROD)
           .add(Items.TORCH)
+          .add(Items.COPPER_TORCH)
+          .addAllItems(Items.COPPER_LANTERN.asList())
           .add(Items.ENDER_CHEST)
           .add(Items.TRAPPED_CHEST)
           .add(Items.FIRE_CHARGE)

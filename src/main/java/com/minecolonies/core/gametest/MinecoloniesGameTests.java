@@ -6970,4 +6970,118 @@ public final class MinecoloniesGameTests
         helper.assertTrue(failures.isEmpty(), "crop climate tags wrong: " + failures);
         helper.succeed();
     }
+
+    /**
+     * The crafting-table modules of the crafters whose learnable recipes are decided by the crafter tags, built the same
+     * way {@code BuildingModules} builds them (a building is not needed to answer {@code isRecipeCompatible}).
+     */
+    private static Map<String, ICraftingBuildingModule> c3CrafterModules()
+    {
+        final Map<String, ICraftingBuildingModule> modules = new java.util.LinkedHashMap<>();
+        modules.put("mechanic", new com.minecolonies.core.colony.buildings.workerbuildings.BuildingMechanic.CraftingModule(com.minecolonies.api.colony.jobs.ModJobs.mechanic.get()));
+        modules.put("sawmill", new BuildingSawmill.CraftingModule(com.minecolonies.api.colony.jobs.ModJobs.sawmill.get()));
+        modules.put("stonemason", new com.minecolonies.core.colony.buildings.workerbuildings.BuildingStonemason.CraftingModule(com.minecolonies.api.colony.jobs.ModJobs.stoneMason.get()));
+        modules.put("fletcher", new com.minecolonies.core.colony.buildings.workerbuildings.BuildingFletcher.CraftingModule(com.minecolonies.api.colony.jobs.ModJobs.fletcher.get()));
+        modules.put("blacksmith", new com.minecolonies.core.colony.buildings.workerbuildings.BuildingBlacksmith.CraftingModule(com.minecolonies.api.colony.jobs.ModJobs.blacksmith.get()));
+        modules.put("dyer", new com.minecolonies.core.colony.buildings.workerbuildings.BuildingDyer.CraftingModule(com.minecolonies.api.colony.jobs.ModJobs.dyer.get()));
+        modules.put("glassblower", new com.minecolonies.core.colony.buildings.workerbuildings.BuildingGlassblower.CraftingModule(com.minecolonies.api.colony.jobs.ModJobs.glassblower.get()));
+        return modules;
+    }
+
+    /**
+     * Which of {@link #c3CrafterModules()} can be taught a vanilla recipe, by the same {@code isRecipeCompatible} check the
+     * teaching window uses. A missing recipe is a failure, not an empty answer.
+     */
+    private static List<String> c3LearnableBy(final GameTestHelper helper, final String recipePath, final List<String> failures)
+    {
+        final Identifier id = Identifier.fromNamespaceAndPath("minecraft", recipePath);
+        final java.util.Optional<net.minecraft.world.item.crafting.RecipeHolder<?>> holder = helper.getLevel().getServer().getRecipeManager()
+          .byKey(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.RECIPE, id));
+        if (holder.isEmpty())
+        {
+            failures.add("no vanilla recipe " + id);
+            return List.of();
+        }
+        final com.minecolonies.api.crafting.IGenericRecipe recipe = com.minecolonies.api.crafting.GenericRecipe.of(holder.get(), helper.getLevel());
+        if (recipe == null)
+        {
+            failures.add("recipe " + id + " has no generic form");
+            return List.of();
+        }
+        final List<String> crafters = new ArrayList<>();
+        for (final Map.Entry<String, ICraftingBuildingModule> module : c3CrafterModules().entrySet())
+        {
+            if (module.getValue().isRecipeCompatible(recipe))
+            {
+                crafters.add(module.getKey());
+            }
+        }
+        return crafters;
+    }
+
+    /**
+     * Phase C3 row 9 (V38): copper lanterns and the copper torch (1.21.9). Lanterns are solid, so the builder only places
+     * them in the decoration pass (after their support) when they are in {@code minecolonies:decoblocks}, like the plain
+     * lantern. The mechanic makes the lantern, soul lantern and torches; it must also be able to learn the copper torch,
+     * the copper lantern and the honeycomb-waxed copper lanterns, and nobody else may claim them.
+     */
+    public static void copperLightDecorations(final GameTestHelper helper)
+    {
+        final List<String> failures = new ArrayList<>();
+        final java.lang.reflect.Method isDecoItem;
+        try
+        {
+            isDecoItem = com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.class.getDeclaredMethod("isDecoItem", Block.class);
+            isDecoItem.setAccessible(true);
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            throw new IllegalStateException("AbstractEntityAIStructure.isDecoItem missing", e);
+        }
+        final List<Block> lanterns = new ArrayList<>(Blocks.COPPER_LANTERN.asList());
+        helper.assertTrue(lanterns.size() == 8, "expected 8 copper lanterns, found " + lanterns);
+        lanterns.add(Blocks.LANTERN);
+        for (final Block lantern : lanterns)
+        {
+            try
+            {
+                if (!(boolean) isDecoItem.invoke(null, lantern) || !lantern.defaultBlockState().is(com.minecolonies.api.items.ModTags.decorationItems))
+                {
+                    failures.add("not a builder decoration: " + net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(lantern));
+                }
+            }
+            catch (final ReflectiveOperationException e)
+            {
+                throw new IllegalStateException(e);
+            }
+        }
+
+        final List<net.minecraft.world.item.Item> products = new ArrayList<>(Items.COPPER_LANTERN.asList());
+        products.add(Items.COPPER_TORCH);
+        for (final net.minecraft.world.item.Item item : products)
+        {
+            if (!new ItemStack(item).is(com.minecolonies.api.items.ModTags.crafterProduct.get(com.minecolonies.api.util.constant.TagConstants.CRAFTING_MECHANIC)))
+            {
+                failures.add("not a mechanic product: " + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item));
+            }
+        }
+
+        final List<String> control = c3LearnableBy(helper, "lantern", failures);
+        helper.assertTrue(control.equals(List.of("mechanic")), "control: lantern learnable by " + control + ", expected only the mechanic");
+        final Map<String, List<String>> learnable = new java.util.TreeMap<>();
+        for (final String recipe : List.of("copper_torch", "copper_lantern", "waxed_copper_lantern_from_honeycomb", "waxed_exposed_copper_lantern_from_honeycomb",
+          "waxed_weathered_copper_lantern_from_honeycomb", "waxed_oxidized_copper_lantern_from_honeycomb"))
+        {
+            final List<String> crafters = c3LearnableBy(helper, recipe, failures);
+            learnable.put(recipe, crafters);
+            if (!crafters.equals(List.of("mechanic")))
+            {
+                failures.add(recipe + " learnable by " + crafters + ", expected only the mechanic");
+            }
+        }
+        Log.getLogger().info("[copper_light_decorations] learnable {}, failures {}", learnable, failures);
+        helper.assertTrue(failures.isEmpty(), "copper lights not usable: " + failures);
+        helper.succeed();
+    }
+
 }
