@@ -93,6 +93,12 @@ public final class ItemStackUtils
       entry(Items.CHAINMAIL_CHESTPLATE, 2),
       entry(Items.CHAINMAIL_LEGGINGS, 2),
       entry(Items.CHAINMAIL_BOOTS, 2),
+      // Copper armor (1.21.9) is chainmail tier: defense just under chainmail's, durability between gold and chainmail.
+      // The armor-point fallback below would split the set (boots have leather's 1 point).
+      entry(Items.COPPER_HELMET, 2),
+      entry(Items.COPPER_CHESTPLATE, 2),
+      entry(Items.COPPER_LEGGINGS, 2),
+      entry(Items.COPPER_BOOTS, 2),
       entry(Items.IRON_HELMET, 3),
       entry(Items.IRON_CHESTPLATE, 3),
       entry(Items.IRON_LEGGINGS, 3),

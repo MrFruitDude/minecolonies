@@ -380,6 +380,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "vanilla_spear_equipment"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::vanillaSpearEquipment),
           data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "copper_equipment_levels"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::copperEquipmentLevels),
+          data);
     }
 
     /**

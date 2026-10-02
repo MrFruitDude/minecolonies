@@ -6462,4 +6462,72 @@ public final class MinecoloniesGameTests
         helper.assertTrue(failures.isEmpty(), "vanilla spears not usable by cavalry: " + failures);
         helper.succeed();
     }
+
+    /**
+     * Phase C3 row 3 (V34/V35): 1.21.9 added copper tools and armor. Copper tools already level 1 (stone tier, as copper
+     * tool materials map there). Copper armor had no entry in MineColonies' armor tiers and fell back to comparing armor
+     * points against leather/chainmail/iron/diamond, which put the helmet, chestplate and leggings at chainmail's level 2
+     * but the boots (1 point, like leather) at 1, so a guard building's armor levels treated one copper set as two tiers.
+     * Copper armor (defense 2/4/3/1, durability 11: under chainmail's 2/5/4/1 and 15, above gold's 7 and leather's 5)
+     * is chainmail tier: every piece level 2. Copper horse armor must not count as worn armor.
+     */
+    public static void copperEquipmentLevels(final GameTestHelper helper)
+    {
+        final List<String> failures = new ArrayList<>();
+        final Map<String, Integer> results = new java.util.LinkedHashMap<>();
+        final java.util.function.BiConsumer<Object[], Integer> check = (args, expected) -> {
+            final ItemStack stack = new ItemStack((net.minecraft.world.item.Item) args[0]);
+            @SuppressWarnings("unchecked")
+            final com.minecolonies.api.equipment.registry.EquipmentTypeEntry type =
+              ((Supplier<com.minecolonies.api.equipment.registry.EquipmentTypeEntry>) args[1]).get();
+            final String name = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
+            final int level = type.checkIsEquipment(stack) ? type.getMiningLevel(stack) : -99;
+            results.put(name, level);
+            if (level != expected)
+            {
+                failures.add(name + " as " + type.getRegistryName().getPath() + " expected level " + expected + " got " + level);
+            }
+        };
+
+        check.accept(new Object[] {Items.COPPER_PICKAXE, ModEquipmentTypes.pickaxe}, 1);
+        check.accept(new Object[] {Items.COPPER_AXE, ModEquipmentTypes.axe}, 1);
+        check.accept(new Object[] {Items.COPPER_SHOVEL, ModEquipmentTypes.shovel}, 1);
+        check.accept(new Object[] {Items.COPPER_HOE, ModEquipmentTypes.hoe}, 1);
+        check.accept(new Object[] {Items.COPPER_SWORD, ModEquipmentTypes.sword}, 1);
+
+        check.accept(new Object[] {Items.COPPER_HELMET, ModEquipmentTypes.helmet}, 2);
+        check.accept(new Object[] {Items.COPPER_CHESTPLATE, ModEquipmentTypes.chestplate}, 2);
+        check.accept(new Object[] {Items.COPPER_LEGGINGS, ModEquipmentTypes.leggings}, 2);
+        check.accept(new Object[] {Items.COPPER_BOOTS, ModEquipmentTypes.boots}, 2);
+        for (final net.minecraft.world.item.Item piece : List.of(Items.COPPER_HELMET, Items.COPPER_CHESTPLATE, Items.COPPER_LEGGINGS, Items.COPPER_BOOTS))
+        {
+            final int tier = ItemStackUtils.getArmorLevel(new ItemStack(piece));
+            if (tier != 2)
+            {
+                failures.add(piece + " armor tier " + tier + " instead of 2");
+            }
+        }
+
+        // Controls: the 1.21 tiers around copper are unchanged.
+        check.accept(new Object[] {Items.LEATHER_BOOTS, ModEquipmentTypes.boots}, 1);
+        check.accept(new Object[] {Items.CHAINMAIL_BOOTS, ModEquipmentTypes.boots}, 2);
+        check.accept(new Object[] {Items.CHAINMAIL_HELMET, ModEquipmentTypes.helmet}, 2);
+        check.accept(new Object[] {Items.IRON_BOOTS, ModEquipmentTypes.boots}, 3);
+        check.accept(new Object[] {Items.STONE_PICKAXE, ModEquipmentTypes.pickaxe}, 1);
+
+        // Horse armor is body armor for a horse, never a citizen's armor piece.
+        final ItemStack horseArmor = new ItemStack(Items.COPPER_HORSE_ARMOR);
+        for (final Supplier<com.minecolonies.api.equipment.registry.EquipmentTypeEntry> worn
+          : List.<Supplier<com.minecolonies.api.equipment.registry.EquipmentTypeEntry>>of(ModEquipmentTypes.helmet, ModEquipmentTypes.chestplate, ModEquipmentTypes.leggings, ModEquipmentTypes.boots))
+        {
+            if (worn.get().checkIsEquipment(horseArmor))
+            {
+                failures.add("copper horse armor accepted as " + worn.get().getRegistryName().getPath());
+            }
+        }
+
+        Log.getLogger().info("[copper_equipment_levels] {} failures {}", results, failures);
+        helper.assertTrue(failures.isEmpty(), "copper equipment levels wrong: " + failures);
+        helper.succeed();
+    }
 }
