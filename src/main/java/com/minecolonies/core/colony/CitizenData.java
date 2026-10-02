@@ -7,6 +7,7 @@ import com.minecolonies.api.MinecoloniesAPIProxy;
 import com.minecolonies.api.colony.CitizenNameFile;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.buildings.ModBuildings;
 import com.minecolonies.api.colony.buildings.modules.IAssignsJob;
@@ -1180,7 +1181,8 @@ public class CitizenData implements ICitizenData
     {
         if (colony != null && colony.isActive())
         {
-            this.saturation = Math.max(MIN_SATURATION, this.saturation - Math.abs(extraSaturation * MineColonies.getConfig().getServer().foodModifier.get()));
+            final double pace = IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().needs(colony));
+            this.saturation = Math.max(MIN_SATURATION, this.saturation - Math.abs(extraSaturation * MineColonies.getConfig().getServer().foodModifier.get()) * pace);
             this.justAte = false;
         }
     }

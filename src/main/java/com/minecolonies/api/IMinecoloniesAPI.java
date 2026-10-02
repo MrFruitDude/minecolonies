@@ -5,6 +5,7 @@ import com.ldtteam.common.config.Configurations;
 import com.minecolonies.api.client.render.modeltype.registry.IModelTypeRegistry;
 import com.minecolonies.api.colony.ICitizenDataManager;
 import com.minecolonies.api.colony.IColonyManager;
+import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildingextensions.registry.BuildingExtensionRegistries.BuildingExtensionEntry;
 import com.minecolonies.api.colony.buildings.registry.BuildingEntry;
 import com.minecolonies.api.colony.buildings.registry.IBuildingDataManager;
@@ -105,4 +106,18 @@ public interface IMinecoloniesAPI
     Registry<EquipmentTypeEntry> getEquipmentTypeRegistry();
 
     EventBus getEventBus();
+
+    /**
+     * The colony pace provider in use ({@link IColonyPaceProvider#DEFAULT} unless a mod set one).
+     *
+     * @return the provider, never null.
+     */
+    IColonyPaceProvider getColonyPaceProvider();
+
+    /**
+     * Sets the colony pace provider. Null puts the default (1.0 everywhere) back.
+     *
+     * @param provider the provider, or null for the default.
+     */
+    void setColonyPaceProvider(IColonyPaceProvider provider);
 }

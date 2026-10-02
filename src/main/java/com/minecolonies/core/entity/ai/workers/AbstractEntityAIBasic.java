@@ -4,7 +4,10 @@ import com.google.common.collect.ImmutableList;
 import com.ldtteam.structurize.api.util.Tuple;
 import com.google.common.collect.Lists;
 import com.google.common.reflect.TypeToken;
+import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.ICitizenData;
+import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.interactionhandling.ChatPriority;
 import com.minecolonies.api.colony.jobs.IJob;
@@ -118,6 +121,12 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
      * The time in ticks until the next action is made.
      */
     private int delay = 0;
+
+    /**
+     * Fraction of a tick left over when the colony pace is not a whole number, added to the next wait step so the
+     * total delay counted down matches tick rate times pace over time.
+     */
+    private double paceCarry = 0.0D;
 
     /**
      * If we have waited one delay.
@@ -505,7 +514,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             {
                 CitizenItemUtils.hitBlockWithToolInHand(worker, currentWorkingLocation);
             }
-            delay -= getTickRate();
+            delay -= getPacedTickRate();
             if (delay <= 0)
             {
                 clearWorkTarget();
@@ -513,6 +522,29 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             return true;
         }
         return false;
+    }
+
+    /**
+     * How much of the delay one wait step counts down: the tick rate times the colony's work pace
+     * ({@link IColonyPaceProvider#work}), with the fraction carried to the next step. At pace 1.0 this is exactly the
+     * tick rate.
+     *
+     * @return the ticks to subtract from the delay.
+     */
+    private int getPacedTickRate()
+    {
+        final IColony colony = job.getColony();
+        final double pace = colony == null ? 1.0D
+          : IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().work(colony, job));
+        if (pace == 1.0D)
+        {
+            paceCarry = 0.0D;
+            return getTickRate();
+        }
+        final double step = getTickRate() * pace + paceCarry;
+        final int whole = (int) step;
+        paceCarry = step - whole;
+        return whole;
     }
 
     /**

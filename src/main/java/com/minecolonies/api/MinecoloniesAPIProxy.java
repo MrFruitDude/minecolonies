@@ -4,6 +4,7 @@ import com.ldtteam.common.config.Configurations;
 import com.minecolonies.api.client.render.modeltype.registry.IModelTypeRegistry;
 import com.minecolonies.api.colony.ICitizenDataManager;
 import com.minecolonies.api.colony.IColonyManager;
+import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildingextensions.registry.BuildingExtensionRegistries.BuildingExtensionEntry;
 import com.minecolonies.api.colony.buildings.registry.BuildingEntry;
 import com.minecolonies.api.colony.buildings.registry.IBuildingDataManager;
@@ -237,5 +238,17 @@ public final class MinecoloniesAPIProxy implements IMinecoloniesAPI
     public EventBus getEventBus()
     {
         return apiInstance.getEventBus();
+    }
+
+    @Override
+    public IColonyPaceProvider getColonyPaceProvider()
+    {
+        return apiInstance.getColonyPaceProvider();
+    }
+
+    @Override
+    public void setColonyPaceProvider(final IColonyPaceProvider provider)
+    {
+        apiInstance.setColonyPaceProvider(provider);
     }
 }

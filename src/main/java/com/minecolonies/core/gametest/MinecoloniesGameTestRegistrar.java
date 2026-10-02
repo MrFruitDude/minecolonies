@@ -433,6 +433,18 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "fletcher_saddle_harness"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::fletcherSaddleHarness),
           data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_provider_scales_ai_delay"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderScalesAiDelay),
+          isolatedColonyData(event, "pace_provider_scales_ai_delay"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_default_provider_unchanged"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceDefaultProviderUnchanged),
+          isolatedColonyData(event, "pace_default_provider_unchanged"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "upgrade_request_event_cancels"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::upgradeRequestEventCancels),
+          isolatedColonyData(event, "upgrade_request_event_cancels"));
     }
 
     /**
