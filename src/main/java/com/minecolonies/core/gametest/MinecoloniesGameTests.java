@@ -6754,4 +6754,62 @@ public final class MinecoloniesGameTests
             Log.getLogger().info("[florist_new_flowers] {} plantables, level2 {}, all {} grown", plantables.size(), level2.size(), grown.size());
         });
     }
+
+    /**
+     * Phase C3 row 7: the composter's barrel takes the plants added since 1.21.2 that vanilla composts. Each item is
+     * checked to be vanilla-compostable (so the list is right) and then fed to a fresh barrel; stone is the control.
+     * The golden dandelion is left out: vanilla does not compost it (the barrel takes it anyway as a flower).
+     */
+    public static void composterNewPlants(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final List<net.minecraft.world.item.Item> plants = List.of(Items.LEAF_LITTER, Items.BUSH, Items.FIREFLY_BUSH, Items.DRY_SHORT_GRASS,
+          Items.DRY_TALL_GRASS, Items.PALE_MOSS_BLOCK, Items.PALE_MOSS_CARPET, Items.PALE_HANGING_MOSS, Items.RED_SHRUB, Items.SHELF_MUSHROOM,
+          Items.CACTUS_FLOWER, Items.WILDFLOWERS, Items.OPEN_EYEBLOSSOM, Items.CLOSED_EYEBLOSSOM, Items.RED_POPLAR_LEAVES,
+          Items.ORANGE_POPLAR_LEAVES, Items.YELLOW_POPLAR_LEAVES,
+          Items.PALE_OAK_LEAVES, Items.PALE_OAK_SAPLING, Items.POPLAR_SAPLING);
+        final BlockPos pos = helper.absolutePos(new BlockPos(1, 1, 1));
+        final List<String> failures = new ArrayList<>();
+        final List<String> accepted = new ArrayList<>();
+        final java.util.function.Predicate<net.minecraft.world.item.Item> barrelTakes = item -> {
+            level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+            level.setBlockAndUpdate(pos, ModBlocks.blockBarrel.defaultBlockState());
+            final com.minecolonies.core.tileentities.TileEntityBarrel barrel = (com.minecolonies.core.tileentities.TileEntityBarrel) level.getBlockEntity(pos);
+            return barrel.addItem(new ItemStack(item)) && barrel.getItems() > 0;
+        };
+        for (final net.minecraft.world.item.Item plant : plants)
+        {
+            if (!new ItemStack(plant).has(net.minecraft.core.component.DataComponents.COMPOSTABLE))
+            {
+                failures.add(plant + " is not vanilla-compostable (test list wrong)");
+            }
+            if (barrelTakes.test(plant))
+            {
+                accepted.add(plant.toString());
+            }
+            else
+            {
+                failures.add(plant + " rejected by the barrel");
+            }
+        }
+        if (barrelTakes.test(Items.STONE))
+        {
+            failures.add("control: barrel took stone");
+        }
+
+        // Information only: vanilla compostables the barrel still ignores (foods etc. are left to the existing tags).
+        final List<String> ignored = new ArrayList<>();
+        for (final net.minecraft.world.item.Item item : net.minecraft.core.registries.BuiltInRegistries.ITEM)
+        {
+            if (new ItemStack(item).has(net.minecraft.core.component.DataComponents.COMPOSTABLE)
+              && !IColonyManager.getInstance().getCompatibilityManager().getCopyOfCompostRecipes().containsKey(item))
+            {
+                ignored.add(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString());
+            }
+        }
+        level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        Log.getLogger().info("[composter_new_plants] accepted {}; vanilla compostables the barrel ignores: {}", accepted, ignored);
+        helper.assertTrue(failures.isEmpty(), "barrel compostables wrong: " + failures);
+        helper.succeed();
+    }
 }

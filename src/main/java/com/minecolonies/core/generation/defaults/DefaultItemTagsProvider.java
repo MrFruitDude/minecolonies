@@ -229,6 +229,8 @@ public class DefaultItemTagsProvider extends BlockTagCopyingItemTagProvider
           .add(Items.CAKE, Items.MELON, Items.RABBIT_FOOT, Items.FERMENTED_SPIDER_EYE)
           .add(Items.MOSS_BLOCK, Items.MOSS_CARPET, Items.SHROOMLIGHT)
           .add(Items.NETHER_WART_BLOCK, Items.WARPED_WART_BLOCK, Items.NETHER_SPROUTS, Items.MANGROVE_ROOTS, Items.HANGING_ROOTS, Items.CRIMSON_ROOTS, Items.WARPED_ROOTS)
+          .add(Items.LEAF_LITTER, Items.BUSH, Items.FIREFLY_BUSH, Items.DRY_SHORT_GRASS, Items.DRY_TALL_GRASS, Items.RED_SHRUB)
+          .add(Items.PALE_MOSS_BLOCK, Items.PALE_MOSS_CARPET, Items.PALE_HANGING_MOSS)
           .addTags(Tags.Items.CROPS, Tags.Items.EGGS, BlockItemTags.FLOWERS.item(), ItemTags.FISHES, ItemTags.LEAVES, ItemTags.WOOL)
           .addTags(Tags.Items.FOODS_RAW_FISH, Tags.Items.FOODS_RAW_MEAT, Tags.Items.MUSHROOMS, ModTags.fungi);
         tag(ModTags.compostables_rich, "Rich-Quality Compostables")
