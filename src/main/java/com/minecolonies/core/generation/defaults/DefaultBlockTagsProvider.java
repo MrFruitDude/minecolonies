@@ -68,6 +68,8 @@ public class DefaultBlockTagsProvider extends BlockTagsProvider
             .addTag(BlockTags.PLANKS)
             .addTag(BlockTags.WOODEN_SLABS)
             .addTag(BlockTags.WOOL_CARPETS)
+            .addTags(BlockTags.WOOL_STAIRS, BlockTags.WOOL_SLABS)
+            .addTags(BlockTags.CONCRETE_STAIRS, BlockTags.CONCRETE_SLABS)
                 .add(Blocks.STONE_BRICK_STAIRS)
                 .add(Blocks.STONE_BRICK_SLAB)
                 .add(Blocks.MOSSY_STONE_BRICK_SLAB)

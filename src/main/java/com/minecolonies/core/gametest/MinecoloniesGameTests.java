@@ -7168,4 +7168,77 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Phase C3 row 11 (V63/V64): wool stairs and slabs (26.2) and concrete stairs and slabs (26.1). Citizens sit on any
+     * stair, so a wool stair is a seat. Wool carpets and concrete are path blocks (citizens prefer them and builders treat
+     * them as roads), so the new wool and concrete stairs and slabs must be too, like the stone-brick ones. The stonemason
+     * owns concrete (it already takes it as an ingredient), so it learns the concrete cuts; the fletcher learns the wool
+     * ones through its wool ingredient.
+     */
+    public static void woolConcreteStairsFit(final GameTestHelper helper)
+    {
+        final List<String> failures = new ArrayList<>();
+
+        final BlockPos seat = new BlockPos(1, 1, 1);
+        helper.setBlock(seat, Blocks.WOOL_STAIRS.white());
+        final net.minecraft.world.entity.monster.zombie.Zombie sitter = helper.spawnWithNoFreeWill(net.minecraft.world.entity.EntityTypes.ZOMBIE, new BlockPos(1, 2, 2));
+        final boolean sat = com.minecolonies.core.entity.other.SittingEntity.sitDown(helper.absolutePos(seat), sitter, 100);
+        if (!sat || !(sitter.getVehicle() instanceof com.minecolonies.core.entity.other.SittingEntity))
+        {
+            failures.add("could not sit on a wool stair (sitDown " + sat + ", vehicle " + sitter.getVehicle() + ")");
+        }
+        if (sitter.getVehicle() != null)
+        {
+            final net.minecraft.world.entity.Entity vehicle = sitter.getVehicle();
+            sitter.stopRiding();
+            vehicle.discard();
+        }
+        sitter.discard();
+
+        helper.assertTrue(WorkerUtil.isPathBlock(Blocks.CONCRETE.white()) && WorkerUtil.isPathBlock(Blocks.CARPET.white()),
+          "control: concrete / wool carpet not path blocks");
+        final List<Block> pathBlocks = new ArrayList<>();
+        pathBlocks.addAll(Blocks.CONCRETE_STAIRS.asList());
+        pathBlocks.addAll(Blocks.CONCRETE_SLAB.asList());
+        pathBlocks.addAll(Blocks.WOOL_STAIRS.asList());
+        pathBlocks.addAll(Blocks.WOOL_SLAB.asList());
+        final List<String> notPath = new ArrayList<>();
+        for (final Block block : pathBlocks)
+        {
+            if (!WorkerUtil.isPathBlock(block))
+            {
+                notPath.add(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).getPath());
+            }
+        }
+        if (!notPath.isEmpty())
+        {
+            failures.add("not path blocks: " + notPath);
+        }
+
+        final Map<String, List<String>> learnable = new java.util.TreeMap<>();
+        for (final String color : List.of("white", "black"))
+        {
+            for (final String cut : List.of("stairs", "slab"))
+            {
+                final String concrete = color + "_concrete_" + cut;
+                final List<String> concreteBy = c3LearnableBy(helper, concrete, failures);
+                learnable.put(concrete, concreteBy);
+                if (!concreteBy.equals(List.of("stonemason")))
+                {
+                    failures.add(concrete + " learnable by " + concreteBy + ", expected only the stonemason");
+                }
+                final String wool = color + "_wool_" + cut;
+                final List<String> woolBy = c3LearnableBy(helper, wool, failures);
+                learnable.put(wool, woolBy);
+                if (!woolBy.contains("fletcher"))
+                {
+                    failures.add(wool + " learnable by " + woolBy + ", expected the fletcher");
+                }
+            }
+        }
+        Log.getLogger().info("[wool_concrete_stairs_fit] learnable {}, failures {}", learnable, failures);
+        helper.assertTrue(failures.isEmpty(), "wool/concrete stairs and slabs do not fit: " + failures);
+        helper.succeed();
+    }
+
 }

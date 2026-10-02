@@ -417,6 +417,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "domum_new_materials"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::domumNewMaterials),
           data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "wool_concrete_stairs_fit"),
+          info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::woolConcreteStairsFit),
+          data);
     }
 
     /**
