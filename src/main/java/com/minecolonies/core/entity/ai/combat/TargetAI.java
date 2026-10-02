@@ -11,6 +11,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.monster.creaking.Creaking;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.common.util.FakePlayer;
 
@@ -91,6 +92,12 @@ public class TargetAI<T extends Mob & IThreatTableEntity> implements IStateAI
     public boolean isEntityValidTarget(final LivingEntity target)
     {
         if (target == user || target == null || !target.isAlive() || !isWithinPersecutionDistance(target) || target instanceof FakePlayer)
+        {
+            return false;
+        }
+
+        // A creaking bound to its creaking heart takes no damage until the heart is broken; fighting it is pointless.
+        if (target instanceof Creaking creaking && creaking.isHeartBound())
         {
             return false;
         }

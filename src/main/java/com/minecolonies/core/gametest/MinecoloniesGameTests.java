@@ -6530,4 +6530,154 @@ public final class MinecoloniesGameTests
         helper.assertTrue(failures.isEmpty(), "copper equipment levels wrong: " + failures);
         helper.succeed();
     }
+
+    /**
+     * Phase C3 row 5: a creaking bound to an active creaking heart takes no damage, so guards must not pick it as a
+     * target (they would hit it all night in a pale garden). A heartless creaking and a zombie stay targets. Runs the
+     * knight's real combat AI target checks ({@code isEntityValidTarget} and the nearby-target search that fills the
+     * threat table) on a guard assigned to a guard tower.
+     */
+    public static void guardIgnoresProtectedCreaking(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = foundGameTestColony(helper, "C3 guard colony");
+        final IBuilding tower = placeProductionBuilding(helper, colony, ModBlocks.blockHutGuardTower, new BlockPos(8, 1, 2),
+          "military/guardtower1.blueprint");
+        final BlockPos anchorRel = new BlockPos(8, 1, 8);
+        final BlockPos anchor = helper.absolutePos(anchorRel);
+        level.setChunkForced(anchor.getX() >> 4, anchor.getZ() >> 4, true);
+
+        // Heart between two pale oak logs, a few blocks from the guard, with its creaking linked to it.
+        final BlockPos heartPos = helper.absolutePos(new BlockPos(14, 3, 8));
+        level.setBlockAndUpdate(heartPos.below(), Blocks.PALE_OAK_LOG.defaultBlockState());
+        level.setBlockAndUpdate(heartPos, Blocks.CREAKING_HEART.defaultBlockState());
+        level.setBlockAndUpdate(heartPos.above(), Blocks.PALE_OAK_LOG.defaultBlockState());
+
+        helper.runAfterDelay(20, () -> {
+            final ICitizenData guard = colony.getCitizenManager().spawnOrCreateCivilian(null, level, List.of(anchor), true);
+            helper.assertTrue(guard != null && guard.getEntity().isPresent(), "guard citizen did not spawn");
+            helper.assertTrue(tower.getModule(BuildingModules.KNIGHT_TOWER_WORK).assignCitizen(guard), "knight assignment failed");
+            final com.minecolonies.core.entity.citizen.EntityCitizen guardEntity =
+              (com.minecolonies.core.entity.citizen.EntityCitizen) guard.getEntity().get();
+            guardEntity.setPos(anchor.getX() + 0.5D, anchor.getY(), anchor.getZ() + 0.5D);
+            guardEntity.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_SWORD));
+            helper.assertTrue(guardEntity.getCitizenJobHandler().getWorkAI()
+                instanceof com.minecolonies.core.entity.ai.workers.guard.AbstractEntityAIGuard<?, ?>,
+              "knight has no guard AI: " + guardEntity.getCitizenJobHandler().getWorkAI());
+            final com.minecolonies.core.entity.ai.workers.guard.MeleeCombatAI combat = new com.minecolonies.core.entity.ai.workers.guard.MeleeCombatAI(
+              guardEntity,
+              new com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.TickRateStateMachine<>(
+                com.minecolonies.api.entity.ai.combat.CombatAIStates.NO_TARGET, e -> { throw e; }),
+              (com.minecolonies.core.entity.ai.workers.guard.AbstractEntityAIGuard<?, ?>) guardEntity.getCitizenJobHandler().getWorkAI());
+
+            final net.minecraft.world.entity.monster.creaking.Creaking protectedCreaking = spawnTestMob(level, net.minecraft.world.entity.EntityTypes.CREAKING, anchor.offset(3, 0, 0));
+            protectedCreaking.setTransient(heartPos);
+            ((net.minecraft.world.level.block.entity.CreakingHeartBlockEntity) level.getBlockEntity(heartPos)).setCreakingInfo(protectedCreaking);
+            final net.minecraft.world.entity.monster.creaking.Creaking heartless = spawnTestMob(level, net.minecraft.world.entity.EntityTypes.CREAKING, anchor.offset(0, 0, 3));
+            final net.minecraft.world.entity.monster.zombie.Zombie zombie = spawnTestMob(level, net.minecraft.world.entity.EntityTypes.ZOMBIE, anchor.offset(-3, 0, 0));
+
+            helper.runAfterDelay(5, () -> {
+                final List<String> failures = new ArrayList<>();
+                // Fixture check: the linked creaking really is protected (a guard's hit does nothing).
+                final float before = protectedCreaking.getHealth();
+                protectedCreaking.hurtServer(level, level.damageSources().mobAttack(guardEntity), 6.0F);
+                if (!protectedCreaking.isAlive() || !protectedCreaking.isHeartBound() || protectedCreaking.getHealth() < before)
+                {
+                    failures.add("fixture: linked creaking not protected (alive=" + protectedCreaking.isAlive() + ", bound="
+                      + protectedCreaking.isHeartBound() + ", health " + before + "->" + protectedCreaking.getHealth() + ")");
+                }
+
+                if (combat.isEntityValidTarget(protectedCreaking))
+                {
+                    failures.add("protected creaking is a valid target");
+                }
+                if (!combat.isEntityValidTarget(heartless))
+                {
+                    failures.add("heartless creaking is not a valid target");
+                }
+                if (!combat.isEntityValidTarget(zombie))
+                {
+                    failures.add("zombie is not a valid target");
+                }
+
+                // The real nearby search that fills the guard's threat table.
+                try
+                {
+                    final java.lang.reflect.Method search = com.minecolonies.core.entity.ai.combat.TargetAI.class.getDeclaredMethod("searchNearbyTarget");
+                    search.setAccessible(true);
+                    search.invoke(combat);
+                }
+                catch (final ReflectiveOperationException e)
+                {
+                    throw new IllegalStateException(e);
+                }
+                final var threats = guardEntity.getThreatTable();
+                final String table = "protected=" + threats.getThreatFor(protectedCreaking) + " heartless=" + threats.getThreatFor(heartless)
+                  + " zombie=" + threats.getThreatFor(zombie);
+                if (threats.getThreatFor(protectedCreaking) >= 0)
+                {
+                    failures.add("nearby search put the protected creaking in the threat table");
+                }
+                if (threats.getThreatFor(zombie) < 0 || threats.getThreatFor(heartless) < 0)
+                {
+                    failures.add("nearby search missed the zombie or the heartless creaking");
+                }
+
+                // Even if the protected creaking was the last thing to hurt the guard, it is not worth fighting.
+                guardEntity.setLastHurtByMob(protectedCreaking);
+                if (combat.isEntityValidTarget(protectedCreaking))
+                {
+                    failures.add("protected creaking that hurt the guard is a valid target");
+                }
+                guardEntity.setLastHurtByMob(null);
+
+                Log.getLogger().info("[guard_ignores_protected_creaking] threat table {} failures {}", table, failures);
+                for (final net.minecraft.world.entity.Entity mob : List.of(protectedCreaking, heartless, zombie))
+                {
+                    mob.discard();
+                }
+                helper.assertTrue(failures.isEmpty(), "guard creaking targeting wrong: " + failures + " (" + table + ")");
+                helper.succeed();
+            });
+        });
+    }
+
+    private static <E extends net.minecraft.world.entity.Mob> E spawnTestMob(final ServerLevel level, final net.minecraft.world.entity.EntityType<E> type, final BlockPos pos)
+    {
+        final E mob = type.create(level, net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+        mob.snapTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 0, 0);
+        mob.setNoAi(true);
+        mob.setPersistenceRequired();
+        level.addFreshEntity(mob);
+        return mob;
+    }
+
+    /**
+     * Founds a colony on a flat stone pad (x -8..40, z -8..32) with a level-one town hall at (2, 1, 2).
+     */
+    private static IColony foundGameTestColony(final GameTestHelper helper, final String name)
+    {
+        final ServerLevel level = helper.getLevel();
+        clearColonyFixture(helper, 0, 40, 32);
+        for (int x = -8; x < 40; x++)
+        {
+            for (int z = -8; z < 32; z++)
+            {
+                helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
+            }
+        }
+        final BlockPos relativeTownHall = new BlockPos(2, 1, 2);
+        final BlockPos townHallPos = helper.absolutePos(relativeTownHall);
+        level.setChunkForced(townHallPos.getX() >> 4, townHallPos.getZ() >> 4, true);
+        helper.setBlock(relativeTownHall, ModBlocks.blockHutTownHall.defaultBlockState());
+        final TileEntityColonyBuilding townHallHut = (TileEntityColonyBuilding) level.getBlockEntity(townHallPos);
+        townHallHut.setPackName("Minecolonies Original");
+        townHallHut.setBlueprintPath("fundamentals/townhall1.blueprint");
+        final IColony colony = IColonyManager.getInstance().createColony(level, townHallPos, FakePlayerFactory.getMinecraft(level), name, "Minecolonies Original");
+        helper.assertTrue(colony != null, "colony creation returned null");
+        final IBuilding townHall = colony.getServerBuildingManager().addNewBuilding(townHallHut, level);
+        helper.assertTrue(townHall != null && colony.getServerBuildingManager().hasTownHall(), "town hall not registered");
+        townHall.setBuildingLevel(1);
+        return colony;
+    }
 }
