@@ -7269,4 +7269,49 @@ public final class MinecoloniesGameTests
         helper.succeed();
     }
 
+    /**
+     * Phase C3 row 13 (V65): the straw bed (26.2) is an {@code AbstractBedBlock} but not a {@code BedBlock} and not in
+     * {@code #minecraft:beds}, and it breaks when its sleeper leaves. Like vanilla villagers, citizens must not use it: a
+     * residence registers no bed for either half (a red bed registers one), and the sleep code's bed checks reject it.
+     */
+    public static void strawBedNotColonyBed(final GameTestHelper helper)
+    {
+        final List<String> failures = new ArrayList<>();
+        final BlockState strawHead = Blocks.STRAW_BED.defaultBlockState()
+          .setValue(net.minecraft.world.level.block.AbstractBedBlock.PART, net.minecraft.world.level.block.state.properties.BedPart.HEAD);
+        final BlockState strawFoot = strawHead.setValue(net.minecraft.world.level.block.AbstractBedBlock.PART, net.minecraft.world.level.block.state.properties.BedPart.FOOT);
+        if (Blocks.STRAW_BED instanceof net.minecraft.world.level.block.BedBlock)
+        {
+            failures.add("straw bed is a BedBlock");
+        }
+        if (strawHead.is(net.minecraft.tags.BlockTags.BEDS) || strawHead.is(net.minecraft.tags.BlockTags.VILLAGERS_CAN_SLEEP_ON_BED))
+        {
+            failures.add("straw bed is in #minecraft:beds / villagers_can_sleep_on_bed");
+        }
+
+        final BlockPos head = helper.absolutePos(new BlockPos(1, 1, 1));
+        final BlockPos foot = helper.absolutePos(new BlockPos(1, 1, 2));
+        final com.minecolonies.core.colony.buildings.modules.BedHandlingModule straw = new com.minecolonies.core.colony.buildings.modules.BedHandlingModule();
+        straw.onBlockPlacedInBuilding(strawHead, head, helper.getLevel());
+        straw.onBlockPlacedInBuilding(strawFoot, foot, helper.getLevel());
+        if (!straw.getRegisteredBlocks().isEmpty())
+        {
+            failures.add("residence registered straw bed parts " + straw.getRegisteredBlocks());
+        }
+
+        final BlockState redHead = Blocks.BED.pick(net.minecraft.world.item.DyeColor.RED).defaultBlockState()
+          .setValue(net.minecraft.world.level.block.BedBlock.PART, net.minecraft.world.level.block.state.properties.BedPart.HEAD)
+          .setValue(net.minecraft.world.level.block.BedBlock.FACING, Direction.NORTH);
+        final BlockState redFoot = redHead.setValue(net.minecraft.world.level.block.BedBlock.PART, net.minecraft.world.level.block.state.properties.BedPart.FOOT);
+        final com.minecolonies.core.colony.buildings.modules.BedHandlingModule red = new com.minecolonies.core.colony.buildings.modules.BedHandlingModule();
+        red.onBlockPlacedInBuilding(redHead, head, helper.getLevel());
+        red.onBlockPlacedInBuilding(redFoot, foot, helper.getLevel());
+        helper.assertTrue(red.getRegisteredBlocks().equals(List.of(head, head)) || red.getRegisteredBlocks().equals(List.of(head)),
+          "control: red bed registered " + red.getRegisteredBlocks() + ", expected its head " + head);
+
+        Log.getLogger().info("[straw_bed_not_colony_bed] straw registered {}, red registered {}, failures {}", straw.getRegisteredBlocks(), red.getRegisteredBlocks(), failures);
+        helper.assertTrue(failures.isEmpty(), "straw bed treated as a colony bed: " + failures);
+        helper.succeed();
+    }
+
 }
