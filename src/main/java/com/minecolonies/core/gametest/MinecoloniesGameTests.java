@@ -6812,4 +6812,50 @@ public final class MinecoloniesGameTests
         helper.assertTrue(failures.isEmpty(), "barrel compostables wrong: " + failures);
         helper.succeed();
     }
+
+    /**
+     * Phase C3 row 8: MineColonies crops only grow in biomes of their climate tag. The surface biomes added since
+     * 1.21.2 must be in exactly one climate tag: pale garden temperate (a dark-forest variant, same climate values),
+     * dappled forest temperate (temperature 0.6 / downfall 0.6, like birch forest; NeoForge tags it c:is_temperate).
+     * Sulfur caves already lands in humid only, through NeoForge's c:is_wet/overworld.
+     */
+    public static void cropBiomeTagsNewBiomes(final GameTestHelper helper)
+    {
+        final net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> biomes =
+          helper.getLevel().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.BIOME);
+        final Map<net.minecraft.resources.ResourceKey<net.minecraft.world.level.biome.Biome>, net.minecraft.tags.TagKey<net.minecraft.world.level.biome.Biome>> expected =
+          Map.of(net.minecraft.world.level.biome.Biomes.PALE_GARDEN, com.minecolonies.api.items.ModTags.temperateBiomes,
+            net.minecraft.world.level.biome.Biomes.DAPPLED_FOREST, com.minecolonies.api.items.ModTags.temperateBiomes,
+            net.minecraft.world.level.biome.Biomes.SULFUR_CAVES, com.minecolonies.api.items.ModTags.humidBiomes);
+        final List<String> failures = new ArrayList<>();
+        final Map<String, List<String>> membership = new java.util.TreeMap<>();
+        for (final var holder : biomes.listElements().toList())
+        {
+            final List<String> in = new ArrayList<>();
+            for (final net.minecraft.tags.TagKey<net.minecraft.world.level.biome.Biome> tag : com.minecolonies.api.items.ModTags.cropBiomeTags)
+            {
+                if (holder.is(tag))
+                {
+                    in.add(tag.location().getPath());
+                }
+            }
+            membership.put(holder.key().identifier().toString(), in);
+        }
+        for (final var entry : expected.entrySet())
+        {
+            final List<String> in = membership.get(entry.getKey().identifier().toString());
+            if (in.size() != 1 || !in.get(0).equals(entry.getValue().location().getPath()))
+            {
+                failures.add(entry.getKey().identifier() + " in " + in + ", expected only " + entry.getValue().location().getPath());
+            }
+        }
+        final var sulfur = biomes.getOrThrow(net.minecraft.world.level.biome.Biomes.SULFUR_CAVES);
+        Log.getLogger().info("[crop_biome_tags_new_biomes] sulfur_caves in {} (c/minecraft tags {}); pale_garden tags {}; dappled_forest tags {}; all {}",
+          membership.get("minecraft:sulfur_caves"), sulfur.tags().map(t -> t.location().toString()).toList(),
+          biomes.getOrThrow(net.minecraft.world.level.biome.Biomes.PALE_GARDEN).tags().map(t -> t.location().toString()).toList(),
+          biomes.getOrThrow(net.minecraft.world.level.biome.Biomes.DAPPLED_FOREST).tags().map(t -> t.location().toString()).toList(),
+          membership);
+        helper.assertTrue(failures.isEmpty(), "crop climate tags wrong: " + failures);
+        helper.succeed();
+    }
 }

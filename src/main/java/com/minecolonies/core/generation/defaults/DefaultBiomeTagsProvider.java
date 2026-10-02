@@ -79,7 +79,9 @@ public class DefaultBiomeTagsProvider extends BiomeTagsProvider
             Biomes.PLAINS,
             Biomes.RIVER,
             Biomes.SUNFLOWER_PLAINS,
-            Biomes.SWAMP);
+            Biomes.SWAMP,
+            Biomes.PALE_GARDEN,
+            Biomes.DAPPLED_FOREST);
 
         tag(ModTags.humidBiomes)
           .addTags(BiomeTags.IS_JUNGLE)

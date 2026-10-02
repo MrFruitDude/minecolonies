@@ -22,6 +22,8 @@
     "minecraft:plains",
     "minecraft:river",
     "minecraft:sunflower_plains",
-    "minecraft:swamp"
+    "minecraft:swamp",
+    "minecraft:pale_garden",
+    "minecraft:dappled_forest"
   ]
 }
