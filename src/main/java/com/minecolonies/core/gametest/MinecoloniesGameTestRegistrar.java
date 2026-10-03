@@ -501,7 +501,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           isolatedColonyData(event, "sync_citizen_derived_refresh"));
         // CA-9: idle citizens skip travel. Each founds its own colony, so each gets its own isolated batch.
         for (final String name : new String[] {"idle_citizen_skips_move", "idle_citizen_push_moves", "idle_citizen_floor_removed_falls",
-          "idle_citizen_hurt_knockback", "idle_citizen_path_walks", "idle_citizen_gravity_recheck"})
+          "idle_citizen_hurt_knockback", "idle_citizen_path_walks", "idle_citizen_gravity_recheck", "idle_citizen_path_starts_at_once"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -510,6 +510,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "idle_citizen_floor_removed_falls" -> IdleTravelGameTests::idleCitizenFloorRemovedFalls;
                 case "idle_citizen_hurt_knockback" -> IdleTravelGameTests::idleCitizenHurtKnockback;
                 case "idle_citizen_path_walks" -> IdleTravelGameTests::idleCitizenPathWalks;
+                case "idle_citizen_path_starts_at_once" -> IdleTravelGameTests::idleCitizenPathStartsAtOnce;
                 default -> IdleTravelGameTests::idleCitizenGravityRecheck;
             };
             event.registerTest(
