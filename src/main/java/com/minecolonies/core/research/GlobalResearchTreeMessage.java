@@ -10,6 +10,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
+import com.minecolonies.core.network.messages.MessageBuffers;
 
 /**
  * The message used to synchronize global research trees from a server to a remote client.
@@ -43,7 +44,7 @@ public class GlobalResearchTreeMessage extends AbstractClientPlayMessage
     @Override
     protected void toBytes(@NotNull final RegistryFriendlyByteBuf buf)
     {
-        buf.writeByteArray(treeBuffer.array());
+        MessageBuffers.writeWrittenBytes(buf, treeBuffer);
     }
 
     @Override

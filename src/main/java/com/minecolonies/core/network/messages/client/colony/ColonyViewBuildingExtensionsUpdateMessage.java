@@ -20,6 +20,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
+import com.minecolonies.core.network.messages.MessageBuffers;
 
 /**
  * Update message for auto syncing the entire building extensions list.
@@ -68,7 +69,7 @@ public class ColonyViewBuildingExtensionsUpdateMessage extends AbstractClientPla
         {
             final RegistryFriendlyByteBuf extensionBuffer = BuildingExtensionDataManager.extensionToBuffer(extension, buf.registryAccess());
             extensionBuffer.resetReaderIndex();
-            buf.writeByteArray(extensionBuffer.array());
+            MessageBuffers.writeWrittenBytes(buf, extensionBuffer);
         }
     }
 

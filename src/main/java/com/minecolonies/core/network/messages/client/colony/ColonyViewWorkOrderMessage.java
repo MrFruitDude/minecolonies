@@ -19,6 +19,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
+import com.minecolonies.core.network.messages.MessageBuffers;
 
 /**
  * Add or Update a ColonyView on the client.
@@ -65,7 +66,7 @@ public class ColonyViewWorkOrderMessage extends AbstractClientPlayMessage
         workOrderBuffer.resetReaderIndex();
         buf.writeInt(colonyId);
         buf.writeUtf(dimension.identifier().toString());
-        buf.writeByteArray(workOrderBuffer.array());
+        MessageBuffers.writeWrittenBytes(buf, workOrderBuffer);
     }
 
     @Override

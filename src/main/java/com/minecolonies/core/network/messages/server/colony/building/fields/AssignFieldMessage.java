@@ -14,6 +14,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
+import com.minecolonies.core.network.messages.MessageBuffers;
 
 /**
  * Message which handles the assignment of fields to farmers.
@@ -59,7 +60,7 @@ public class AssignFieldMessage extends AbstractBuildingServerMessage<IBuilding>
         fieldData.resetReaderIndex();
         buf.writeBoolean(assign);
         buf.writeInt(moduleID);
-        buf.writeByteArray(fieldData.array());
+        MessageBuffers.writeWrittenBytes(buf, fieldData);
     }
 
     protected AssignFieldMessage(final RegistryFriendlyByteBuf buf, final PlayMessageType<?> type)

@@ -20,6 +20,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Set;
+import com.minecolonies.core.network.messages.MessageBuffers;
 
 /**
  * Sends visitor data to the client
@@ -91,7 +92,7 @@ public class ColonyVisitorViewDataMessage extends AbstractClientPlayMessage
         buf.writeInt(colonyId);
         buf.writeUtf(dimension.identifier().toString());
         buf.writeBoolean(refresh);
-        buf.writeByteArray(visitorBuf.array());
+        MessageBuffers.writeWrittenBytes(buf, visitorBuf);
     }
 
     @Override

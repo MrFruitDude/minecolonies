@@ -236,6 +236,10 @@ public class ColonyPackageManager implements IColonyPackageManager
     @Override
     public void sendColonyViewPackets()
     {
+        if (!isDirty && citizenDerivedRefreshDue())
+        {
+            isDirty = true;
+        }
         if (isDirty || !newSubscribers.isEmpty())
         {
             final RegistryFriendlyByteBuf colonyFriendlyByteBuf = new RegistryFriendlyByteBuf(Unpooled.buffer(), colony.getWorld().registryAccess());

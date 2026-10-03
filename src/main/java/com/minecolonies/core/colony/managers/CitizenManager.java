@@ -472,8 +472,12 @@ public class CitizenManager implements ICitizenManager
     @Override
     public void markDirty()
     {
-        colony.markDirty();
+        // CA-2: a dirty citizen re-sends its own citizen view (sendPackets). It no longer re-sends the whole colony view
+        // every second: the colony is still flagged for saving, and the colony view fields derived from citizens are
+        // refreshed on the package manager's slower cadence. Colony-level changes call colony.markDirty() themselves.
         isCitizensDirty = true;
+        colony.setDirty(true);
+        colony.getPackageManager().markCitizenDerivedDirty();
     }
 
     @Override
