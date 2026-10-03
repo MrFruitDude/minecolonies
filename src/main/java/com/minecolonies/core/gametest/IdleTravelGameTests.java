@@ -7,6 +7,7 @@ import com.minecolonies.api.entity.other.AbstractFastMinecoloniesEntity;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingTownHall;
 import com.minecolonies.core.colony.buildings.modules.settings.BoolSetting;
+import com.minecolonies.core.entity.pathfinding.PathPointExtended;
 import com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -17,6 +18,8 @@ import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.pathfinder.Node;
+import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -373,6 +376,52 @@ public final class IdleTravelGameTests
             walk[0].run();
         });
     }
+
+    /**
+     * idle_citizen_path_starts_at_once: an idle citizen given a path starts walking on the very next ticks, not at its next
+     * 10-tick re-check. The path is handed to the navigator synchronously (no async path job) right after the citizen's
+     * re-check, so the next 9 ticks have no re-check: only the "path not done" and "input not zero" terms of the idle
+     * test can wake it. idle_citizen_path_walks cannot see those two terms, because once the citizen moves at all the
+     * position compare keeps it awake; this test bounds how soon it starts.
+     */
+    public static void idleCitizenPathStartsAtOnce(final GameTestHelper helper)
+    {
+        singleIdleCitizen(helper, "CA9 path start colony", (colony, citizen) -> {
+            final List<Node> nodes = new ArrayList<>();
+            for (int i = 0; i <= 6; i++)
+            {
+                nodes.add(new PathPointExtended(helper.absolutePos(SINGLE_SPOT.east(i))));
+            }
+            final BlockPos target = helper.absolutePos(SINGLE_SPOT.east(6));
+            final boolean started = citizen.getNavigation().moveTo(new Path(nodes, target, true), 1.0D);
+            helper.assertTrue(started && !citizen.getNavigation().isDone(), "fixture: the navigator did not take the path");
+            final Vec3 before = citizen.position();
+            final List<String> trace = new ArrayList<>();
+            final int[] ticks = {0};
+            final Runnable[] watch = new Runnable[1];
+            watch[0] = () -> {
+                ticks[0]++;
+                final double moved = Math.sqrt(Math.pow(citizen.getX() - before.x, 2) + Math.pow(citizen.getZ() - before.z, 2));
+                trace.add(String.format("t%d moved %.3f zza %.2f done %b", ticks[0], moved, citizen.zza, citizen.getNavigation().isDone()));
+                if (moved >= 0.1D)
+                {
+                    Log.getLogger().info("CA9 path start: moved " + moved + " in " + ticks[0] + " ticks " + trace);
+                    helper.succeed();
+                    return;
+                }
+                if (ticks[0] >= PATH_START_TICKS)
+                {
+                    throw helper.assertionException(Component.literal("idle citizen given a path did not start walking within " + PATH_START_TICKS
+                                                                      + " ticks (next re-check is 10 ticks away): " + trace));
+                }
+                helper.runAfterDelay(1, () -> watch[0].run());
+            };
+            helper.runAfterDelay(1, () -> watch[0].run());
+        });
+    }
+
+    /** idle_citizen_path_starts_at_once: ticks the citizen has to move 0.1 blocks in, well inside the 10-tick re-check gap. */
+    private static final int PATH_START_TICKS = 5;
 
     /**
      * idle_citizen_gravity_recheck: the cheap wake checks do not watch attributes, so a change only the full travel sees
