@@ -6,7 +6,9 @@ import com.minecolonies.api.tileentities.AbstractTileEntityRack;
 import com.minecolonies.api.tileentities.AbstractTileEntityWareHouse;
 import com.minecolonies.api.tileentities.MinecoloniesTileEntities;
 import com.minecolonies.api.util.*;
+import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
+import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.core.BlockPos;
@@ -16,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Predicate;
 
 import static com.minecolonies.api.util.constant.Constants.TICKS_FIVE_MIN;
@@ -41,24 +44,10 @@ public class TileEntityWareHouse extends AbstractTileEntityWareHouse
     @Override
     public boolean hasMatchingItemStackInWarehouse(@NotNull final Predicate<ItemStack> itemStackSelectionPredicate, int count)
     {
-        int totalCount = 0;
-        if (getBuilding() != null)
+        final IBuilding building = getBuilding();
+        if (building != null)
         {
-            for (@NotNull final BlockPos pos : getBuilding().getContainers())
-            {
-                if (WorldUtil.isBlockLoaded(level, pos))
-                {
-                    final BlockEntity entity = getLevel().getBlockEntity(pos);
-                    if (entity instanceof final TileEntityRack rack && !rack.isEmpty())
-                    {
-                        totalCount += rack.getItemCount(itemStackSelectionPredicate);
-                        if (totalCount >= count)
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
+            return rackIndex(building).hasMatching(level, itemStackSelectionPredicate, count);
         }
 
         return false;
@@ -73,23 +62,7 @@ public class TileEntityWareHouse extends AbstractTileEntityWareHouse
     @Override
     public boolean hasMatchingItemStackInWarehouse(@NotNull final ItemStack itemStack, final int count, final boolean ignoreNBT, final boolean ignoreDamage, final int leftOver)
     {
-        int totalCountFound = 0 - leftOver;
-        for (@NotNull final BlockPos pos : getBuilding().getContainers())
-        {
-            if (WorldUtil.isBlockLoaded(level, pos))
-            {
-                final BlockEntity entity = getLevel().getBlockEntity(pos);
-                if (entity instanceof TileEntityRack && !((AbstractTileEntityRack) entity).isEmpty())
-                {
-                    totalCountFound += ((AbstractTileEntityRack) entity).getCount(itemStack, ignoreDamage, ignoreNBT);
-                    if (totalCountFound >= count)
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
+        return rackIndex(getBuilding()).hasMatching(level, itemStack, count, ignoreNBT, ignoreDamage, leftOver);
     }
 
     @Override
@@ -104,19 +77,18 @@ public class TileEntityWareHouse extends AbstractTileEntityWareHouse
     {
         List<Tuple<ItemStack, BlockPos>> found = new ArrayList<>();
         
-        if (getBuilding() != null)
+        final IBuilding building = getBuilding();
+        if (building != null)
         {
-            for (@NotNull final BlockPos pos : getBuilding().getContainers())
+            for (final Map.Entry<BlockPos, TileEntityRack> entry : rackIndex(building).nonEmptyRacks(level))
             {
-                if (WorldUtil.isBlockLoaded(level, pos))
+                final TileEntityRack rack = entry.getValue();
+                WarehouseRackIndex.rackProbes++;
+                if (rack.getItemCount(itemStackSelectionPredicate) > 0)
                 {
-                    final BlockEntity entity = getLevel().getBlockEntity(pos);
-                    if (entity instanceof final TileEntityRack rack && !rack.isEmpty() && rack.getItemCount(itemStackSelectionPredicate) > 0)
+                    for (final ItemStack stack : (InventoryUtils.filterItemHandler(rack.getInventory(), itemStackSelectionPredicate)))
                     {
-                        for (final ItemStack stack : (InventoryUtils.filterItemHandler(rack.getInventory(), itemStackSelectionPredicate)))
-                        {
-                            found.add(new Tuple<>(stack, pos));
-                        }
+                        found.add(new Tuple<>(stack, entry.getKey()));
                     }
                 }
             }
@@ -171,73 +143,34 @@ public class TileEntityWareHouse extends AbstractTileEntityWareHouse
      */
     public AbstractTileEntityRack getRackForStack(final ItemStack stack)
     {
-        AbstractTileEntityRack rack = getPositionOfChestWithItemStack(stack);
+        // One rack snapshot serves every slot of a dump; racks report their own changes to it.
+        final WarehouseRackIndex index = rackIndex(getBuilding());
+        AbstractTileEntityRack rack = index.rackWithItemStack(level, stack);
         if (rack == null)
         {
-            rack = getPositionOfChestWithSimilarItemStack(stack);
+            rack = index.rackWithSimilarStack(level, stack);
             if (rack == null)
             {
-                rack = searchMostEmptyRack();
+                rack = index.hasUnloadedContainers(level) ? searchMostEmptyRack() : index.mostEmptyLoadedRack(level);
             }
         }
         return rack;
     }
 
     /**
-     * Search the right chest for an itemStack.
+     * The rack index of the building: the warehouse's own, else a one-shot scan.
      *
-     * @param stack the stack to dump.
-     * @return the tile entity of the chest
+     * @param building the building (must not be null).
+     * @return the index.
      */
-    @Nullable
-    private AbstractTileEntityRack getPositionOfChestWithItemStack(@NotNull final ItemStack stack)
+    private static WarehouseRackIndex rackIndex(@NotNull final IBuilding building)
     {
-        for (@NotNull final BlockPos pos : getBuilding().getContainers())
-        {
-            if (WorldUtil.isBlockLoaded(level, pos))
-            {
-                final BlockEntity entity = getLevel().getBlockEntity(pos);
-                if (entity instanceof final AbstractTileEntityRack rack)
-                {
-                    if (rack.getFreeSlots() > 0 && rack.hasItemStack(stack, 1, true))
-                    {
-                        return rack;
-                    }
-                }
-            }
-        }
-
-        return null;
+        return building instanceof final BuildingWareHouse wareHouse ? wareHouse.getRackIndex() : WarehouseRackIndex.oneShot(building);
     }
 
     /**
-     * Searches a chest with a similar item as the incoming stack.
-     *
-     * @param stack the stack.
-     * @return the entity of the chest.
-     */
-    @Nullable
-    private AbstractTileEntityRack getPositionOfChestWithSimilarItemStack(final ItemStack stack)
-    {
-        for (@NotNull final BlockPos pos : getBuilding().getContainers())
-        {
-            if (WorldUtil.isBlockLoaded(level, pos))
-            {
-                final BlockEntity entity = getLevel().getBlockEntity(pos);
-                if (entity instanceof final AbstractTileEntityRack rack)
-                {
-                    if (rack.getFreeSlots() > 0 && rack.hasSimilarStack(stack))
-                    {
-                        return rack;
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Search for the chest with the least items in it.
+     * Search for the chest with the least items in it. Kept for warehouses with an unloaded container: like before, it
+     * looks up every container position, loaded or not.
      *
      * @return the tileEntity of this chest.
      */

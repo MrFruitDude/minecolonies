@@ -8,7 +8,6 @@ import com.minecolonies.api.colony.requestsystem.requestable.INonExhaustiveDeliv
 import com.minecolonies.api.colony.requestsystem.requestable.Stack;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.crafting.ItemStorage;
-import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
 import com.minecolonies.core.colony.requestsystem.resolvers.core.AbstractWarehouseRequestResolver;
 import net.minecraft.world.item.ItemStack;
@@ -47,12 +46,12 @@ public class WarehouseConcreteRequestResolver extends AbstractWarehouseRequestRe
         {
             if (requestToCheck.getRequest() instanceof INonExhaustiveDeliverable neDeliverable)
             {
-                totalCount += Math.max(0, InventoryUtils.hasBuildingEnoughElseCount(wareHouse,
+                totalCount += Math.max(0, wareHouse.hasEnoughElseCount(
                   new ItemStorage(possible, requestToCheck.getRequest().getMinimumCount(), ignoreDamage, ignoreNBT), requestToCheck.getRequest().getCount() + neDeliverable.getLeftOver()) - neDeliverable.getLeftOver());
             }
             else
             {
-                totalCount += InventoryUtils.hasBuildingEnoughElseCount(wareHouse,
+                totalCount += wareHouse.hasEnoughElseCount(
                   new ItemStorage(possible, requestToCheck.getRequest().getMinimumCount(), ignoreDamage, ignoreNBT), requestToCheck.getRequest().getCount());
             }
 

@@ -1807,7 +1807,7 @@ public final class MinecoloniesGameTests
      * Place and register a level-one worker/storage hut through the same
      * block-entity/building-manager path used by the production server.
      */
-    private static IBuilding placeProductionBuilding(
+    static IBuilding placeProductionBuilding(
       final GameTestHelper helper,
       final IColony colony,
       final net.minecraft.world.level.block.Block block,
@@ -6767,7 +6767,7 @@ public final class MinecoloniesGameTests
     /**
      * Founds a colony on a flat stone pad (x -8..40, z -8..32) with a level-one town hall at (2, 1, 2).
      */
-    private static IColony foundGameTestColony(final GameTestHelper helper, final String name)
+    static IColony foundGameTestColony(final GameTestHelper helper, final String name)
     {
         final ServerLevel level = helper.getLevel();
         clearColonyFixture(helper, 0, 40, 32);

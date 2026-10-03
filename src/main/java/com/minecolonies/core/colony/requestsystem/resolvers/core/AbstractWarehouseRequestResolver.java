@@ -108,11 +108,12 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
 
             try
             {
-                for (final Map.Entry<BlockPos, IBuilding> building : colony.getServerBuildingManager().getBuildings().entrySet())
+                // The maintained warehouse list, not a walk over every building. The answer does not depend on the order.
+                for (final IWareHouse building : colony.getServerBuildingManager().getWareHouses())
                 {
-                    if (building.getValue().getBuildingType() == ModBuildings.wareHouse.get() && building.getValue() != wareHouse)
+                    if (building.getBuildingType() == ModBuildings.wareHouse.get() && building != wareHouse)
                     {
-                        totalCount += getWarehouseInternalCount((BuildingWareHouse) building.getValue(), requestToCheck);
+                        totalCount += getWarehouseInternalCount((BuildingWareHouse) building, requestToCheck);
                         if (totalCount >= requestToCheck.getRequest().getCount())
                         {
                             return true;

@@ -140,6 +140,12 @@ public class TileEntityRack extends AbstractTileEntityRack implements IMateriall
     private boolean checkedAfterStartup = false;
 
     /**
+     * Warehouse indexes that cache this rack and must hear about its changes (null until one does).
+     */
+    @Nullable
+    private List<WarehouseRackIndex> indexListeners;
+
+    /**
      * Create a new rack.
      * @param type the specific block entity type.
      * @param pos the position.
@@ -295,6 +301,7 @@ public class TileEntityRack extends AbstractTileEntityRack implements IMateriall
         final BlockState state = level.getBlockState(worldPosition);
         level.sendBlockUpdated(worldPosition, state, state, 0x03);
         invalidateCap();
+        notifyIndexContentChanged();
     }
 
     @Override
@@ -371,6 +378,55 @@ public class TileEntityRack extends AbstractTileEntityRack implements IMateriall
                 amount += content.remove(storage);
             }
             content.put(storage, amount);
+        }
+        notifyIndexContentChanged();
+    }
+
+    /**
+     * Register a warehouse index that caches this rack.
+     *
+     * @param index the index.
+     */
+    void addIndexListener(final WarehouseRackIndex index)
+    {
+        if (indexListeners == null)
+        {
+            indexListeners = new ArrayList<>(1);
+        }
+        for (final WarehouseRackIndex listener : indexListeners)
+        {
+            if (listener == index)
+            {
+                return;
+            }
+        }
+        indexListeners.add(index);
+    }
+
+    /**
+     * Unregister a warehouse index.
+     *
+     * @param index the index.
+     */
+    void removeIndexListener(final WarehouseRackIndex index)
+    {
+        if (indexListeners != null)
+        {
+            indexListeners.removeIf(listener -> listener == index);
+        }
+    }
+
+    /**
+     * Tell the warehouse indexes caching this rack that its content was rebuilt.
+     */
+    private void notifyIndexContentChanged()
+    {
+        if (indexListeners != null)
+        {
+            for (final WarehouseRackIndex listener : indexListeners)
+            {
+                listener.onRackContentChanged(this);
+            }
         }
     }
 
@@ -568,6 +624,20 @@ public class TileEntityRack extends AbstractTileEntityRack implements IMateriall
     {
         super.setRemoved();
         invalidateCap();
+        if (indexListeners != null)
+        {
+            for (final WarehouseRackIndex listener : indexListeners)
+            {
+                listener.onRackRemoved(this);
+            }
+        }
+    }
+
+    @Override
+    public void clearRemoved()
+    {
+        super.clearRemoved();
+        WarehouseRackIndex.onRackLoaded();
     }
 
     /**
