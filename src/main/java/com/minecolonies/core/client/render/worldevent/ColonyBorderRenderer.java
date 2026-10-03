@@ -8,13 +8,13 @@ import com.ldtteam.structurize.items.ModItems;
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.colony.IColonyView;
+import com.minecolonies.api.colony.claim.ClaimRevision;
 import com.minecolonies.api.colony.claim.IChunkClaimData;
 import com.minecolonies.core.MineColonies;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -25,9 +25,10 @@ public class ColonyBorderRenderer
     private static final int CHUNK_SIZE = 16;
     private static final int PLAYER_CHUNK_STEP = CHUNK_SIZE / 4;
 
-    private static ChunkPos lastPlayerChunkPos = null;
-    private static IColonyView lastColony = null;
-    private static boolean lastShowTickets = false;
+    /** The last frame's border grid and the key it was read for. */
+    private static final ColonyBorderGrid.Cache<Map<ChunkPos, Integer>> GRID = new ColonyBorderGrid.Cache<>();
+    /** Bumped on every client chunk load / unload (render thread). */
+    private static long chunkRevision = 0;
 
     static void render(final WorldEventContext ctx)
     {
@@ -39,45 +40,36 @@ public class ColonyBorderRenderer
         final var blockPosition = ctx.clientPlayer.blockPosition();
         final ChunkPos playerChunkPos = new ChunkPos(blockPosition.getX() >> 4, blockPosition.getZ() >> 4);
         final boolean showTickets = Minecraft.getInstance().hasControlDown();
-        if (lastColony != ctx.nearestColony
-              || lastShowTickets != showTickets
-              || !playerChunkPos.equals(lastPlayerChunkPos))
-        {
-            lastColony = ctx.nearestColony;
-            lastPlayerChunkPos = playerChunkPos;
-            lastShowTickets = showTickets;
-        }
-
-        final Map<ChunkPos, Integer> chunksToDraw = new HashMap<>();
-        final int nearestColonyId = ctx.nearestColony.getID();
+        final IColonyView colony = ctx.nearestColony;
+        final int nearestColonyId = colony.getID();
         final int playerRenderDist = Math.max(ctx.clientRenderDist - RENDER_DIST_THRESHOLD, 2);
         final int range = Math.max(ctx.clientRenderDist, MineColonies.getConfig().getServer().maxColonySize.get());
 
-        for (int chunkX = -range; chunkX <= range; chunkX++)
-        {
-            for (int chunkZ = -range; chunkZ <= range; chunkZ++)
+        // The grid only changes with this key; an unchanged frame reuses it instead of ~(2*range+1)^2 chunk and claim reads.
+        final ColonyBorderGrid.Key key = new ColonyBorderGrid.Key(ctx.clientLevel, colony, playerChunkPos.x(), playerChunkPos.z(), showTickets, range,
+          ClaimRevision.current(), chunkRevision, showTickets ? java.util.Set.copyOf(colony.getTicketedChunks()) : null);
+        final Map<ChunkPos, Integer> chunksToDraw = GRID.get(key, () -> {
+            final Map<ChunkPos, Integer> grid = new HashMap<>();
+            for (final ColonyBorderGrid.Cell cell : ColonyBorderGrid.compute(playerChunkPos.x(), playerChunkPos.z(), range, showTickets, nearestColonyId,
+              (x, z) -> !ctx.clientLevel.getChunk(x, z).isEmpty(),
+              (x, z) -> {
+                  final IChunkClaimData claimData = IColonyManager.getInstance().getClaimData(colony.getDimension(), new ChunkPos(x, z));
+                  return claimData == null ? 0 : claimData.getOwningColony();
+              },
+              (x, z) -> colony.getTicketedChunks().contains(ChunkPos.pack(x, z))))
             {
-                final LevelChunk chunk = ctx.clientLevel.getChunk(playerChunkPos.x() + chunkX, playerChunkPos.z() + chunkZ);
-                if (chunk.isEmpty())
-                {
-                    continue;
-                }
-
-                final ChunkPos chunkPos = chunk.getPos();
-                final IChunkClaimData claimData =
-                    IColonyManager.getInstance().getClaimData(ctx.nearestColony.getDimension(), chunkPos);
-                if (!showTickets && claimData != null && claimData.getOwningColony() != 0)
-                {
-                    chunksToDraw.put(chunkPos, claimData.getOwningColony());
-                }
-                else if (showTickets && ctx.nearestColony.getTicketedChunks().contains(chunkPos.pack()))
-                {
-                    chunksToDraw.put(chunkPos, nearestColonyId);
-                }
+                grid.put(new ChunkPos(cell.chunkX(), cell.chunkZ()), cell.colonyId());
             }
-        }
+            return grid;
+        });
 
         draw(ctx, chunksToDraw, nearestColonyId, playerChunkPos, playerRenderDist);
+    }
+
+    /** A chunk arrived in or left the client level: the border grid is read again on the next frame. */
+    public static void onClientChunkChanged()
+    {
+        chunkRevision++;
     }
 
     private static void draw(final WorldEventContext ctx,
@@ -205,8 +197,6 @@ public class ColonyBorderRenderer
 
     public static void cleanup()
     {
-        lastColony = null;
-        lastPlayerChunkPos = null;
-        lastShowTickets = false;
+        GRID.clear();
     }
 }

@@ -56,6 +56,7 @@ public class ChunkClaimData implements IChunkClaimData, INBTSerializable<Compoun
     @Override
     public void addColony(final int id, final LevelChunk chunk)
     {
+        ClaimRevision.bump();
         final IColony colony = IColonyManager.getInstance().getColonyByDimension(id, chunk.getLevel().dimension());
         if (colony == null)
         {
@@ -74,6 +75,7 @@ public class ChunkClaimData implements IChunkClaimData, INBTSerializable<Compoun
     @Override
     public void removeColony(final int id, final LevelChunk chunk)
     {
+        ClaimRevision.bump();
         colonies.remove(id);
         claimingBuildings.remove(id);
         if (owningColony == id)
@@ -98,12 +100,14 @@ public class ChunkClaimData implements IChunkClaimData, INBTSerializable<Compoun
     @Override
     public void setStaticColonyClaim(final List<Integer> colonies)
     {
+        ClaimRevision.bump();
         this.colonies = new HashSet<>(colonies);
     }
 
     @Override
     public void reset(final LevelChunk chunk)
     {
+        ClaimRevision.bump();
         colonies.clear();
         owningColony = NO_COLONY_ID;
         claimingBuildings.clear();
@@ -150,6 +154,7 @@ public class ChunkClaimData implements IChunkClaimData, INBTSerializable<Compoun
     @Override
     public void removeBuildingClaim(final int colonyId, final BlockPos pos, final LevelChunk chunk)
     {
+        ClaimRevision.bump();
         if (!claimingBuildings.containsKey(colonyId))
         {
             return;
@@ -215,6 +220,7 @@ public class ChunkClaimData implements IChunkClaimData, INBTSerializable<Compoun
     @Override
     public void setOwningColony(final int id, final LevelChunk chunk)
     {
+        ClaimRevision.bump();
         this.owningColony = id;
         chunk.markUnsaved();
     }
@@ -274,6 +280,7 @@ public class ChunkClaimData implements IChunkClaimData, INBTSerializable<Compoun
     @Override
     public void deserializeNBT(@NotNull final HolderLookup.Provider provider, final CompoundTag compound)
     {
+        ClaimRevision.bump();
         // Set owning
         owningColony = compound.getIntOr(TAG_ID, 0);
 
@@ -334,6 +341,7 @@ public class ChunkClaimData implements IChunkClaimData, INBTSerializable<Compoun
      */
     public void deSerialize(final RegistryFriendlyByteBuf buf)
     {
+        ClaimRevision.bump();
         owningColony = buf.readInt();
 
         final int colonyAmount = buf.readInt();

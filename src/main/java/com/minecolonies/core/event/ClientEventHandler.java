@@ -62,6 +62,7 @@ import net.neoforged.neoforge.client.event.sound.PlaySoundEvent;
 import net.neoforged.neoforge.common.util.Lazy;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import com.ldtteam.structurize.api.compat.itemhandler.wrapper.InvWrapper;
 import org.jetbrains.annotations.NotNull;
@@ -98,6 +99,26 @@ public class ClientEventHandler
         if (event.getLevel().isClientSide() && ColonyConstants.rand.nextInt(20) == 0)
         {
             WorldEventContext.INSTANCE.checkNearbyColony(event.getLevel());
+        }
+    }
+
+    /** A chunk arrived on the client: the colony border grid around it is read again. */
+    @SubscribeEvent
+    public static void onClientChunkLoad(@NotNull final ChunkEvent.Load event)
+    {
+        if (event.getLevel().isClientSide())
+        {
+            ColonyBorderRenderer.onClientChunkChanged();
+        }
+    }
+
+    /** A chunk left the client: the colony border grid around it is read again. */
+    @SubscribeEvent
+    public static void onClientChunkUnload(@NotNull final ChunkEvent.Unload event)
+    {
+        if (event.getLevel().isClientSide())
+        {
+            ColonyBorderRenderer.onClientChunkChanged();
         }
     }
 

@@ -4,6 +4,7 @@ import com.google.common.collect.Lists;
 import com.minecolonies.api.client.render.modeltype.CitizenRenderState;
 import com.minecolonies.api.client.render.modeltype.IModelType;
 import com.minecolonies.api.client.render.modeltype.ModModelTypes;
+import com.minecolonies.api.client.render.modeltype.ResolvedModelCache;
 import com.minecolonies.api.client.render.modeltype.registry.IModelTypeRegistry;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.ICitizenDataView;
@@ -116,6 +117,11 @@ public abstract class AbstractEntityCitizen extends AbstractCivilianEntity imple
      * Was the texture initiated with the citizen view.
      */
     private boolean textureDirty = true;
+
+    /**
+     * Client only: the render model the citizen renderer resolved for this citizen, kept between frames.
+     */
+    private final ResolvedModelCache<Object> renderModel = new ResolvedModelCache<>();
 
     private AbstractAdvancedPathNavigate pathNavigate;
 
@@ -287,6 +293,16 @@ public abstract class AbstractEntityCitizen extends AbstractCivilianEntity imple
     public void setTextureDirty()
     {
         this.textureDirty = true;
+    }
+
+    /**
+     * Client only: the render model cache the citizen renderer keeps on this citizen ({@link ResolvedModelCache}).
+     *
+     * @return the cache.
+     */
+    public ResolvedModelCache<Object> getRenderModelCache()
+    {
+        return renderModel;
     }
 
     /**

@@ -45,6 +45,9 @@ public class WorldEventContext
     @Nullable
     public IColonyView nearestColony;
 
+    /** Once per game tick for the per-frame nearest-colony lookup in {@link #submit}. */
+    private final PerTickGate nearbyColonyGate = new PerTickGate();
+
     boolean hasNearestColony()
     {
         return nearestColony != null;
@@ -69,7 +72,12 @@ public class WorldEventContext
         poseStack = event.getPoseStack();
         mainHandItem = clientPlayer.getMainHandItem();
         clientRenderDist = mc.options.renderDistance().get();
-        checkNearbyColony(clientLevel);
+        // The nearest colony changes no faster than the ticks that move the player: look it up once per tick, not per frame
+        // (outside claimed chunks the lookup scans every colony view).
+        if (nearbyColonyGate.due(clientLevel, clientLevel.getGameTime()))
+        {
+            checkNearbyColony(clientLevel);
+        }
 
         try (final Gizmos.TemporaryCollection ignored = mc.levelRenderer.collectPerFrameRenderThreadGizmos())
         {
