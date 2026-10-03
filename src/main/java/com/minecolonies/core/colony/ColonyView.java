@@ -82,6 +82,12 @@ public final class ColonyView implements IColonyView
      */
     private static final int REQUEST_MANAGER_MAX_SIZE = 700000;
 
+    /**
+     * Test seam (CA-1): whether {@link #serializeNetworkData} carries the request manager. Sync GameTests read it to
+     * know where request-system data travels.
+     */
+    public static final boolean REQUEST_SYSTEM_IN_VIEW = true;
+
     //  General Attributes
     private final int                            id;
     private final Map<Integer, IWorkOrderView>   workOrders  = new HashMap<>();

@@ -539,6 +539,37 @@ public class StandardRequestManager implements IStandardRequestManager
         controller.serialize(buffer, retryingRequestResolverId);
     }
 
+    /**
+     * CA-1 view sync: writes the version and the store/resolver ids, i.e. the full network payload minus the data store
+     * manager (which {@link RequestSystemViewSync} sends store by store).
+     */
+    public void writeViewHeader(final IFactoryController controller, final RegistryFriendlyByteBuf buffer)
+    {
+        buffer.writeInt(version);
+        controller.serialize(buffer, requestIdentitiesDataStoreId);
+        controller.serialize(buffer, requestResolverIdentitiesDataStoreId);
+        controller.serialize(buffer, providerRequestResolverAssignmentDataStoreId);
+        controller.serialize(buffer, requestResolverRequestAssignmentDataStoreId);
+        controller.serialize(buffer, requestableTypeRequestResolverAssignmentDataStoreId);
+        controller.serialize(buffer, playerRequestResolverId);
+        controller.serialize(buffer, retryingRequestResolverId);
+    }
+
+    /**
+     * CA-1 view sync: reads what {@link #writeViewHeader} wrote.
+     */
+    public void readViewHeader(final IFactoryController controller, final RegistryFriendlyByteBuf buffer)
+    {
+        version = buffer.readInt();
+        requestIdentitiesDataStoreId = controller.deserialize(buffer);
+        requestResolverIdentitiesDataStoreId = controller.deserialize(buffer);
+        providerRequestResolverAssignmentDataStoreId = controller.deserialize(buffer);
+        requestResolverRequestAssignmentDataStoreId = controller.deserialize(buffer);
+        requestableTypeRequestResolverAssignmentDataStoreId = controller.deserialize(buffer);
+        playerRequestResolverId = controller.deserialize(buffer);
+        retryingRequestResolverId = controller.deserialize(buffer);
+    }
+
     @Override
     public void deserialize(IFactoryController controller, RegistryFriendlyByteBuf buffer)
     {

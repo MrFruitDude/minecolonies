@@ -58,6 +58,14 @@ public class StandardDataStoreManager implements IDataStoreManager
         return (T) storeMap.get(id);
     }
 
+    /**
+     * @return the live store map (CA-1 view sync reads and updates it store by store).
+     */
+    public Map<IToken<?>, IDataStore> getStoreMap()
+    {
+        return storeMap;
+    }
+
     @Override
     public void remove(final IToken<?> id)
     {
