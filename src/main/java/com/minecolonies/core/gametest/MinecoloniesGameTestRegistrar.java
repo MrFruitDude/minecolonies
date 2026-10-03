@@ -438,6 +438,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderScalesAiDelay),
           isolatedColonyData(event, "pace_provider_scales_ai_delay"));
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_provider_scales_action_cycle"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderScalesActionCycle),
+          isolatedColonyData(event, "pace_provider_scales_action_cycle"));
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_default_provider_unchanged"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceDefaultProviderUnchanged),
           isolatedColonyData(event, "pace_default_provider_unchanged"));
