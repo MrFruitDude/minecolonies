@@ -93,6 +93,12 @@ import static com.minecolonies.core.MineColonies.getConfig;
 public class Colony implements IColony
 {
     /**
+     * Test seam (GameTest): when set, every colony world tick runs inside this wrapper (colony, tick body), e.g. to
+     * time it. Null in production.
+     */
+    public static java.util.function.BiConsumer<IColony, Runnable> worldTickWrapper = null;
+
+    /**
      * The default style for the building.
      */
     private String pack = DEFAULT_STYLE;
@@ -417,6 +423,19 @@ public class Colony implements IColony
         colonyStateMachine.addTransition(new TickingTransition<>(ACTIVE, this::worldTickSlow, () -> ACTIVE, MAX_TICKRATE));
         colonyStateMachine.addTransition(new TickingTransition<>(ACTIVE, this::tickWorkManager, () -> ACTIVE, 20));
         colonyStateMachine.addTransition(new TickingTransition<>(UNLOADED, this::worldTickUnloaded, () -> UNLOADED, MAX_TICKRATE));
+        // CA-5: the buildings' 500-tick colony tick, a 1/25 share every 20 ticks instead of all of them in one tick.
+        colonyStateMachine.addTransition(new TickingTransition<>(ACTIVE, this::tickBuildingSlot, () -> ACTIVE, IRegisteredStructureManager.BUILDING_TICK_SLOT_INTERVAL));
+    }
+
+    /**
+     * Ticks the buildings of the next building tick slot.
+     *
+     * @return false
+     */
+    private boolean tickBuildingSlot()
+    {
+        buildingManager.onColonyTickSlot(this);
+        return false;
     }
 
     /**
@@ -496,6 +515,7 @@ public class Colony implements IColony
         animalManager.onColonyTick(this);
         updateAttackingPlayers();
         eventManager.onColonyTick(this);
+        // Prestige only: the buildings' own colony ticks run spread over the cycle in tickBuildingSlot (CA-5).
         buildingManager.onColonyTick(this);
         graveManager.onColonyTick(this);
         reproductionManager.onColonyTick(this);
@@ -1225,6 +1245,22 @@ public class Colony implements IColony
             return;
         }
 
+        final java.util.function.BiConsumer<IColony, Runnable> wrapper = worldTickWrapper;
+        if (wrapper != null)
+        {
+            wrapper.accept(this, () -> tickWorld(event));
+            return;
+        }
+        tickWorld(event);
+    }
+
+    /**
+     * The body of {@link #onWorldTick} for this colony's own world.
+     *
+     * @param event the world tick event.
+     */
+    private void tickWorld(@NotNull final LevelTickEvent.Pre event)
+    {
         if (!event.getLevel().isClientSide() && (event.getLevel().getGameTime() + id) % 20 == 0)
         {
             connectionManager.tick();

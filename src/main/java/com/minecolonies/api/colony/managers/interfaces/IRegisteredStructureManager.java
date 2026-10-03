@@ -59,11 +59,32 @@ public interface IRegisteredStructureManager extends ICommonRegisteredStructureM
     void sendPackets(Set<ServerPlayer> closeSubscribers, final Set<ServerPlayer> newSubscribers);
 
     /**
-     * Tick the buildings on colony tick.
+     * Ticks between two building tick slots. {@link #onColonyTickSlot} is called at this interval.
+     */
+    int BUILDING_TICK_SLOT_INTERVAL = 20;
+
+    /**
+     * Number of building tick slots: every building ticks in exactly one of them, so once per
+     * {@code BUILDING_TICK_SLOT_INTERVAL * BUILDING_TICK_SLOTS} = 500 ticks.
+     */
+    int BUILDING_TICK_SLOTS = 25;
+
+    /**
+     * Colony-wide part of the slow (500 tick) colony tick: the prestige recalculation. The buildings themselves
+     * tick in {@link #onColonyTickSlot}, spread over the 500 ticks.
      *
      * @param colony the event.
      */
     void onColonyTick(IColony colony);
+
+    /**
+     * Tick the buildings of the next building tick slot (a round-robin share of about 1/25 of the buildings).
+     * Called every {@link #BUILDING_TICK_SLOT_INTERVAL} ticks, so each building's colony tick still runs once per
+     * 500 ticks, but not every building in the same server tick.
+     *
+     * @param colony the colony.
+     */
+    void onColonyTickSlot(IColony colony);
 
     /**
      * Clean up the buildings.

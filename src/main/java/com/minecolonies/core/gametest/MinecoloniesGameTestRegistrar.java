@@ -493,6 +493,19 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               info -> new MinecoloniesGameTestInstance(info, test),
               isolatedColonyData(event, name));
         }
+        // CA-5 building tick spread (one glob: minecolonies:colony_tick_spread*).
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_tick_spread"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyTickSpreadGameTests::colonyTickSpread),
+          isolatedColonyData(event, "colony_tick_spread"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_tick_spread_min_stock"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyTickSpreadGameTests::colonyTickSpreadMinStock),
+          isolatedColonyData(event, "colony_tick_spread_min_stock"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_tick_spread_prestige"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyTickSpreadGameTests::colonyTickSpreadPrestige),
+          isolatedColonyData(event, "colony_tick_spread_prestige"));
     }
 
     /**

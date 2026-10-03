@@ -54,6 +54,11 @@ import static com.minecolonies.api.util.constant.NbtTagConstants.*;
 public class RegisteredStructureManager implements IRegisteredStructureManager
 {
     /**
+     * Test seam (GameTest): told about every building colony tick, just before it runs. Null in production.
+     */
+    public static java.util.function.BiConsumer<IColony, IBuilding> buildingTickRecorder = null;
+
+    /**
      * List of building in the colony.
      */
     @NotNull
@@ -63,6 +68,21 @@ public class RegisteredStructureManager implements IRegisteredStructureManager
      * Buildings that need to be recalculated for prestige value.
      */
     private List<IBuilding> pendingPrestigeCalc = new ArrayList<>();
+
+    /**
+     * CA-5: the building tick slot (0 .. BUILDING_TICK_SLOTS - 1) each building's colony tick runs in.
+     */
+    private final Map<BlockPos, Integer> tickSlotOf = new HashMap<>();
+
+    /**
+     * Buildings per tick slot.
+     */
+    private final int[] tickSlotLoad = new int[BUILDING_TICK_SLOTS];
+
+    /**
+     * The slot the next {@link #onColonyTickSlot} call runs.
+     */
+    private int nextTickSlot = 0;
 
     /**
      * List of building extensions of the colony.
@@ -289,15 +309,7 @@ public class RegisteredStructureManager implements IRegisteredStructureManager
     @Override
     public void onColonyTick(final IColony colony)
     {
-        //  Tick Buildings
-        for (@NotNull final IBuilding building : buildings.values())
-        {
-            if (WorldUtil.isBlockLoaded(colony.getWorld(), building.getPosition()))
-            {
-                building.onColonyTick(colony);
-            }
-        }
-
+        // The buildings tick in onColonyTickSlot; only the colony-wide prestige round stays on the 500-tick cycle.
         if (pendingPrestigeCalc.isEmpty())
         {
             pendingPrestigeCalc.addAll(buildings.values());
@@ -307,6 +319,79 @@ public class RegisteredStructureManager implements IRegisteredStructureManager
         {
             pendingPrestigeCalc.getLast().asyncPrestigeRecalc();
         }
+    }
+
+    @Override
+    public void onColonyTickSlot(final IColony colony)
+    {
+        final int slot = nextTickSlot;
+        nextTickSlot = (nextTickSlot + 1) % BUILDING_TICK_SLOTS;
+        syncTickSlots();
+
+        for (@NotNull final IBuilding building : buildings.values())
+        {
+            final Integer own = tickSlotOf.get(building.getID());
+            if (own != null && own == slot && WorldUtil.isBlockLoaded(colony.getWorld(), building.getPosition()))
+            {
+                tickBuilding(colony, building);
+            }
+        }
+    }
+
+    /**
+     * Give every new building a tick slot (the least loaded one) and drop the slots of removed buildings. A building
+     * keeps its slot for as long as it exists, so its colony tick stays exactly one slot cycle apart.
+     */
+    private void syncTickSlots()
+    {
+        if (tickSlotOf.size() == buildings.size() && buildings.keySet().containsAll(tickSlotOf.keySet()))
+        {
+            return;
+        }
+
+        final Iterator<Map.Entry<BlockPos, Integer>> it = tickSlotOf.entrySet().iterator();
+        while (it.hasNext())
+        {
+            final Map.Entry<BlockPos, Integer> entry = it.next();
+            if (!buildings.containsKey(entry.getKey()))
+            {
+                tickSlotLoad[entry.getValue()]--;
+                it.remove();
+            }
+        }
+
+        for (final BlockPos pos : buildings.keySet())
+        {
+            if (!tickSlotOf.containsKey(pos))
+            {
+                int best = 0;
+                for (int s = 1; s < BUILDING_TICK_SLOTS; s++)
+                {
+                    if (tickSlotLoad[s] < tickSlotLoad[best])
+                    {
+                        best = s;
+                    }
+                }
+                tickSlotOf.put(pos, best);
+                tickSlotLoad[best]++;
+            }
+        }
+    }
+
+    /**
+     * Run one building's colony tick.
+     *
+     * @param colony   the colony.
+     * @param building the building.
+     */
+    private static void tickBuilding(final IColony colony, final IBuilding building)
+    {
+        final java.util.function.BiConsumer<IColony, IBuilding> recorder = buildingTickRecorder;
+        if (recorder != null)
+        {
+            recorder.accept(colony, building);
+        }
+        building.onColonyTick(colony);
     }
 
     @Override
