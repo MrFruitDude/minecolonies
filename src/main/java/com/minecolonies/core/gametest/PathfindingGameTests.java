@@ -5,6 +5,7 @@ import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
 import com.minecolonies.api.entity.pathfinding.IStuckHandler;
 import com.minecolonies.api.util.Log;
+import com.minecolonies.api.util.WorldUtil;
 import com.minecolonies.core.colony.buildings.modules.settings.BoolSetting;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingTownHall;
 import com.minecolonies.core.entity.pathfinding.Pathfinding;
@@ -51,7 +52,7 @@ import static com.minecolonies.core.gametest.MinecoloniesGameTests.makeConnected
  * The navigator tests drive a {@link MinecoloniesAdvancedPathNavigate} on a no-AI villager "host": the test ticks the
  * navigator, issues the move request every 5 ticks the way {@code EntityNavigationUtils.walkToPos} does, and when a path
  * arrives it moves the host to the path's end at once (the walk itself is not under test). The stuck handler is a no-op
- * so it cannot teleport the host.
+ * so it cannot teleport the host. Emulated time does not advance while the host's search runs (see {@link #drive}).
  */
 public final class PathfindingGameTests
 {
@@ -75,16 +76,16 @@ public final class PathfindingGameTests
 
     /**
      * Route digests (relative node list, sha-256 prefix) and node counts captured on port/26.3 @ 1495a510f8 before the
-     * change. A route that comes out different fails.
+     * change (capture3.log and capture4.log agree). A route that comes out different fails.
      */
     private static final Map<String, String> EXPECTED_ROUTES = new LinkedHashMap<>();
 
     static
     {
-        EXPECTED_ROUTES.put("wall_gap", "41:53726aaed88b6ff4");
+        EXPECTED_ROUTES.put("wall_gap", "41:f4547b373eb19805");
         EXPECTED_ROUTES.put("stairs_up", "10:1b7e98decedcf819");
         EXPECTED_ROUTES.put("ditch", "11:f95b3c8ff9334f69");
-        EXPECTED_ROUTES.put("pillars", "40:77c2516217418ee4");
+        EXPECTED_ROUTES.put("pillars", "40:76308a5fc026bd2f");
     }
 
     private PathfindingGameTests()
@@ -98,7 +99,10 @@ public final class PathfindingGameTests
         level.getServer().clockManager().setTotalTicks(level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
     }
 
-    /** Flat stone floor at y 0, air y 1..7, chunks forced, clock pinned to 6000. */
+    /**
+     * Flat stone floor at y 0, air y 1..7, a 3-high stone border so no search leaves the floor (the world outside the
+     * plot differs with where the plot lands), chunks forced, clock pinned to 6000.
+     */
     private static void prepareFloor(final GameTestHelper helper)
     {
         final ServerLevel level = helper.getLevel();
@@ -118,9 +122,10 @@ public final class PathfindingGameTests
             {
                 helper.setBlock(new BlockPos(x, -1, z), Blocks.STONE.defaultBlockState());
                 helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
+                final boolean border = x == MIN_X || x == MAX_X || z == MIN_Z || z == MAX_Z;
                 for (int y = 1; y <= 7; y++)
                 {
-                    helper.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState());
+                    helper.setBlock(new BlockPos(x, y, z), border && y <= 3 ? Blocks.STONE.defaultBlockState() : Blocks.AIR.defaultBlockState());
                 }
             }
         }
@@ -257,11 +262,12 @@ public final class PathfindingGameTests
 
     /**
      * Waits (wall time, the GameTest server runs unthrottled) until the shared pathfinding pool has nothing queued or
-     * running, so an earlier batch's leftover jobs cannot delay this test's.
+     * running, so an earlier batch's leftover jobs cannot delay this test's, and until every floor chunk is
+     * entity-ticking: a path job only sees entity-ticking chunks, and forced chunks get there a few ticks late.
      */
     private static void awaitIdlePool(final GameTestHelper helper, final long t0, final Runnable then)
     {
-        if (Pathfinding.getExecutor().getQueue().isEmpty() && Pathfinding.Stats.running.get() == 0)
+        if (Pathfinding.getExecutor().getQueue().isEmpty() && Pathfinding.Stats.running.get() == 0 && floorChunksReady(helper))
         {
             then.run();
             return;
@@ -272,6 +278,23 @@ public final class PathfindingGameTests
             return;
         }
         helper.runAfterDelay(1, () -> awaitIdlePool(helper, t0, then));
+    }
+
+    private static boolean floorChunksReady(final GameTestHelper helper)
+    {
+        final BlockPos a = helper.absolutePos(new BlockPos(MIN_X, 0, MIN_Z));
+        final BlockPos b = helper.absolutePos(new BlockPos(MAX_X, 0, MAX_Z));
+        for (int cx = Math.min(a.getX(), b.getX()) >> 4; cx <= Math.max(a.getX(), b.getX()) >> 4; cx++)
+        {
+            for (int cz = Math.min(a.getZ(), b.getZ()) >> 4; cz <= Math.max(a.getZ(), b.getZ()) >> 4; cz++)
+            {
+                if (!WorldUtil.isEntityChunkLoaded(helper.getLevel(), cx, cz))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /** Installs the submit observer that records every job of {@code host}. */
@@ -295,6 +318,14 @@ public final class PathfindingGameTests
         if (tick >= ticks || stopEarly.test(tick))
         {
             then.run();
+            return;
+        }
+        // Emulated time stands still while the host's search runs: the GameTest server is unthrottled, so a search
+        // spans a varying number of real ticks. Here a search takes no time, so the counts depend only on the logic.
+        final PathResult<?> computing = host.nav.getPathResult();
+        if (computing != null && !computing.isDone())
+        {
+            helper.runAfterDelay(1, () -> drive(helper, host, dest, tick, ticks, stopEarly, then));
             return;
         }
         host.step();
@@ -576,7 +607,7 @@ public final class PathfindingGameTests
 
     /**
      * path_routes_identical: four fixture routes, all queued at once, must produce the same node list as before the
-     * change (digest of the relative node list) and must reach.
+     * change (digest of the relative node list, cost jitter off) and must reach.
      */
     public static void pathRoutesIdentical(final GameTestHelper helper)
     {
@@ -589,6 +620,9 @@ public final class PathfindingGameTests
             {
                 final PathJobMoveToLocation job =
                   new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(e.getValue()[0]), helper.absolutePos(e.getValue()[1]), 48, null);
+                // Path costs carry a random 0..0.1 jitter by default (PathingOptions.randomnessFactor); off here so a
+                // route has one right answer.
+                job.getPathingOptions().randomnessFactor = 0.0D;
                 results.put(e.getKey(), job.getResult());
                 Pathfinding.enqueue(job);
             }
