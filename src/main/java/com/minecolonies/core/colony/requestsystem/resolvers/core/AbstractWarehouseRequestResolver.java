@@ -47,6 +47,12 @@ import static com.minecolonies.api.util.constant.RSConstants.CONST_WAREHOUSE_RES
  */
 public abstract class AbstractWarehouseRequestResolver extends AbstractRequestResolver<IDeliverable>
 {
+    /**
+     * Buildings {@link #canResolveRequest} looked at while summing the other warehouses' stock. Server thread statistic
+     * for tests.
+     */
+    public static long otherBuildingsVisited;
+
     public AbstractWarehouseRequestResolver(
       @NotNull final ILocation location,
       @NotNull final IToken<?> token)
@@ -111,6 +117,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
                 // The maintained warehouse list, not a walk over every building. The answer does not depend on the order.
                 for (final IWareHouse building : colony.getServerBuildingManager().getWareHouses())
                 {
+                    otherBuildingsVisited++;
                     if (building.getBuildingType() == ModBuildings.wareHouse.get() && building != wareHouse)
                     {
                         totalCount += getWarehouseInternalCount((BuildingWareHouse) building, requestToCheck);

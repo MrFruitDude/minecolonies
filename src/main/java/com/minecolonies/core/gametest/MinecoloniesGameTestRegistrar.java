@@ -82,12 +82,16 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "survival_player_actions"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::survivalPlayerActions),
           isolatedColonyData(event, "survival_player_actions"));
-        for (final String name : new String[] {"warehouse_index_request_scaling", "warehouse_index_invalidation", "warehouse_index_dump_same_rack"})
+        for (final String name : new String[] {"warehouse_index_request_scaling", "warehouse_index_invalidation", "warehouse_index_dump_same_rack",
+          "warehouse_ca14_one_rack_walk", "warehouse_ca14_followup_fresh", "warehouse_ca14_warehouses_only"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
                 case "warehouse_index_request_scaling" -> WarehouseIndexGameTests::warehouseIndexRequestScaling;
                 case "warehouse_index_invalidation" -> WarehouseIndexGameTests::warehouseIndexInvalidation;
+                case "warehouse_ca14_one_rack_walk" -> WarehouseIndexGameTests::warehouseCa14OneRackWalk;
+                case "warehouse_ca14_followup_fresh" -> WarehouseIndexGameTests::warehouseCa14FollowupFresh;
+                case "warehouse_ca14_warehouses_only" -> WarehouseIndexGameTests::warehouseCa14WarehousesOnly;
                 default -> WarehouseIndexGameTests::warehouseIndexDumpSameRack;
             };
             event.registerTest(
