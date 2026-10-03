@@ -81,6 +81,7 @@ public abstract class AbstractBuildingContainer extends AbstractSchematicProvide
         {
             containerList.add(NBTUtils.readBlockPos(containerTagList.get(i)));
         }
+        onContainersChanged();
         if (compound.contains(TAG_PRIO))
         {
             this.unscaledPickUpPriority = compound.getIntOr(TAG_PRIO, 0);
@@ -127,12 +128,22 @@ public abstract class AbstractBuildingContainer extends AbstractSchematicProvide
     public void addContainerPosition(@NotNull final BlockPos pos)
     {
         containerList.add(pos);
+        onContainersChanged();
     }
 
     @Override
     public void removeContainerPosition(final BlockPos pos)
     {
         containerList.remove(pos);
+        onContainersChanged();
+    }
+
+    /**
+     * Called after the container list may have changed.
+     */
+    protected void onContainersChanged()
+    {
+        // Nothing by default.
     }
 
     @Override

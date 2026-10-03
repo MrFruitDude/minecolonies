@@ -24,6 +24,10 @@ import com.minecolonies.core.colony.requestsystem.resolvers.WarehouseRequestReso
 import com.minecolonies.core.tileentities.TileEntityColonyBuilding;
 import com.minecolonies.core.tileentities.TileEntityRack;
 import com.minecolonies.core.tileentities.TileEntityWareHouse;
+import com.minecolonies.core.tileentities.WarehouseRackIndex;
+import com.minecolonies.api.crafting.ItemStorage;
+import net.minecraft.world.item.ItemStack;
+import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -49,6 +53,11 @@ public class BuildingWareHouse extends AbstractBuilding implements IWareHouse
      * Max storage upgrades.
      */
     public static final int MAX_STORAGE_UPGRADE = 3;
+
+    /**
+     * Cached rack snapshot and item index for request resolution and courier dumps.
+     */
+    private final WarehouseRackIndex rackIndex = new WarehouseRackIndex(this);
 
     /**
      * Instantiates a new warehouse building.
@@ -78,6 +87,57 @@ public class BuildingWareHouse extends AbstractBuilding implements IWareHouse
         }
 
         super.requestRepair(builder);
+    }
+
+    /**
+     * The rack index of this warehouse.
+     *
+     * @return the index.
+     */
+    public WarehouseRackIndex getRackIndex()
+    {
+        return rackIndex;
+    }
+
+    @Override
+    protected void onContainersChanged()
+    {
+        // Called from the super constructor chain before this class' fields exist.
+        if (rackIndex != null)
+        {
+            rackIndex.markStructureDirty();
+        }
+    }
+
+    @Override
+    public void onDestroyed()
+    {
+        super.onDestroyed();
+        rackIndex.release();
+    }
+
+    /**
+     * Same answer as {@code InventoryUtils.hasBuildingEnoughElseCount(this, storage, count)}, from the rack index.
+     *
+     * @param storage the storage.
+     * @param count   the count wanted.
+     * @return the count found, stopping once it reaches {@code count}.
+     */
+    public int hasEnoughElseCount(@NotNull final ItemStorage storage, final int count)
+    {
+        return rackIndex.countUpTo(getColony().getWorld(), storage, count);
+    }
+
+    /**
+     * Same answer as {@code InventoryUtils.hasBuildingEnoughElseCount(this, predicate, count)}, from the rack index.
+     *
+     * @param predicate the predicate.
+     * @param count     the count wanted.
+     * @return the count found, stopping once it reaches {@code count}.
+     */
+    public int hasEnoughElseCount(@NotNull final Predicate<ItemStack> predicate, final int count)
+    {
+        return rackIndex.countUpTo(getColony().getWorld(), predicate, count);
     }
 
     @Override
