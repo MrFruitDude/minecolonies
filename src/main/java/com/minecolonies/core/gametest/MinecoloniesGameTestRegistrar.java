@@ -462,6 +462,24 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "upgrade_request_event_cancels"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::upgradeRequestEventCancels),
           isolatedColonyData(event, "upgrade_request_event_cancels"));
+        // CA-9: idle citizens skip travel. Each founds its own colony, so each gets its own isolated batch.
+        for (final String name : new String[] {"idle_citizen_skips_move", "idle_citizen_push_moves", "idle_citizen_floor_removed_falls",
+          "idle_citizen_hurt_knockback", "idle_citizen_path_walks", "idle_citizen_gravity_recheck"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "idle_citizen_skips_move" -> IdleTravelGameTests::idleCitizenSkipsMove;
+                case "idle_citizen_push_moves" -> IdleTravelGameTests::idleCitizenPushMoves;
+                case "idle_citizen_floor_removed_falls" -> IdleTravelGameTests::idleCitizenFloorRemovedFalls;
+                case "idle_citizen_hurt_knockback" -> IdleTravelGameTests::idleCitizenHurtKnockback;
+                case "idle_citizen_path_walks" -> IdleTravelGameTests::idleCitizenPathWalks;
+                default -> IdleTravelGameTests::idleCitizenGravityRecheck;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
     }
 
     /**

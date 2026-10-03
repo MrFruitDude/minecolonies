@@ -19,6 +19,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Special abstract minecolonies mob that overrides laggy vanilla behaviour.
@@ -70,6 +71,23 @@ public abstract class AbstractFastMinecoloniesEntity extends PathfinderMob imple
     {
         super(type, worldIn);
         lookControl = new LookHandler(this);
+    }
+
+    /**
+     * Test seam (CA-9): when set, it sees every {@link #move} call on these entities before the move runs. It is null in
+     * production, so the cost is one static read per move. Server thread only.
+     */
+    public static Consumer<AbstractFastMinecoloniesEntity> moveObserver = null;
+
+    @Override
+    public void move(final MoverType moverType, final Vec3 delta)
+    {
+        final Consumer<AbstractFastMinecoloniesEntity> observer = moveObserver;
+        if (observer != null)
+        {
+            observer.accept(this);
+        }
+        super.move(moverType, delta);
     }
 
     @Override
