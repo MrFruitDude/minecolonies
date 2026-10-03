@@ -25,6 +25,7 @@ import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
 import com.minecolonies.core.tileentities.TileEntityWareHouse;
+import com.minecolonies.core.tileentities.WarehouseRackIndex;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -52,6 +53,25 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
      * for tests.
      */
     public static long otherBuildingsVisited;
+
+    /**
+     * The matching stacks the last attempt from stock read, kept so the follow-up that the request manager runs right
+     * after it (same request, same tick, no rack change) does not walk the racks a second time. Transient: never saved.
+     *
+     * @param request    the request the stacks were read for.
+     * @param stacks     the stacks with their rack positions, as getMatchingItemStacksInWarehouse returned them.
+     * @param index      the warehouse rack index they were read through.
+     * @param changes    the index's change count at the read.
+     * @param loadEpoch  the rack load epoch at the read.
+     * @param gameTime   the game time of the read.
+     */
+    private record MatchedStacks(IToken<?> request, List<Tuple<ItemStack, BlockPos>> stacks, WarehouseRackIndex index, long changes, int loadEpoch,
+                                 long gameTime)
+    {
+    }
+
+    @Nullable
+    private MatchedStacks lastMatched;
 
     public AbstractWarehouseRequestResolver(
       @NotNull final ILocation location,
@@ -177,6 +197,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
 
         final Colony colony = (Colony) manager.getColony();
         final TileEntityWareHouse wareHouse = (TileEntityWareHouse) colony.getServerBuildingManager().getBuilding(getLocation().getInDimensionLocation()).getTileEntity();
+        lastMatched = null;
         if (wareHouse == null)
         {
             return Lists.newArrayList();
@@ -223,6 +244,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
 
         if (totalAvailable >= totalRequested || totalAvailable >= request.getRequest().getMinimumCount())
         {
+            // Resolved from stock: the request manager asks for the follow-up next, before anything else runs.
+            lastMatched = matched(wareHouse, request, inv);
             return Lists.newArrayList();
         }
 
@@ -265,7 +288,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
 
         final int keep = completedRequest.getRequest() instanceof INonExhaustiveDeliverable ? ((INonExhaustiveDeliverable) completedRequest.getRequest()).getLeftOver() : 0;
 
-        final List<Tuple<ItemStack, BlockPos>> targetStacks = wareHouse.getMatchingItemStacksInWarehouse(itemStack -> completedRequest.getRequest().matches(itemStack));
+        final List<Tuple<ItemStack, BlockPos>> targetStacks = matchingStacksForFollowup(wareHouse, completedRequest);
         for (final Tuple<ItemStack, BlockPos> tuple : targetStacks)
         {
             if (ItemStackUtils.isEmpty(tuple.getA()))
@@ -312,6 +335,55 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         }
 
         return deliveries.isEmpty() ? null : deliveries;
+    }
+
+    /**
+     * Remember the stacks an attempt from stock read.
+     *
+     * @param wareHouse the warehouse block entity.
+     * @param request   the request.
+     * @param stacks    the stacks read.
+     * @return the record, or null when the warehouse has no rack index to check it against later.
+     */
+    @Nullable
+    private static MatchedStacks matched(
+      @NotNull final TileEntityWareHouse wareHouse,
+      @NotNull final IRequest<?> request,
+      @NotNull final List<Tuple<ItemStack, BlockPos>> stacks)
+    {
+        if (!(wareHouse.getBuilding() instanceof final BuildingWareHouse building) || wareHouse.getLevel() == null)
+        {
+            return null;
+        }
+        final WarehouseRackIndex index = building.getRackIndex();
+        return new MatchedStacks(request.getId(), stacks, index, index.changeCount(), WarehouseRackIndex.loadEpoch(), wareHouse.getLevel().getGameTime());
+    }
+
+    /**
+     * The matching stacks for a follow-up: the attempt's read when it was for this request, in this tick, with no rack
+     * change since (the from-stock case, where the follow-up runs straight after the attempt); otherwise a fresh walk.
+     * The remembered read is used at most once.
+     *
+     * @param wareHouse the warehouse block entity.
+     * @param request   the completed request.
+     * @return the stacks with their rack positions.
+     */
+    private List<Tuple<ItemStack, BlockPos>> matchingStacksForFollowup(@NotNull final TileEntityWareHouse wareHouse, @NotNull final IRequest<? extends IDeliverable> request)
+    {
+        final MatchedStacks matched = lastMatched;
+        lastMatched = null;
+        if (matched != null
+              && matched.request().equals(request.getId())
+              && wareHouse.getLevel() != null
+              && wareHouse.getLevel().getGameTime() == matched.gameTime()
+              && wareHouse.getBuilding() instanceof final BuildingWareHouse building
+              && building.getRackIndex() == matched.index()
+              && matched.index().changeCount() == matched.changes()
+              && WarehouseRackIndex.loadEpoch() == matched.loadEpoch())
+        {
+            return matched.stacks();
+        }
+        return wareHouse.getMatchingItemStacksInWarehouse(itemStack -> request.getRequest().matches(itemStack));
     }
 
     @Override
