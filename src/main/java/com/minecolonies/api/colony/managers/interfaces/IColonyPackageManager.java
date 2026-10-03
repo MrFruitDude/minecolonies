@@ -62,6 +62,16 @@ public interface IColonyPackageManager
     void setDirty();
 
     /**
+     * A citizen changed. Its own view goes out with the citizen views; this only marks the colony view fields derived
+     * from citizens (overall happiness) as stale, so an implementation may refresh them on a slower cadence than a real
+     * colony change. The default treats it as a colony change.
+     */
+    default void markCitizenDerivedDirty()
+    {
+        setDirty();
+    }
+
+    /**
      * Add a new subscriber to the colony.
      *
      * @param subscriber the subscriber to add.

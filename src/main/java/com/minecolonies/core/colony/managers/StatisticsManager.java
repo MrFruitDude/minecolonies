@@ -102,6 +102,12 @@ public class StatisticsManager implements IStatisticsManager
     }
 
     @Override
+    public boolean hasDirtyStats()
+    {
+        return !dirtyStats.isEmpty();
+    }
+
+    @Override
     public void serialize(@NotNull final RegistryFriendlyByteBuf buf, final boolean fullSync)
     {
         buf.writeBoolean(fullSync);

@@ -221,7 +221,7 @@ public class CitizenManager implements ICitizenManager
             {
                 if (citizen.isDirty() || !newSubscribers.isEmpty())
                 {
-                    new ColonyViewCitizenViewMessage(colony, citizen).sendToPlayer(players);
+                    ColonyPackageManager.sendView(new ColonyViewCitizenViewMessage(colony, citizen), players);
                 }
             }
         }

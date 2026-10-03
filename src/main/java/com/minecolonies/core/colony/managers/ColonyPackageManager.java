@@ -1,5 +1,6 @@
 package com.minecolonies.core.colony.managers;
 
+import com.ldtteam.common.network.AbstractClientPlayMessage;
 import com.minecolonies.api.colony.managers.interfaces.IColonyPackageManager;
 import com.minecolonies.api.colony.workorders.IServerWorkOrder;
 import com.minecolonies.api.colony.workorders.IWorkManager;
@@ -19,14 +20,37 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.neoforged.neoforge.common.util.FakePlayer;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.function.BiConsumer;
 
 import static com.minecolonies.api.util.constant.ColonyConstants.UPDATE_STATE_INTERVAL;
 import static com.minecolonies.api.util.constant.Constants.TICKS_HOUR;
 
 public class ColonyPackageManager implements IColonyPackageManager
 {
+    /**
+     * Test seam: when set, every colony view and citizen view message sent through {@link #sendView} is reported to it
+     * (once per receiving player) before it goes out. GameTest mock players never show what they received, so the sync
+     * GameTests count messages here. Null in production.
+     */
+    @Nullable
+    public static volatile BiConsumer<ServerPlayer, AbstractClientPlayMessage> viewSendRecorder = null;
+
+    /**
+     * Sends a view message to the given players, reporting it to {@link #viewSendRecorder} first when one is set.
+     */
+    public static void sendView(@NotNull final AbstractClientPlayMessage message, @NotNull final Collection<ServerPlayer> players)
+    {
+        final BiConsumer<ServerPlayer, AbstractClientPlayMessage> recorder = viewSendRecorder;
+        if (recorder != null)
+        {
+            players.forEach(player -> recorder.accept(player, message));
+        }
+        message.sendToPlayer(players);
+    }
+
     /**
      * List of players close to the colony receiving updates. Populated by chunk entry events
      */
@@ -47,6 +71,17 @@ public class ColonyPackageManager implements IColonyPackageManager
      * Variables taking care of updating the views.
      */
     private boolean isDirty = false;
+
+    /**
+     * CA-2: how long the colony view fields derived from citizens (overall happiness, statistics) may lag behind when
+     * only citizens changed. A citizen change used to re-send the whole colony view every second.
+     */
+    public static final int CITIZEN_DERIVED_REFRESH_TICKS = 200;
+
+    /**
+     * Game time since which the citizen-derived colony view fields are stale, or -1 when close subscribers have them.
+     */
+    private long citizenDerivedStaleSince = -1;
 
     /**
      * Amount of ticks passed.
@@ -214,10 +249,42 @@ public class ColonyPackageManager implements IColonyPackageManager
 
             for (ServerPlayer player : players)
             {
-                new ColonyViewMessage(colony, colonyFriendlyByteBuf, newSubscribers.contains(player)).sendToPlayer(player);
+                sendView(new ColonyViewMessage(colony, colonyFriendlyByteBuf, newSubscribers.contains(player)), List.of(player));
+            }
+            if (isDirty)
+            {
+                // Every close subscriber got the current citizen-derived fields.
+                citizenDerivedStaleSince = -1;
             }
         }
         colony.getRequestManager().setDirty(false);
+    }
+
+    @Override
+    public void markCitizenDerivedDirty()
+    {
+        if (citizenDerivedStaleSince < 0)
+        {
+            citizenDerivedStaleSince = gameTime();
+        }
+    }
+
+    /**
+     * @return true once the citizen-derived colony view fields (or unsent statistics) have been stale for the refresh window.
+     */
+    private boolean citizenDerivedRefreshDue()
+    {
+        if (citizenDerivedStaleSince < 0 && colony.getStatisticsManager().hasDirtyStats())
+        {
+            citizenDerivedStaleSince = gameTime();
+        }
+        return citizenDerivedStaleSince >= 0 && gameTime() - citizenDerivedStaleSince >= CITIZEN_DERIVED_REFRESH_TICKS;
+    }
+
+    private long gameTime()
+    {
+        // No world yet (colony still loading): count it as stale since the beginning, so the first send refreshes.
+        return colony.getWorld() == null ? 0 : colony.getWorld().getGameTime();
     }
 
     @Override
