@@ -530,6 +530,23 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_tick_spread_prestige"),
           info -> new MinecoloniesGameTestInstance(info, ColonyTickSpreadGameTests::colonyTickSpreadPrestige),
           isolatedColonyData(event, "colony_tick_spread_prestige"));
+        // CA-1 + CA-3 request-system / citizen view sync (one glob: minecolonies:reqsync_*).
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_bytes_per_minute"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSyncGameTests::bytesPerMinute),
+          isolatedColonyData(event, "reqsync_bytes_per_minute"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_client_equals_full"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSyncGameTests::clientEqualsFull),
+          isolatedColonyData(event, "reqsync_client_equals_full"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_protocol_mismatch"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSyncGameTests::protocolMismatch),
+          isolatedColonyData(event, "reqsync_protocol_mismatch"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_citizen_view_patch"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSyncGameTests::citizenViewPatch),
+          isolatedColonyData(event, "reqsync_citizen_view_patch"));
     }
 
     /**

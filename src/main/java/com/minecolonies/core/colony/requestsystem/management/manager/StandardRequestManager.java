@@ -22,6 +22,7 @@ import com.minecolonies.api.util.ItemStackUtils;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.api.util.constant.TypeConstants;
+import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
 import com.minecolonies.core.colony.requestsystem.management.handlers.*;
 import com.minecolonies.core.colony.requestsystem.management.manager.wrapped.WrappedStaticStateRequestManager;
@@ -217,7 +218,16 @@ public class StandardRequestManager implements IStandardRequestManager
 
         if (this.isDirty())
         {
-            colony.markDirty();
+            // CA-1: the request system is synced as its own delta message, driven by this flag. It no longer re-sends the
+            // whole colony view: on the server the colony is only flagged for saving.
+            if (colony instanceof Colony serverColony)
+            {
+                serverColony.setDirty(true);
+            }
+            else
+            {
+                colony.markDirty();
+            }
         }
     }
 
@@ -537,6 +547,37 @@ public class StandardRequestManager implements IStandardRequestManager
         controller.serialize(buffer, requestableTypeRequestResolverAssignmentDataStoreId);
         controller.serialize(buffer, playerRequestResolverId);
         controller.serialize(buffer, retryingRequestResolverId);
+    }
+
+    /**
+     * CA-1 view sync: writes the version and the store/resolver ids, i.e. the full network payload minus the data store
+     * manager (which {@link RequestSystemViewSync} sends store by store).
+     */
+    public void writeViewHeader(final IFactoryController controller, final RegistryFriendlyByteBuf buffer)
+    {
+        buffer.writeInt(version);
+        controller.serialize(buffer, requestIdentitiesDataStoreId);
+        controller.serialize(buffer, requestResolverIdentitiesDataStoreId);
+        controller.serialize(buffer, providerRequestResolverAssignmentDataStoreId);
+        controller.serialize(buffer, requestResolverRequestAssignmentDataStoreId);
+        controller.serialize(buffer, requestableTypeRequestResolverAssignmentDataStoreId);
+        controller.serialize(buffer, playerRequestResolverId);
+        controller.serialize(buffer, retryingRequestResolverId);
+    }
+
+    /**
+     * CA-1 view sync: reads what {@link #writeViewHeader} wrote.
+     */
+    public void readViewHeader(final IFactoryController controller, final RegistryFriendlyByteBuf buffer)
+    {
+        version = buffer.readInt();
+        requestIdentitiesDataStoreId = controller.deserialize(buffer);
+        requestResolverIdentitiesDataStoreId = controller.deserialize(buffer);
+        providerRequestResolverAssignmentDataStoreId = controller.deserialize(buffer);
+        requestResolverRequestAssignmentDataStoreId = controller.deserialize(buffer);
+        requestableTypeRequestResolverAssignmentDataStoreId = controller.deserialize(buffer);
+        playerRequestResolverId = controller.deserialize(buffer);
+        retryingRequestResolverId = controller.deserialize(buffer);
     }
 
     @Override

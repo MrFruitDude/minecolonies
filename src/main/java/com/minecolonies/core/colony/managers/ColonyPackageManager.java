@@ -9,9 +9,12 @@ import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.WorldUtil;
 import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.ColonyView;
+import com.minecolonies.core.colony.requestsystem.management.manager.RequestSystemViewSync;
+import com.minecolonies.core.colony.requestsystem.management.manager.StandardRequestManager;
 import com.minecolonies.core.colony.permissions.Permissions;
 import com.minecolonies.core.network.messages.PermissionsMessage;
 import com.minecolonies.core.network.messages.client.colony.ColonyViewMessage;
+import com.minecolonies.core.network.messages.client.colony.ColonyViewRequestSystemMessage;
 import com.minecolonies.core.network.messages.client.colony.ColonyViewWorkOrderMessage;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -82,6 +85,17 @@ public class ColonyPackageManager implements IColonyPackageManager
      * Game time since which the citizen-derived colony view fields are stale, or -1 when close subscribers have them.
      */
     private long citizenDerivedStaleSince = -1;
+
+    /**
+     * CA-1: what close subscribers hold of the request-system view, and players that asked for a full resync of it.
+     */
+    private final RequestSystemViewSync.ServerBaseline requestSystemBaseline = new RequestSystemViewSync.ServerBaseline();
+    private final Set<ServerPlayer>                    requestSystemResync   = new HashSet<>();
+
+    /**
+     * CA-3: citizens whose view a close subscriber asked to resync.
+     */
+    private final Map<ServerPlayer, Set<Integer>> citizenResync = new HashMap<>();
 
     /**
      * Amount of ticks passed.
@@ -207,6 +221,9 @@ public class ColonyPackageManager implements IColonyPackageManager
             //ColonyView
             sendColonyViewPackets();
 
+            //Request system (CA-1: its own message, after the colony view a new subscriber needs first)
+            sendRequestSystemPackets();
+
             //Permissions
             sendPermissionsPackets();
 
@@ -214,6 +231,7 @@ public class ColonyPackageManager implements IColonyPackageManager
             sendWorkOrderPackets();
 
             colony.getCitizenManager().sendPackets(closeSubscribers, newSubscribers);
+            sendCitizenResyncs();
             colony.getVisitorManager().sendPackets(closeSubscribers, newSubscribers);
             colony.getServerBuildingManager().sendPackets(closeSubscribers, newSubscribers);
             colony.getAnimalManager().sendPackets(closeSubscribers, newSubscribers);
@@ -261,7 +279,144 @@ public class ColonyPackageManager implements IColonyPackageManager
                 citizenDerivedStaleSince = -1;
             }
         }
-        colony.getRequestManager().setDirty(false);
+    }
+
+    /**
+     * CA-1: sends the request-system view: a delta to close subscribers when it changed, a full payload to new
+     * subscribers and to players that asked for a resync, and a periodic full resync.
+     */
+    public void sendRequestSystemPackets()
+    {
+        if (!(colony.getRequestManager() instanceof StandardRequestManager manager))
+        {
+            return;
+        }
+        requestSystemResync.retainAll(closeSubscribers);
+        requestSystemResync.removeAll(newSubscribers);
+        final Set<ServerPlayer> closes = new HashSet<>(closeSubscribers);
+        closes.removeAll(newSubscribers);
+        closes.removeAll(requestSystemResync);
+
+        final long now = gameTime();
+        final RequestSystemViewSync.Snapshot previous = requestSystemBaseline.baseline();
+        final boolean fullDue = !closes.isEmpty() && requestSystemBaseline.fullDue(now);
+        final boolean snapshotNeeded = !newSubscribers.isEmpty()
+                                         || (!closes.isEmpty() && (manager.isDirty() || fullDue || previous == null))
+                                         || (!requestSystemResync.isEmpty() && previous == null);
+        if (!snapshotNeeded)
+        {
+            if (!requestSystemResync.isEmpty() && previous != null)
+            {
+                sendRequestSystem(full(previous, requestSystemBaseline.seq()), requestSystemResync);
+            }
+            requestSystemResync.clear();
+            if (closes.isEmpty() && newSubscribers.isEmpty())
+            {
+                return;
+            }
+            manager.setDirty(false);
+            return;
+        }
+
+        final RequestSystemViewSync.Snapshot snapshot;
+        try
+        {
+            snapshot = RequestSystemViewSync.snapshot(manager, colony.getWorld().registryAccess());
+        }
+        catch (final Exception e)
+        {
+            Log.getLogger().warn("Error during request manager serialization for:" + colony.getID(), e);
+            manager.reset();
+            requestSystemBaseline.clear();
+            return;
+        }
+        if (snapshot.size() >= ColonyView.REQUEST_MANAGER_MAX_SIZE)
+        {
+            Log.getLogger().warn("Colony " + colony.getID() + " has a very big memory imprint, this could be a memory leak, please contact the mod author!");
+        }
+
+        final Set<ServerPlayer> fullTo = new HashSet<>(newSubscribers);
+        fullTo.addAll(requestSystemResync);
+        if (previous == null || fullDue)
+        {
+            final int seq = requestSystemBaseline.advance(snapshot, true, now);
+            fullTo.addAll(closes);
+            sendRequestSystem(full(snapshot, seq), fullTo);
+        }
+        else
+        {
+            final int fromSeq = requestSystemBaseline.seq();
+            final RegistryFriendlyByteBuf delta = new RegistryFriendlyByteBuf(Unpooled.buffer(), colony.getWorld().registryAccess());
+            final int seq;
+            if (RequestSystemViewSync.writeDelta(delta, previous, fromSeq, snapshot, fromSeq + 1))
+            {
+                seq = requestSystemBaseline.advance(snapshot, false, now);
+                sendRequestSystem(delta, closes);
+            }
+            else
+            {
+                seq = fromSeq;
+            }
+            sendRequestSystem(full(snapshot, seq), fullTo);
+        }
+        requestSystemResync.clear();
+        manager.setDirty(false);
+    }
+
+    private RegistryFriendlyByteBuf full(final RequestSystemViewSync.Snapshot snapshot, final int seq)
+    {
+        final RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), colony.getWorld().registryAccess());
+        RequestSystemViewSync.writeFull(buf, snapshot, seq);
+        return buf;
+    }
+
+    private void sendRequestSystem(final RegistryFriendlyByteBuf payload, final Set<ServerPlayer> players)
+    {
+        if (players.isEmpty())
+        {
+            return;
+        }
+        final ColonyViewRequestSystemMessage message = new ColonyViewRequestSystemMessage(colony.getID(), colony.getDimension(), payload);
+        sendView(message, players);
+    }
+
+    /**
+     * CA-1: a close subscriber could not apply a request-system delta; it gets a full payload next round.
+     */
+    public void requestRequestSystemResync(@NotNull final ServerPlayer player)
+    {
+        if (closeSubscribers.contains(player))
+        {
+            requestSystemResync.add(player);
+        }
+    }
+
+    /**
+     * CA-3: a close subscriber could not apply a citizen view patch; it gets that citizen's full view next round.
+     */
+    public void requestCitizenResync(@NotNull final ServerPlayer player, final int citizenId)
+    {
+        if (closeSubscribers.contains(player))
+        {
+            citizenResync.computeIfAbsent(player, p -> new HashSet<>()).add(citizenId);
+        }
+    }
+
+    private void sendCitizenResyncs()
+    {
+        if (citizenResync.isEmpty())
+        {
+            return;
+        }
+        for (final Map.Entry<ServerPlayer, Set<Integer>> entry : citizenResync.entrySet())
+        {
+            if (closeSubscribers.contains(entry.getKey()) && !newSubscribers.contains(entry.getKey())
+                  && colony.getCitizenManager() instanceof CitizenManager citizens)
+            {
+                entry.getValue().forEach(id -> citizens.sendCitizenResync(entry.getKey(), id));
+            }
+        }
+        citizenResync.clear();
     }
 
     @Override

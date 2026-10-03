@@ -59,7 +59,7 @@ public class ProviderHandler implements IProviderHandler
         resolverListBuilder.addAll(manager.getResolverHandler().registerResolvers(provider.getResolvers()));
 
         manager.getProviderResolverAssignmentDataStore().getAssignments().put(provider.getId(), resolverListBuilder.build());
-        manager.getColony().markDirty();
+        manager.markDirty();
     }
 
     @Override
@@ -86,7 +86,7 @@ public class ProviderHandler implements IProviderHandler
 
         //Removing the data from the maps.
         manager.getProviderResolverAssignmentDataStore().getAssignments().remove(token);
-        manager.getColony().markDirty();
+        manager.markDirty();
         manager.log(String.format("Removed provider: %s", token));
     }
 
