@@ -105,6 +105,27 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     private int pauseTickBackupAmount = 10;
 
     /**
+     * Back-off steps (in navigator ticks) for a move-to destination that keeps failing without progress (CA-11).
+     */
+    private static final int[] UNREACHABLE_BACKOFF = {200, 600, 1200};
+
+    /**
+     * A failed move-to path counts as progress when its end is more than this many blocks (manhattan) closer to the
+     * destination than its start: walking it gets the entity closer, so the next try is a real retry.
+     */
+    private static final int UNREACHABLE_PROGRESS_DIST = 2;
+
+    /**
+     * The last move-to destination that failed, the failures in a row for it, the next back-off step, and the ticks
+     * left during which new move-to jobs for it are refused (CA-11).
+     */
+    @Nullable
+    private BlockPos unreachableDest   = null;
+    private int      unreachableFails  = 0;
+    private int      unreachableLevel  = 0;
+    private int      unreachableTicks  = 0;
+
+    /**
      * Temporary block position
      */
     private BlockPos.MutableBlockPos tempPos = new BlockPos.MutableBlockPos();
@@ -271,6 +292,11 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             return null;
         }
 
+        if (job instanceof PathJobMoveToLocation moveJob && isDestinationUnreachable(moveJob.getDestination()))
+        {
+            return null;
+        }
+
         if (ourEntity.getPose() != Pose.STANDING)
         {
             ourEntity.setPose(Pose.STANDING);
@@ -391,6 +417,11 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         if (pauseTicks > 0)
         {
             pauseTicks--;
+        }
+
+        if (unreachableTicks > 0)
+        {
+            unreachableTicks--;
         }
 
         if (pathResult != null)
@@ -544,6 +575,12 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     @Nullable
     protected PathResult<PathJobMoveToLocation> walkTo(final BlockPos desiredPos, final double speedFactor, final boolean safeDestination)
     {
+        // Same outcome as setPathJob's refusal, without first building the job's chunk cache on the server thread.
+        if (pauseTicks > 0 || isDestinationUnreachable(desiredPos))
+        {
+            return null;
+        }
+
         @NotNull final BlockPos start = PathfindingUtils.prepareStart(ourEntity);
         return setPathJob(
             new PathJobMoveToLocation(CompatibilityUtils.getWorldFromEntity(ourEntity),
@@ -727,7 +764,65 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             pauseTickBackupAmount = 10;
         }
 
+        recordMoveToOutcome();
+
         moveTo(pathResult.getPath(), getSpeedFactor());
+    }
+
+    /**
+     * CA-11: tracks a move-to destination that keeps failing. Once it failed twice in a row and the latest path made no
+     * progress towards it, new move-to jobs for that destination are refused for 200, then 600, then 1200 ticks, so an
+     * unreachable target stops costing a full search every few ticks. Other destinations are not affected, and a
+     * successful path to it clears the state. Results without a path (rejected or crashed jobs) are not counted.
+     */
+    private void recordMoveToOutcome()
+    {
+        if (!(pathResult.getJob() instanceof PathJobMoveToLocation moveJob) || pathResult.getPath() == null)
+        {
+            return;
+        }
+
+        final BlockPos dest = moveJob.getDestination();
+        if (pathResult.isPathReachingDestination())
+        {
+            if (dest.equals(unreachableDest))
+            {
+                unreachableDest = null;
+                unreachableFails = 0;
+                unreachableLevel = 0;
+                unreachableTicks = 0;
+            }
+            return;
+        }
+
+        if (!dest.equals(unreachableDest))
+        {
+            unreachableDest = dest;
+            unreachableFails = 0;
+            unreachableLevel = 0;
+            unreachableTicks = 0;
+        }
+        unreachableFails++;
+
+        final boolean progress = BlockPosUtil.distManhattan(moveJob.getStart(), dest) - BlockPosUtil.distManhattan(pathResult.getPath().getTarget(), dest)
+                                   > UNREACHABLE_PROGRESS_DIST;
+        if (unreachableFails >= 2 && !progress)
+        {
+            unreachableTicks = UNREACHABLE_BACKOFF[Math.min(unreachableLevel, UNREACHABLE_BACKOFF.length - 1)];
+            unreachableLevel++;
+        }
+    }
+
+    /**
+     * Whether move-to jobs for this destination are currently refused because it kept failing (CA-11). AI code can use
+     * this to treat the target as "can't reach" instead of asking again.
+     *
+     * @param dest the destination.
+     * @return true while backing off from it.
+     */
+    public boolean isDestinationUnreachable(final BlockPos dest)
+    {
+        return unreachableTicks > 0 && dest != null && dest.equals(unreachableDest);
     }
 
     /**

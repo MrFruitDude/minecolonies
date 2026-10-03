@@ -108,6 +108,7 @@ public class ServerConfiguration extends AbstractConfiguration
 
     public final IntValue minimumRailsToPath;
     public final DoubleValue pathNodeLimitMultiplier;
+    public final IntValue pathfindingWorkerThreads;
 
     /*  --------------------------------------------------------------------------------- *
      *  ------------------- ######## Request System Settings ######## ------------------- *
@@ -199,6 +200,7 @@ public class ServerConfiguration extends AbstractConfiguration
         blueprintBuildMode = defineBoolean("blueprintbuildmode", false);
 
         pathNodeLimitMultiplier = defineDouble("pathNodeLimitMultiplier", 1, 1, 4);
+        pathfindingWorkerThreads = defineInteger("pathfindingworkerthreads", 2, 1, 4);
         minimumRailsToPath = defineInteger("minimumrailstopath", 8, 5, 100);
 
         swapToCategory("requestSystem");

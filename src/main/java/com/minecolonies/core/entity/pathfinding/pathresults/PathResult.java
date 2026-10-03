@@ -13,6 +13,7 @@ import net.minecraft.world.level.pathfinder.Path;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -291,7 +292,7 @@ public class PathResult<T extends AbstractPathJob>
             var watchers = getDebugWatchers();
             job.syncDebug(watchers);
 
-            if (!watchers.isEmpty())
+            if (!watchers.isEmpty() && path != null)
             {
                 final Component debugInfo = Component.literal(" Finished pathjob:")
                     .withStyle(ChatFormatting.GRAY)
@@ -306,6 +307,15 @@ public class PathResult<T extends AbstractPathJob>
                     new DebugOutputMessage(debugInfo, false).sendToPlayer(player);
                 }
             }
+        }
+        catch (CancellationException e)
+        {
+            // Only a job the full queue rejected gets here (Pathfinding.RejectAsFailed); a normal cancel() never reads
+            // the future. Finish it as a failed result without a path.
+            path = null;
+            pathCalculation = null;
+            pathReachesDestination = false;
+            setStatus(PathFindingStatus.CALCULATION_COMPLETE);
         }
         catch (InterruptedException | ExecutionException e)
         {

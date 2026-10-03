@@ -3007,6 +3007,8 @@
   "minecolonies.config.officersreceiveadvancements.comment": "Should officers of a colony receive advancements from that colony?",
   "minecolonies.config.pathNodeLimitMultiplier": "Pathfinding Node Limit",
   "minecolonies.config.pathNodeLimitMultiplier.comment": "Increases the pathfinding node limit by the given factor, enabling citizens to search a bigger area at the cost of performance (offthread) for more accurate pathfinding.",
+  "minecolonies.config.pathfindingworkerthreads": "Pathfinding Worker Threads",
+  "minecolonies.config.pathfindingworkerthreads.comment": "Number of background threads that compute citizen paths. More threads cut path waiting times in large colonies; 1 restores the old single-thread behaviour.",
   "minecolonies.config.pathfinding": "Pathfinding Settings",
   "minecolonies.config.pathfinding.comment": "All configurations related to pathfinding",
   "minecolonies.config.pathfindingdebugdraw": "Pathfinding Debug Draw",

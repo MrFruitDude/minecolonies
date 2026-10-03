@@ -1,12 +1,15 @@
 package com.minecolonies.core.entity.pathfinding;
 
 import com.minecolonies.api.util.Log;
+import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.entity.pathfinding.pathjobs.AbstractPathJob;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -79,12 +82,12 @@ public final class Pathfinding
         /**
          * Ongoing thread IDs.
          */
-        public static int id;
+        private static final AtomicInteger id = new AtomicInteger();
 
         @Override
         public Thread newThread(@NotNull final Runnable runnable)
         {
-            final Thread thread = new Thread(runnable, "Minecolonies Pathfinding Worker #" + (id++));
+            final Thread thread = new Thread(runnable, "Minecolonies Pathfinding Worker #" + id.getAndIncrement());
             thread.setDaemon(true);
 
             thread.setUncaughtExceptionHandler((thread1, throwable) -> Log.getLogger().error("Minecolonies Pathfinding Thread errored! ", throwable));
@@ -93,21 +96,83 @@ public final class Pathfinding
     }
 
     /**
-     * Creates a new thread pool for pathfinding jobs
+     * Upper bound for the configured worker count.
+     */
+    private static final int MAX_WORKERS = 4;
+
+    /**
+     * A full queue must never throw on the server thread (the default AbortPolicy does, and its message even calls the
+     * unstarted job's toString, which throws an NPE). The rejected job's future is cancelled instead, so its PathResult
+     * finishes as a failed result with no path, which the navigator handles like any failed path.
+     */
+    private static final class RejectAsFailed implements RejectedExecutionHandler
+    {
+        private static volatile long lastWarn = 0;
+
+        @Override
+        public void rejectedExecution(final Runnable runnable, final ThreadPoolExecutor pool)
+        {
+            Stats.rejected.incrementAndGet();
+            if (runnable instanceof Future<?> future)
+            {
+                future.cancel(false);
+            }
+            final long now = System.currentTimeMillis();
+            if (now - lastWarn > 10_000L)
+            {
+                lastWarn = now;
+                Log.getLogger().warn("Minecolonies pathfinding queue is full ({} queued); path job dropped and reported as failed", pool.getQueue().size());
+            }
+        }
+    }
+
+    /**
+     * Creates a new thread pool for pathfinding jobs, sized by the pathfindingworkerthreads server config (CA-10); a
+     * changed config value resizes the running pool.
      *
      * @return the threadpool executor.
      */
     public static ThreadPoolExecutor getExecutor()
     {
+        final int threads = configuredWorkers();
         if (executor == null)
         {
-            executor = createExecutor(1, jobQueue);
+            executor = createExecutor(threads, jobQueue);
+        }
+        else if (executor.getMaximumPoolSize() != threads)
+        {
+            if (threads > executor.getMaximumPoolSize())
+            {
+                executor.setMaximumPoolSize(threads);
+                executor.setCorePoolSize(threads);
+            }
+            else
+            {
+                executor.setCorePoolSize(threads);
+                executor.setMaximumPoolSize(threads);
+            }
         }
         return executor;
     }
 
     /**
-     * Builds a pathfinding executor with the given worker count over the given queue.
+     * @return the configured worker count, 1 when the server config is not loaded.
+     */
+    private static int configuredWorkers()
+    {
+        try
+        {
+            return Math.max(1, Math.min(MAX_WORKERS, MineColonies.getConfig().getServer().pathfindingWorkerThreads.get()));
+        }
+        catch (final IllegalStateException | NullPointerException e)
+        {
+            return 1;
+        }
+    }
+
+    /**
+     * Builds a pathfinding executor with the given worker count over the given queue. A full queue cancels the job
+     * (failed result) instead of throwing.
      *
      * @param threads worker threads.
      * @param queue   job queue.
@@ -115,7 +180,7 @@ public final class Pathfinding
      */
     public static ThreadPoolExecutor createExecutor(final int threads, final BlockingQueue<Runnable> queue)
     {
-        return new ThreadPoolExecutor(threads, threads, 10, TimeUnit.SECONDS, queue, new MinecoloniesThreadFactory());
+        return new ThreadPoolExecutor(threads, threads, 10, TimeUnit.SECONDS, queue, new MinecoloniesThreadFactory(), new RejectAsFailed());
     }
 
     /**
