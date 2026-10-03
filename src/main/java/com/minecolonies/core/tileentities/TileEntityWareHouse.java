@@ -80,6 +80,7 @@ public class TileEntityWareHouse extends AbstractTileEntityWareHouse
         final IBuilding building = getBuilding();
         if (building != null)
         {
+            WarehouseRackIndex.rackWalks++;
             for (final Map.Entry<BlockPos, TileEntityRack> entry : rackIndex(building).nonEmptyRacks(level))
             {
                 final TileEntityRack rack = entry.getValue();

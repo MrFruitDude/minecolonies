@@ -54,6 +54,12 @@ public final class WarehouseRackIndex
     public static long rebuilds;
 
     /**
+     * Full matching-stack walks over a warehouse's racks ({@code TileEntityWareHouse#getMatchingItemStacksInWarehouse}).
+     * Server thread statistic for tests.
+     */
+    public static long rackWalks;
+
+    /**
      * Bumped whenever a rack block entity joins a level, so a snapshot that saw an empty or unloaded position re-checks it.
      */
     private static final AtomicInteger RACK_LOAD_EPOCH = new AtomicInteger();
@@ -69,6 +75,10 @@ public final class WarehouseRackIndex
     private final boolean tracked;
 
     private boolean structureDirty = true;
+    /**
+     * Bumped on every reported rack content change, rack removal or container list change.
+     */
+    private long    changeCount;
     private Level   level;
     private long    validatedTick;
     private int     validatedEpoch;
@@ -120,6 +130,29 @@ public final class WarehouseRackIndex
         beLookups = 0;
         rackProbes = 0;
         rebuilds = 0;
+        rackWalks = 0;
+    }
+
+    /**
+     * Change counter: differs from an earlier reading once any indexed rack's content changed, a rack was removed or
+     * the container list changed since then. Pair it with {@link #loadEpoch()} and the game time to tell whether an
+     * earlier read of the racks still holds.
+     *
+     * @return the change count.
+     */
+    public long changeCount()
+    {
+        return changeCount;
+    }
+
+    /**
+     * Rack load epoch: changes whenever a rack block entity joins a level.
+     *
+     * @return the epoch.
+     */
+    public static int loadEpoch()
+    {
+        return RACK_LOAD_EPOCH.get();
     }
 
     /**
@@ -136,6 +169,7 @@ public final class WarehouseRackIndex
     public void markStructureDirty()
     {
         structureDirty = true;
+        changeCount++;
     }
 
     /**
@@ -162,6 +196,7 @@ public final class WarehouseRackIndex
         rackSlot.clear();
         dirtyRacks.clear();
         structureDirty = true;
+        changeCount++;
     }
 
     /**
@@ -171,6 +206,7 @@ public final class WarehouseRackIndex
      */
     void onRackContentChanged(final TileEntityRack rack)
     {
+        changeCount++;
         final BitSet slots = rackSlot.get(rack);
         if (slots != null)
         {
@@ -188,6 +224,7 @@ public final class WarehouseRackIndex
         if (rackSlot.containsKey(rack))
         {
             structureDirty = true;
+            changeCount++;
         }
     }
 
