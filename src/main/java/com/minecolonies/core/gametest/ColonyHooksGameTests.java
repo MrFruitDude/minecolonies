@@ -323,6 +323,105 @@ public final class ColonyHooksGameTests
     }
 
     /**
+     * G0b: the pace covers the whole act-and-wait cycle, not only the wait. On the sawmill worker's real AI, its own
+     * wait step (AbstractEntityAIBasic#waitingForSomething) is driven directly, one call per AI step, and every step on
+     * which it does not wait counts as an action that sets the same delay again, as a builder's placement does. At 1x a
+     * cycle of delay {@code d} takes {@code ceil(d / tickRate) + 1} steps (exactly as before: the action step itself
+     * plus the waits); at 2x and 3x the same 60 actions take 1/2 and 1/3 of the steps (within 5%), for a delay of 10
+     * and of 15. Without G0b the action step is never scaled and a delay of 10 only gets 1.5x faster at 2x.
+     */
+    public static void paceProviderScalesActionCycle(final GameTestHelper helper)
+    {
+        crafterFixture(helper, "G0b pace cycle colony", (colony, worker) -> {
+            final IMinecoloniesAPI api = IMinecoloniesAPI.getInstance();
+            final IColonyPaceProvider previous = api.getColonyPaceProvider();
+            final StubPaceProvider stub = new StubPaceProvider(colony.getID());
+            api.setColonyPaceProvider(stub);
+            try
+            {
+                final AbstractEntityAIBasic<?, ?> ai = workAi(worker);
+                final int tickRate = ai.getTickRate();
+                final List<String> failures = new ArrayList<>();
+                final StringBuilder seen = new StringBuilder();
+                for (final int delay : new int[] {10, 15})
+                {
+                    final int at1 = cycleSteps(ai, stub, 1.0D, delay, 60);
+                    final int at2 = cycleSteps(ai, stub, 2.0D, delay, 60);
+                    final int at3 = cycleSteps(ai, stub, 3.0D, delay, 60);
+                    // 1x is MineColonies' own timing: the first action at once, then every ceil(d / tickRate) + 1 steps.
+                    final int cycle = (delay + tickRate - 1) / tickRate + 1;
+                    if (at1 != 1 + 59 * cycle)
+                    {
+                        failures.add("delay " + delay + " at 1x took " + at1 + " steps for 60 actions, expected " + (1 + 59 * cycle));
+                    }
+                    final double r2 = (double) at1 / at2;
+                    final double r3 = (double) at1 / at3;
+                    if (Math.abs(r2 - 2.0D) > 0.1D)
+                    {
+                        failures.add("delay " + delay + " at 2x: " + at2 + " steps vs " + at1 + " at 1x (x" + String.format(java.util.Locale.ROOT, "%.2f", r2) + ")");
+                    }
+                    if (Math.abs(r3 - 3.0D) > 0.15D)
+                    {
+                        failures.add("delay " + delay + " at 3x: " + at3 + " steps vs " + at1 + " at 1x (x" + String.format(java.util.Locale.ROOT, "%.2f", r3) + ")");
+                    }
+                    seen.append(" delay ").append(delay).append(": 1x/2x/3x ").append(at1).append('/').append(at2).append('/').append(at3);
+                }
+                // Back at 1x nothing is left over: the same cycle as before any pace.
+                final int again = cycleSteps(ai, stub, 1.0D, 10, 60);
+                if (again != 1 + 59 * ((10 + tickRate - 1) / tickRate + 1))
+                {
+                    failures.add("1x after 3x took " + again + " steps");
+                }
+                Log.getLogger().info("[pace_provider_scales_action_cycle] tick rate {}, 60 actions:{}; 1x again {}", tickRate, seen, again);
+                helper.assertTrue(failures.isEmpty(), "pace does not cover the action step: " + failures);
+                api.setColonyPaceProvider(previous);
+                helper.succeed();
+            }
+            catch (final RuntimeException e)
+            {
+                api.setColonyPaceProvider(previous);
+                throw e;
+            }
+        });
+    }
+
+    /**
+     * Drives the AI's own wait step {@code actions} times to an action at {@code pace}: each step it does not wait is an
+     * action that sets {@code delay}. Starts from a clean 1x state and returns the number of steps taken.
+     */
+    private static int cycleSteps(final AbstractEntityAIBasic<?, ?> ai, final StubPaceProvider stub, final double pace, final int delay, final int actions)
+    {
+        try
+        {
+            final Method wait = AbstractEntityAIBasic.class.getDeclaredMethod("waitingForSomething");
+            wait.setAccessible(true);
+            stub.work = 1.0D;
+            ai.setDelay(0);
+            wait.invoke(ai);
+            stub.work = pace;
+            int steps = 0;
+            int done = 0;
+            while (done < actions && steps < 10_000)
+            {
+                steps++;
+                if (!(Boolean) wait.invoke(ai))
+                {
+                    done++;
+                    ai.setDelay(delay);
+                }
+            }
+            stub.work = 1.0D;
+            ai.setDelay(0);
+            wait.invoke(ai);
+            return steps;
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
      * H1: with no provider set, MineColonies is exactly as before. The API answers the default provider, which says 1.0
      * everywhere; a crafter's wait counts down by exactly its tick rate per step; saturation loss is bit-for-bit
      * {@code |amount * foodModifier|}; the child growth modifier is exactly 1 + the growth research. Bad provider

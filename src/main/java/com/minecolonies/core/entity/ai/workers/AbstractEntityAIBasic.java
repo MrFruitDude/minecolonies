@@ -129,6 +129,19 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     private double paceCarry = 0.0D;
 
     /**
+     * G0b: ticks of the next delay already worked off while the colony pace is above 1. A step in which the AI acts
+     * (does not wait) does the work of {@code tickRate * pace} ticks in {@code tickRate}, and a wait that runs out
+     * part-way through its step leaves the rest unused; both are credited here and taken off the next
+     * {@link #setDelay}. So the whole act-and-wait cycle runs at the pace, not only the wait. Always 0 at pace 1.0.
+     */
+    private int paceCredit = 0;
+
+    /**
+     * Fraction of a tick of action-step credit left over at a pace that is not a whole number.
+     */
+    private double actionCarry = 0.0D;
+
+    /**
      * If we have waited one delay.
      */
     private boolean hasDelayed = false;
@@ -405,6 +418,24 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     public final void setDelay(final int timeout)
     {
         this.delay = timeout;
+        if (paceCredit > 0)
+        {
+            if (getWorkPace() == 1.0D)
+            {
+                // Back at 1x: nothing carries over.
+                paceCredit = 0;
+                actionCarry = 0.0D;
+                return;
+            }
+            delay -= paceCredit;
+            paceCredit = 0;
+            if (delay < 0)
+            {
+                // More credit than this delay: the rest is kept for the next one.
+                paceCredit = -delay;
+                delay = 0;
+            }
+        }
     }
 
     /**
@@ -517,11 +548,62 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             delay -= getPacedTickRate();
             if (delay <= 0)
             {
+                // G0b: the part of this step the wait did not need is credited to the next delay (only when paced).
+                final int unused = -delay;
                 clearWorkTarget();
+                if (unused > 0 && getWorkPace() != 1.0D)
+                {
+                    paceCredit = Math.min(paceCredit + unused, maxPaceCredit());
+                }
             }
             return true;
         }
+        creditActionStep();
         return false;
+    }
+
+    /**
+     * G0b: this step the AI acts instead of waiting. At pace {@code p} it counts as {@code tickRate * p} ticks of work
+     * done in {@code tickRate}, so {@code tickRate * (p - 1)} is credited to the next delay (with the fraction carried).
+     * At pace 1.0 nothing is credited and nothing changes.
+     */
+    private void creditActionStep()
+    {
+        final double pace = getWorkPace();
+        if (pace == 1.0D)
+        {
+            paceCredit = 0;
+            actionCarry = 0.0D;
+            return;
+        }
+        if (pace < 1.0D)
+        {
+            return;
+        }
+        final double credit = getTickRate() * (pace - 1.0D) + actionCarry;
+        final int whole = (int) credit;
+        actionCarry = credit - whole;
+        paceCredit = Math.min(paceCredit + whole, maxPaceCredit());
+    }
+
+    /**
+     * G0b: at most what one cycle can earn is banked (the unused part of a paced wait step, {@code tickRate * pace}, plus
+     * one action step's {@code tickRate * (pace - 1)}), so an idle AI (acting without delays for a while) cannot save up
+     * a long stretch of free work.
+     */
+    private int maxPaceCredit()
+    {
+        return (int) Math.ceil(getTickRate() * (2.0D * getWorkPace() - 1.0D));
+    }
+
+    /**
+     * The colony's work pace for this worker ({@link IColonyPaceProvider#work}, sanitized; exactly 1.0 without a
+     * colony or provider).
+     */
+    private double getWorkPace()
+    {
+        final IColony colony = job.getColony();
+        return colony == null ? 1.0D : IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().work(colony, job));
     }
 
     /**
