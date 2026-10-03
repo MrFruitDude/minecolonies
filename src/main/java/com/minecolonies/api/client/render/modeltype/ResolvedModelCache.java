@@ -29,7 +29,7 @@ public final class ResolvedModelCache<M>
      */
     public M get(final Object owner, final Object modelType, final boolean female, final boolean custom, final Supplier<M> resolve)
     {
-        if (true) // FX2 pre-fix seam: every frame resolves
+        if (model == null || owner != this.owner || female != this.female || custom != this.custom || !java.util.Objects.equals(modelType, this.modelType))
         {
             model = resolve.get();
             this.owner = owner;

@@ -15,7 +15,7 @@ public final class PerTickGate
     /** True once per (level, game tick): the first call of each tick, and the first call after the level changed. */
     public boolean due(final Object level, final long gameTime)
     {
-        if (true) // FX2 pre-fix seam: every frame
+        if (level != this.level || gameTime != tick)
         {
             this.level = level;
             this.tick = gameTime;

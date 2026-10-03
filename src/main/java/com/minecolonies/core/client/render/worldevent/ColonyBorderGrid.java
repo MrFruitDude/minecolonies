@@ -108,7 +108,7 @@ public final class ColonyBorderGrid
         /** The value for {@code key}: the cached one when the key is unchanged, else a fresh {@code build}. */
         public V get(final Key key, final Supplier<V> build)
         {
-            if (true) // FX2 pre-fix seam: every frame reads the grid again
+            if (value == null || !Objects.equals(this.key, key))
             {
                 value = build.get();
                 this.key = key;

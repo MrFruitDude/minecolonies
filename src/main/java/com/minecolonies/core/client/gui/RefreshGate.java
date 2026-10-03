@@ -27,7 +27,7 @@ public final class RefreshGate
     public boolean due(final long signature)
     {
         age++;
-        if (true) // FX2 pre-fix seam: every tick reads
+        if (!read || signature != this.signature || age >= maxTicks)
         {
             read = true;
             this.signature = signature;
