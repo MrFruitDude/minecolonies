@@ -462,6 +462,19 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "upgrade_request_event_cancels"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::upgradeRequestEventCancels),
           isolatedColonyData(event, "upgrade_request_event_cancels"));
+        // CA-4 + CA-2 network sync (one glob: minecolonies:sync_*).
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "sync_view_message_no_tail"),
+          info -> new MinecoloniesGameTestInstance(info, ColonySyncGameTests::viewMessageNoTail),
+          isolatedColonyData(event, "sync_view_message_no_tail"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "sync_citizen_dirty_not_colony_dirty"),
+          info -> new MinecoloniesGameTestInstance(info, ColonySyncGameTests::citizenDirtyNotColonyDirty),
+          isolatedColonyData(event, "sync_citizen_dirty_not_colony_dirty"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "sync_citizen_derived_refresh"),
+          info -> new MinecoloniesGameTestInstance(info, ColonySyncGameTests::citizenDerivedRefresh),
+          isolatedColonyData(event, "sync_citizen_derived_refresh"));
     }
 
     /**

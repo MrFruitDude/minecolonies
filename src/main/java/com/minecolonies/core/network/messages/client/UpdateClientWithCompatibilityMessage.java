@@ -13,6 +13,7 @@ import net.minecraft.world.entity.player.Player;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import com.minecolonies.core.event.DataPackSyncEventHandler;
 import org.jetbrains.annotations.NotNull;
+import com.minecolonies.core.network.messages.MessageBuffers;
 
 /**
  * Message to update the recipes on the client side.
@@ -42,8 +43,7 @@ public class UpdateClientWithCompatibilityMessage extends AbstractClientPlayMess
     @Override
     protected void toBytes(@NotNull final RegistryFriendlyByteBuf buf)
     {
-        buf.writeByteArray(this.buffer.array());
-        this.buffer.resetWriterIndex();
+        MessageBuffers.writeWrittenBytes(buf, this.buffer);
     }
 
     @Override

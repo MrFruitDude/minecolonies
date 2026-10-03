@@ -85,7 +85,7 @@ public class PermissionsMessage
             data.resetReaderIndex();
             buf.writeInt(colonyID);
             buf.writeUtf(dimension.identifier().toString());
-            buf.writeByteArray(data.array());
+            MessageBuffers.writeWrittenBytes(buf, data);
         }
     }
 

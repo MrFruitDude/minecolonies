@@ -57,6 +57,14 @@ public interface IStatisticsManager
     void serialize(@NotNull final RegistryFriendlyByteBuf buf, final boolean hasNewSubscribers);
 
     /**
+     * @return true if a stat changed since the last {@link #serialize}, i.e. the colony view has stats not yet sent.
+     */
+    default boolean hasDirtyStats()
+    {
+        return false;
+    }
+
+    /**
      * Deserialize from bytebuf.
      * @param buf the buffer to read from.
      */

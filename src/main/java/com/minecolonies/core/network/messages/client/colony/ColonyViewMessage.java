@@ -16,6 +16,7 @@ import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import com.minecolonies.core.network.messages.MessageBuffers;
 
 /**
  * Add or Update a ColonyView on the client.
@@ -75,7 +76,7 @@ public class ColonyViewMessage extends AbstractClientPlayMessage
         buf.writeInt(colonyId);
         buf.writeBoolean(isNewSubscription);
         buf.writeUtf(dim.identifier().toString());
-        buf.writeByteArray(colonyBuffer.array());
+        MessageBuffers.writeWrittenBytes(buf, colonyBuffer);
     }
 
     @Override

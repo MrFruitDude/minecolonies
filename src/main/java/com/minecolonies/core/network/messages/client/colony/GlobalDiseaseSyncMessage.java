@@ -10,6 +10,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
+import com.minecolonies.core.network.messages.MessageBuffers;
 
 /**
  * The message used to synchronize global disease data from a server to a remote client.
@@ -44,7 +45,7 @@ public class GlobalDiseaseSyncMessage extends AbstractClientPlayMessage
     protected void toBytes(@NotNull final RegistryFriendlyByteBuf buf)
     {
         buffer.resetReaderIndex();
-        buf.writeByteArray(buffer.array());
+        MessageBuffers.writeWrittenBytes(buf, buffer);
     }
 
     @Override
