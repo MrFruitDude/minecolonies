@@ -42,6 +42,15 @@ public abstract class AbstractCivilianEntity extends AbstractFastMinecoloniesEnt
     }
 
     /**
+     * Idle citizens and visitors skip vanilla travel while they stand at rest (CA-9).
+     */
+    @Override
+    protected boolean canSkipIdleTravel()
+    {
+        return true;
+    }
+
+    /**
      * Setter for the citizen data.
      *
      * @param data the data to set.
