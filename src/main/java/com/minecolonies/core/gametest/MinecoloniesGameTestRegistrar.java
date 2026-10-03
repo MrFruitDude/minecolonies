@@ -471,6 +471,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_tick_spread_min_stock"),
           info -> new MinecoloniesGameTestInstance(info, ColonyTickSpreadGameTests::colonyTickSpreadMinStock),
           isolatedColonyData(event, "colony_tick_spread_min_stock"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_tick_spread_prestige"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyTickSpreadGameTests::colonyTickSpreadPrestige),
+          isolatedColonyData(event, "colony_tick_spread_prestige"));
     }
 
     /**

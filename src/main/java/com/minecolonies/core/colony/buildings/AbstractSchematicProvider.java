@@ -18,6 +18,7 @@ import com.minecolonies.api.util.BlockPosUtil;
 import com.minecolonies.api.util.FireworkUtils;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.MessageUtils;
+import com.minecolonies.core.util.SchemAnalyzerUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -27,6 +28,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
@@ -99,6 +101,12 @@ public abstract class AbstractSchematicProvider implements ISchematicProvider, I
     private Future<Blueprint> blueprintFuture;
     private String            blueprintFuturePack = "";
     private String            blueprintFutureName = "";
+
+    /**
+     * CA-5: the prestige cost score, analysed on the blueprint's IO thread right after it loaded, so the server thread
+     * only applies it. Completes with null for a missing blueprint.
+     */
+    private Future<Integer> prestigeScoreFuture;
 
     /**
      * If prestige should be recalculated.
@@ -350,10 +358,17 @@ public abstract class AbstractSchematicProvider implements ISchematicProvider, I
         }
     }
 
+    /**
+     * Apply a prestige cost score analysed from this building's blueprint (same effect as {@code calculatePrestige}).
+     *
+     * @param costScore the blueprint's cost score.
+     */
+    protected abstract void applyPrestigeScore(int costScore);
+
     @Override
     public void onColonyTick(final IColony colony)
     {
-        if (blueprintFuture != null && blueprintFuture.isDone())
+        if (blueprintFuture != null && blueprintFuture.isDone() && (prestigeScoreFuture == null || prestigeScoreFuture.isDone()))
         {
             final Blueprint blueprint;
             try
@@ -364,12 +379,22 @@ public abstract class AbstractSchematicProvider implements ISchematicProvider, I
                     blueprintFuture = null;
                     if (recalcPrestige)
                     {
-                        calculatePrestige(blueprint);
+                        final Integer score = prestigeScoreFuture == null ? null : prestigeScoreFuture.get();
+                        prestigeScoreFuture = null;
+                        if (score != null)
+                        {
+                            applyPrestigeScore(score);
+                        }
+                        else
+                        {
+                            calculatePrestige(blueprint);
+                        }
                         recalcPrestige = false;
                     }
                 }
                 else
                 {
+                    prestigeScoreFuture = null;
                     recalcPrestige = false;
                     colony.getServerBuildingManager().clearPendingPrestigeCalc(this);
                 }
@@ -378,6 +403,7 @@ public abstract class AbstractSchematicProvider implements ISchematicProvider, I
             {
                 Log.getLogger().info("Failed to load blueprintfuture for: pack:" + blueprintFuturePack + " name:" + blueprintFutureName, e);
                 blueprintFuture = null;
+                prestigeScoreFuture = null;
             }
         }
     }
@@ -395,7 +421,11 @@ public abstract class AbstractSchematicProvider implements ISchematicProvider, I
         if (!recalcPrestige)
         {
             recalcPrestige = true;
-            blueprintFuture = StructurePacks.getBlueprintFuture(this.getStructurePack(), this.getBlueprintPath());
+            final CompletableFuture<Blueprint> future = StructurePacks.getBlueprintFuture(this.getStructurePack(), this.getBlueprintPath());
+            blueprintFuture = future;
+            // The blueprint is a fresh copy read for this future, so analysing it off the server thread touches nothing shared.
+            final HolderLookup.Provider provider = colony.getWorld().registryAccess();
+            prestigeScoreFuture = future.thenApply(blueprint -> blueprint == null ? null : SchemAnalyzerUtil.analyzeSchematic(blueprint, provider).costScore);
         }
     }
 
