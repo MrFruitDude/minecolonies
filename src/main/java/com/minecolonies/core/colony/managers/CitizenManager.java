@@ -71,6 +71,11 @@ public class CitizenManager implements ICitizenManager
     private boolean isCitizensDirty = false;
 
     /**
+     * CA-3: the full view payload of each citizen that close subscribers hold, so a change goes out as a patch.
+     */
+    private final Map<Integer, byte[]> viewBaselines = new HashMap<>();
+
+    /**
      * The highest citizen id.
      */
     private int topCitizenId = 0;
@@ -211,20 +216,42 @@ public class CitizenManager implements ICitizenManager
     {
         if (isCitizensDirty || !newSubscribers.isEmpty())
         {
-            final Set<ServerPlayer> players = new HashSet<>();
-            if (isCitizensDirty)
-            {
-                players.addAll(closeSubscribers);
-            }
-            players.addAll(newSubscribers);
+            // CA-3: close subscribers get a patch against the view they hold, new subscribers the full view.
+            final Set<ServerPlayer> closes = new HashSet<>(closeSubscribers);
+            closes.removeAll(newSubscribers);
             for (@NotNull final ICitizenData citizen : citizens.values())
             {
                 if (citizen.isDirty() || !newSubscribers.isEmpty())
                 {
-                    ColonyPackageManager.sendView(new ColonyViewCitizenViewMessage(colony, citizen), players);
+                    final byte[] now = ColonyViewCitizenViewMessage.viewPayload(colony, citizen);
+                    final byte[] base = viewBaselines.get(citizen.getId());
+                    if (!closes.isEmpty() && (base == null || !Arrays.equals(base, now)))
+                    {
+                        ColonyPackageManager.sendView(ColonyViewCitizenViewMessage.forSubscribers(colony, citizen.getId(), base, now), closes);
+                    }
+                    if (!newSubscribers.isEmpty())
+                    {
+                        ColonyPackageManager.sendView(ColonyViewCitizenViewMessage.forSubscribers(colony, citizen.getId(), null, now), newSubscribers);
+                    }
+                    viewBaselines.put(citizen.getId(), now);
                 }
             }
         }
+    }
+
+    /**
+     * CA-3: re-sends the full view close subscribers hold for a citizen to one player whose copy did not match a patch.
+     */
+    public void sendCitizenResync(@NotNull final ServerPlayer player, final int citizenId)
+    {
+        final byte[] base = viewBaselines.get(citizenId);
+        final ICitizenData citizen = citizens.get(citizenId);
+        if (citizen == null)
+        {
+            return;
+        }
+        final byte[] full = base != null ? base : ColonyViewCitizenViewMessage.viewPayload(colony, citizen);
+        ColonyPackageManager.sendView(ColonyViewCitizenViewMessage.forSubscribers(colony, citizenId, null, full), List.of(player));
     }
 
     @Override
@@ -395,6 +422,7 @@ public class CitizenManager implements ICitizenManager
         colony.getWorkManager().clearWorkForCitizen((ICitizenData) citizen);
 
         //  Inform Subscribers of removed citizen
+        viewBaselines.remove(citizen.getId());
         new ColonyViewRemoveCitizenMessage(colony, citizen.getId()).sendToPlayer(colony.getPackageManager().getCloseSubscribers());
 
         calculateMaxCitizens();

@@ -22,6 +22,7 @@ import com.minecolonies.api.util.ItemStackUtils;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.api.util.constant.TypeConstants;
+import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
 import com.minecolonies.core.colony.requestsystem.management.handlers.*;
 import com.minecolonies.core.colony.requestsystem.management.manager.wrapped.WrappedStaticStateRequestManager;
@@ -217,7 +218,16 @@ public class StandardRequestManager implements IStandardRequestManager
 
         if (this.isDirty())
         {
-            colony.markDirty();
+            // CA-1: the request system is synced as its own delta message, driven by this flag. It no longer re-sends the
+            // whole colony view: on the server the colony is only flagged for saving.
+            if (colony instanceof Colony serverColony)
+            {
+                serverColony.setDirty(true);
+            }
+            else
+            {
+                colony.markDirty();
+            }
         }
     }
 

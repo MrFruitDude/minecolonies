@@ -343,11 +343,26 @@ public class MineColonies
         return config;
     }
 
+    /**
+     * Network protocol revision, appended to the mod version as the channel version. Bump it whenever a message's wire
+     * format changes, so a client of the same mod version built before the change is refused at login with a reason
+     * instead of misreading packets. 2: CA-1/CA-3 view sync (request-system deltas, citizen view patches).
+     */
+    public static final int NETWORK_PROTOCOL_VERSION = 2;
+
+    /**
+     * @return the channel version both sides must announce.
+     */
+    public static String networkChannelVersion(final String modVersion)
+    {
+        return modVersion + "+net" + NETWORK_PROTOCOL_VERSION;
+    }
+
     @SubscribeEvent
     public static void onNetworkRegistry(final RegisterPayloadHandlersEvent event)
     {
         final String modVersion = ModList.get().getModContainerById(Constants.MOD_ID).get().getModInfo().getVersion().toString();
-        final PayloadRegistrar registry = event.registrar(Constants.MOD_ID).versioned(modVersion);
+        final PayloadRegistrar registry = event.registrar(Constants.MOD_ID).versioned(networkChannelVersion(modVersion));
 
         //  ColonyView messages
         ColonyViewMessage.TYPE.register(registry);
@@ -360,6 +375,8 @@ public class MineColonies
         ColonyViewWorkOrderMessage.TYPE.register(registry);
         ColonyViewRemoveWorkOrderMessage.TYPE.register(registry);
         ColonyViewResearchManagerViewMessage.TYPE.register(registry);
+        ColonyViewRequestSystemMessage.TYPE.register(registry);
+        ColonyViewResyncRequestMessage.TYPE.register(registry);
 
         //  Permission Request messages
         PermissionsMessage.Permission.TYPE.register(registry);

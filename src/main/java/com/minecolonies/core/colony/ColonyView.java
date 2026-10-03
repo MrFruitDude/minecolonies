@@ -14,7 +14,6 @@ import com.minecolonies.api.colony.managers.interfaces.*;
 import com.minecolonies.api.colony.managers.interfaces.views.IRegisteredStructureManagerView;
 import com.minecolonies.api.colony.permissions.ColonyPlayer;
 import com.minecolonies.api.colony.permissions.IPermissions;
-import com.minecolonies.api.colony.requestsystem.StandardFactoryController;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import com.minecolonies.api.colony.requestsystem.requester.IRequester;
 import com.minecolonies.api.colony.workorders.IWorkManager;
@@ -35,6 +34,7 @@ import com.minecolonies.core.colony.managers.StatisticsManager;
 import com.minecolonies.core.colony.managers.TravellingManager;
 import com.minecolonies.core.colony.managers.views.RegisteredStructureManagerView;
 import com.minecolonies.core.colony.permissions.PermissionsView;
+import com.minecolonies.core.colony.requestsystem.management.manager.RequestSystemViewSync;
 import com.minecolonies.core.colony.requestsystem.management.manager.StandardRequestManager;
 import com.minecolonies.core.colony.workorders.AbstractWorkOrder;
 import com.minecolonies.core.datalistener.CitizenNameListener;
@@ -80,13 +80,13 @@ public final class ColonyView implements IColonyView
     /**
      * Max allowed CompoundTag in bytes
      */
-    private static final int REQUEST_MANAGER_MAX_SIZE = 700000;
+    public static final int REQUEST_MANAGER_MAX_SIZE = 700000;
 
     /**
      * Test seam (CA-1): whether {@link #serializeNetworkData} carries the request manager. Sync GameTests read it to
      * know where request-system data travels.
      */
-    public static final boolean REQUEST_SYSTEM_IN_VIEW = true;
+    public static final boolean REQUEST_SYSTEM_IN_VIEW = false;
 
     //  General Attributes
     private final int                            id;
@@ -164,6 +164,16 @@ public final class ColonyView implements IColonyView
      * The request manager on the colony view side.
      */
     private IRequestManager requestManager;
+
+    /**
+     * CA-1: the bytes behind the request-system view, so request-system deltas can be applied.
+     */
+    private final RequestSystemViewSync.ClientMirror requestSystemMirror = new RequestSystemViewSync.ClientMirror();
+
+    /**
+     * CA-3: the last full view payload of each citizen, so citizen view patches can be applied.
+     */
+    private final Map<Integer, byte[]> citizenViewPayloads = new HashMap<>();
 
     /**
      * Wether the colony is raided
@@ -328,31 +338,7 @@ public final class ColonyView implements IColonyView
         }
         //  Citizens are sent as a separate packet
 
-        if (colony.getRequestManager() != null && (colony.getRequestManager().isDirty() || hasNewSubscribers))
-        {
-            final int preIndex = buf.writerIndex();
-            try
-            {
-                buf.writeBoolean(true);
-                colony.getRequestManager().serialize(StandardFactoryController.getInstance(), buf);
-                final int postSize = buf.writerIndex();
-                if ((postSize - preIndex) >= ColonyView.REQUEST_MANAGER_MAX_SIZE)
-                {
-                    Log.getLogger().warn("Colony " + colony.getID() + " has a very big memory imprint, this could be a memory leak, please contact the mod author!");
-                }
-            }
-            catch (Exception e)
-            {
-                buf.writerIndex(preIndex);
-                Log.getLogger().warn("Error during request manager serialization for:" + colony.getID(), e);
-                colony.getRequestManager().reset();
-                buf.writeBoolean(false);
-            }
-        }
-        else
-        {
-            buf.writeBoolean(false);
-        }
+        //  CA-1: the request system is sent as its own message (ColonyViewRequestSystemMessage), as a delta.
 
         buf.writeInt(colony.getRaiderManager().getLastSpawnPoints().size());
         for (final BlockPos block : colony.getRaiderManager().getLastSpawnPoints())
@@ -677,6 +663,7 @@ public final class ColonyView implements IColonyView
         if (isNewSubscription)
         {
             citizens.clear();
+            citizenViewPayloads.clear();
         }
 
         freePositions.clear();
@@ -711,15 +698,6 @@ public final class ColonyView implements IColonyView
         for (int i = 0; i < nameFileIdSize; i++)
         {
             nameFileIds.add(buf.readUtf(32767));
-        }
-
-        if (buf.readBoolean())
-        {
-            if (this.requestManager == null)
-            {
-                this.requestManager = new StandardRequestManager(this);
-            }
-            this.requestManager.deserialize(StandardFactoryController.getInstance(), buf);
         }
 
         final int barbSpawnListSize = buf.readInt();
@@ -916,6 +894,38 @@ public final class ColonyView implements IColonyView
     public void handleColonyViewRemoveCitizenMessage(final int citizen)
     {
         citizens.remove(citizen);
+        citizenViewPayloads.remove(citizen);
+    }
+
+    /**
+     * CA-1: applies a request-system payload (full or delta).
+     *
+     * @return false when it could not be applied; the caller then asks the server for a full resync.
+     */
+    public boolean handleRequestSystemMessage(@NotNull final RegistryFriendlyByteBuf buf)
+    {
+        if (this.requestManager == null)
+        {
+            this.requestManager = new StandardRequestManager(this);
+        }
+        return requestManager instanceof StandardRequestManager standard && RequestSystemViewSync.apply(standard, requestSystemMirror, buf);
+    }
+
+    /**
+     * CA-3: the last full view payload of a citizen, or null.
+     */
+    @Nullable
+    public byte[] getCitizenViewPayload(final int citizen)
+    {
+        return citizenViewPayloads.get(citizen);
+    }
+
+    /**
+     * CA-3: remembers a citizen's full view payload, for the next patch.
+     */
+    public void setCitizenViewPayload(final int citizen, @NotNull final byte[] payload)
+    {
+        citizenViewPayloads.put(citizen, payload);
     }
 
     /**
