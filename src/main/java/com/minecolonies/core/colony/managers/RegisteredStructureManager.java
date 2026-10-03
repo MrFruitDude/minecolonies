@@ -54,6 +54,11 @@ import static com.minecolonies.api.util.constant.NbtTagConstants.*;
 public class RegisteredStructureManager implements IRegisteredStructureManager
 {
     /**
+     * Test seam (GameTest): told about every building colony tick, just before it runs. Null in production.
+     */
+    public static java.util.function.BiConsumer<IColony, IBuilding> buildingTickRecorder = null;
+
+    /**
      * List of building in the colony.
      */
     @NotNull
@@ -294,7 +299,7 @@ public class RegisteredStructureManager implements IRegisteredStructureManager
         {
             if (WorldUtil.isBlockLoaded(colony.getWorld(), building.getPosition()))
             {
-                building.onColonyTick(colony);
+                tickBuilding(colony, building);
             }
         }
 
@@ -307,6 +312,22 @@ public class RegisteredStructureManager implements IRegisteredStructureManager
         {
             pendingPrestigeCalc.getLast().asyncPrestigeRecalc();
         }
+    }
+
+    /**
+     * Run one building's colony tick.
+     *
+     * @param colony   the colony.
+     * @param building the building.
+     */
+    private static void tickBuilding(final IColony colony, final IBuilding building)
+    {
+        final java.util.function.BiConsumer<IColony, IBuilding> recorder = buildingTickRecorder;
+        if (recorder != null)
+        {
+            recorder.accept(colony, building);
+        }
+        building.onColonyTick(colony);
     }
 
     @Override

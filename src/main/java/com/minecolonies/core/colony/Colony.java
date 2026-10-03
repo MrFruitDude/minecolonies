@@ -93,6 +93,12 @@ import static com.minecolonies.core.MineColonies.getConfig;
 public class Colony implements IColony
 {
     /**
+     * Test seam (GameTest): when set, every colony world tick runs inside this wrapper (colony, tick body), e.g. to
+     * time it. Null in production.
+     */
+    public static java.util.function.BiConsumer<IColony, Runnable> worldTickWrapper = null;
+
+    /**
      * The default style for the building.
      */
     private String pack = DEFAULT_STYLE;
@@ -1225,6 +1231,22 @@ public class Colony implements IColony
             return;
         }
 
+        final java.util.function.BiConsumer<IColony, Runnable> wrapper = worldTickWrapper;
+        if (wrapper != null)
+        {
+            wrapper.accept(this, () -> tickWorld(event));
+            return;
+        }
+        tickWorld(event);
+    }
+
+    /**
+     * The body of {@link #onWorldTick} for this colony's own world.
+     *
+     * @param event the world tick event.
+     */
+    private void tickWorld(@NotNull final LevelTickEvent.Pre event)
+    {
         if (!event.getLevel().isClientSide() && (event.getLevel().getGameTime() + id) % 20 == 0)
         {
             connectionManager.tick();
