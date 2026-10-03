@@ -34,7 +34,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -82,10 +81,10 @@ public final class PathfindingGameTests
 
     static
     {
-        EXPECTED_ROUTES.put("wall_gap", null);
-        EXPECTED_ROUTES.put("stairs_up", null);
-        EXPECTED_ROUTES.put("ditch", null);
-        EXPECTED_ROUTES.put("pillars", null);
+        EXPECTED_ROUTES.put("wall_gap", "41:53726aaed88b6ff4");
+        EXPECTED_ROUTES.put("stairs_up", "10:1b7e98decedcf819");
+        EXPECTED_ROUTES.put("ditch", "11:f95b3c8ff9334f69");
+        EXPECTED_ROUTES.put("pillars", "40:77c2516217418ee4");
     }
 
     private PathfindingGameTests()
@@ -256,6 +255,25 @@ public final class PathfindingGameTests
         }
     }
 
+    /**
+     * Waits (wall time, the GameTest server runs unthrottled) until the shared pathfinding pool has nothing queued or
+     * running, so an earlier batch's leftover jobs cannot delay this test's.
+     */
+    private static void awaitIdlePool(final GameTestHelper helper, final long t0, final Runnable then)
+    {
+        if (Pathfinding.getExecutor().getQueue().isEmpty() && Pathfinding.Stats.running.get() == 0)
+        {
+            then.run();
+            return;
+        }
+        if (System.nanoTime() - t0 > 120_000_000_000L)
+        {
+            helper.fail("fixture: the pathfinding pool was still busy after 120 s");
+            return;
+        }
+        helper.runAfterDelay(1, () -> awaitIdlePool(helper, t0, then));
+    }
+
     /** Installs the submit observer that records every job of {@code host}. */
     private static void observe(final Host host)
     {
@@ -313,7 +331,7 @@ public final class PathfindingGameTests
         final Host host = new Host(helper, HOST_START);
         final BlockPos target = helper.absolutePos(SEALED_TARGET);
         observe(host);
-        helper.runAfterDelay(2, () -> drive(helper, host, () -> target, 0, BACKOFF_WINDOW, t -> false, () -> {
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> drive(helper, host, () -> target, 0, BACKOFF_WINDOW, t -> false, () -> {
             Pathfinding.submitObserver = null;
             final String s = summary("unreachable", host);
             Log.getLogger().info(s);
@@ -322,7 +340,7 @@ public final class PathfindingGameTests
             helper.assertTrue(host.jobs.size() <= MAX_BACKOFF_JOBS,
               "unreachable target: " + host.jobs.size() + " path jobs in " + BACKOFF_WINDOW + " ticks (bar " + MAX_BACKOFF_JOBS + "). " + s);
             helper.succeed();
-        }));
+        })));
     }
 
     /**
@@ -338,7 +356,7 @@ public final class PathfindingGameTests
         final BlockPos target = helper.absolutePos(SEALED_TARGET);
         final BlockPos other = helper.absolutePos(new BlockPos(10, 1, 34));
         observe(host);
-        helper.runAfterDelay(2, () -> drive(helper, host, () -> target, 0, 300, t -> false, () ->
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> drive(helper, host, () -> target, 0, 300, t -> false, () ->
           drive(helper, host, () -> other, 0, 100, t -> host.anyReached(other), () -> {
               Pathfinding.submitObserver = null;
               final String s = summary("other target", host);
@@ -346,7 +364,7 @@ public final class PathfindingGameTests
               helper.assertTrue(host.jobsFor(target) >= 2, "fixture: fewer than 2 jobs for the sealed target. " + s);
               helper.assertTrue(host.anyReached(other), "a reachable second target was not reached within 100 ticks while the first one backed off. " + s);
               helper.succeed();
-          })));
+          }))));
     }
 
     /**
@@ -361,7 +379,7 @@ public final class PathfindingGameTests
         final Host host = new Host(helper, HOST_START);
         final BlockPos target = helper.absolutePos(SEALED_TARGET);
         observe(host);
-        helper.runAfterDelay(2, () -> drive(helper, host, () -> target, 0, 300, t -> false, () -> {
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> drive(helper, host, () -> target, 0, 300, t -> false, () -> {
             final int failedBefore = host.jobs.size();
             // Doorway on the side facing the host.
             helper.setBlock(SEALED_TARGET.west(), Blocks.AIR.defaultBlockState());
@@ -376,7 +394,7 @@ public final class PathfindingGameTests
                 helper.assertTrue(host.anyReached(target), "the target was not reached within 1400 ticks of becoming reachable. " + s);
                 helper.succeed();
             });
-        }));
+        })));
     }
 
     // ------------------------------------------------------------------ CA-10
@@ -411,8 +429,10 @@ public final class PathfindingGameTests
         {
             result.startJob(executor);
         }
-        catch (final RejectedExecutionException e)
+        catch (final RuntimeException e)
         {
+            // Today: AbortPolicy builds its message from the job's toString, which itself throws an NPE before the
+            // job ran (no best node yet), so the server thread gets an NPE, not even a RejectedExecutionException.
             thrown = e.toString();
         }
         finally
@@ -450,7 +470,7 @@ public final class PathfindingGameTests
         queueCourse(helper);
         final BlockPos start = helper.absolutePos(new BlockPos(-6, 1, 10));
         final BlockPos end = helper.absolutePos(new BlockPos(57, 1, 12));
-        helper.runAfterDelay(2, () -> {
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
             Pathfinding.Stats.reset();
             final List<PathResult<?>> results = new ArrayList<>();
             final long t0 = System.nanoTime();
@@ -478,7 +498,7 @@ public final class PathfindingGameTests
                   "only " + Pathfinding.Stats.peakRunning.get() + " search ran at once for " + QUEUED_JOBS + " queued jobs (bar " + MIN_PEAK_RUNNING + "). " + s);
                 helper.succeed();
             });
-        });
+        }));
     }
 
     private static void waitAll(final GameTestHelper helper, final List<PathResult<?>> results, final long t0, final int tick, final Runnable then)
@@ -496,9 +516,10 @@ public final class PathfindingGameTests
             then.run();
             return;
         }
-        if (tick > 2400)
+        // The GameTest server runs unthrottled (thousands of ticks per second), so the bound is wall time.
+        if (System.nanoTime() - t0 > 120_000_000_000L)
         {
-            helper.fail("queued path jobs not done after 2400 ticks / " + (System.nanoTime() - t0) / 1_000_000L + " ms");
+            helper.fail("queued path jobs not done after 120 s (" + tick + " ticks)");
             return;
         }
         helper.runAfterDelay(1, () -> waitAll(helper, results, t0, tick + 1, then));
@@ -562,7 +583,7 @@ public final class PathfindingGameTests
         prepareFloor(helper);
         keepClock(helper, 6000L);
         final Map<String, BlockPos[]> routes = routeCourse(helper);
-        helper.runAfterDelay(2, () -> {
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
             final Map<String, PathResult<?>> results = new LinkedHashMap<>();
             for (final Map.Entry<String, BlockPos[]> e : routes.entrySet())
             {
@@ -590,7 +611,7 @@ public final class PathfindingGameTests
                 helper.assertTrue(wrong.isEmpty(), "routes differ from the pre-change node lists: " + wrong + ". " + s);
                 helper.succeed();
             });
-        });
+        }));
     }
 
     // ------------------------------------------------------------------ real citizen
