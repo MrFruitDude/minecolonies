@@ -216,6 +216,12 @@ public class PathResult<T extends AbstractPathJob>
         if (job != null)
         {
             checkDebugging();
+            final java.util.function.Consumer<AbstractPathJob> observer = com.minecolonies.core.entity.pathfinding.Pathfinding.submitObserver;
+            if (observer != null)
+            {
+                observer.accept(job);
+            }
+            com.minecolonies.core.entity.pathfinding.Pathfinding.Stats.submitted.incrementAndGet();
             pathCalculation = executorService.submit(job);
         }
     }

@@ -294,6 +294,7 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     @Override
     public final Path call()
     {
+        Pathfinding.Stats.searchStarted();
         try
         {
             return search();
@@ -301,6 +302,10 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
         catch (final Exception e)
         {
             Log.getLogger().warn("Pathfinding Exception from: " + start + " range: " + Math.sqrt(maxNodes) + " entity: " + entity + " type: " + getClass().getSimpleName(), e);
+        }
+        finally
+        {
+            Pathfinding.Stats.searchFinished();
         }
 
         return null;

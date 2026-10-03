@@ -95,6 +95,26 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               info -> new MinecoloniesGameTestInstance(info, test),
               isolatedColonyData(event, name));
         }
+        // CA-10 / CA-11 pathfinding: each in its own batch (own environment), so no other test's path jobs share the
+        // worker pool or the submit observer while one is measured.
+        for (final String name : new String[] {"path_unreachable_backoff", "path_unreachable_other_target", "path_unreachable_recovers",
+          "path_queue_reject_marks_failed", "path_queue_parallel", "path_routes_identical", "path_citizen_walks_home"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "path_unreachable_backoff" -> PathfindingGameTests::unreachableTargetBackoff;
+                case "path_unreachable_other_target" -> PathfindingGameTests::unreachableTargetOtherTarget;
+                case "path_unreachable_recovers" -> PathfindingGameTests::unreachableTargetRecovers;
+                case "path_queue_reject_marks_failed" -> PathfindingGameTests::pathQueueRejectMarksFailed;
+                case "path_queue_parallel" -> PathfindingGameTests::pathQueueParallel;
+                case "path_routes_identical" -> PathfindingGameTests::pathRoutesIdentical;
+                default -> PathfindingGameTests::pathCitizenWalksHome;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rack_inventory_round_trip"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::rackInventoryRoundTrip),
