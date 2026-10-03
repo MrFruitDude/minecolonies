@@ -423,6 +423,19 @@ public class Colony implements IColony
         colonyStateMachine.addTransition(new TickingTransition<>(ACTIVE, this::worldTickSlow, () -> ACTIVE, MAX_TICKRATE));
         colonyStateMachine.addTransition(new TickingTransition<>(ACTIVE, this::tickWorkManager, () -> ACTIVE, 20));
         colonyStateMachine.addTransition(new TickingTransition<>(UNLOADED, this::worldTickUnloaded, () -> UNLOADED, MAX_TICKRATE));
+        // CA-5: the buildings' 500-tick colony tick, a 1/25 share every 20 ticks instead of all of them in one tick.
+        colonyStateMachine.addTransition(new TickingTransition<>(ACTIVE, this::tickBuildingSlot, () -> ACTIVE, IRegisteredStructureManager.BUILDING_TICK_SLOT_INTERVAL));
+    }
+
+    /**
+     * Ticks the buildings of the next building tick slot.
+     *
+     * @return false
+     */
+    private boolean tickBuildingSlot()
+    {
+        buildingManager.onColonyTickSlot(this);
+        return false;
     }
 
     /**
@@ -502,6 +515,7 @@ public class Colony implements IColony
         animalManager.onColonyTick(this);
         updateAttackingPlayers();
         eventManager.onColonyTick(this);
+        // Prestige only: the buildings' own colony ticks run spread over the cycle in tickBuildingSlot (CA-5).
         buildingManager.onColonyTick(this);
         graveManager.onColonyTick(this);
         reproductionManager.onColonyTick(this);

@@ -207,6 +207,26 @@ public final class ColonyTickSpreadGameTests
         final Map<IBuilding, List<Long>> ticksOf = new HashMap<>();
         final long[] recordStart = {-1};
         final long[] activeSince = {-1};
+        // Diagnostics: CPU nanos from one building tick's start to the next one's (or the tick's end), per tick.
+        final List<List<String>> costsAt = new ArrayList<>();
+        for (int i = 0; i < RECORD_TICKS; i++)
+        {
+            costsAt.add(new ArrayList<>());
+        }
+        final Object[] open = new Object[1];
+        final long[] openAt = new long[1];
+        final java.util.function.LongConsumer closeOpen = now -> {
+            if (open[0] != null && recordStart[0] >= 0)
+            {
+                final long t = level.getGameTime() - recordStart[0];
+                if (t >= 0 && t < RECORD_TICKS)
+                {
+                    final IBuilding prev = (IBuilding) open[0];
+                    costsAt.get((int) t).add(prev.getBuildingType().getRegistryName().getPath() + "@" + prev.getID().toShortString() + "=" + (now - openAt[0]));
+                }
+            }
+            open[0] = null;
+        };
 
         final Runnable cleanup = () -> {
             Colony.worldTickWrapper = null;
@@ -222,6 +242,10 @@ public final class ColonyTickSpreadGameTests
             final long t = level.getGameTime() - recordStart[0];
             if (t >= 0 && t < RECORD_TICKS)
             {
+                final long now = cpuTime ? threads.getCurrentThreadCpuTime() : System.nanoTime();
+                closeOpen.accept(now);
+                open[0] = building;
+                openAt[0] = now;
                 buildingTicksAt[(int) t]++;
                 ticksOf.computeIfAbsent(building, k -> new ArrayList<>()).add(level.getGameTime());
             }
@@ -243,7 +267,9 @@ public final class ColonyTickSpreadGameTests
             final long w0 = System.nanoTime();
             body.run();
             wall[(int) t] = System.nanoTime() - w0;
-            cpu[(int) t] = cpuTime ? threads.getCurrentThreadCpuTime() - c0 : wall[(int) t];
+            final long c1 = cpuTime ? threads.getCurrentThreadCpuTime() : System.nanoTime();
+            closeOpen.accept(c1);
+            cpu[(int) t] = cpuTime ? c1 - c0 : wall[(int) t];
             gc[(int) t] = gcCount() != gc0;
         };
 
@@ -270,7 +296,7 @@ public final class ColonyTickSpreadGameTests
             else if (recordStart[0] >= 0 && now >= recordStart[0] + RECORD_TICKS)
             {
                 cleanup.run();
-                evaluate(helper, all, cpu, wall, gc, buildingTicksAt, ticksOf, recordStart[0], cpuTime);
+                evaluate(helper, all, cpu, wall, gc, buildingTicksAt, costsAt, ticksOf, recordStart[0], cpuTime);
                 return;
             }
             helper.runAfterDelay(1, () -> pump[0].run());
@@ -285,6 +311,7 @@ public final class ColonyTickSpreadGameTests
       final long[] wall,
       final boolean[] gc,
       final int[] buildingTicksAt,
+      final List<List<String>> costsAt,
       final Map<IBuilding, List<Long>> ticksOf,
       final long start,
       final boolean cpuTime)
@@ -387,6 +414,19 @@ public final class ColonyTickSpreadGameTests
                                + sortedWindows[sortedWindows.length * 9 / 10] + ", max window " + sortedWindows[sortedWindows.length - 1]
                                + ", max wall tick " + maxWall + "; max building ticks per server tick " + maxBuildingTicks + " (limit " + perSlot
                                + "); cadence bad " + cadenceBad + ", building tick gaps " + gaps);
+        final Integer[] order = new Integer[cpu.length];
+        for (int t = 0; t < order.length; t++)
+        {
+            order[t] = t;
+        }
+        Arrays.sort(order, (x, y) -> Long.compare(cpu[y], cpu[x]));
+        final List<String> top = new ArrayList<>();
+        for (int i = 0; i < 5; i++)
+        {
+            final int t = order[i];
+            top.add("+" + t + " " + cpu[t] + "ns gc=" + gc[t] + " " + costsAt.get(t));
+        }
+        Log.getLogger().info("CA5 spread top ticks: " + top);
         helper.assertTrue(failures.isEmpty(), String.join(" | ", failures));
         helper.succeed();
     }

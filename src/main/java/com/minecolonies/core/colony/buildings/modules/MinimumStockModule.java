@@ -9,12 +9,13 @@ import com.minecolonies.api.colony.requestsystem.requestable.MinimumStack;
 import com.minecolonies.api.colony.requestsystem.requestable.Stack;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.crafting.ItemStorage;
-import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.ItemStackUtils;
 import com.minecolonies.api.util.Utils;
 import com.minecolonies.api.util.WorldUtil;
 import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.api.util.constant.NbtTagConstants;
+import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
+import com.minecolonies.core.tileentities.WarehouseRackIndex;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -115,6 +116,10 @@ public class MinimumStockModule extends AbstractBuildingModule implements IMinim
         if (WorldUtil.isBlockLoaded(colony.getWorld(), building.getPosition()))
         {
             final Collection<IToken<?>> list = building.getOpenRequestsByRequestableType().getOrDefault(TypeToken.of(MinimumStack.class), new ArrayList<>());
+            // One rack scan for all entries (the warehouse's live index, else a one-shot index): each entry then only
+            // visits the racks holding its item. Same counts as InventoryUtils.hasBuildingEnoughElseCount per entry.
+            final WarehouseRackIndex index = minimumStock.isEmpty() ? null
+                                               : building instanceof final BuildingWareHouse wareHouse ? wareHouse.getRackIndex() : WarehouseRackIndex.oneShot(building);
 
             for (final Map.Entry<ItemStorage, Integer> entry : minimumStock.entrySet())
             {
@@ -126,7 +131,7 @@ public class MinimumStockModule extends AbstractBuildingModule implements IMinim
                 }
 
                 final int target = entry.getValue() * itemStack.getMaxStackSize();
-                final int count = InventoryUtils.hasBuildingEnoughElseCount(this.building, new ItemStorage(itemStack, true), target);
+                final int count = index.countUpTo(colony.getWorld(), new ItemStorage(itemStack, true), target);
                 final int delta = target - count;
                 final IToken<?> request = getMatchingRequest(itemStack, list);
                 if (delta > (building.getColony().getResearchManager().getResearchEffects().getEffectStrength(MIN_ORDER) > 0 ? target / 4 : 0))

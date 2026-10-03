@@ -70,6 +70,21 @@ public class RegisteredStructureManager implements IRegisteredStructureManager
     private List<IBuilding> pendingPrestigeCalc = new ArrayList<>();
 
     /**
+     * CA-5: the building tick slot (0 .. BUILDING_TICK_SLOTS - 1) each building's colony tick runs in.
+     */
+    private final Map<BlockPos, Integer> tickSlotOf = new HashMap<>();
+
+    /**
+     * Buildings per tick slot.
+     */
+    private final int[] tickSlotLoad = new int[BUILDING_TICK_SLOTS];
+
+    /**
+     * The slot the next {@link #onColonyTickSlot} call runs.
+     */
+    private int nextTickSlot = 0;
+
+    /**
      * List of building extensions of the colony.
      */
     private final Map<IBuildingExtension.ExtensionId, IBuildingExtension> buildingExtensions = new HashMap<>();
@@ -294,15 +309,7 @@ public class RegisteredStructureManager implements IRegisteredStructureManager
     @Override
     public void onColonyTick(final IColony colony)
     {
-        //  Tick Buildings
-        for (@NotNull final IBuilding building : buildings.values())
-        {
-            if (WorldUtil.isBlockLoaded(colony.getWorld(), building.getPosition()))
-            {
-                tickBuilding(colony, building);
-            }
-        }
-
+        // The buildings tick in onColonyTickSlot; only the colony-wide prestige round stays on the 500-tick cycle.
         if (pendingPrestigeCalc.isEmpty())
         {
             pendingPrestigeCalc.addAll(buildings.values());
@@ -311,6 +318,63 @@ public class RegisteredStructureManager implements IRegisteredStructureManager
         else
         {
             pendingPrestigeCalc.getLast().asyncPrestigeRecalc();
+        }
+    }
+
+    @Override
+    public void onColonyTickSlot(final IColony colony)
+    {
+        final int slot = nextTickSlot;
+        nextTickSlot = (nextTickSlot + 1) % BUILDING_TICK_SLOTS;
+        syncTickSlots();
+
+        for (@NotNull final IBuilding building : buildings.values())
+        {
+            final Integer own = tickSlotOf.get(building.getID());
+            if (own != null && own == slot && WorldUtil.isBlockLoaded(colony.getWorld(), building.getPosition()))
+            {
+                tickBuilding(colony, building);
+            }
+        }
+    }
+
+    /**
+     * Give every new building a tick slot (the least loaded one) and drop the slots of removed buildings. A building
+     * keeps its slot for as long as it exists, so its colony tick stays exactly one slot cycle apart.
+     */
+    private void syncTickSlots()
+    {
+        if (tickSlotOf.size() == buildings.size() && buildings.keySet().containsAll(tickSlotOf.keySet()))
+        {
+            return;
+        }
+
+        final Iterator<Map.Entry<BlockPos, Integer>> it = tickSlotOf.entrySet().iterator();
+        while (it.hasNext())
+        {
+            final Map.Entry<BlockPos, Integer> entry = it.next();
+            if (!buildings.containsKey(entry.getKey()))
+            {
+                tickSlotLoad[entry.getValue()]--;
+                it.remove();
+            }
+        }
+
+        for (final BlockPos pos : buildings.keySet())
+        {
+            if (!tickSlotOf.containsKey(pos))
+            {
+                int best = 0;
+                for (int s = 1; s < BUILDING_TICK_SLOTS; s++)
+                {
+                    if (tickSlotLoad[s] < tickSlotLoad[best])
+                    {
+                        best = s;
+                    }
+                }
+                tickSlotOf.put(pos, best);
+                tickSlotLoad[best]++;
+            }
         }
     }
 
