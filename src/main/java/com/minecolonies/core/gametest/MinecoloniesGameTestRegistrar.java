@@ -123,6 +123,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rack_inventory_round_trip"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::rackInventoryRoundTrip),
           data);
+        // NF48: ModEquipmentTypes.simulateBlockTransform on NeoForge .48's holder-based DataMapHooks transformer lookup.
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "equipment_simulate_block_transform"),
+          info -> new MinecoloniesGameTestInstance(info, EquipmentTransformGameTests::simulateBlockTransform),
+          data);
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "production_courier_builder"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilder),

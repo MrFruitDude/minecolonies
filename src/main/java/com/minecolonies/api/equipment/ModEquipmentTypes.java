@@ -552,7 +552,8 @@ public class ModEquipmentTypes
         {
             return null;
         }
-        for (final BlockTransformer.BlockTransformData data : DataMapHooks.appendDatamapTransformers(tool, component.value().transforms()))
+        // NeoForge 26.3.0.48 (#3575): the data-map transforms are looked up by the transformer holder, not the stack.
+        for (final BlockTransformer.BlockTransformData data : DataMapHooks.getAllTransformers(component))
         {
             if (data.disallowedFaces().contains(face))
             {
