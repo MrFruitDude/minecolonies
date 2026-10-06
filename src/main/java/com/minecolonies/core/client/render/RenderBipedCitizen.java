@@ -117,12 +117,21 @@ public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, Citiz
      * The state renderer keeps a single model reference, so this must happen immediately
      * before the state is submitted, after all visible entity states have been extracted.
      */
+    @SuppressWarnings("unchecked")
     private CitizenModel<CitizenRenderState> modelFor(final AbstractEntityCitizen citizen)
     {
-        final IModelTypeRegistry registry = IModelTypeRegistry.getInstance();
         final ICitizenDataView citizenDataView = citizen.getCitizenDataView();
+        final boolean custom = citizenDataView != null && citizenDataView.getCustomTextureUUID() != null;
+        // Kept on the citizen until the renderer, its model type, gender or custom texture changes: no registry lookups per frame.
+        return (CitizenModel<CitizenRenderState>) citizen.getRenderModelCache().get(this, citizen.getModelType(), citizen.isFemale(), custom,
+          () -> resolveModel(citizen, custom));
+    }
+
+    private CitizenModel<CitizenRenderState> resolveModel(final AbstractEntityCitizen citizen, final boolean custom)
+    {
+        final IModelTypeRegistry registry = IModelTypeRegistry.getInstance();
         final IModelType modelType = registry.getModelType(citizen.getModelType());
-        if (citizenDataView != null && citizenDataView.getCustomTextureUUID() != null)
+        if (custom)
         {
             final IModelType customType = registry.getModelType(ModModelTypes.CUSTOM_ID);
             if (customType != null && customType.getMaleModel() != null)

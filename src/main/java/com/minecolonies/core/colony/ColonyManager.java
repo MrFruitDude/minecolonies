@@ -10,6 +10,7 @@ import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.claim.ChunkClaimData;
+import com.minecolonies.api.colony.claim.ClaimRevision;
 import com.minecolonies.api.colony.claim.IChunkClaimData;
 import com.minecolonies.api.colony.permissions.ColonyPlayer;
 import com.minecolonies.api.colony.savedata.IServerColonySaveData;
@@ -895,6 +896,7 @@ public final class ColonyManager implements IColonyManager
     {
         colonyViews.clear();
         chunkClaimData.clear();
+        ClaimRevision.bump();
     }
 
     @Override
@@ -911,6 +913,7 @@ public final class ColonyManager implements IColonyManager
     public void addClaimData(final IColony colony, final Long2ObjectMap<ChunkClaimData> claimData)
     {
         this.chunkClaimData.computeIfAbsent(colony.getDimension(), (k) -> new Long2ObjectOpenHashMap<>()).putAll(claimData);
+        ClaimRevision.bump();
     }
 
     @Override
@@ -932,5 +935,6 @@ public final class ColonyManager implements IColonyManager
     public void addNewChunk(final Colony colony, final ChunkPos pos, final ChunkClaimData chunkClaimData)
     {
         this.chunkClaimData.computeIfAbsent(colony.getDimension(), (k) -> new Long2ObjectOpenHashMap<>()).put(pos.pack(), chunkClaimData);
+        ClaimRevision.bump();
     }
 }

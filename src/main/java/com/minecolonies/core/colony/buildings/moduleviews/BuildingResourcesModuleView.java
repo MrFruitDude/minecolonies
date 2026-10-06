@@ -39,9 +39,15 @@ public class BuildingResourcesModuleView extends AbstractBuildingModuleView
     private int finishedStages = 0;
     private int totalStages    = 1;
 
+    /**
+     * Bumped on every view update, so a window showing the resources knows when to read them again.
+     */
+    private int revision = 0;
+
     @Override
     public void deserialize(@NotNull final RegistryFriendlyByteBuf buf)
     {
+        revision++;
         final int size = buf.readInt();
         resources.clear();
 
@@ -70,6 +76,16 @@ public class BuildingResourcesModuleView extends AbstractBuildingModuleView
     public int getWorkOrderId()
     {
         return workOrderId;
+    }
+
+    /**
+     * How many view updates this module has had (it grows on every update).
+     *
+     * @return the revision.
+     */
+    public int getRevision()
+    {
+        return revision;
     }
 
     /**

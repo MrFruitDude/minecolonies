@@ -59,6 +59,16 @@ public class WindowResourceList extends AbstractWindowSkeleton
     private final Map<String, Integer> warehouseSnapshot;
 
     /**
+     * GUI ticks between resource reads while nothing the rows depend on changed (deliveries are not in the signature).
+     */
+    private static final int REFRESH_TICKS = 20;
+
+    /**
+     * When {@link #onUpdate} reads the resources again.
+     */
+    private final RefreshGate refresh = new RefreshGate(REFRESH_TICKS);
+
+    /**
      * Constructor for the resource scroll window.
      *
      * @param builderView the building view for the builder.
@@ -161,6 +171,7 @@ public class WindowResourceList extends AbstractWindowSkeleton
     {
         super.onOpened();
         pullResourcesFromHut();
+        refresh.markRead(signature());
 
         final ScrollingList resourceList = findPaneOfTypeByID(LIST_RESOURCES, ScrollingList.class);
         resourceList.setDataProvider(new ScrollingList.DataProvider()
@@ -279,7 +290,30 @@ public class WindowResourceList extends AbstractWindowSkeleton
     {
         super.onUpdate();
 
-        pullResourcesFromHut();
+        // Read the resources again only when the view or the inventory changed, or every second for the deliveries;
+        // the row panes still refresh every tick.
+        if (refresh.due(signature()))
+        {
+            pullResourcesFromHut();
+        }
         window.findPaneOfTypeByID(LIST_RESOURCES, ScrollingList.class).refreshElementPanes();
+    }
+
+    /**
+     * What the resource rows are read from, folded into one number: the builder module's view revision, creative mode
+     * and the player's inventory (each slot's item and count).
+     */
+    private long signature()
+    {
+        final BuildingResourcesModuleView moduleView = builder.getModuleViewByType(BuildingResourcesModuleView.class);
+        long sig = moduleView == null ? -1 : moduleView.getRevision();
+        sig = sig * 31 + (this.mc.player.isCreative() ? 1 : 0);
+        final Inventory inventory = this.mc.player.getInventory();
+        for (int i = 0; i < inventory.getContainerSize(); i++)
+        {
+            final ItemStack stack = inventory.getItem(i);
+            sig = sig * 31 + (stack.isEmpty() ? 0 : System.identityHashCode(stack.getItem()) * 64L + stack.getCount());
+        }
+        return sig;
     }
 }
