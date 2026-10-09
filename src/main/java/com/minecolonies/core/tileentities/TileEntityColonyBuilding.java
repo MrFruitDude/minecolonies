@@ -547,7 +547,11 @@ public class TileEntityColonyBuilding extends AbstractTileEntityColonyBuilding i
     {
         if (rotationMirror == null)
         {
-            calcRotation(StructurePacks.getBlueprint(this.packMeta, this.path.replace("0.blueprint", "1.blueprint")));
+            // Source stashes and other non-schematic huts intentionally have no blueprint path.
+            // Keep their neutral rotation without asking Structurize to load an empty resource.
+            calcRotation(this.path == null || this.path.isBlank()
+              ? null
+              : StructurePacks.getBlueprint(this.packMeta, this.path.replace("0.blueprint", "1.blueprint")));
         }
         return rotationMirror;
     }

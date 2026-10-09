@@ -322,6 +322,40 @@ public final class MinecoloniesGameTests
     }
 
     /**
+     * Empty-path source huts keep neutral rotation without a blueprint lookup; valid schematics still determine rotation.
+     */
+    public static void hutRotationWithOptionalBlueprint(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final BlockPos pos = new BlockPos(1, 1, 1);
+        final String packName = "Minecolonies Original";
+        final String blueprintPath = "fundamentals/builder1.blueprint";
+        final Blueprint blueprint = StructurePacks.getBlueprint(packName, blueprintPath);
+        helper.assertTrue(blueprint != null, "rotation control blueprint did not load: " + blueprintPath);
+        final BlockInfo primary = blueprint.getBlockInfoAsMap().get(blueprint.getPrimaryBlockOffset());
+        helper.assertTrue(primary != null && primary.getState().getBlock() instanceof com.minecolonies.api.blocks.AbstractBlockHut,
+          "rotation control blueprint has no hut at its primary offset");
+
+        final Direction blueprintFacing = primary.getState().getValue(com.minecolonies.api.blocks.AbstractBlockHut.FACING);
+        final int sourceFacing = blueprintFacing.get2DDataValue();
+        final Direction placedFacing = Direction.from2DDataValue((sourceFacing + 1) % 4);
+        helper.setBlock(pos, ModBlocks.blockHutBuilder.defaultBlockState().setValue(com.minecolonies.api.blocks.AbstractBlockHut.FACING, placedFacing));
+        final TileEntityColonyBuilding hut = (TileEntityColonyBuilding) level.getBlockEntity(helper.absolutePos(pos));
+        helper.assertTrue(hut != null, "builder hut tile entity was not created");
+        hut.setPackName(packName);
+        hut.setBlueprintPath("");
+        helper.assertTrue(hut.getRotationMirror() == RotationMirror.NONE,
+          "hut without a blueprint path must use neutral rotation");
+
+        hut.setBlueprintPath(blueprintPath);
+        hut.setRotationMirror(null);
+        final RotationMirror expected = RotationMirror.of(net.minecraft.world.level.block.Rotation.values()[1], net.minecraft.world.level.block.Mirror.NONE);
+        helper.assertTrue(expected.equals(hut.getRotationMirror()),
+          "valid hut blueprint rotation changed: expected=" + expected + ", actual=" + hut.getRotationMirror());
+        helper.succeed();
+    }
+
+    /**
      * Exercise the first half of a real survival workflow without opening a
      * client GUI: a survival player places a finite town-hall item, the
      * production founding packet creates the colony, and the production
