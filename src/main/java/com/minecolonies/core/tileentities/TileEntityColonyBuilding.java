@@ -415,10 +415,7 @@ public class TileEntityColonyBuilding extends AbstractTileEntityColonyBuilding i
             path = BlueprintMapping.getPathMapping("", abstractBlockHut.getBlueprintName()) + "1.blueprint";
         }
 
-        if (!path.endsWith(".blueprint"))
-        {
-            path += ".blueprint";
-        }
+        path = BlueprintPathNormalizer.ensureBlueprintExtension(path);
 
         this.packMeta = packName;
         this.path = path;

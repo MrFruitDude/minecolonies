@@ -23,6 +23,7 @@ import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.crafting.RecipeStorage;
 import com.minecolonies.core.tileentities.TileEntityColonyBuilding;
 import com.minecolonies.core.tileentities.TileEntityRack;
+import com.minecolonies.core.tileentities.TileEntityStash;
 import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingBuilder;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingDeliveryman;
@@ -352,6 +353,42 @@ public final class MinecoloniesGameTests
         final RotationMirror expected = RotationMirror.of(net.minecraft.world.level.block.Rotation.values()[1], net.minecraft.world.level.block.Mirror.NONE);
         helper.assertTrue(expected.equals(hut.getRotationMirror()),
           "valid hut blueprint rotation changed: expected=" + expected + ", actual=" + hut.getRotationMirror());
+        helper.succeed();
+    }
+
+    /** Loads the actual source stash block entity NBT from the shipped Medieval Oak cook5 blueprint. */
+    public static void cookBlueprintStashKeepsEmptyPath(final GameTestHelper helper)
+    {
+        final Blueprint blueprint = StructurePacks.getBlueprint("Medieval Oak", "fundamentals/cook5.blueprint");
+        helper.assertTrue(blueprint != null, "Medieval Oak cook5 source blueprint did not load");
+
+        int loadedStashes = 0;
+        for (final BlockInfo info : blueprint.getBlockInfoAsList())
+        {
+            final var sourceNbt = info.getTileEntityData();
+            if (sourceNbt == null || !"minecolonies:stash".equals(sourceNbt.getStringOr("id", "")))
+            {
+                continue;
+            }
+
+            helper.assertTrue(info.getState().is(ModBlocks.blockStash),
+              "cook5 stash NBT is attached to unexpected block state " + info.getState());
+            helper.assertTrue(sourceNbt.getStringOr("path", "").isBlank(),
+              "expected source stash NBT to have no blueprint path: " + sourceNbt);
+            final BlockEntity loaded = BlockEntity.loadStatic(helper.absolutePos(info.getPos()), info.getState(),
+              sourceNbt, helper.getLevel().registryAccess());
+            helper.assertTrue(loaded instanceof TileEntityStash,
+              "cook5 source stash NBT did not load as TileEntityStash: " + sourceNbt);
+            final TileEntityStash stash = (TileEntityStash) loaded;
+            stash.setRotationMirror(null);
+            final RotationMirror rotation = stash.getRotationMirror();
+            helper.assertTrue(stash.getBlueprintPath().isBlank(),
+              "loading empty source stash path invented " + stash.getBlueprintPath());
+            helper.assertTrue(rotation == RotationMirror.NONE,
+              "source stash without a blueprint should use neutral rotation, got " + rotation);
+            loadedStashes++;
+        }
+        helper.assertTrue(loadedStashes > 0, "cook5 source blueprint contains no stash block entity NBT");
         helper.succeed();
     }
 
