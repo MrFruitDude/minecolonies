@@ -38,8 +38,10 @@ import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Predicate;
 
 import static com.minecolonies.api.util.constant.BuildingConstants.TAG_ONGOING;
@@ -188,7 +190,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         }
     }
 
-    private int getRequestPriority(final IToken<?> token, final IRequest<?> req, final List<IToken<?>> mutableRequestList)
+    private int getRequestPriority(final IRequest<?> req, final int queueIndex, final int queueSize)
     {
         int priority = 1;
         if (!WorldUtil.isBlockLoaded(getColony().getWorld(), getTarget(req)))
@@ -204,7 +206,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             }
         }
 
-        priority += mutableRequestList.size() - mutableRequestList.indexOf(token);
+        priority += queueSize - queueIndex;
         final int distance = (int) Math.sqrt(getSource(req).distManhattan(getTarget(req)));
         return priority - distance;
     }
@@ -236,23 +238,28 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             return null;
         }
 
-        final List<IToken<?>> reqsToRemove = new ArrayList<>();
+        final Set<IToken<?>> reqsToRemove = new HashSet<>();
 
         IToken<?> resultRequestId = null;
+        int resultIndex = -1;
         int priority = Integer.MIN_VALUE;
+        final int queueSize = wareHouseModule.getMutableRequestList().size();
+        int queueIndex = 0;
         for (final IToken<?> reqId : wareHouseModule.getMutableRequestList())
         {
+            final int position = queueIndex++;
             final IRequest<?> req = getColony().getRequestManager().getRequestForToken(reqId);
             if (req == null)
             {
                 reqsToRemove.add(reqId);
                 continue;
             }
-            final int localPriority = getRequestPriority(reqId, req, wareHouseModule.getMutableRequestList());
+            final int localPriority = getRequestPriority(req, position, queueSize);
             if (localPriority > priority)
             {
                 priority = localPriority;
                 resultRequestId = reqId;
+                resultIndex = position;
             }
         }
 
@@ -261,7 +268,6 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             return null;
         }
 
-        final int resultIndex = wareHouseModule.getMutableRequestList().indexOf(resultRequestId);
         reqsToRemove.add(resultRequestId);
 
         final IRequest<?> resultRequest = getColony().getRequestManager().getRequestForToken(resultRequestId);

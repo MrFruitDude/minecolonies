@@ -539,4 +539,87 @@ public final class RequestSystemGameTests
         }
     }
 
+    // ------------------------------------------------------------------ 11: courier task selection
+
+    /**
+     * {@code getCurrentTask} scored every queued request with {@code indexOf} in the loop: O(Q squared). The queue is
+     * swapped for one that counts its {@code indexOf} calls; the selection may look the chosen request up, not every one.
+     */
+    public static void courierTaskSelectionScales(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "rs-courier-scaling");
+        final ServerLevel level = helper.getLevel();
+        final IBuilding warehouse = place(helper, colony, ModBlocks.blockHutWareHouse, new BlockPos(24, 1, 2), "craftsmanship/storage/warehouse1.blueprint");
+        final IBuilding deliveryman = place(helper, colony, ModBlocks.blockHutDeliveryman, new BlockPos(32, 1, 2), "craftsmanship/storage/deliveryman1.blueprint");
+        final IBuilding target = place(helper, colony, ModBlocks.blockHutBuilder, new BlockPos(10, 1, 2), "fundamentals/builder1.blueprint");
+        forceChunks(level, helper.absolutePos(new BlockPos(24, 1, 2)), helper.absolutePos(new BlockPos(32, 1, 2)), helper.absolutePos(new BlockPos(10, 1, 2)));
+
+        helper.runAfterDelay(200, () -> {
+            final ICitizenData courier = spawn(helper, colony, new BlockPos(34, 1, 8));
+            helper.assertTrue(deliveryman.getModule(BuildingModules.COURIER_WORK).assignCitizen(courier), "courier not assigned to the courier hut");
+            helper.assertTrue(warehouse.getModule(BuildingModules.WAREHOUSE_COURIERS).assignCitizen(courier), "courier not assigned to the warehouse");
+            final JobDeliveryman job = courier.getJob(JobDeliveryman.class);
+            final WarehouseRequestQueueModule queue = warehouse.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE);
+            final IRequestManager manager = colony.getRequestManager();
+
+            final List<String> failures = new ArrayList<>();
+            for (final int size : new int[] {1000, 8000})
+            {
+                final CountingList counting = new CountingList();
+                try
+                {
+                    final var field = WarehouseRequestQueueModule.class.getDeclaredField("requestList");
+                    field.setAccessible(true);
+                    field.set(queue, counting);
+                }
+                catch (final ReflectiveOperationException e)
+                {
+                    helper.fail("cannot swap the queue list: " + e);
+                    return;
+                }
+                for (int i = 0; i < size; i++)
+                {
+                    final IToken<?> token = manager.createRequest(warehouse.getRequester(),
+                      new Delivery(warehouse.getLocation(), target.getLocation(), new ItemStack(Items.DIRT, 1), 13));
+                    queue.addRequest(token);
+                }
+                counting.indexOfCalls = 0;
+                final long start = System.nanoTime();
+                final IRequest<?> task = job.getCurrentTask();
+                final double ms = (System.nanoTime() - start) / 1e6;
+                Log.getLogger().info("RS courier getCurrentTask queue={} indexOfCalls={} ms={}", size, counting.indexOfCalls, ms);
+                if (task == null)
+                {
+                    failures.add("queue " + size + ": no task was selected");
+                }
+                if (counting.indexOfCalls > 3)
+                {
+                    failures.add("queue " + size + ": getCurrentTask made " + counting.indexOfCalls + " indexOf calls (want at most 3, i.e. not one per queued request)");
+                }
+                // Reset for the next size.
+                for (final IToken<?> token : job.getTaskQueue())
+                {
+                    job.onTaskDeletion(token);
+                }
+            }
+            if (!failures.isEmpty())
+            {
+                helper.fail(String.join("; ", failures));
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    private static final class CountingList extends ArrayList<IToken<?>>
+    {
+        int indexOfCalls;
+
+        @Override
+        public int indexOf(final Object o)
+        {
+            indexOfCalls++;
+            return super.indexOf(o);
+        }
+    }
 }

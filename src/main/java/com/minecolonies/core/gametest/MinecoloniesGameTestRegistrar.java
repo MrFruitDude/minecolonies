@@ -582,6 +582,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_null_safety"),
           info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::nullSafety),
           isolatedColonyData(event, "rs_null_safety"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_courier_scaling"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::courierTaskSelectionScales),
+          isolatedColonyData(event, "rs_courier_scaling"));
     }
 
     /**
