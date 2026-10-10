@@ -357,8 +357,9 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     {
         if (!this.children.contains(child))
         {
-            //WHAT? log and return.
+            //The parent does not know this child: it must not be advanced by it.
             Log.getLogger().warn("The given child:" + child + " could not update the parent:" + getId() + " as it was not registered.");
+            return;
         }
 
         try
