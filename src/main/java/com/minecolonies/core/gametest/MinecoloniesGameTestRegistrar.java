@@ -540,6 +540,25 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_tick_spread_prestige"),
           info -> new MinecoloniesGameTestInstance(info, ColonyTickSpreadGameTests::colonyTickSpreadPrestige),
           isolatedColonyData(event, "colony_tick_spread_prestige"));
+        // C0 builder work order fixes (one glob: minecolonies:builder_wo_*).
+        for (final String name : new String[] {"builder_wo_unclaim_moves_progress", "builder_wo_invalid_removed_with_callbacks", "builder_wo_manual_claim",
+          "builder_wo_priority", "builder_wo_zero_cost_progress", "builder_wo_materials_reused", "builder_wo_dead_fluids_state"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "builder_wo_unclaim_moves_progress" -> BuilderWorkOrderGameTests::unclaimMovesProgressWithOrder;
+                case "builder_wo_invalid_removed_with_callbacks" -> BuilderWorkOrderGameTests::invalidOrderRemovedThroughOnRemoved;
+                case "builder_wo_manual_claim" -> BuilderWorkOrderGameTests::manualClaimChecksLevelAndReleasesWithoutWorker;
+                case "builder_wo_priority" -> BuilderWorkOrderGameTests::assignmentFollowsPriority;
+                case "builder_wo_zero_cost_progress" -> BuilderWorkOrderGameTests::zeroCostOrderProgress;
+                case "builder_wo_materials_reused" -> BuilderWorkOrderGameTests::reassignedOrderReusesMaterials;
+                default -> BuilderWorkOrderGameTests::deadFluidsStateNotPersisted;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
         // CA-1 + CA-3 request-system / citizen view sync (one glob: minecolonies:reqsync_*).
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_bytes_per_minute"),
