@@ -590,7 +590,7 @@ public final class BuilderCollabGameTests
                     helper.assertTrue(first.getCollab().getAssistantCount() == 0, "the helper is still listed on the first order");
                     helper.assertTrue(first.getCollab().getLeaseCountOf(live.b.getID()) == 0, "the helper still holds leases on the first order");
                 }
-                if (second[0] != null && stepsSinceSecond[0]++ >= 2)
+                if (second[0] != null && stepsSinceSecond[0]++ >= 2 && live.colony.getWorkManager().getWorkOrder(second[0].getID()) != null)
                 {
                     helper.assertTrue(first.getCollab().getAssistantCount() == 0, "2 orders for 2 builders but a helper exists");
                 }

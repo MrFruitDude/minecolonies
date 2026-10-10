@@ -768,6 +768,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
     private void takeFrom(final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler source, final AbstractBuildingStructureBuilder lead, final Map<ItemStorage, Integer> missing)
     {
+        if (source == null)
+        {
+            return;
+        }
         for (final Map.Entry<ItemStorage, Integer> need : missing.entrySet())
         {
             final ItemStack kind = need.getKey().getItemStack();
