@@ -547,6 +547,13 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     private StructurePlacer                  assistPlacer  = null;
     private BlockPos                         assistMine    = null;
     private int                              assistTries   = 0;
+    private boolean                          gatherFromLead = false;
+    private int                              gatherSteps    = 0;
+
+    /**
+     * Steps (about 20 ticks each) a helper tries to get his materials before he gives the positions back.
+     */
+    private static final int MAX_GATHER_STEPS = 90;
 
     /**
      * The builder who leads the order, if his hut really works on it.
@@ -692,6 +699,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 setDelay(40);
                 return getState();
             }
+            gatherFromLead = false;
+            gatherSteps = 0;
             final long expiry = now + BuilderCollab.leaseTicks();
             for (final LeaseAllocator.Planned planned : plan)
             {
@@ -778,18 +787,22 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         }
         final AbstractBuildingStructureBuilder lead = leadOf(assistOrder);
         assistOrder.getCollab().renew(building.getID(), world.getGameTime() + BuilderCollab.leaseTicks());
-        final Map<ItemStorage, Integer> missing = missingForBatch();
-        if (!missing.isEmpty())
+        final boolean giveUp = ++gatherSteps > MAX_GATHER_STEPS;
+        if (!giveUp && !gatherFromLead && !missingForBatch().isEmpty())
         {
             // first from the lead's hut ...
             if (!walkToBuilding(lead))
             {
                 return getState();
             }
-            takeFrom(lead.getItemHandlerCap(), lead, missing);
+            takeFrom(lead.getItemHandlerCap(), lead, missingForBatch());
+            if (!missingForBatch().isEmpty())
+            {
+                gatherFromLead = true;
+                return getState();
+            }
         }
-        Map<ItemStorage, Integer> stillMissing = missingForBatch();
-        if (!stillMissing.isEmpty())
+        if (!giveUp && gatherFromLead)
         {
             // ... then from what the lead carries: the builder keeps the bucket of materials he works with in his inventory
             final ICitizenData leadCitizen = leadCitizen(lead);
@@ -799,9 +812,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 {
                     return getState();
                 }
-                takeFrom(leadCitizen.getInventory(), lead, stillMissing);
+                takeFrom(leadCitizen.getInventory(), lead, missingForBatch());
             }
         }
+        gatherFromLead = false;
+        gatherSteps = 0;
 
         // positions the stock did not cover go back to the lead
         final Map<ItemStorage, Integer> available = new HashMap<>();

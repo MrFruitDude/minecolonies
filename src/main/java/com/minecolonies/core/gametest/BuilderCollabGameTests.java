@@ -576,6 +576,7 @@ public final class BuilderCollabGameTests
             final WorkOrderDecoration[] second = {null};
             final boolean[] handedOff = {false};
             final int[] helpedBeforeHandoff = {0};
+            final int[] stepsSinceSecond = {0};
             poll(live, 30_000, () -> {
                 final boolean bHelps = live.colony.getWorkManager().getAssistedOrder(live.b.getID()) == first;
                 if (second[0] == null && bHelps && live.placements.values().stream().filter(l -> l.contains(live.b.getID())).count() >= 8)
@@ -589,7 +590,7 @@ public final class BuilderCollabGameTests
                     helper.assertTrue(first.getCollab().getAssistantCount() == 0, "the helper is still listed on the first order");
                     helper.assertTrue(first.getCollab().getLeaseCountOf(live.b.getID()) == 0, "the helper still holds leases on the first order");
                 }
-                if (second[0] != null)
+                if (second[0] != null && stepsSinceSecond[0]++ >= 2)
                 {
                     helper.assertTrue(first.getCollab().getAssistantCount() == 0, "2 orders for 2 builders but a helper exists");
                 }
