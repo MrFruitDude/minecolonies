@@ -423,7 +423,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     @Override
     public boolean canGoIdle()
     {
-        return !building.hasWorkOrder() && assistOrder == null && !building.hasCarry();
+        // a builder who helps or still has materials to bring back keeps his work AI running (the citizen AI ticks it only if he cannot idle)
+        return !building.hasWorkOrder() && !building.hasCarry() && assistOrder == null && building.getColony().getWorkManager().getAssistedOrder(building.getID()) == null;
     }
 
     @Override
