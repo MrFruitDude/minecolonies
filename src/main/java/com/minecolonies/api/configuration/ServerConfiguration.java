@@ -223,7 +223,7 @@ public class ServerConfiguration extends AbstractConfiguration
         swapToCategory("builders");
 
         // Idle builders help the builder who leads an order, and take a new order when one arrives.
-        builderCollaboration = defineBoolean("collaboration", false);
+        builderCollaboration = defineBoolean("collaboration", true);
         builderCollaborationMaxHelpers = defineInteger("collaborationMaxHelpers", 3, 1, 8);
         builderCollaborationBlocksPerHelper = defineInteger("collaborationBlocksPerHelper", 1500, 1, 1000000);
         builderCollaborationMinRemaining = defineInteger("collaborationMinRemaining", 64, 1, 1000000);
