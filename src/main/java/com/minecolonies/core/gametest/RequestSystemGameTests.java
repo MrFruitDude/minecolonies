@@ -420,4 +420,48 @@ public final class RequestSystemGameTests
         return n;
     }
 
+    // ------------------------------------------------------------------ 5: reserved items in the building resolver
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static void buildingResolverLeavesReservedItems(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "rs-building-reserved");
+        final IBuilding sawmill = place(helper, colony, ModBlocks.blockHutSawmill, new BlockPos(10, 1, 2), "craftsmanship/carpentry/sawmill1.blueprint");
+        forceChunks(helper.getLevel(), helper.absolutePos(new BlockPos(10, 1, 2)));
+
+        helper.runAfterDelay(200, () -> {
+            final ICitizenData crafter = spawn(helper, colony, new BlockPos(12, 1, 8));
+            helper.assertTrue(sawmill.getModule(BuildingModules.SAWMILL_WORK).assignCitizen(crafter), "crafter not assigned to the sawmill");
+
+            // 4 crafts of 1 oak log are queued in the sawmill: 4 logs are reserved for them.
+            final var recipe = RecipeStorage.builder()
+              .withRecipeId(net.minecraft.resources.Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest/rs_reserved_planks"))
+              .withInputs(List.of(new ItemStorage(new ItemStack(Items.OAK_LOG, 1))))
+              .withPrimaryOutput(new ItemStack(Items.OAK_PLANKS, 4))
+              .build();
+            final IToken<?> recipeToken = IColonyManager.getInstance().getRecipeManager().checkOrAddRecipe(recipe);
+            helper.assertTrue(sawmill.getModule(BuildingModules.SAWMILL_CRAFT).addRecipe(recipeToken), "sawmill rejected the recipe");
+            final IToken<?> crafting = colony.getRequestManager().createRequest(sawmill.getRequester(),
+              new PublicCrafting(new ItemStack(Items.OAK_PLANKS), 4, 4, recipeToken));
+            crafter.getJob(com.minecolonies.core.colony.jobs.AbstractJobCrafter.class).onTaskBeingScheduled(crafting);
+
+            // 6 logs in the hut, 4 of them reserved: 2 are free.
+            final var inventory = sawmill.getItemHandlerCap();
+            helper.assertTrue(com.minecolonies.api.util.InventoryUtils.forceItemStackToItemHandler(inventory, new ItemStack(Items.OAK_LOG, 6), s -> true).isEmpty(), "could not stock the sawmill");
+            final IToken<?> probe = colony.getRequestManager().createRequest(sawmill.getRequester(), new Stack(new ItemStack(Items.OAK_LOG), 2, 2));
+            final java.util.Map<ItemStorage, Integer> reservedMap = sawmill.reservedStacksExcluding((IRequest) colony.getRequestManager().getRequestForToken(probe));
+            final int reserved = reservedMap.values().stream().mapToInt(Integer::intValue).sum();
+            helper.assertTrue(reserved == 4, "fixture error: reserved logs = " + reserved);
+
+            // The sawmill's citizen asks for 2 logs: the attempt accepts (2 free), the resolve step must hand out only those.
+            final IToken<?> asked = ((AbstractBuilding) sawmill).createRequest(crafter, new Stack(new ItemStack(Items.OAK_LOG), 2, 2), false);
+            final List<IRequest<?>> completed = ((AbstractBuilding) sawmill).getCompletedRequestsOfCitizenOrBuilding(crafter).stream().filter(r -> r.getId().equals(asked)).toList();
+            helper.assertTrue(completed.size() == 1, "the request for 2 free logs was not resolved by the building: "
+                                                       + colony.getRequestManager().getRequestForToken(asked));
+            final int handedOut = completed.get(0).getDeliveries().stream().mapToInt(ItemStack::getCount).sum();
+            helper.assertTrue(handedOut <= 2, "the building resolver handed out " + handedOut + " logs although only 2 of the 6 are not reserved");
+            helper.succeed();
+        });
+    }
+
 }
