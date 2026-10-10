@@ -31,6 +31,7 @@ import com.minecolonies.core.colony.buildings.modules.BuildingResourcesModule;
 import com.minecolonies.core.colony.buildings.utils.BuilderBucket;
 import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource;
 import com.minecolonies.core.colony.jobs.AbstractJobStructure;
+import com.minecolonies.core.entity.ai.workers.util.BuilderStageRules;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
 import com.minecolonies.core.entity.ai.workers.util.BuildingStructureHandler;
 import com.minecolonies.core.tileentities.TileEntityDecorationController;
@@ -127,6 +128,61 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     {
         return (info, pos, handler) -> DONT_TOUCH_PREDICATE.test(info, pos, handler)
                  || predicate.test(info, pos, handler);
+    }
+
+    /**
+     * Adds "not a position another builder has leased" to a stage's skip rule.
+     */
+    private TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> reserved(
+      final TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> rule)
+    {
+        return (info, pos, handler) -> rule.test(info, pos, handler) || isPositionReserved(pos);
+    }
+
+    /**
+     * Whether another builder works on this position, so this one leaves it alone.
+     *
+     * @param worldPos the position.
+     * @return true if reserved. Never by default.
+     */
+    protected boolean isPositionReserved(final BlockPos worldPos)
+    {
+        return false;
+    }
+
+    /**
+     * Whether the stage may end now. Builders that help with a stage can hold it up.
+     *
+     * @return true by default.
+     */
+    protected boolean canFinishStage()
+    {
+        return true;
+    }
+
+    /**
+     * A position was placed or mined by this builder.
+     */
+    protected void onBlockProcessed()
+    {
+    }
+
+    /**
+     * The builder cannot go on at this position for now (mining it, or waiting for materials).
+     *
+     * @param worldPos the position.
+     */
+    protected void onStepBlocked(final BlockPos worldPos)
+    {
+    }
+
+    /**
+     * The builder waits for materials.
+     *
+     * @param required what the position he cannot place needs.
+     */
+    protected void onMissingItems(final List<ItemStack> required)
+    {
     }
 
     /**
@@ -380,7 +436,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             case BUILD_SOLID:
                 //structure
                 result = placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_PLACEMENT,
-                  () -> placer.getIterator().increment(this::skipBuilding), false);
+                  () -> placer.getIterator().increment(reserved(this::skipBuilding)), false);
                 break;
             case WEAK_SOLID:
 
@@ -390,7 +446,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
                   progress,
                   StructurePlacer.Operation.BLOCK_PLACEMENT,
                   () -> placer.getIterator()
-                          .increment(((info, pos, handler) -> !BlockUtils.isWeakSolidBlock(info.getBlockInfo().getState()) || DONT_TOUCH_PREDICATE.test(info, pos, handler))),
+                          .increment(reserved((info, pos, handler) -> !BlockUtils.isWeakSolidBlock(info.getBlockInfo().getState()) || DONT_TOUCH_PREDICATE.test(info, pos, handler))),
                   false);
                 break;
             case CLEAR_WATER:
@@ -408,7 +464,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             case DECORATE:
                 // not solid
                 result = placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_PLACEMENT,
-                  () -> placer.getIterator().increment(this::skipDecorate), false);
+                  () -> placer.getIterator().increment(reserved(this::skipDecorate)), false);
                 break;
             case SPAWN:
                 if (placer.getHandler().getBluePrint().getEntities().length == 0)
@@ -436,7 +492,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             case CLEAR:
             default:
                 result =
-                  placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_REMOVAL, () -> placer.getIterator().decrement(this::skipClearing), false);
+                  placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_REMOVAL, () -> placer.getIterator().decrement(reserved(this::skipClearing)), false);
                 break;
         }
 
@@ -448,6 +504,12 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         final boolean firstIteration = building.getProgress() == null;
         if (result.getBlockResult().getResult() == BlockPlacementResult.Result.FINISHED)
         {
+            if (!canFinishStage())
+            {
+                // builders helping with this stage have positions left; wait for them (or for their lease to run out)
+                setDelay(TICKS_SECOND);
+                return getState();
+            }
 
             building.nextStage();
             if (!goToNextStage(result))
@@ -486,8 +548,15 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             building.checkOrRequestBucket(building.getRequiredResources(), worker.getCitizenData());
         }
 
+        if (result.getBlockResult().getResult() == BlockPlacementResult.Result.SUCCESS)
+        {
+            onBlockProcessed();
+        }
+
         if (result.getBlockResult().getResult() == BlockPlacementResult.Result.MISSING_ITEMS)
         {
+            onStepBlocked(result.getBlockResult().getWorldPos());
+            onMissingItems(result.getBlockResult().getRequiredItems());
             if (hasListOfResInInvOrRequest(this, result.getBlockResult().getRequiredItems(), result.getBlockResult().getRequiredItems().size() > 1) == RECALC)
             {
                 building.getWorkOrder().setRequested(false);
@@ -502,6 +571,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         if (result.getBlockResult().getResult() == BlockPlacementResult.Result.BREAK_BLOCK)
         {
             blockToMine = result.getBlockResult().getWorldPos();
+            onStepBlocked(blockToMine);
             worker.getCitizenData().setStatusPosition(blockToMine);
             return MINE_BLOCK;
         }
@@ -510,10 +580,18 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             blockToMine = null;
         }
 
-        final double decrease = 1 - worker.getCitizenColonyHandler().getColonyOrRegister().getResearchManager().getResearchEffects().getEffectStrength(BLOCK_PLACE_SPEED);
-        setDelay((int) ((BUILD_BLOCK_DELAY * PROGRESS_MULTIPLIER / (getPlaceSpeedLevel() / 2 + PROGRESS_MULTIPLIER)) * decrease));
+        setPlacementDelay();
 
         return getState();
+    }
+
+    /**
+     * Waits as long as placing one block takes this builder.
+     */
+    protected final void setPlacementDelay()
+    {
+        final double decrease = 1 - worker.getCitizenColonyHandler().getColonyOrRegister().getResearchManager().getResearchEffects().getEffectStrength(BLOCK_PLACE_SPEED);
+        setDelay((int) ((BUILD_BLOCK_DELAY * PROGRESS_MULTIPLIER / (getPlaceSpeedLevel() / 2 + PROGRESS_MULTIPLIER)) * decrease));
     }
 
     /**
@@ -553,8 +631,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     private boolean skipDecorate(final BlueprintPositionInfo info, final BlockPos pos, final IStructureHandler handler)
     {
-        final BlockState blockInfoState = info.getBlockInfo().getState();
-        return (!isDecoItem(blockInfoState.getBlock()) && BlockUtils.isAnySolid(blockInfoState)) || DONT_TOUCH_PREDICATE.test(info, pos, handler);
+        return BuilderStageRules.skipDecorate(info, pos, handler);
     }
 
     /**
@@ -567,10 +644,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     protected boolean skipBuilding(final BlueprintPositionInfo info, final BlockPos pos, final IStructureHandler handler)
     {
-        final BlockState blockInfoState = info.getBlockInfo().getState();
-        return !BlockUtils.canBlockFloatInAir(blockInfoState)
-                 || isDecoItem(blockInfoState.getBlock())
-                 || DONT_TOUCH_PREDICATE.test(info, pos, handler);
+        return BuilderStageRules.skipBuilding(info, pos, handler);
     }
 
     /**
@@ -583,16 +657,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     protected boolean skipClearing(final BlueprintPositionInfo info, final BlockPos pos, final IStructureHandler handler)
     {
-        if (info.getBlockInfo().getState().getBlock() == com.ldtteam.structurize.blocks.ModBlocks.blockFluidSubstitution.get())
-        {
-            return true;
-        }
-
-        final BlockState state = handler.getWorld().getBlockState(pos);
-        return state.getBlock() instanceof IBuilderUndestroyable
-                 || state.getBlock() == Blocks.BEDROCK
-                 || state.isAir()
-                 || !state.getFluidState().isEmpty();
+        return BuilderStageRules.skipClearing(info, pos, handler);
     }
 
     /**
@@ -683,6 +748,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return getState();
         }
         worker.decreaseSaturationForContinuousAction();
+        onBlockProcessed();
         return BUILDING_STEP;
     }
 

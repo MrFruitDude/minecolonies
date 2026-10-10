@@ -28,6 +28,23 @@ public interface IWorkManager
     void removeWorkOrder(int orderId);
 
     /**
+     * Removes an order and says why; a {@link com.minecolonies.api.eventbus.events.colony.WorkOrderRemovedModEvent} carries the reason.
+     *
+     * @param orderId the order.
+     * @param reason  why it is removed.
+     */
+    void removeWorkOrder(int orderId, WorkOrderRemovalReason reason);
+
+    /**
+     * Adds an order like {@link #addWorkOrder} does for a new order, but without the construction tape, the chat message and the
+     * advancement; it still refuses duplicates and orders outside the colony.
+     *
+     * @param order the order.
+     * @return false if the order was refused.
+     */
+    boolean addWorkOrderQuietly(@NotNull IServerWorkOrder order);
+
+    /**
      * Get a work order of the specified id, as a specific type.
      *
      * @param id   the id of the work order.
@@ -78,6 +95,15 @@ public interface IWorkManager
      *
      * @param citizen Citizen to unclaim work for.
      */
+    /**
+     * The order the builder of the given hut helps with, if the hut is a helper.
+     *
+     * @param hut the position of the builder's hut.
+     * @return the order or null.
+     */
+    @Nullable
+    IBuilderWorkOrder getAssistedOrder(BlockPos hut);
+
     void clearWorkForCitizen(@NotNull ICitizenData citizen);
 
     /**

@@ -3,6 +3,7 @@ package com.minecolonies.api.colony.workorders;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
+import com.minecolonies.core.colony.workorders.collab.WorkOrderCollab;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
 import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.NotNull;
@@ -117,4 +118,21 @@ public interface IBuilderWorkOrder extends IServerWorkOrder
      * @param stage
      */
     void setStage(BuildingProgressStage stage);
+
+    /**
+     * The state builders share on this order: the progress cursor, helpers and leases, and block counts.
+     *
+     * @return the shared state.
+     */
+    WorkOrderCollab getCollab();
+
+    /**
+     * The project this order is a part of (e.g. a terraforming job that is built in sections); empty if none. Builders prefer
+     * the next section of the project they worked on last.
+     *
+     * @return the project id.
+     */
+    String getProjectId();
+
+    void setProjectId(String projectId);
 }

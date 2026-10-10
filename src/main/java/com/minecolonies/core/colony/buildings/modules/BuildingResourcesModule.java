@@ -17,6 +17,7 @@ import com.minecolonies.api.util.ItemStackUtils;
 import com.minecolonies.api.util.Utils;
 import com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder;
 import com.minecolonies.core.colony.buildings.utils.BuilderBucket;
+import com.minecolonies.core.colony.buildings.utils.BuilderProgress;
 import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource;
 import com.minecolonies.core.colony.jobs.AbstractJobStructure;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
@@ -94,7 +95,7 @@ public class BuildingResourcesModule extends AbstractBuildingModule implements I
             if (workOrder != null)
             {
                 buf.writeInt(workOrder.getID());
-                buf.writeDouble(workOrder.getAmountOfResources() == 0 ? 0 : qty / workOrder.getAmountOfResources());
+                buf.writeDouble(BuilderProgress.remainingFraction(workOrder.getAmountOfResources(), qty, workOrder.getCollab().getPlacedBlocks(), workOrder.getCollab().getTotalBlocks(), currentStage, totalStages));
                 buf.writeInt(totalStages);
                 buf.writeInt(currentStage);
                 return;
@@ -260,7 +261,20 @@ public class BuildingResourcesModule extends AbstractBuildingModule implements I
         final int hashCode = res.getComponentsPatch().hashCode();
         final String name = res.getItem().getDescriptionId() + "-" + hashCode;
 
-        final BuilderBucket last = buckets.isEmpty() ? null : getRequiredResources();
+        // the item comes off the first bucket that still lists it (normally the active one)
+        BuilderBucket last = buckets.isEmpty() ? null : getRequiredResources();
+        if (last != null && !last.getResourceMap().containsKey(name))
+        {
+            last = null;
+            for (final BuilderBucket bucket : buckets)
+            {
+                if (bucket.getResourceMap().containsKey(name))
+                {
+                    last = bucket;
+                    break;
+                }
+            }
+        }
 
         if (last != null)
         {
@@ -280,7 +294,7 @@ public class BuildingResourcesModule extends AbstractBuildingModule implements I
 
             if (map.isEmpty())
             {
-                buckets.remove();
+                buckets.remove(last);
             }
         }
 
@@ -355,6 +369,20 @@ public class BuildingResourcesModule extends AbstractBuildingModule implements I
             int count = InventoryUtils.hasBuildingEnoughElseCount(building,
               stack -> ItemStackUtils.compareItemStacksIgnoreStackSize(stack, itemStack.getItemStack()), entry.getValue());
 
+            if (count >= entry.getValue())
+            {
+                continue;
+            }
+
+            // materials that the builder who led this order before had delivered to his hut
+            count += ((AbstractBuildingStructureBuilder) building).takeOverMaterials(itemStack.getItemStack(), entry.getValue() - count);
+            if (count >= entry.getValue())
+            {
+                continue;
+            }
+
+            // materials that builders helping with this order have taken out of the hut for their blocks
+            count += ((AbstractBuildingStructureBuilder) building).itemsCarriedByHelpers(itemStack.getItemStack());
             if (count >= entry.getValue())
             {
                 continue;

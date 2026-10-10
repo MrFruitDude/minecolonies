@@ -10,6 +10,9 @@ import com.minecolonies.api.colony.workorders.IBuilderWorkOrder;
 import com.minecolonies.api.colony.workorders.IServerWorkOrder;
 import com.minecolonies.api.colony.workorders.IWorkManager;
 import com.minecolonies.api.colony.workorders.IWorkOrder;
+import com.minecolonies.api.colony.workorders.WorkOrderRemovalReason;
+import com.minecolonies.api.IMinecoloniesAPI;
+import com.minecolonies.api.eventbus.events.colony.WorkOrderRemovedModEvent;
 import com.minecolonies.api.util.ColonyUtils;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.MessageUtils;
@@ -17,6 +20,9 @@ import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.buildings.modules.settings.StringSetting;
+import com.minecolonies.core.colony.buildings.workerbuildings.BuildingBuilder;
+import com.minecolonies.core.colony.workorders.collab.BuilderCollab;
+import com.minecolonies.core.colony.workorders.collab.CollabScheduler;
 import com.minecolonies.core.util.AdvancementUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -94,6 +100,12 @@ public class WorkManager implements IWorkManager
     @Override
     public void removeWorkOrder(final int orderId)
     {
+        removeWorkOrder(orderId, WorkOrderRemovalReason.CANCELLED);
+    }
+
+    @Override
+    public void removeWorkOrder(final int orderId, final WorkOrderRemovalReason reason)
+    {
         final IWorkOrder workOrder = workOrders.get(orderId);
         if (workOrder != null)
         {
@@ -109,11 +121,16 @@ public class WorkManager implements IWorkManager
             dirty = true;
             workOrders.remove(orderId);
             colony.removeWorkOrderInView(orderId);
+            if (workOrder instanceof AbstractWorkOrder abstractWorkOrder)
+            {
+                abstractWorkOrder.setRemovalReason(reason);
+            }
             if (workOrder instanceof IBuilderWorkOrder builderWorkOrder)
             {
                 builderWorkOrder.onRemoved(colony);
             }
             colony.markDirty();
+            IMinecoloniesAPI.getInstance().getEventBus().post(new WorkOrderRemovedModEvent(colony, workOrder, reason));
         }
     }
 
@@ -205,16 +222,60 @@ public class WorkManager implements IWorkManager
     public void clearWorkForCitizen(@NotNull final ICitizenData citizen)
     {
         dirty = true;
-        if (citizen.getWorkBuilding() != null)
+        final IBuilding workBuilding = citizen.getWorkBuilding();
+        if (workBuilding != null)
         {
-            for (final IWorkOrder workOrder : workOrders.values())
+            for (final IServerWorkOrder workOrder : new ArrayList<>(workOrders.values()))
             {
-                if (citizen.getWorkBuilding().getPosition().equals(workOrder.getClaimedBy()))
+                if (workBuilding.getPosition().equals(workOrder.getClaimedBy()))
                 {
-                    workOrder.setClaimedBy(null);
+                    releaseClaim(workOrder, workBuilding);
+                }
+                if (workOrder instanceof IBuilderWorkOrder builderOrder)
+                {
+                    builderOrder.getCollab().removeAssistant(workBuilding.getPosition(), 0);
                 }
             }
+            if (workBuilding instanceof AbstractBuildingStructureBuilder hut)
+            {
+                // what he carried is gone with him
+                hut.clearCarry();
+            }
         }
+    }
+
+    @Override
+    @Nullable
+    public IBuilderWorkOrder getAssistedOrder(final BlockPos hut)
+    {
+        for (final IServerWorkOrder order : workOrders.values())
+        {
+            if (order instanceof IBuilderWorkOrder builderOrder && builderOrder.getCollab().hasAssistant(hut))
+            {
+                return builderOrder;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Takes an order away from the hut that claimed it, the order itself goes on. The hut forgets it, the order keeps its progress and
+     * remembers the hut so the next builder can take over what was delivered there.
+     *
+     * @param order    the order.
+     * @param claimant the hut that claimed it, null if it is gone.
+     */
+    private void releaseClaim(final IServerWorkOrder order, @Nullable final IBuilding claimant)
+    {
+        if (claimant instanceof AbstractBuildingStructureBuilder hut)
+        {
+            if (order instanceof IBuilderWorkOrder builderOrder && hut.hasWorkOrder() && hut.getWorkOrder() == order)
+            {
+                builderOrder.getCollab().setPreviousLead(hut.getPosition());
+            }
+            hut.onWorkOrderReleased(order);
+        }
+        order.setClaimedBy(null);
     }
 
     /**
@@ -294,7 +355,7 @@ public class WorkManager implements IWorkManager
                 if (or.getLocation().equals(order.getLocation()) && or.getStructurePath().equals(order.getStructurePath()) && or.getStructurePack().equals(order.getStructurePack()))
                 {
                     Log.getLogger().warn("Avoiding adding duplicate workOrder");
-                    removeWorkOrder(or);
+                    removeWorkOrder(or.getID(), WorkOrderRemovalReason.REPLACED);
                     break;
                 }
             }
@@ -330,8 +391,39 @@ public class WorkManager implements IWorkManager
             }
         }
 
+        order.setColony(colony);
         workOrders.put(order.getID(), order);
         order.onAdded(colony, readingFromNbt);
+    }
+
+    @Override
+    public boolean addWorkOrderQuietly(@NotNull final IServerWorkOrder order)
+    {
+        dirty = true;
+        if (!(order instanceof WorkOrderMiner))
+        {
+            for (final IServerWorkOrder or : workOrders.values())
+            {
+                if (or.getLocation().equals(order.getLocation()) && or.getStructurePath().equals(order.getStructurePath()) && or.getStructurePack().equals(order.getStructurePack()))
+                {
+                    removeWorkOrder(or.getID(), WorkOrderRemovalReason.REPLACED);
+                    break;
+                }
+            }
+            if (!isWorkOrderWithinColony(order))
+            {
+                return false;
+            }
+        }
+        if (order.getID() == 0)
+        {
+            topWorkOrderId++;
+            order.setID(topWorkOrderId);
+        }
+        order.setColony(colony);
+        workOrders.put(order.getID(), order);
+        order.onAdded(colony, true);
+        return true;
     }
 
     /**
@@ -378,41 +470,93 @@ public class WorkManager implements IWorkManager
     }
 
     /**
-     * Process updates on the Colony Tick. Currently, does periodic Work Order cleanup.
+     * Process updates on the Colony Tick. Does work order cleanup and hands unclaimed orders to builders, the highest priority first.
      *
      * @param colony the colony being ticked.
      */
     @Override
     public void onColonyTick(@NotNull final IColony colony)
     {
-        @NotNull final Iterator<IServerWorkOrder> iter = workOrders.values().iterator();
-        while (iter.hasNext())
+        // Invalid orders leave through removeWorkOrder, so the claiming hut cancels its work and the clients and the order hear about it.
+        List<IServerWorkOrder> invalid = null;
+        for (final IServerWorkOrder order : workOrders.values())
         {
-            final IServerWorkOrder order = iter.next();
             if (!order.isValid(this.colony))
             {
-                iter.remove();
-                dirty = true;
-                continue;
+                if (invalid == null)
+                {
+                    invalid = new ArrayList<>();
+                }
+                invalid.add(order);
             }
-            else if (order.isDirty())
+        }
+        if (invalid != null)
+        {
+            invalid.forEach(o -> removeWorkOrder(o.getID(), WorkOrderRemovalReason.INVALID));
+        }
+
+        final boolean collaborate = BuilderCollab.enabled();
+        for (final IServerWorkOrder order : workOrders.values())
+        {
+            if (order.isDirty())
             {
                 dirty = true;
                 order.resetChange();
             }
-
-            if (order.isClaimed() && getColony().getServerBuildingManager().getBuildings().get(order.getClaimedBy()) == null)
+            if (order instanceof IBuilderWorkOrder builderOrder && builderOrder.getCollab().consumeViewDirty())
             {
-                order.setClaimedBy(BlockPos.ZERO);
+                dirty = true;
             }
 
-            tryAssignWorkOrder(order, (b) -> order.getClaimedBy().equals(b.getPosition()));
+            if (order.isClaimed())
+            {
+                final IBuilding claimant = getColony().getServerBuildingManager().getBuildings().get(order.getClaimedBy());
+                if (claimant == null)
+                {
+                    order.setClaimedBy(BlockPos.ZERO);
+                }
+                else if (claimant instanceof BuildingBuilder hut && !isBound(hut, order) && hut.getFirstModuleOccurance(WorkerBuildingModule.class).getFirstCitizen() == null)
+                {
+                    // queued for a hut that has no builder: nobody will ever take it from the queue
+                    order.setClaimedBy(BlockPos.ZERO);
+                }
+            }
         }
 
-        for (final IServerWorkOrder wo : colony.getWorkManager().getWorkOrders().values())
+        CollabScheduler.maintain(this, this.colony, collaborate);
+
+        // orders claimed by a hut that is free move into the hut
+        for (final IServerWorkOrder order : new ArrayList<>(workOrders.values()))
         {
-            tryAssignWorkOrder(wo, wo::canBuild);
+            if (order.isClaimed())
+            {
+                tryAssignWorkOrder(order, (b) -> order.getClaimedBy().equals(b.getPosition()));
+            }
         }
+
+        // unclaimed orders go to free builders in priority order
+        for (final IServerWorkOrder wo : getOrderedList(o -> !o.isClaimed(), BlockPos.ZERO))
+        {
+            if (collaborate && wo instanceof IBuilderWorkOrder builderOrder && !builderOrder.getProjectId().isEmpty())
+            {
+                // the builder who worked on the last section of the project takes the next one
+                tryAssignWorkOrder(wo, b -> wo.canBuild(b) && b instanceof AbstractBuildingStructureBuilder hut && builderOrder.getProjectId().equals(hut.getLastProjectId()));
+            }
+            if (!wo.isClaimed())
+            {
+                tryAssignWorkOrder(wo, wo::canBuild);
+            }
+        }
+
+        if (collaborate)
+        {
+            CollabScheduler.assign(this, this.colony);
+        }
+    }
+
+    private static boolean isBound(final AbstractBuildingStructureBuilder hut, final IServerWorkOrder order)
+    {
+        return hut.hasWorkOrder() && hut.getWorkOrder() == order;
     }
 
     /**
@@ -434,6 +578,12 @@ public class WorkManager implements IWorkManager
 
                 if (abstractBuildingStructureBuilder.hasWorkOrder())
                 {
+                    continue;
+                }
+
+                if (!order.isClaimed() && getAssistedOrder(building.getPosition()) != null)
+                {
+                    // helpers take new orders only when no free builder is left (see CollabScheduler)
                     continue;
                 }
 
