@@ -89,6 +89,12 @@ public class BuildingBuilder extends AbstractBuildingStructureBuilder
     }
 
     @Override
+    protected boolean usesOrderProgress()
+    {
+        return true;
+    }
+
+    @Override
     public void onWakeUp()
     {
         this.purgedMobsToday = false;
@@ -166,8 +172,15 @@ public class BuildingBuilder extends AbstractBuildingStructureBuilder
             return;
         }
 
+        if (!((IBuilderWorkOrder) wo).canBuildIgnoringDistance(this, this.getPosition(), this.getBuildingLevel()))
+        {
+            MessageUtils.format(MESSAGE_WARNING_CANNOTBUILD).sendTo(serverPlayer);
+            return;
+        }
+
         if (hasWorkOrder())
         {
+            // queued: the order moves into the hut when the current one is done (the work manager takes it from there)
             wo.setClaimedBy(getID());
             getColony().getWorkManager().setDirty(true);
             return;

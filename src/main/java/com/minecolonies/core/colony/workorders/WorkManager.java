@@ -17,6 +17,7 @@ import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.buildings.modules.settings.StringSetting;
+import com.minecolonies.core.colony.buildings.workerbuildings.BuildingBuilder;
 import com.minecolonies.core.util.AdvancementUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -205,16 +206,37 @@ public class WorkManager implements IWorkManager
     public void clearWorkForCitizen(@NotNull final ICitizenData citizen)
     {
         dirty = true;
-        if (citizen.getWorkBuilding() != null)
+        final IBuilding workBuilding = citizen.getWorkBuilding();
+        if (workBuilding != null)
         {
-            for (final IWorkOrder workOrder : workOrders.values())
+            for (final IServerWorkOrder workOrder : new ArrayList<>(workOrders.values()))
             {
-                if (citizen.getWorkBuilding().getPosition().equals(workOrder.getClaimedBy()))
+                if (workBuilding.getPosition().equals(workOrder.getClaimedBy()))
                 {
-                    workOrder.setClaimedBy(null);
+                    releaseClaim(workOrder, workBuilding);
                 }
             }
         }
+    }
+
+    /**
+     * Takes an order away from the hut that claimed it, the order itself goes on. The hut forgets it, the order keeps its progress and
+     * remembers the hut so the next builder can take over what was delivered there.
+     *
+     * @param order    the order.
+     * @param claimant the hut that claimed it, null if it is gone.
+     */
+    private void releaseClaim(final IServerWorkOrder order, @Nullable final IBuilding claimant)
+    {
+        if (claimant instanceof AbstractBuildingStructureBuilder hut)
+        {
+            if (order instanceof IBuilderWorkOrder builderOrder && hut.hasWorkOrder() && hut.getWorkOrder() == order)
+            {
+                builderOrder.getCollab().setPreviousLead(hut.getPosition());
+            }
+            hut.onWorkOrderReleased(order);
+        }
+        order.setClaimedBy(null);
     }
 
     /**
@@ -378,41 +400,73 @@ public class WorkManager implements IWorkManager
     }
 
     /**
-     * Process updates on the Colony Tick. Currently, does periodic Work Order cleanup.
+     * Process updates on the Colony Tick. Does work order cleanup and hands unclaimed orders to builders, the highest priority first.
      *
      * @param colony the colony being ticked.
      */
     @Override
     public void onColonyTick(@NotNull final IColony colony)
     {
-        @NotNull final Iterator<IServerWorkOrder> iter = workOrders.values().iterator();
-        while (iter.hasNext())
+        // Invalid orders leave through removeWorkOrder, so the claiming hut cancels its work and the clients and the order hear about it.
+        List<IServerWorkOrder> invalid = null;
+        for (final IServerWorkOrder order : workOrders.values())
         {
-            final IServerWorkOrder order = iter.next();
             if (!order.isValid(this.colony))
             {
-                iter.remove();
-                dirty = true;
-                continue;
+                if (invalid == null)
+                {
+                    invalid = new ArrayList<>();
+                }
+                invalid.add(order);
             }
-            else if (order.isDirty())
+        }
+        if (invalid != null)
+        {
+            invalid.forEach(this::removeWorkOrder);
+        }
+
+        for (final IServerWorkOrder order : workOrders.values())
+        {
+            if (order.isDirty())
             {
                 dirty = true;
                 order.resetChange();
             }
 
-            if (order.isClaimed() && getColony().getServerBuildingManager().getBuildings().get(order.getClaimedBy()) == null)
+            if (order.isClaimed())
             {
-                order.setClaimedBy(BlockPos.ZERO);
+                final IBuilding claimant = getColony().getServerBuildingManager().getBuildings().get(order.getClaimedBy());
+                if (claimant == null)
+                {
+                    order.setClaimedBy(BlockPos.ZERO);
+                }
+                else if (claimant instanceof BuildingBuilder hut && !isBound(hut, order) && hut.getFirstModuleOccurance(WorkerBuildingModule.class).getFirstCitizen() == null)
+                {
+                    // queued for a hut that has no builder: nobody will ever take it from the queue
+                    order.setClaimedBy(BlockPos.ZERO);
+                }
             }
-
-            tryAssignWorkOrder(order, (b) -> order.getClaimedBy().equals(b.getPosition()));
         }
 
-        for (final IServerWorkOrder wo : colony.getWorkManager().getWorkOrders().values())
+        // orders claimed by a hut that is free move into the hut
+        for (final IServerWorkOrder order : new ArrayList<>(workOrders.values()))
+        {
+            if (order.isClaimed())
+            {
+                tryAssignWorkOrder(order, (b) -> order.getClaimedBy().equals(b.getPosition()));
+            }
+        }
+
+        // unclaimed orders go to free builders in priority order
+        for (final IServerWorkOrder wo : getOrderedList(o -> !o.isClaimed(), BlockPos.ZERO))
         {
             tryAssignWorkOrder(wo, wo::canBuild);
         }
+    }
+
+    private static boolean isBound(final AbstractBuildingStructureBuilder hut, final IServerWorkOrder order)
+    {
+        return hut.hasWorkOrder() && hut.getWorkOrder() == order;
     }
 
     /**

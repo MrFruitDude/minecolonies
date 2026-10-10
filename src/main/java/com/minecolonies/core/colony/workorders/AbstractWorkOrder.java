@@ -15,6 +15,7 @@ import com.minecolonies.api.util.*;
 import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.api.util.constant.NbtTagConstants;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingBuilder;
+import com.minecolonies.core.colony.workorders.collab.WorkOrderCollab;
 import com.minecolonies.core.colony.workorders.view.*;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
 import net.minecraft.core.BlockPos;
@@ -165,6 +166,11 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
      * Whether the resources for the work order have been requested.
      */
     private boolean requested;
+
+    /**
+     * The state that builders share on this order: progress cursor, leases of helpers and block counts.
+     */
+    protected final WorkOrderCollab collab = new WorkOrderCollab();
 
     /**
      * Internal flag to see if anything has been changed.
@@ -677,6 +683,8 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
             stage = BuildingProgressStage.values()[compound.getIntOr(TAG_STAGE, 0)];
         }
 
+        collab.read(compound);
+
         if (compound.contains(TAG_BB))
         {
             CompoundTag tag = (CompoundTag) compound.get(TAG_BB);
@@ -709,6 +717,7 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
         compound.putBoolean(TAG_IS_CLEARED, cleared);
         compound.putBoolean(TAG_IS_REQUESTED, requested);
         compound.putInt(TAG_STAGE, stage == null ? 0 : stage.ordinal());
+        collab.write(compound);
 
         if (box != Constants.EMPTY_AABB)
         {
@@ -881,6 +890,12 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
     public boolean tooFarFromAnyBuilder(final IColony colony, final int level)
     {
         return false;
+    }
+
+    @Override
+    public WorkOrderCollab getCollab()
+    {
+        return collab;
     }
 
     @Override

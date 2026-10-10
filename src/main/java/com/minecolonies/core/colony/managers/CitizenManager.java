@@ -408,6 +408,9 @@ public class CitizenManager implements ICitizenManager
             return;
         }
 
+        // The work manager has to look at the citizen while he still has his job and work building.
+        colony.getWorkManager().clearWorkForCitizen((ICitizenData) citizen);
+
         //Remove the Citizen
         citizens.remove(citizen.getId());
 
@@ -418,8 +421,6 @@ public class CitizenManager implements ICitizenManager
                 assignedCitizenModule.removeCitizen((ICitizenData) citizen);
             }
         }
-
-        colony.getWorkManager().clearWorkForCitizen((ICitizenData) citizen);
 
         //  Inform Subscribers of removed citizen
         viewBaselines.remove(citizen.getId());

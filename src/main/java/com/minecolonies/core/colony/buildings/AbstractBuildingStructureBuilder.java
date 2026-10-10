@@ -1,6 +1,7 @@
 package com.minecolonies.core.colony.buildings;
 
 import com.minecolonies.api.colony.ICitizenData;
+import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.jobs.registry.JobEntry;
 import com.minecolonies.api.colony.workorders.IBuilderWorkOrder;
@@ -9,6 +10,7 @@ import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.equipment.ModEquipmentTypes;
 import com.minecolonies.api.equipment.registry.EquipmentTypeEntry;
 import com.minecolonies.api.util.BlockPosUtil;
+import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.ItemStackUtils;
 import com.ldtteam.structurize.api.util.Tuple;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
@@ -16,6 +18,8 @@ import com.minecolonies.core.colony.buildings.modules.BuildingResourcesModule;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.buildings.utils.BuilderBucket;
 import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource;
+import com.minecolonies.core.colony.workorders.collab.WorkOrderCollab;
+import com.minecolonies.core.util.ItemMover;
 import com.minecolonies.core.colony.jobs.AbstractJobStructure;
 import com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructureWithWorkOrder;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
@@ -67,9 +71,9 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
     private int progressCounter = 0;
 
     /**
-     * all the fluids to be removed in fluids_remove.
+     * The order the legacy progress above was saved for (hut-level progress from before it moved to the order).
      */
-    private Map<Integer, List<BlockPos>> fluidsToRemove = new LinkedHashMap<>();
+    private int legacyProgressOrderId = 0;
 
     /**
      * The id of the current workOrder.
@@ -218,26 +222,12 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
             progressStage = BuildingProgressStage.values()[compound.getIntOr(TAG_PROGRESS_STAGE, 0)];
         }
 
-        if (compound.contains(TAG_FLUIDS_REMOVE))
-        {
-            fluidsToRemove.clear();
-            ListTag fluidsToRemove = (ListTag) compound.get(TAG_FLUIDS_REMOVE);
-            fluidsToRemove.forEach(fluidsRemove -> {
-                int y = ((CompoundTag) fluidsRemove).getIntOr(TAG_FLUIDS_REMOVE_Y, 0);
-                ListTag positions = (ListTag) ((CompoundTag) fluidsRemove).get(TAG_FLUIDS_REMOVE_POSITIONS);
-                final List<BlockPos> fluids = new ArrayList<BlockPos>();
-                for (int i = 0; i < positions.size(); i++)
-                {
-                    fluids.add(BlockPosUtil.readFromListNBT(positions, i));
-                }
-                this.fluidsToRemove.put(y, fluids);
-            });
-        }
-
         if (compound.contains(TAG_WORK_ORDER))
         {
             this.workOrderId = compound.getIntOr(TAG_WORK_ORDER, 0);
         }
+        // progress saved with the hut belongs to the order the hut had then; it moves to that order when it is read
+        legacyProgressOrderId = progressPos == null ? 0 : workOrderId;
     }
 
     @Override
@@ -249,17 +239,6 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
             BlockPosUtil.write(compound, TAG_PROGRESS_POS, progressPos);
             compound.putInt(TAG_PROGRESS_STAGE, progressStage.ordinal());
         }
-
-        final ListTag fluidsToRemove = new ListTag();
-        this.fluidsToRemove.forEach((y, fluids) -> {
-            final CompoundTag fluidsRemove = new CompoundTag();
-            final ListTag positions = new ListTag();
-            fluids.forEach(fluid -> BlockPosUtil.writeToListNBT(positions, fluid));
-            fluidsRemove.put(TAG_FLUIDS_REMOVE_POSITIONS, positions);
-            fluidsRemove.putInt(TAG_FLUIDS_REMOVE_Y, y);
-            fluidsToRemove.add(fluidsRemove);
-        });
-        compound.put(TAG_FLUIDS_REMOVE, fluidsToRemove);
 
         if (workOrderId != 0)
         {
@@ -374,6 +353,30 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
      */
     public void setProgressPos(final BlockPos blockPos, final BuildingProgressStage stage)
     {
+        if (usesOrderProgress())
+        {
+            final IBuilderWorkOrder order = getWorkOrder();
+            if (order != null)
+            {
+                final boolean stageChanged = order.getCollab().setProgress(blockPos, stage);
+                // whatever the hut saved before is out of date now
+                this.progressPos = null;
+                this.progressStage = null;
+                this.legacyProgressOrderId = 0;
+                if (this.progressCounter > COUNT_TO_STORE_POS || blockPos == null || stageChanged)
+                {
+                    getColony().markDirty();
+                    this.progressCounter = 0;
+                }
+                else
+                {
+                    this.progressCounter++;
+                }
+            }
+            // without an order there is nothing to keep progress for
+            return;
+        }
+
         this.progressPos = blockPos;
         if (this.progressCounter > COUNT_TO_STORE_POS || blockPos == null || stage != progressStage)
         {
@@ -395,6 +398,28 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
     @Nullable
     public Tuple<BlockPos, BuildingProgressStage> getProgress()
     {
+        if (usesOrderProgress())
+        {
+            final IBuilderWorkOrder order = getWorkOrder();
+            if (order == null)
+            {
+                return null;
+            }
+            final WorkOrderCollab collab = order.getCollab();
+            if (this.progressPos != null)
+            {
+                // progress from a save made before it moved to the order: take it over if it is this order's
+                if (!collab.hasProgress() && legacyProgressOrderId == order.getID())
+                {
+                    collab.setProgress(this.progressPos, this.progressStage);
+                }
+                this.progressPos = null;
+                this.progressStage = null;
+                this.legacyProgressOrderId = 0;
+            }
+            return collab.hasProgress() ? new Tuple<>(collab.getProgressPos(), collab.getProgressStage()) : null;
+        }
+
         if (this.progressPos == null)
         {
             return null;
@@ -408,16 +433,6 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
     public int getResourceBatchMultiplier()
     {
         return 1;
-    }
-
-    /**
-     * Getter for the blocks to be removed in fluids_remove.
-     *
-     * @return the blocks to be removed in fluids_remove.
-     */
-    public Map<Integer, List<BlockPos>> getFluidsToRemove()
-    {
-        return fluidsToRemove;
     }
 
     /**
@@ -489,6 +504,85 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
     }
 
     /**
+     * The hut lets go of an order that continues without it (its builder is gone): the hut forgets the order and what it
+     * had gathered for it. The order keeps its progress for the next builder.
+     *
+     * @param workOrder the order.
+     */
+    public void onWorkOrderReleased(final IWorkOrder workOrder)
+    {
+        if (workOrderId != workOrder.getID())
+        {
+            return;
+        }
+        setWorkOrder(null);
+        for (final ICitizenData citizen : getAllAssignedCitizen())
+        {
+            if (citizen.getJob() instanceof AbstractJobStructure<?, ?> abstractJobStructure)
+            {
+                this.cancelAllRequestsOfCitizenOrBuilding(citizen);
+                if (abstractJobStructure.getWorkerAI() instanceof AbstractEntityAIStructureWithWorkOrder<?, ?> abstractEntityAIStructure)
+                {
+                    abstractEntityAIStructure.resetCurrentStructure();
+                }
+            }
+        }
+        this.cancelAllRequestsOfCitizenOrBuilding(null);
+        this.markDirty();
+    }
+
+    /**
+     * Takes over materials that were delivered to the hut of the builder who led the current order before, as far as that hut does
+     * not need them for what it builds now. The builder then does not request them a second time.
+     *
+     * @param stack   the kind of item (the count is ignored).
+     * @param missing how many are missing.
+     * @return how many items moved into this hut.
+     */
+    public int takeOverMaterials(final ItemStack stack, final int missing)
+    {
+        final IBuilderWorkOrder order = getWorkOrder();
+        if (order == null || missing <= 0)
+        {
+            return 0;
+        }
+        final BlockPos from = order.getCollab().getPreviousLead();
+        if (from == null || from.equals(getID()))
+        {
+            return 0;
+        }
+        final IBuilding source = getColony().getServerBuildingManager().getBuilding(from);
+        if (!(source instanceof AbstractBuildingStructureBuilder old) || old == this || old.getItemHandlerCap() == null || getItemHandlerCap() == null)
+        {
+            return 0;
+        }
+
+        final Predicate<ItemStack> matches = candidate -> ItemStackUtils.compareItemStacksIgnoreStackSize(candidate, stack, true, true);
+        int spare = InventoryUtils.getItemCountInItemHandler(old.getItemHandlerCap(), matches);
+        final int hashCode = stack.getComponentsPatch().hashCode();
+        final BuildingBuilderResource stillNeeded = old.getNeededResources().get(stack.getItem().getDescriptionId() + "-" + hashCode);
+        if (stillNeeded != null)
+        {
+            spare -= stillNeeded.getAmount();
+        }
+        if (spare <= 0)
+        {
+            return 0;
+        }
+        return ItemMover.move(old.getItemHandlerCap(), getItemHandlerCap(), matches, Math.min(spare, missing));
+    }
+
+    /**
+     * Whether the progress of the structure is kept on the work order (builders) or in the hut.
+     *
+     * @return true if on the work order.
+     */
+    protected boolean usesOrderProgress()
+    {
+        return false;
+    }
+
+    /**
      * Get the Work Order ID for this Job.
      *
      * @return UUID of the Work Order claimed by this Job, or null
@@ -548,6 +642,11 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
         }
         else
         {
+            if (workOrderId != order.getID())
+            {
+                // whatever was gathered for another order is not this order's list
+                resetNeededResources();
+            }
             workOrderId = order.getID();
         }
     }
