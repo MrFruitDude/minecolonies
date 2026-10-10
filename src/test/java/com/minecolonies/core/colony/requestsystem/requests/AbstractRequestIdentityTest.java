@@ -26,6 +26,51 @@ import static org.junit.Assert.assertTrue;
 public class AbstractRequestIdentityTest
 {
     /**
+     * Requests are HashBiMap values and HashSet members while their state, children and parent change. The hash must
+     * not move with them, or value lookups and set membership silently fail.
+     */
+    @Test
+    public void hashCodeDoesNotChangeWhenTheRequestIsUpdated()
+    {
+        final IRequestManager manager = RsTestSupport.manager();
+        final TestRequest request = new TestRequest(RsTestSupport.token(), new Payload());
+        final int before = request.hashCode();
+
+        final Set<IRequest<?>> set = new HashSet<>();
+        set.add(request);
+        final BiMap<IToken<?>, IRequest<?>> identities = HashBiMap.create();
+        identities.put(request.getId(), request);
+
+        request.setState(manager, RequestState.IN_PROGRESS);
+        request.addChild(RsTestSupport.token());
+        request.setParent(RsTestSupport.token());
+
+        assertEquals("hashCode moved with request state, children or parent", before, request.hashCode());
+        assertTrue("HashSet membership lost after an update", set.contains(request));
+        assertTrue("BiMap value lookup lost after an update", identities.containsValue(request));
+        assertSame("BiMap inverse lookup lost after an update", request.getId(), identities.inverse().get(request));
+    }
+
+    /**
+     * A request is its token: the same token is the same request, whatever state each copy is in.
+     */
+    @Test
+    public void equalityIsDecidedByTheToken()
+    {
+        final IRequestManager manager = RsTestSupport.manager();
+        final IToken<?> token = RsTestSupport.token();
+        final Payload payload = new Payload();
+        final TestRequest first = new TestRequest(token, payload);
+        final TestRequest second = new TestRequest(token, payload);
+        second.setState(manager, RequestState.RESOLVED);
+        second.addChild(RsTestSupport.token());
+
+        assertEquals(first, second);
+        assertEquals(first.hashCode(), second.hashCode());
+        assertTrue("a different token must be a different request", !first.equals(new TestRequest(RsTestSupport.token(), payload)));
+    }
+
+    /**
      * A child that the parent does not know must not advance the parent: the code warned "log and return" and then
      * carried on.
      */

@@ -473,6 +473,10 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
         return Optional.empty();
     }
 
+    /**
+     * A request is its token. State, children, deliveries and the like change while the request lives and requests are
+     * keys and members of hashed collections (the identities BiMap, sets), so they must not take part in the identity.
+     */
     @Override
     public boolean equals(final Object o)
     {
@@ -485,56 +489,13 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
             return false;
         }
 
-        final AbstractRequest<?> that = (AbstractRequest<?>) o;
-
-        if (!getId().equals(that.getId()))
-        {
-            return false;
-        }
-        if (!requested.equals(that.requested))
-        {
-            return false;
-        }
-        if (!getChildren().equals(that.getChildren()))
-        {
-            return false;
-        }
-        if (!getRequester().equals(that.getRequester()))
-        {
-            return false;
-        }
-        if (getState() != that.getState())
-        {
-            return false;
-        }
-        if (getResult() != null ? !getResult().equals(that.getResult()) : that.getResult() != null)
-        {
-            return false;
-        }
-        if (getParent() != null ? !getParent().equals(that.getParent()) : that.getParent() != null)
-        {
-            return false;
-        }
-        if (!getDeliveries().equals(that.getDeliveries()))
-        {
-            return false;
-        }
-        return Objects.equals(itemExamples, that.itemExamples);
+        return getId().equals(((AbstractRequest<?>) o).getId());
     }
 
     @Override
     public int hashCode()
     {
-        int result1 = getId().hashCode();
-        result1 = 31 * result1 + requested.hashCode();
-        result1 = 31 * result1 + getChildren().hashCode();
-        result1 = 31 * result1 + getRequester().hashCode();
-        result1 = 31 * result1 + getState().hashCode();
-        result1 = 31 * result1 + (getResult() != null ? getResult().hashCode() : 0);
-        result1 = 31 * result1 + (getParent() != null ? getParent().hashCode() : 0);
-        result1 = 31 * result1 + getDeliveries().hashCode();
-        result1 = 31 * result1 + (itemExamples != null ? itemExamples.hashCode() : 0);
-        return result1;
+        return getId().hashCode();
     }
 
     @Override
