@@ -807,9 +807,12 @@ public final class BuilderCollabGameTests
         {
             final BuilderWorkOrderGameTests.Fx f = BuilderWorkOrderGameTests.fixture(helper, "C1 fast clear", false);
             final WorkOrderDecoration order = BuilderWorkOrderGameTests.order(f, "fc", new BlockPos(24, 1, 10), 0);
-            final CollabStructureHandler handler = new CollabStructureHandler(f.level(), order, BuildingProgressStage.CLEAR, null, () -> Blocks.DIRT.defaultBlockState());
             final BlockPos stoneCell = new BlockPos(0, 0, 0);
             final BlockPos grassCell = new BlockPos(2, 1, 2);
+            final Blueprint withAir = BuilderWorkOrderGameTests.smallBlueprint("fc2");
+            withAir.addBlockState(grassCell, Blocks.AIR.defaultBlockState());
+            order.setBlueprint(withAir, f.level());
+            final CollabStructureHandler handler = new CollabStructureHandler(f.level(), order, BuildingProgressStage.CLEAR, null, () -> Blocks.DIRT.defaultBlockState());
             f.level().setBlock(handler.getProgressPosInWorld(stoneCell), Blocks.STONE.defaultBlockState(), 3);
             f.level().setBlock(handler.getProgressPosInWorld(grassCell), Blocks.DIRT.defaultBlockState(), 3);
             final var stoneInfo = order.getBlueprint().getBluePrintPositionInfo(stoneCell, false);
@@ -818,7 +821,7 @@ public final class BuilderCollabGameTests
             helper.assertTrue(!BuilderStageRules.skipClearing(stoneInfo, handler.getProgressPosInWorld(stoneCell), handler), "a stone to build over stone is skipped with fast clear off");
             BuilderCollab.overrideFastClearForTests(true);
             helper.assertTrue(BuilderStageRules.skipClearing(stoneInfo, handler.getProgressPosInWorld(stoneCell), handler), "a stone to build over stone is mined with fast clear on");
-            helper.assertTrue(!BuilderStageRules.skipClearing(otherInfo, handler.getProgressPosInWorld(grassCell), handler), "dirt where the blueprint wants air is skipped");
+            helper.assertTrue(!BuilderStageRules.skipClearing(otherInfo, handler.getProgressPosInWorld(grassCell), handler), "dirt where the blueprint wants air is skipped (it must be mined)");
             helper.succeed();
         }
         finally
