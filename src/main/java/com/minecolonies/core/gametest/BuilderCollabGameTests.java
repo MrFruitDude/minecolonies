@@ -476,7 +476,12 @@ public final class BuilderCollabGameTests
           .append(" B.carry=").append(live.b.getCarry().size()).append(" placements=").append(live.placements.size())
           .append(" stateA=").append(live.ca.getEntity().map(e -> e.getCitizenJobHandler().getWorkAI() == null ? "no-ai" : String.valueOf(e.getCitizenJobHandler().getWorkAI().getStateAI().getState())).orElse("-"))
           .append(" stateB=").append(live.cb.getEntity().map(e -> e.getCitizenJobHandler().getWorkAI() == null ? "no-ai" : String.valueOf(e.getCitizenJobHandler().getWorkAI().getStateAI().getState())).orElse("-"))
-          .append(" bricks=").append(live.count(BUILD_ITEM));
+          .append(" bricks=").append(live.count(BUILD_ITEM))
+          .append(" (hutA=").append(InventoryUtils.getItemCountInItemHandler(live.a.getItemHandlerCap(), x -> x.is(BUILD_ITEM)))
+          .append(" invA=").append(InventoryUtils.getItemCountInItemHandler(live.ca.getInventory(), x -> x.is(BUILD_ITEM)))
+          .append(" hutB=").append(InventoryUtils.getItemCountInItemHandler(live.b.getItemHandlerCap(), x -> x.is(BUILD_ITEM)))
+          .append(" invB=").append(InventoryUtils.getItemCountInItemHandler(live.cb.getInventory(), x -> x.is(BUILD_ITEM)))
+          .append(" carryB=").append(live.b.getCarry().values()).append(')');
         for (final ICitizenData citizen : List.of(live.ca, live.cb))
         {
             sb.append(" [citizen ").append(citizen.getId()).append(" job=").append(citizen.getJob() == null ? null : citizen.getJob().getClass().getSimpleName())
