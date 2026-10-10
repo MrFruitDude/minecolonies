@@ -562,6 +562,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_craft_batch_zero"),
           info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::craftRecipeTooBigForOneBatch),
           isolatedColonyData(event, "rs_craft_batch_zero"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_completed_once"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::completedRequestsAreListedOnce),
+          isolatedColonyData(event, "rs_completed_once"));
     }
 
     /**

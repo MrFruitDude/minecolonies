@@ -183,4 +183,25 @@ public final class RequestSystemGameTests
         }
     }
 
+    // ------------------------------------------------------------------ 2: completed requests listed twice
+
+    public static void completedRequestsAreListedOnce(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "rs-completed-once");
+        final AbstractBuilding builder = (AbstractBuilding) place(helper, colony, ModBlocks.blockHutBuilder, new BlockPos(8, 1, 2), "fundamentals/builder1.blueprint");
+        final ICitizenData citizen = colony.getCitizenManager().createAndRegisterCivilianData();
+        final IRequestManager manager = colony.getRequestManager();
+
+        final IToken<?> token = builder.createRequest(citizen, new Stack(new ItemStack(Items.DIRT), 4, 4), false);
+        final IRequest<?> request = manager.getRequestForToken(token);
+        helper.assertTrue(request != null, "request was not created");
+        builder.onRequestedRequestComplete(manager, request);
+
+        final Collection<IRequest<?>> all = builder.getCompletedRequestsOfCitizenOrBuilding(citizen);
+        final List<IRequest<?>> filtered = builder.getCompletedRequestsOfCitizenOrBuilding(citizen, r -> true);
+        helper.assertTrue(all.size() == 1, "expected exactly one completed request, got " + all.size());
+        helper.assertTrue(filtered.size() == 1, "the filtered list returned " + filtered.size() + " entries for one completed request (every match is returned twice)");
+        helper.succeed();
+    }
+
 }
