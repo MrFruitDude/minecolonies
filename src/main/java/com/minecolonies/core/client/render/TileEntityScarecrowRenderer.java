@@ -32,10 +32,11 @@ public class TileEntityScarecrowRenderer
     private static final int ROTATION = 180;
     private static final int BASIC_ROTATION = 90;
 
+    // MC 26.x: Model.renderType(Identifier) takes a full texture path (not an atlas sprite like the 1.21 Material did).
     private static final Identifier SCARECROW_A =
-        Identifier.fromNamespaceAndPath(Constants.MOD_ID, "block/blockscarecrowpumpkin");
+        Identifier.fromNamespaceAndPath(Constants.MOD_ID, "textures/block/blockscarecrowpumpkin.png");
     private static final Identifier SCARECROW_B =
-        Identifier.fromNamespaceAndPath(Constants.MOD_ID, "block/blockscarecrownormal");
+        Identifier.fromNamespaceAndPath(Constants.MOD_ID, "textures/block/blockscarecrownormal.png");
 
     private final ScarecrowModel model;
 
