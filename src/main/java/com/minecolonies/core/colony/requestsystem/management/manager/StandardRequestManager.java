@@ -435,7 +435,7 @@ public class StandardRequestManager implements IStandardRequestManager
         setup();
 
         version = -1;
-        getUpdateHandler().handleUpdate(UpdateType.RESET);
+        getUpdateHandler().handleUpdate(type);
     }
 
     /**
