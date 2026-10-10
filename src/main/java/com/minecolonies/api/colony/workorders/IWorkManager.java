@@ -78,6 +78,15 @@ public interface IWorkManager
      *
      * @param citizen Citizen to unclaim work for.
      */
+    /**
+     * The order the builder of the given hut helps with, if the hut is a helper.
+     *
+     * @param hut the position of the builder's hut.
+     * @return the order or null.
+     */
+    @Nullable
+    IBuilderWorkOrder getAssistedOrder(BlockPos hut);
+
     void clearWorkForCitizen(@NotNull ICitizenData citizen);
 
     /**

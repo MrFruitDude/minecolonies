@@ -30,4 +30,44 @@ public interface IWorkOrderView extends IWorkOrder
      * @return true if so.
      */
     boolean canBuildIgnoringDistance(@NotNull final BlockPos builderLocation, final int builderLevel);
+
+    /**
+     * Blocks of the structure done so far (all builders together). 0 when not known.
+     */
+    default int getPlacedBlocks()
+    {
+        return 0;
+    }
+
+    /**
+     * Blocks of the structure to do in all, as estimated from the blueprint. 0 when not known.
+     */
+    default int getTotalBlocks()
+    {
+        return 0;
+    }
+
+    /**
+     * Positions currently leased by helpers.
+     */
+    default int getLeaseCount()
+    {
+        return 0;
+    }
+
+    /**
+     * The huts of the builders that help the lead (the lead is {@link #getClaimedBy()}).
+     */
+    default java.util.List<BlockPos> getAssistantHuts()
+    {
+        return java.util.List.of();
+    }
+
+    /**
+     * The citizen ids of the builders that help the lead, in the order of {@link #getAssistantHuts()}; -1 if a hut has no builder.
+     */
+    default java.util.List<Integer> getAssistantCitizenIds()
+    {
+        return java.util.List.of();
+    }
 }

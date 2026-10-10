@@ -14,6 +14,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
@@ -82,6 +84,12 @@ public abstract class AbstractWorkOrderView implements IWorkOrderView
      * Translation key.
      */
     private String translationKey;
+
+    private int          placedBlocks;
+    private int          totalBlocks;
+    private int          leaseCount;
+    private List<BlockPos> assistantHuts = List.of();
+    private List<Integer> assistantCitizens = List.of();
 
     /**
      * The workorder area
@@ -284,6 +292,49 @@ public abstract class AbstractWorkOrderView implements IWorkOrderView
         targetLevel = buf.readInt();
         stage = BuildingProgressStage.values()[buf.readInt()];
         box = new AABB(buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble());
+        placedBlocks = buf.readInt();
+        totalBlocks = buf.readInt();
+        leaseCount = buf.readInt();
+        final int helpers = buf.readInt();
+        final List<BlockPos> huts = new ArrayList<>(helpers);
+        final List<Integer> citizens = new ArrayList<>(helpers);
+        for (int i = 0; i < helpers; i++)
+        {
+            huts.add(buf.readBlockPos());
+            citizens.add(buf.readInt());
+        }
+        assistantHuts = List.copyOf(huts);
+        assistantCitizens = List.copyOf(citizens);
+    }
+
+    @Override
+    public int getPlacedBlocks()
+    {
+        return placedBlocks;
+    }
+
+    @Override
+    public int getTotalBlocks()
+    {
+        return totalBlocks;
+    }
+
+    @Override
+    public int getLeaseCount()
+    {
+        return leaseCount;
+    }
+
+    @Override
+    public List<BlockPos> getAssistantHuts()
+    {
+        return assistantHuts;
+    }
+
+    @Override
+    public List<Integer> getAssistantCitizenIds()
+    {
+        return assistantCitizens;
     }
 
     @Override

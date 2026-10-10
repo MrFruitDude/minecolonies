@@ -759,6 +759,11 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
         buf.writeDouble(getBoundingBox().maxX);
         buf.writeDouble(getBoundingBox().maxY);
         buf.writeDouble(getBoundingBox().maxZ);
+        collab.writeView(buf, hut -> {
+            final IBuilding building = colony == null ? null : colony.getServerBuildingManager().getBuilding(hut);
+            final ICitizenData citizen = building == null ? null : building.getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule.class).getFirstCitizen();
+            return citizen == null ? -1 : citizen.getId();
+        });
     }
 
     private String getMappingName()

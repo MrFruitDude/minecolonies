@@ -125,6 +125,16 @@ public class BuildingStructureHandler<J extends AbstractJobStructure<?, J>, B ex
     }
 
     /**
+     * The stages of this structure, in the order they run.
+     *
+     * @return the stages.
+     */
+    public BuildingProgressStage[] getStages()
+    {
+        return stages;
+    }
+
+    /**
      * Get the current stage we're in.
      *
      * @return the current Stage.
@@ -202,6 +212,7 @@ public class BuildingStructureHandler<J extends AbstractJobStructure<?, J>, B ex
 
         if (placement)
         {
+            com.minecolonies.core.colony.workorders.collab.BuilderCollab.placed(worldPos, structureAI.getWorker().getCitizenData().getWorkBuilding().getID());
             structureAI.getWorker().getCitizenExperienceHandler().addExperience(XP_EACH_BLOCK);
 
             for (final ItemStack stack : list)

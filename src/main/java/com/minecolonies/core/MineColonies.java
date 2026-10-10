@@ -346,9 +346,10 @@ public class MineColonies
     /**
      * Network protocol revision, appended to the mod version as the channel version. Bump it whenever a message's wire
      * format changes, so a client of the same mod version built before the change is refused at login with a reason
-     * instead of misreading packets. 2: CA-1/CA-3 view sync (request-system deltas, citizen view patches).
+     * instead of misreading packets. 2: CA-1/CA-3 view sync (request-system deltas, citizen view patches). 3: work order views carry the
+     * builder collaboration state (block counts, helpers).
      */
-    public static final int NETWORK_PROTOCOL_VERSION = 2;
+    public static final int NETWORK_PROTOCOL_VERSION = 3;
 
     /**
      * @return the channel version both sides must announce.

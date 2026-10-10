@@ -379,6 +379,13 @@ public class BuildingResourcesModule extends AbstractBuildingModule implements I
                 continue;
             }
 
+            // materials that builders helping with this order have taken out of the hut for their blocks
+            count += ((AbstractBuildingStructureBuilder) building).itemsCarriedByHelpers(itemStack.getItemStack());
+            if (count >= entry.getValue())
+            {
+                continue;
+            }
+
             count += InventoryUtils.getItemCountInItemHandler(worker.getInventory(), stack -> ItemStackUtils.compareItemStacksIgnoreStackSize(stack, itemStack.getItemStack()));
             if (count >= entry.getValue())
             {

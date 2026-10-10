@@ -18,6 +18,8 @@ import com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.buildings.modules.settings.StringSetting;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingBuilder;
+import com.minecolonies.core.colony.workorders.collab.BuilderCollab;
+import com.minecolonies.core.colony.workorders.collab.CollabScheduler;
 import com.minecolonies.core.util.AdvancementUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -215,8 +217,31 @@ public class WorkManager implements IWorkManager
                 {
                     releaseClaim(workOrder, workBuilding);
                 }
+                if (workOrder instanceof IBuilderWorkOrder builderOrder)
+                {
+                    builderOrder.getCollab().removeAssistant(workBuilding.getPosition(), 0);
+                }
+            }
+            if (workBuilding instanceof AbstractBuildingStructureBuilder hut)
+            {
+                // what he carried is gone with him
+                hut.clearCarry();
             }
         }
+    }
+
+    @Override
+    @Nullable
+    public IBuilderWorkOrder getAssistedOrder(final BlockPos hut)
+    {
+        for (final IServerWorkOrder order : workOrders.values())
+        {
+            if (order instanceof IBuilderWorkOrder builderOrder && builderOrder.getCollab().hasAssistant(hut))
+            {
+                return builderOrder;
+            }
+        }
+        return null;
     }
 
     /**
@@ -425,12 +450,17 @@ public class WorkManager implements IWorkManager
             invalid.forEach(this::removeWorkOrder);
         }
 
+        final boolean collaborate = BuilderCollab.enabled();
         for (final IServerWorkOrder order : workOrders.values())
         {
             if (order.isDirty())
             {
                 dirty = true;
                 order.resetChange();
+            }
+            if (order instanceof IBuilderWorkOrder builderOrder && builderOrder.getCollab().consumeViewDirty())
+            {
+                dirty = true;
             }
 
             if (order.isClaimed())
@@ -448,6 +478,8 @@ public class WorkManager implements IWorkManager
             }
         }
 
+        CollabScheduler.maintain(this, this.colony, collaborate);
+
         // orders claimed by a hut that is free move into the hut
         for (final IServerWorkOrder order : new ArrayList<>(workOrders.values()))
         {
@@ -461,6 +493,11 @@ public class WorkManager implements IWorkManager
         for (final IServerWorkOrder wo : getOrderedList(o -> !o.isClaimed(), BlockPos.ZERO))
         {
             tryAssignWorkOrder(wo, wo::canBuild);
+        }
+
+        if (collaborate)
+        {
+            CollabScheduler.assign(this, this.colony);
         }
     }
 
@@ -488,6 +525,12 @@ public class WorkManager implements IWorkManager
 
                 if (abstractBuildingStructureBuilder.hasWorkOrder())
                 {
+                    continue;
+                }
+
+                if (!order.isClaimed() && getAssistedOrder(building.getPosition()) != null)
+                {
+                    // helpers take new orders only when no free builder is left (see CollabScheduler)
                     continue;
                 }
 

@@ -116,6 +116,18 @@ public class ServerConfiguration extends AbstractConfiguration
 
     public final BooleanValue creativeResolve;
 
+    /*  --------------------------------------------------------------------------- *
+     *  ------------------- ######## Builder settings ######## --------------------- *
+     *  --------------------------------------------------------------------------- */
+
+    public final BooleanValue builderCollaboration;
+    public final IntValue     builderCollaborationMaxHelpers;
+    public final IntValue     builderCollaborationBlocksPerHelper;
+    public final IntValue     builderCollaborationMinRemaining;
+    public final IntValue     builderCollaborationStaySeconds;
+    public final IntValue     builderCollaborationLeaseSize;
+    public final IntValue     builderCollaborationLeaseSeconds;
+
     /**
      * Builds server configuration.
      *
@@ -206,6 +218,17 @@ public class ServerConfiguration extends AbstractConfiguration
         swapToCategory("requestSystem");
 
         creativeResolve = defineBoolean("creativeresolve", false);
+
+        swapToCategory("builders");
+
+        // Idle builders help the builder who leads an order, and take a new order when one arrives.
+        builderCollaboration = defineBoolean("collaboration", false);
+        builderCollaborationMaxHelpers = defineInteger("collaborationMaxHelpers", 3, 1, 8);
+        builderCollaborationBlocksPerHelper = defineInteger("collaborationBlocksPerHelper", 1500, 1, 1000000);
+        builderCollaborationMinRemaining = defineInteger("collaborationMinRemaining", 64, 1, 1000000);
+        builderCollaborationStaySeconds = defineInteger("collaborationStaySeconds", 120, 0, 3600);
+        builderCollaborationLeaseSize = defineInteger("collaborationLeaseSize", 12, 1, 64);
+        builderCollaborationLeaseSeconds = defineInteger("collaborationLeaseSeconds", 120, 10, 3600);
 
         finishCategory();
     }

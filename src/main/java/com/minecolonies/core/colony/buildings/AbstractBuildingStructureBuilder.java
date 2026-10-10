@@ -71,6 +71,15 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
     private int progressCounter = 0;
 
     /**
+     * What this builder carries for a structure that another builder leads: the hut of that builder and the materials taken
+     * from it, which are given back when the builder stops helping.
+     */
+    @Nullable
+    private BlockPos carryLead;
+
+    private final Map<ItemStorage, Integer> carry = new LinkedHashMap<>();
+
+    /**
      * The order the legacy progress above was saved for (hut-level progress from before it moved to the order).
      */
     private int legacyProgressOrderId = 0;
@@ -79,6 +88,11 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
      * The id of the current workOrder.
      */
     private int workOrderId;
+
+    private static final String TAG_COLLAB_CARRY_LEAD = "collabCarryLead";
+    private static final String TAG_COLLAB_CARRY      = "collabCarry";
+    private static final String TAG_COLLAB_STACK      = "stack";
+    private static final String TAG_COLLAB_COUNT      = "count";
 
     /**
      * Public constructor of the building, creates an object of the building.
@@ -226,6 +240,18 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
         {
             this.workOrderId = compound.getIntOr(TAG_WORK_ORDER, 0);
         }
+        carry.clear();
+        carryLead = compound.contains(TAG_COLLAB_CARRY_LEAD) ? BlockPosUtil.read(compound, TAG_COLLAB_CARRY_LEAD) : null;
+        final ListTag carryList = compound.getListOrEmpty(TAG_COLLAB_CARRY);
+        for (int i = 0; i < carryList.size(); i++)
+        {
+            final CompoundTag entry = carryList.getCompoundOrEmpty(i);
+            final ItemStack stack = ItemStackUtils.deserializeFromNBT(entry.getCompoundOrEmpty(TAG_COLLAB_STACK), provider);
+            if (!stack.isEmpty())
+            {
+                carry.merge(new ItemStorage(stack.copyWithCount(1)), entry.getIntOr(TAG_COLLAB_COUNT, 0), Integer::sum);
+            }
+        }
         // progress saved with the hut belongs to the order the hut had then; it moves to that order when it is read
         legacyProgressOrderId = progressPos == null ? 0 : workOrderId;
     }
@@ -243,6 +269,20 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
         if (workOrderId != 0)
         {
             compound.putInt(TAG_WORK_ORDER, workOrderId);
+        }
+
+        if (carryLead != null && !carry.isEmpty())
+        {
+            BlockPosUtil.write(compound, TAG_COLLAB_CARRY_LEAD, carryLead);
+            final ListTag carryList = new ListTag();
+            for (final Map.Entry<ItemStorage, Integer> entry : carry.entrySet())
+            {
+                final CompoundTag tag = new CompoundTag();
+                tag.put(TAG_COLLAB_STACK, ItemStackUtils.serializeOptional(entry.getKey().getItemStack().copyWithCount(1), provider));
+                tag.putInt(TAG_COLLAB_COUNT, entry.getValue());
+                carryList.add(tag);
+            }
+            compound.put(TAG_COLLAB_CARRY, carryList);
         }
 
         return compound;
@@ -570,6 +610,132 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
             return 0;
         }
         return ItemMover.move(old.getItemHandlerCap(), getItemHandlerCap(), matches, Math.min(spare, missing));
+    }
+
+    // ------------------------------------------------------------------ cargo of a helping builder
+
+    /**
+     * Whether this builder carries materials of another builder's structure.
+     *
+     * @return true if so.
+     */
+    public boolean hasCarry()
+    {
+        return !carry.isEmpty();
+    }
+
+    /**
+     * The hut the carried materials belong to.
+     *
+     * @return the hut position or null.
+     */
+    @Nullable
+    public BlockPos getCarryLead()
+    {
+        return carryLead;
+    }
+
+    /**
+     * What is carried: item (count 1) to count taken from the lead's hut and not placed or given back yet.
+     *
+     * @return a copy.
+     */
+    public Map<ItemStorage, Integer> getCarry()
+    {
+        return new LinkedHashMap<>(carry);
+    }
+
+    /**
+     * Notes materials taken from the hut of the lead.
+     *
+     * @param lead   the hut of the lead.
+     * @param stack  the kind of item (the count is ignored).
+     * @param amount how many were taken.
+     */
+    public void addCarry(final BlockPos lead, final ItemStack stack, final int amount)
+    {
+        if (amount <= 0)
+        {
+            return;
+        }
+        if (carryLead != null && !carryLead.equals(lead) && !carry.isEmpty())
+        {
+            throw new IllegalStateException("builder " + getID() + " still carries materials of " + carryLead + " and may not take from " + lead);
+        }
+        carryLead = lead;
+        carry.merge(new ItemStorage(stack.copyWithCount(1)), amount, Integer::sum);
+        markDirty();
+    }
+
+    /**
+     * Notes placed materials, which are no longer carried.
+     *
+     * @param consumed the materials that were used up.
+     */
+    public void reduceCarry(final Map<ItemStorage, Integer> consumed)
+    {
+        for (final Map.Entry<ItemStorage, Integer> entry : consumed.entrySet())
+        {
+            carry.computeIfPresent(entry.getKey(), (key, have) -> have > entry.getValue() ? have - entry.getValue() : null);
+        }
+        if (carry.isEmpty())
+        {
+            carryLead = null;
+        }
+        markDirty();
+    }
+
+    /**
+     * Sets the carried count of one item (e.g. what really is in the inventory).
+     *
+     * @param key   the item.
+     * @param count the count, 0 or less removes it.
+     */
+    public void setCarry(final ItemStorage key, final int count)
+    {
+        if (count <= 0)
+        {
+            carry.remove(key);
+        }
+        else
+        {
+            carry.put(key, count);
+        }
+        if (carry.isEmpty())
+        {
+            carryLead = null;
+        }
+        markDirty();
+    }
+
+    /**
+     * Forgets what is carried.
+     */
+    public void clearCarry()
+    {
+        carry.clear();
+        carryLead = null;
+        markDirty();
+    }
+
+    /**
+     * How many of an item builders that help this hut's order carry for it.
+     *
+     * @param stack the kind of item.
+     * @return the count.
+     */
+    public int itemsCarriedByHelpers(final ItemStack stack)
+    {
+        int count = 0;
+        final ItemStorage key = new ItemStorage(stack.copyWithCount(1));
+        for (final IBuilding other : getColony().getServerBuildingManager().getBuildings().values())
+        {
+            if (other != this && other instanceof AbstractBuildingStructureBuilder helper && getID().equals(helper.carryLead))
+            {
+                count += helper.carry.getOrDefault(key, 0);
+            }
+        }
+        return count;
     }
 
     /**
