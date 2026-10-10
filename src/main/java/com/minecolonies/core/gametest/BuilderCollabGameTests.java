@@ -440,6 +440,8 @@ public final class BuilderCollabGameTests
         step[0] = () -> {
             // no night: the builders have no beds
             live.level.getServer().clockManager().setTotalTicks(live.level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
+            // the test colony has no player close by and so no colony tick of its own: the work manager is ticked here, once a second like in a running colony
+            live.colony.getWorkManager().onColonyTick(live.colony);
             if (check.getAsBoolean())
             {
                 onDone.run();
@@ -454,8 +456,8 @@ public final class BuilderCollabGameTests
                 live.helper.assertTrue(false, "timeout after " + maxTicks + " ticks: " + failure.get());
                 return;
             }
-            elapsed[0] += 100;
-            live.helper.runAfterDelay(100, () -> step[0].run());
+            elapsed[0] += 20;
+            live.helper.runAfterDelay(20, () -> step[0].run());
         };
         live.helper.runAfterDelay(1, step[0]);
     }
