@@ -12,6 +12,7 @@ import com.minecolonies.api.colony.requestsystem.requestable.Food;
 import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
 import com.minecolonies.api.colony.requestsystem.requestable.IRequestable;
 import com.minecolonies.api.colony.requestsystem.requestable.Stack;
+import com.minecolonies.api.util.Log;
 import com.minecolonies.api.colony.requestsystem.requester.IRequester;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.crafting.IRecipeStorage;
@@ -351,6 +352,15 @@ public abstract class AbstractCraftingRequestResolver extends AbstractRequestRes
                 batchSize = (int) Math.floor((double) batchSize * ((double) maxSlots / stacksNeeded));
             }
             totalSlots = Math.min(totalSlots, stacksNeeded);
+        }
+
+        if (batchSize < 1)
+        {
+            // Even a single execution of this recipe needs more slots than the crafter has, so it can never be batched
+            // into a crafter's inventory. Refuse the attempt: a batch size of 0 never works through the remaining
+            // executions and would create requests forever.
+            Log.getLogger().warn("Cannot craft {}: one execution of its recipe needs more than the {} slots of a crafter.", requestStack, maxSlots);
+            return null;
         }
 
         //Create a crafting request for each batch needed to supply the full request

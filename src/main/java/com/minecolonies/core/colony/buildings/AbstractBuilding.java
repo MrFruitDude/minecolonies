@@ -2166,14 +2166,6 @@ public abstract class AbstractBuilding extends AbstractBuildingContainer
             }
         }
 
-        for (final IRequest<?> req : getCompletedRequestsOfCitizenOrBuilding(citizenData))
-        {
-            if (selectionPredicate.test(req))
-            {
-                requests.add(req);
-            }
-        }
-
         return requests;
     }
 

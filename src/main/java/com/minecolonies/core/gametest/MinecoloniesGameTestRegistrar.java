@@ -557,6 +557,35 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_citizen_view_patch"),
           info -> new MinecoloniesGameTestInstance(info, RequestSyncGameTests::citizenViewPatch),
           isolatedColonyData(event, "reqsync_citizen_view_patch"));
+        // Request system defect checks (one glob: minecolonies:rs_*).
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_craft_batch_zero"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::craftRecipeTooBigForOneBatch),
+          isolatedColonyData(event, "rs_craft_batch_zero"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_completed_once"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::completedRequestsAreListedOnce),
+          isolatedColonyData(event, "rs_completed_once"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_min_stock_remove"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::minimumStockRemovalCancelsItsRequest),
+          isolatedColonyData(event, "rs_min_stock_remove"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_delivery_full"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::deliveryToFullBuildingIsNotResolved),
+          isolatedColonyData(event, "rs_delivery_full"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_building_reserved"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::buildingResolverLeavesReservedItems),
+          isolatedColonyData(event, "rs_building_reserved"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_null_safety"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::nullSafety),
+          isolatedColonyData(event, "rs_null_safety"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_courier_scaling"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::courierTaskSelectionScales),
+          isolatedColonyData(event, "rs_courier_scaling"));
     }
 
     /**

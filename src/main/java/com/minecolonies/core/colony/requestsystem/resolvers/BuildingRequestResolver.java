@@ -93,6 +93,25 @@ public class BuildingRequestResolver extends AbstractBuildingDependentRequestRes
         return InventoryUtils.hasBuildingEnoughElseCount(building, pred, request.getRequest().getMinimumCount()) >= request.getRequest().getMinimumCount();
     }
 
+    /**
+     * The amount of the requested item that the building keeps for other work (queued crafting), not counting this request.
+     *
+     * @param request  the request.
+     * @param building the building.
+     * @return the reserved amount.
+     */
+    private static int reservedAmount(@NotNull final IRequest<? extends IDeliverable> request, @NotNull final AbstractBuilding building)
+    {
+        for (final Map.Entry<ItemStorage, Integer> reserved : building.reservedStacksExcluding(request).entrySet())
+        {
+            if (request.getRequest().matches(reserved.getKey().getItemStack()))
+            {
+                return reserved.getValue();
+            }
+        }
+        return 0;
+    }
+
     @Nullable
     @Override
     public List<IToken<?>> attemptResolveForBuilding(
@@ -101,15 +120,7 @@ public class BuildingRequestResolver extends AbstractBuildingDependentRequestRes
       @NotNull final AbstractBuilding building)
     {
         final int totalRequested = request.getRequest().getCount();
-        int totalAvailable = InventoryUtils.getCountFromBuilding(building, itemStack -> request.getRequest().matches(itemStack));
-        for (final Map.Entry<ItemStorage, Integer> reserved : building.reservedStacksExcluding(request).entrySet())
-        {
-            if (request.getRequest().matches(reserved.getKey().getItemStack()))
-            {
-                totalAvailable = Math.max(0, totalAvailable - reserved.getValue());
-                break;
-            }
-        }
+        int totalAvailable = Math.max(0, InventoryUtils.getCountFromBuilding(building, itemStack -> request.getRequest().matches(itemStack)) - reservedAmount(request, building));
 
         if (totalAvailable <= 0)
         {
@@ -139,6 +150,8 @@ public class BuildingRequestResolver extends AbstractBuildingDependentRequestRes
 
         final int total = request.getRequest().getCount();
         int current = 0;
+        // The attempt only counted what is not reserved for other work in the building: do not hand out the reserved items either.
+        int reserved = reservedAmount(request, building);
         final List<ItemStack> deliveries = new ArrayList<>();
 
         for (final IItemHandlerCapProvider tile : tileEntities)
@@ -148,8 +161,16 @@ public class BuildingRequestResolver extends AbstractBuildingDependentRequestRes
             {
                 if (!stack.isEmpty() && current < total)
                 {
-                    deliveries.add(stack);
-                    current += stack.getCount();
+                    final int skipped = Math.min(reserved, stack.getCount());
+                    reserved -= skipped;
+                    if (skipped == stack.getCount())
+                    {
+                        continue;
+                    }
+
+                    final ItemStack available = skipped == 0 ? stack : stack.copyWithCount(stack.getCount() - skipped);
+                    deliveries.add(available);
+                    current += available.getCount();
                 }
             }
         }

@@ -187,8 +187,8 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
             return resultingResolver != null;
         }).collect(Collectors.toSet());
 
-        successfully.forEach(t -> {
-            manager.log("Failed to reassign a retryable request: " + id);
+        retryables.stream().filter(t -> !successfully.contains(t)).forEach(t -> {
+            manager.log("Failed to reassign a retryable request: " + t);
         });
 
         manager.log("Finished reassignment.");
@@ -295,7 +295,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
                               }
 
                               IToken<?> newResolverToken = manager.reassignRequest(req.getId(), ImmutableList.of(getId()));
-                              if (newResolverToken != getId())
+                              if (!getId().equals(newResolverToken))
                               {
                                   assignedRequests.remove(request.getId());
                                   break;

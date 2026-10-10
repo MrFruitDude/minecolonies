@@ -38,8 +38,11 @@ import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Predicate;
 
 import static com.minecolonies.api.util.constant.BuildingConstants.TAG_ONGOING;
 import static com.minecolonies.api.util.constant.CitizenConstants.SKILL_BONUS_ADD_NAME;
@@ -187,7 +190,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         }
     }
 
-    private int getRequestPriority(final IToken<?> token, final IRequest<?> req, final List<IToken<?>> mutableRequestList)
+    private int getRequestPriority(final IRequest<?> req, final int queueIndex, final int queueSize)
     {
         int priority = 1;
         if (!WorldUtil.isBlockLoaded(getColony().getWorld(), getTarget(req)))
@@ -203,7 +206,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             }
         }
 
-        priority += mutableRequestList.size() - mutableRequestList.indexOf(token);
+        priority += queueSize - queueIndex;
         final int distance = (int) Math.sqrt(getSource(req).distManhattan(getTarget(req)));
         return priority - distance;
     }
@@ -235,23 +238,28 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             return null;
         }
 
-        final List<IToken<?>> reqsToRemove = new ArrayList<>();
+        final Set<IToken<?>> reqsToRemove = new HashSet<>();
 
         IToken<?> resultRequestId = null;
+        int resultIndex = -1;
         int priority = Integer.MIN_VALUE;
+        final int queueSize = wareHouseModule.getMutableRequestList().size();
+        int queueIndex = 0;
         for (final IToken<?> reqId : wareHouseModule.getMutableRequestList())
         {
+            final int position = queueIndex++;
             final IRequest<?> req = getColony().getRequestManager().getRequestForToken(reqId);
             if (req == null)
             {
                 reqsToRemove.add(reqId);
                 continue;
             }
-            final int localPriority = getRequestPriority(reqId, req, wareHouseModule.getMutableRequestList());
+            final int localPriority = getRequestPriority(req, position, queueSize);
             if (localPriority > priority)
             {
                 priority = localPriority;
                 resultRequestId = reqId;
+                resultIndex = position;
             }
         }
 
@@ -260,7 +268,6 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             return null;
         }
 
-        final int resultIndex = wareHouseModule.getMutableRequestList().indexOf(resultRequestId);
         reqsToRemove.add(resultRequestId);
 
         final IRequest<?> resultRequest = getColony().getRequestManager().getRequestForToken(resultRequestId);
@@ -326,6 +333,16 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
      */
     public void finishRequest(final boolean successful)
     {
+        finishRequest(request -> successful);
+    }
+
+    /**
+     * Method called to mark the current request, and the deliveries running along with it, as finished.
+     *
+     * @param successful decides per request whether it was handled successfully.
+     */
+    public void finishRequest(final Predicate<IRequest<?>> successful)
+    {
         if (getTaskQueueFromDataStore().isEmpty())
         {
             return;
@@ -353,7 +370,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
                     final IRequest<? extends Delivery> req = taskList.get(i);
                     if (req.getState() == RequestState.IN_PROGRESS)
                     {
-                        getColony().getRequestManager().updateRequestState(req.getId(), successful ? RequestState.RESOLVED : RequestState.FAILED);
+                        getColony().getRequestManager().updateRequestState(req.getId(), successful.test(req) ? RequestState.RESOLVED : RequestState.FAILED);
                     }
                     getTaskQueueFromDataStore().remove(req.getId());
                 }
@@ -365,7 +382,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
                     final IRequest<?> req = getColony().getRequestManager().getRequestForToken(token);
                     if (req != null && req.getState() == RequestState.IN_PROGRESS)
                     {
-                        getColony().getRequestManager().updateRequestState(req.getId(), successful ? RequestState.RESOLVED : RequestState.FAILED);
+                        getColony().getRequestManager().updateRequestState(req.getId(), successful.test(req) ? RequestState.RESOLVED : RequestState.FAILED);
                     }
                     getTaskQueueFromDataStore().remove(token);
                     getDataStore().getOngoingDeliveries().remove(token);
@@ -375,11 +392,11 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         else if (request.getRequest() instanceof Pickup)
         {
             getTaskQueueFromDataStore().remove(request.getId());
-            getColony().getRequestManager().updateRequestState(current, successful ? RequestState.RESOLVED : RequestState.FAILED);
+            getColony().getRequestManager().updateRequestState(current, successful.test(request) ? RequestState.RESOLVED : RequestState.FAILED);
         }
         else
         {
-            getColony().getRequestManager().updateRequestState(current, successful ? RequestState.RESOLVED : RequestState.FAILED);
+            getColony().getRequestManager().updateRequestState(current, successful.test(request) ? RequestState.RESOLVED : RequestState.FAILED);
 
             //Just to be sure lets delete them!
             if (!getTaskQueueFromDataStore().isEmpty() && current == getTaskQueueFromDataStore().getFirst())

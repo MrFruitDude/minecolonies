@@ -8,6 +8,7 @@ import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.requestable.IRequestable;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.IDeliverymanRequestable;
+import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.entity.ai.statemachine.AITarget;
 import com.minecolonies.api.entity.ai.statemachine.states.IAIState;
@@ -40,7 +41,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState.*;
@@ -364,8 +369,10 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
         boolean success = true;
         boolean extracted = false;
         final IItemHandler workerInventory = worker.getInventoryCitizen();
-        final List<ItemStorage> itemsToDeliver =
-          job.getTaskListWithSameDestination((IRequest<? extends Delivery>) currentTask).stream().map(r -> new ItemStorage(r.getRequest().getStack())).collect(Collectors.toList());
+        final List<IRequest<? extends Delivery>> deliveries = job.getTaskListWithSameDestination((IRequest<? extends Delivery>) currentTask);
+        final List<ItemStorage> itemsToDeliver = deliveries.stream().map(r -> new ItemStorage(r.getRequest().getStack())).collect(Collectors.toList());
+        // What the target did not take, per item.
+        final Map<ItemStorage, Integer> notDelivered = new HashMap<>();
 
         for (int i = 0; i < workerInventory.getSlots(); i++)
         {
@@ -435,6 +442,12 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
                     }
                 }
 
+                // What came back is what the target could not take, unless it is a stack that was pushed out to make room.
+                if (ItemStack.isSameItemSameComponents(insertionResultStack, stack) && insertionResultStack.getCount() <= count)
+                {
+                    notDelivered.merge(new ItemStorage(stack), insertionResultStack.getCount(), Integer::sum);
+                }
+
                 //Insert the result back into the inventory so we do not lose it.
                 workerInventory.insertItem(i, insertionResultStack, false);
             }
@@ -460,8 +473,37 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
         worker.getCitizenExperienceHandler().addExperience(1.5D);
         worker.decreaseSaturationForContinuousAction();
         CitizenItemUtils.setHeldItem(worker, InteractionHand.MAIN_HAND, SLOT_HAND);
-        job.finishRequest(true);
-        return success ? START_WORKING : DUMPING;
+        // Only the deliveries that arrived in full are resolved; the others fail and go back to the request system, the
+        // items that did not fit stay with the courier and are dumped into the warehouse.
+        final Set<IToken<?>> undelivered = undeliveredRequests(deliveries, notDelivered);
+        job.finishRequest(request -> !undelivered.contains(request.getId()));
+        return success && notDelivered.isEmpty() ? START_WORKING : DUMPING;
+    }
+
+    /**
+     * Finds the deliveries of a batch that did not arrive in full.
+     *
+     * @param batch        the deliveries of the batch, in order.
+     * @param notDelivered how much of each item the target refused.
+     * @return the tokens of the deliveries that came up short. The last deliveries of an item go short first.
+     */
+    static Set<IToken<?>> undeliveredRequests(final List<IRequest<? extends Delivery>> batch, final Map<ItemStorage, Integer> notDelivered)
+    {
+        final Set<IToken<?>> undelivered = new HashSet<>();
+        for (final Map.Entry<ItemStorage, Integer> refused : notDelivered.entrySet())
+        {
+            int missing = refused.getValue();
+            for (int i = batch.size() - 1; i >= 0 && missing > 0; i--)
+            {
+                final ItemStack requested = batch.get(i).getRequest().getStack();
+                if (refused.getKey().equals(new ItemStorage(requested)))
+                {
+                    undelivered.add(batch.get(i).getId());
+                    missing -= requested.getCount();
+                }
+            }
+        }
+        return undelivered;
     }
 
     /**

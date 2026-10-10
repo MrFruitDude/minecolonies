@@ -115,7 +115,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             if (requestToCheck.getRequest() instanceof MinimumStack)
             {
                 final IBuilding otherWarehouse = colony.getServerBuildingManager().getBuilding(requestToCheck.getRequester().getLocation().getInDimensionLocation());
-                if (otherWarehouse.getBuildingType() == ModBuildings.wareHouse.get())
+                if (otherWarehouse != null && otherWarehouse.getBuildingType() == ModBuildings.wareHouse.get())
                 {
                     return false;
                 }
@@ -196,7 +196,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         }
 
         final Colony colony = (Colony) manager.getColony();
-        final TileEntityWareHouse wareHouse = (TileEntityWareHouse) colony.getServerBuildingManager().getBuilding(getLocation().getInDimensionLocation()).getTileEntity();
+        final IBuilding wareHouseBuilding = colony.getServerBuildingManager().getBuilding(getLocation().getInDimensionLocation());
+        final TileEntityWareHouse wareHouse = wareHouseBuilding == null ? null : (TileEntityWareHouse) wareHouseBuilding.getTileEntity();
         lastMatched = null;
         if (wareHouse == null)
         {
@@ -274,7 +275,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         }
 
         final Colony colony = (Colony) manager.getColony();
-        final TileEntityWareHouse wareHouse = (TileEntityWareHouse) colony.getServerBuildingManager().getBuilding(getLocation().getInDimensionLocation()).getTileEntity();
+        final IBuilding wareHouseBuilding = colony.getServerBuildingManager().getBuilding(getLocation().getInDimensionLocation());
+        final TileEntityWareHouse wareHouse = wareHouseBuilding == null ? null : (TileEntityWareHouse) wareHouseBuilding.getTileEntity();
 
         if (wareHouse == null)
         {
