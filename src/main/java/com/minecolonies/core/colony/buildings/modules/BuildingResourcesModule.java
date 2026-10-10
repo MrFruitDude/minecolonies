@@ -219,7 +219,9 @@ public class BuildingResourcesModule extends AbstractBuildingModule implements I
         BuilderBucket last = buckets.isEmpty() ? null : buckets.removeLast();
 
         final int stacks = (int) Math.ceil((double) amount / res.getMaxStackSize());
-        final int max = building.getAllAssignedCitizen().iterator().next().getInventory().getSlots() - 9;
+        // Nobody may be assigned yet (a new builder hut, or the builder was fired): size the bucket for a default inventory.
+        final Iterator<ICitizenData> builders = building.getAllAssignedCitizen().iterator();
+        final int max = (builders.hasNext() ? builders.next().getInventory().getSlots() : InventoryCitizen.DEFAULT_INV_SIZE) - 9;
 
         if (last == null || last.getTotalStacks() >= max || last.getTotalStacks() + stacks >= max)
         {

@@ -578,6 +578,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_building_reserved"),
           info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::buildingResolverLeavesReservedItems),
           isolatedColonyData(event, "rs_building_reserved"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_null_safety"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::nullSafety),
+          isolatedColonyData(event, "rs_null_safety"));
     }
 
     /**

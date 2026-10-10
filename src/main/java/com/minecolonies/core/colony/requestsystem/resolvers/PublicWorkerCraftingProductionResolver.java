@@ -78,7 +78,12 @@ public class PublicWorkerCraftingProductionResolver extends AbstractCraftingProd
             //This is the crafting that got completed.
             //We go up the tree one level to get the actual request.
             //Get the requester for that request and ask where he wants his stuff delivered.
-            final IRequest<?> parentRequest = manager.getRequestForToken(completedRequest.getParent());
+            final IRequest<?> parentRequest = completedRequest.hasParent() ? manager.getRequestForToken(completedRequest.getParent()) : null;
+            if (parentRequest == null)
+            {
+                // Nobody to deliver to: the parent is gone or there never was one.
+                return null;
+            }
             final IRequester parentRequestRequester = parentRequest.getRequester();
 
             if (parentRequestRequester.getLocation().equals(getLocation()))

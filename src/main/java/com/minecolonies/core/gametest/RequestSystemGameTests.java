@@ -464,4 +464,79 @@ public final class RequestSystemGameTests
         });
     }
 
+    // ------------------------------------------------------------------ 9: null safety
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static void nullSafety(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "rs-null-safety");
+        final ServerLevel level = helper.getLevel();
+        final IRequestManager manager = colony.getRequestManager();
+        final IBuilding builder = place(helper, colony, ModBlocks.blockHutBuilder, new BlockPos(8, 1, 2), "fundamentals/builder1.blueprint");
+        final BuildingWareHouse warehouse = (BuildingWareHouse) place(helper, colony, ModBlocks.blockHutWareHouse, new BlockPos(16, 1, 2), "craftsmanship/storage/warehouse1.blueprint");
+        final List<String> failures = new ArrayList<>();
+
+        // A location where no building stands.
+        final ILocation empty = StandardFactoryController.getInstance().getNewInstance(TypeConstants.ILOCATION, helper.absolutePos(new BlockPos(30, 1, 20)), level.dimension());
+        final IRequester ghost = (IRequester) Proxy.newProxyInstance(RequestSystemGameTests.class.getClassLoader(), new Class<?>[] {IRequester.class}, (proxy, method, args) -> switch (method.getName())
+        {
+            case "getLocation" -> empty;
+            case "getId" -> new StandardToken();
+            case "hashCode" -> System.identityHashCode(proxy);
+            case "equals" -> proxy == args[0];
+            case "toString" -> "GhostRequester";
+            default -> throw new UnsupportedOperationException(method.getName());
+        });
+
+        // AbstractWarehouseRequestResolver.canResolveRequest: a MinimumStack from a requester whose building is gone.
+        check(failures, "warehouse canResolveRequest (requester building gone)", () -> {
+            final IToken<?> token = manager.createRequest(ghost, new MinimumStack(new ItemStack(Items.DIRT), 4, 4));
+            final IRequest<?> request = manager.getRequestForToken(token);
+            final WarehouseRequestResolver resolver = new WarehouseRequestResolver(warehouse.getRequester().getLocation(), newToken(colony));
+            resolver.canResolveRequest(manager, (IRequest) request);
+        });
+
+        final WarehouseRequestResolver unbound = new WarehouseRequestResolver(empty, newToken(colony));
+        final IToken<?> plain = builder.createRequest(new Stack(new ItemStack(Items.DIRT), 4, 4), false);
+        final IRequest<?> plainRequest = manager.getRequestForToken(plain);
+
+        // AbstractWarehouseRequestResolver.attemptResolveRequest: the resolver's warehouse is gone.
+        check(failures, "warehouse attemptResolveRequest (own building gone)", () -> unbound.attemptResolveRequest(manager, (IRequest) plainRequest));
+        // AbstractWarehouseRequestResolver.getFollowupRequestForCompletion: same.
+        check(failures, "warehouse getFollowupRequestForCompletion (own building gone)", () -> unbound.getFollowupRequestForCompletion(manager, (IRequest) plainRequest));
+
+        // BuildingResourcesModule.addNeededResource: nobody builds yet.
+        check(failures, "BuildingResourcesModule.addNeededResource (no builder assigned)",
+          () -> builder.getFirstModuleOccurance(BuildingResourcesModule.class).addNeededResource(new ItemStack(Items.DIRT), 10));
+
+        // PublicWorkerCraftingProductionResolver.getFollowupRequestForCompletion: a crafting request without a parent.
+        check(failures, "PublicWorkerCraftingProductionResolver.getFollowupRequestForCompletion (no parent)", () -> {
+            final var sawmill = place(helper, colony, ModBlocks.blockHutSawmill, new BlockPos(24, 1, 2), "craftsmanship/carpentry/sawmill1.blueprint");
+            final PublicWorkerCraftingProductionResolver resolver = new PublicWorkerCraftingProductionResolver(sawmill.getRequester().getLocation(), newToken(colony), ModJobs.sawmill.get());
+            final IToken<?> token = manager.createRequest(sawmill.getRequester(), new PublicCrafting(new ItemStack(Items.OAK_PLANKS), 1, 1, newToken(colony)));
+            final IRequest<?> crafting = manager.getRequestForToken(token);
+            helper.assertTrue(!crafting.hasParent(), "fixture error: crafting request has a parent");
+            resolver.getFollowupRequestForCompletion(manager, (IRequest) crafting);
+        });
+
+        if (!failures.isEmpty())
+        {
+            helper.fail(String.join("; ", failures));
+            return;
+        }
+        helper.succeed();
+    }
+
+    private static void check(final List<String> failures, final String what, final Runnable body)
+    {
+        try
+        {
+            body.run();
+        }
+        catch (final RuntimeException e)
+        {
+            failures.add(what + " threw " + e);
+        }
+    }
+
 }
