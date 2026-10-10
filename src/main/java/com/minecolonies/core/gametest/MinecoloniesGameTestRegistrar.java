@@ -559,6 +559,27 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               info -> new MinecoloniesGameTestInstance(info, test),
               isolatedColonyData(event, name));
         }
+        // C1 builder collaboration (one glob: minecolonies:builder_collab_*).
+        for (final String name : new String[] {"builder_collab_scheduler", "builder_collab_free_first", "builder_collab_limits", "builder_collab_level",
+          "builder_collab_persist_sync", "builder_collab_two_builders", "builder_collab_hand_off", "builder_collab_reload", "builder_collab_off"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "builder_collab_scheduler" -> BuilderCollabGameTests::schedulerHelpsThenHandsOff;
+                case "builder_collab_free_first" -> BuilderCollabGameTests::schedulerFreeBuilderBeforeHelper;
+                case "builder_collab_limits" -> BuilderCollabGameTests::schedulerLimitsHelpers;
+                case "builder_collab_level" -> BuilderCollabGameTests::schedulerRespectsLevel;
+                case "builder_collab_persist_sync" -> BuilderCollabGameTests::collabStatePersistsAndSyncs;
+                case "builder_collab_two_builders" -> BuilderCollabGameTests::twoBuildersOneOrder;
+                case "builder_collab_hand_off" -> BuilderCollabGameTests::newOrderTakesTheHelper;
+                case "builder_collab_reload" -> BuilderCollabGameTests::reloadWhileHelping;
+                default -> BuilderCollabGameTests::collaborationOffChangesNothing;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
         // CA-1 + CA-3 request-system / citizen view sync (one glob: minecolonies:reqsync_*).
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_bytes_per_minute"),

@@ -377,6 +377,7 @@ public class WorkManager implements IWorkManager
             }
         }
 
+        order.setColony(colony);
         workOrders.put(order.getID(), order);
         order.onAdded(colony, readingFromNbt);
     }
