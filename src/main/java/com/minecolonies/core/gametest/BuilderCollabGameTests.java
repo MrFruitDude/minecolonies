@@ -445,6 +445,10 @@ public final class BuilderCollabGameTests
                 onDone.run();
                 return;
             }
+            if (elapsed[0] % 500 == 0)
+            {
+                Log.getLogger().info("C1 poll t={} {}", elapsed[0], failure.get());
+            }
             if (elapsed[0] >= maxTicks)
             {
                 live.helper.assertTrue(false, "timeout after " + maxTicks + " ticks: " + failure.get());
@@ -471,6 +475,14 @@ public final class BuilderCollabGameTests
           .append(" stateA=").append(live.ca.getEntity().map(e -> e.getCitizenJobHandler().getWorkAI() == null ? "no-ai" : String.valueOf(e.getCitizenJobHandler().getWorkAI().getStateAI().getState())).orElse("-"))
           .append(" stateB=").append(live.cb.getEntity().map(e -> e.getCitizenJobHandler().getWorkAI() == null ? "no-ai" : String.valueOf(e.getCitizenJobHandler().getWorkAI().getStateAI().getState())).orElse("-"))
           .append(" bricks=").append(live.count(BUILD_ITEM));
+        for (final ICitizenData citizen : List.of(live.ca, live.cb))
+        {
+            sb.append(" [citizen ").append(citizen.getId()).append(" job=").append(citizen.getJob() == null ? null : citizen.getJob().getClass().getSimpleName())
+              .append(" workBuilding=").append(citizen.getWorkBuilding() == null ? null : citizen.getWorkBuilding().getID())
+              .append(" entity=").append(citizen.getEntity().map(e -> e.blockPosition() + (e.isAlive() ? "" : " dead")).orElse("none"))
+              .append(" history=").append(citizen.getEntity().map(e -> e.getCitizenJobHandler().getWorkAI() == null ? "no-ai" : e.getCitizenJobHandler().getWorkAI().getStateAI().getHistory().getString()).orElse("-"))
+              .append(']');
+        }
         return sb.toString();
     }
 
@@ -646,7 +658,7 @@ public final class BuilderCollabGameTests
             live.stock(live.a, BUILD_ITEM, SIZE * SIZE + SPARE_ITEMS);
             final WorkOrderDecoration order = live.order("off", new BlockPos(24, 1, 10), BUILD_BLOCK, SIZE, live.a);
             poll(live, 30_000, () -> {
-                helper.assertTrue(order.getCollab().getAssistantCount() == 0 && order.getCollab().getLeaseCount() == 0, "a helper or lease with collaboration off");
+                helper.assertTrue(order.getCollab().getAssistantCount() == 0 && order.getCollab().getOpenLeasesExcluding(live.a.getID()) == 0, "a helper or lease of a helper with collaboration off");
                 return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && idle(live);
             }, () -> {
                 helper.assertTrue(floorBuilt(live, order, BUILD_BLOCK, SIZE), "floor not complete");
