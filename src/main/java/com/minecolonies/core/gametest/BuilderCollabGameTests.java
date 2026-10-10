@@ -332,11 +332,24 @@ public final class BuilderCollabGameTests
 
         WorkOrderDecoration order(final String name, final BlockPos rel, final Block block, final int size)
         {
+            return order(name, rel, block, size, null);
+        }
+
+        /**
+         * @param lead the builder that is to lead the order (his hut holds the materials), or null for whoever the work manager picks.
+         */
+        WorkOrderDecoration order(final String name, final BlockPos rel, final Block block, final int size, final BuildingBuilder lead)
+        {
             final WorkOrderDecoration order = WorkOrderDecoration.create(WorkOrderType.BUILD, "Minecolonies Original", "gametest/" + name + ".blueprint", "gametest." + name,
               helper.absolutePos(rel), RotationMirror.NONE, 0);
             order.setBlueprint(floor(name, block, size), level);
             colony.getWorkManager().addWorkOrder(order, true);
             helper.assertTrue(order.getID() > 0, "no id for " + name);
+            if (lead != null)
+            {
+                order.setClaimedBy(lead.getID());
+                lead.setWorkOrder(order);
+            }
             return order;
         }
 
@@ -520,7 +533,7 @@ public final class BuilderCollabGameTests
         scene(helper, "C1 two builders", live -> {
             live.stock(live.a, BUILD_ITEM, SIZE * SIZE + SPARE_ITEMS);
             final int before = live.count(BUILD_ITEM);
-            final WorkOrderDecoration order = live.order("two", new BlockPos(24, 1, 10), BUILD_BLOCK, SIZE);
+            final WorkOrderDecoration order = live.order("two", new BlockPos(24, 1, 10), BUILD_BLOCK, SIZE, live.a);
             poll(live, 30_000, () -> live.colony.getWorkManager().getWorkOrder(order.getID()) == null && idle(live), () -> {
                 helper.assertTrue(floorBuilt(live, order, BUILD_BLOCK, SIZE), "floor not complete");
                 checkPlacedOnce(live, order, SIZE, true);
@@ -540,7 +553,7 @@ public final class BuilderCollabGameTests
         scene(helper, "C1 hand off", live -> {
             live.stock(live.a, BUILD_ITEM, SIZE * SIZE + SPARE_ITEMS);
             live.stock(live.b, Items.COBBLESTONE, 6 * 6 + 4);
-            final WorkOrderDecoration first = live.order("first", new BlockPos(24, 1, 10), BUILD_BLOCK, SIZE);
+            final WorkOrderDecoration first = live.order("first", new BlockPos(24, 1, 10), BUILD_BLOCK, SIZE, live.a);
             final WorkOrderDecoration[] second = {null};
             final boolean[] handedOff = {false};
             final int[] helpedBeforeHandoff = {0};
@@ -586,7 +599,7 @@ public final class BuilderCollabGameTests
         BuilderCollab.overrideForTests(true, 3, 10_000, 10, 100_000, 8, 2400);
         scene(helper, "C1 reload", live -> {
             live.stock(live.a, BUILD_ITEM, SIZE * SIZE + SPARE_ITEMS);
-            final WorkOrderDecoration order = live.order("reload", new BlockPos(24, 1, 10), BUILD_BLOCK, SIZE);
+            final WorkOrderDecoration order = live.order("reload", new BlockPos(24, 1, 10), BUILD_BLOCK, SIZE, live.a);
             final boolean[] reloaded = {false};
             poll(live, 30_000, () -> {
                 final IBuilderWorkOrder current = live.colony.getWorkManager().getWorkOrder(order.getID(), IBuilderWorkOrder.class);
@@ -631,7 +644,7 @@ public final class BuilderCollabGameTests
         BuilderCollab.overrideForTests(false, 3, 10_000, 10, 100_000, 8, 2400);
         scene(helper, "C1 off", live -> {
             live.stock(live.a, BUILD_ITEM, SIZE * SIZE + SPARE_ITEMS);
-            final WorkOrderDecoration order = live.order("off", new BlockPos(24, 1, 10), BUILD_BLOCK, SIZE);
+            final WorkOrderDecoration order = live.order("off", new BlockPos(24, 1, 10), BUILD_BLOCK, SIZE, live.a);
             poll(live, 30_000, () -> {
                 helper.assertTrue(order.getCollab().getAssistantCount() == 0 && order.getCollab().getLeaseCount() == 0, "a helper or lease with collaboration off");
                 return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && idle(live);
