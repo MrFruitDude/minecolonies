@@ -100,7 +100,7 @@ public class MinimumStockModule extends AbstractBuildingModule implements IMinim
     {
         minimumStock.remove(new ItemStorage(itemStack));
 
-        final Collection<IToken<?>> list = building.getOpenRequestsByRequestableType().getOrDefault(TypeToken.of(Stack.class), new ArrayList<>());
+        final Collection<IToken<?>> list = building.getOpenRequestsByRequestableType().getOrDefault(TypeToken.of(MinimumStack.class), new ArrayList<>());
         final IToken<?> token = getMatchingRequest(itemStack, list);
         if (token != null)
         {

@@ -204,4 +204,32 @@ public final class RequestSystemGameTests
         helper.succeed();
     }
 
+    // ------------------------------------------------------------------ 3: minimum stock removal
+
+    public static void minimumStockRemovalCancelsItsRequest(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "rs-minstock-remove");
+        forceChunks(helper.getLevel(), helper.absolutePos(new BlockPos(16, 1, 2)));
+        final AbstractBuilding warehouse = (AbstractBuilding) place(helper, colony, ModBlocks.blockHutWareHouse, new BlockPos(16, 1, 2), "craftsmanship/storage/warehouse1.blueprint");
+        final MinimumStockModule stock = warehouse.getModule(BuildingModules.MIN_STOCK);
+        final ItemStack dirt = new ItemStack(Items.DIRT);
+
+        // An ordinary request for the same item, which the minimum stock does not own.
+        final IToken<?> ordinary = warehouse.createRequest(new Stack(new ItemStack(Items.DIRT), 5, 5), false);
+
+        stock.addMinimumStock(dirt, 1);
+        stock.onColonyTick(colony);
+        final List<IToken<?>> minimum = new ArrayList<>(warehouse.getOpenRequestsByRequestableType().getOrDefault(TypeToken.of(MinimumStack.class), List.of()));
+        helper.assertTrue(minimum.size() == 1, "the minimum stock did not create its request: " + warehouse.getOpenRequestsByRequestableType());
+
+        stock.removeMinimumStock(dirt);
+
+        final Collection<IToken<?>> stillMinimum = warehouse.getOpenRequestsByRequestableType().getOrDefault(TypeToken.of(MinimumStack.class), List.of());
+        helper.assertTrue(stillMinimum.isEmpty(), "removing the minimum stock left its request open: " + stillMinimum);
+        final IRequest<?> ordinaryRequest = colony.getRequestManager().getRequestForToken(ordinary);
+        helper.assertTrue(ordinaryRequest != null && ordinaryRequest.getState() != RequestState.CANCELLED,
+          "removing the minimum stock cancelled an unrelated request for the same item: " + (ordinaryRequest == null ? "gone" : ordinaryRequest.getState()));
+        helper.succeed();
+    }
+
 }
