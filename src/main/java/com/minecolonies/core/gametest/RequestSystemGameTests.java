@@ -232,4 +232,192 @@ public final class RequestSystemGameTests
         helper.succeed();
     }
 
+    // ------------------------------------------------------------------ 4: delivery to a full building
+
+    public static void deliveryToFullBuildingIsNotResolved(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "rs-delivery-full");
+        final ServerLevel level = helper.getLevel();
+        final IBuilding warehouse = place(helper, colony, ModBlocks.blockHutWareHouse, new BlockPos(24, 1, 2), "craftsmanship/storage/warehouse1.blueprint");
+        final IBuilding deliveryman = place(helper, colony, ModBlocks.blockHutDeliveryman, new BlockPos(32, 1, 2), "craftsmanship/storage/deliveryman1.blueprint");
+        final IBuilding target = place(helper, colony, ModBlocks.blockHutBuilder, new BlockPos(10, 1, 2), "fundamentals/builder1.blueprint");
+        forceChunks(level, helper.absolutePos(new BlockPos(24, 1, 2)), helper.absolutePos(new BlockPos(32, 1, 2)), helper.absolutePos(new BlockPos(10, 1, 2)));
+
+        helper.runAfterDelay(200, () -> {
+            final ICitizenData courier = spawn(helper, colony, new BlockPos(34, 1, 8));
+            final ICitizenData worker = spawn(helper, colony, new BlockPos(12, 1, 8));
+            helper.assertTrue(deliveryman.getModule(BuildingModules.COURIER_WORK).assignCitizen(courier), "courier not assigned to the courier hut");
+            helper.assertTrue(warehouse.getModule(BuildingModules.WAREHOUSE_COURIERS).assignCitizen(courier), "courier not assigned to the warehouse");
+            helper.assertTrue(target.getModule(BuildingModules.BUILDER_WORK).assignCitizen(worker), "worker not assigned to the target building");
+
+            final JobDeliveryman job = courier.getJob(JobDeliveryman.class);
+            final EntityAIWorkDeliveryman ai = job.generateAI();
+            final var courierInventory = courier.getEntity().get().getInventoryCitizen();
+            final var targetInventory = target.getItemHandlerCap();
+            helper.assertTrue(job != null && targetInventory != null, "fixture is missing the courier job or the target inventory");
+
+            // Two stacks the target treats as promised to its worker, so a delivery may not push them out.
+            final IToken<?> promise = ((AbstractBuilding) target).createRequest(worker, new Stack(new ItemStack(Items.COBBLESTONE), 64, 1), false);
+            final IRequest<?> promised = colony.getRequestManager().getRequestForToken(promise);
+            promised.addDelivery(new ItemStack(Items.COBBLESTONE, 64));
+            promised.addDelivery(new ItemStack(Items.DIRT, 64));
+
+            final List<String> failures = new ArrayList<>();
+            runDelivery(helper, colony, job, ai, warehouse, target, courierInventory, targetInventory, Scenario.ROOM, failures);
+            runDelivery(helper, colony, job, ai, warehouse, target, courierInventory, targetInventory, Scenario.FULL, failures);
+            runDelivery(helper, colony, job, ai, warehouse, target, courierInventory, targetInventory, Scenario.PARTIAL, failures);
+            if (!failures.isEmpty())
+            {
+                helper.fail(String.join("; ", failures));
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    private enum Scenario
+    {
+        /** The target has plenty of room: the delivery must be resolved. */
+        ROOM,
+        /** Every slot of the target holds a promised stack: nothing fits, the delivery must not be resolved. */
+        FULL,
+        /** The target can take 4 of the 10: the delivery must not be resolved, and nothing may be lost. */
+        PARTIAL
+    }
+
+    private static final int DELIVERED = 10;
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void runDelivery(
+      final GameTestHelper helper,
+      final IColony colony,
+      final JobDeliveryman job,
+      final EntityAIWorkDeliveryman ai,
+      final IBuilding warehouse,
+      final IBuilding target,
+      final com.minecolonies.api.inventory.InventoryCitizen courierInventory,
+      final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler targetInventory,
+      final Scenario scenario,
+      final List<String> failures)
+    {
+        final IRequestManager manager = colony.getRequestManager();
+        // Empty the courier and shape the target.
+        for (int i = 0; i < courierInventory.getSlots(); i++)
+        {
+            courierInventory.setStackInSlot(i, ItemStack.EMPTY);
+        }
+        for (int i = 0; i < targetInventory.getSlots(); i++)
+        {
+            final ItemStack content = switch (scenario)
+            {
+                case ROOM -> ItemStack.EMPTY;
+                case FULL -> new ItemStack(Items.COBBLESTONE, 64);
+                case PARTIAL -> i == 0 ? new ItemStack(Items.DIRT, 60) : new ItemStack(Items.COBBLESTONE, 64);
+            };
+            targetInventory.extractItem(i, Integer.MAX_VALUE, false);
+            if (!content.isEmpty())
+            {
+                targetInventory.insertItem(i, content, false);
+            }
+        }
+        final int dirtInTargetBefore = countDirt(targetInventory);
+
+        // The courier carries the goods and stands at the target.
+        courierInventory.setStackInSlot(0, new ItemStack(Items.DIRT, DELIVERED));
+        job.getCitizen().getEntity().ifPresent(e -> e.setPos(target.getPosition().getX() + 0.5D, target.getPosition().getY(), target.getPosition().getZ() + 0.5D));
+
+        final Delivery delivery = new Delivery(warehouse.getLocation(), target.getLocation(), new ItemStack(Items.DIRT, DELIVERED), 13);
+        // Warehouse deliveries are requested by the warehouse's resolvers, not by the building.
+        final IRequester warehouseResolver = warehouse.getResolvers().stream().filter(r -> r instanceof AbstractWarehouseRequestResolver).findFirst().orElseThrow();
+        final IToken<?> token = manager.createRequest(warehouseResolver, delivery);
+        final IRequest<?> request = manager.getRequestForToken(token);
+        manager.assignRequest(token);
+        if (request.getState() != RequestState.IN_PROGRESS)
+        {
+            failures.add(scenario + ": the delivery request is " + request.getState() + " after assignment (needs IN_PROGRESS)");
+            return;
+        }
+        final IRequest<?> task = job.getCurrentTask();
+        if (task == null || !task.getId().equals(token))
+        {
+            failures.add(scenario + ": the courier did not take the delivery: " + task);
+            return;
+        }
+        job.addConcurrentDelivery(token);
+
+        try
+        {
+            final Method deliver = EntityAIWorkDeliveryman.class.getDeclaredMethod("deliver");
+            deliver.setAccessible(true);
+            Log.getLogger().info("RS delivery {}: deliver() returned {}", scenario, deliver.invoke(ai));
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            failures.add(scenario + ": could not run deliver(): " + e + " / " + e.getCause());
+            return;
+        }
+
+        final RequestState state = request.getState();
+        final boolean resolved = Set.of(RequestState.RESOLVED, RequestState.COMPLETED, RequestState.FOLLOWUP_IN_PROGRESS, RequestState.RECEIVED).contains(state);
+        final int carried = countDirt(courierInventory);
+        final int delivered = countDirt(targetInventory) - dirtInTargetBefore;
+        Log.getLogger().info("RS delivery {}: state={} carried={} delivered={}", scenario, state, carried, delivered);
+
+        switch (scenario)
+        {
+            case ROOM ->
+            {
+                if (!resolved || delivered != DELIVERED || carried != 0)
+                {
+                    failures.add("ROOM: state " + state + ", delivered " + delivered + ", carried " + carried + " (want resolved, 10, 0)");
+                }
+            }
+            case FULL ->
+            {
+                if (resolved)
+                {
+                    failures.add("FULL: the delivery was " + state + " although nothing fitted into the target");
+                }
+                if (delivered != 0 || carried != DELIVERED)
+                {
+                    failures.add("FULL: delivered " + delivered + ", carried " + carried + " (want 0 and 10: nothing lost)");
+                }
+            }
+            case PARTIAL ->
+            {
+                if (resolved)
+                {
+                    failures.add("PARTIAL: the delivery was " + state + " although only " + delivered + " of " + DELIVERED + " fitted");
+                }
+                if (delivered + carried != DELIVERED)
+                {
+                    failures.add("PARTIAL: delivered " + delivered + " + carried " + carried + " != " + DELIVERED + ": items were lost");
+                }
+                if (delivered != 4)
+                {
+                    failures.add("PARTIAL: expected the 4 free spaces to be filled, delivered " + delivered);
+                }
+            }
+        }
+        // Whatever the outcome, the courier's queue must not keep the request.
+        if (job.getTaskQueue().contains(token))
+        {
+            failures.add(scenario + ": the finished delivery is still in the courier's task queue");
+        }
+    }
+
+    private static int countDirt(final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler handler)
+    {
+        int n = 0;
+        for (int i = 0; i < handler.getSlots(); i++)
+        {
+            final ItemStack stack = handler.getStackInSlot(i);
+            if (stack.is(Items.DIRT))
+            {
+                n += stack.getCount();
+            }
+        }
+        return n;
+    }
+
 }
