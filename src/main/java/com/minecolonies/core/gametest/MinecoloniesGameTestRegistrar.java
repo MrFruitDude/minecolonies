@@ -557,6 +557,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_citizen_view_patch"),
           info -> new MinecoloniesGameTestInstance(info, RequestSyncGameTests::citizenViewPatch),
           isolatedColonyData(event, "reqsync_citizen_view_patch"));
+        // Request system defect checks (one glob: minecolonies:rs_*).
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_craft_batch_zero"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::craftRecipeTooBigForOneBatch),
+          isolatedColonyData(event, "rs_craft_batch_zero"));
     }
 
     /**
