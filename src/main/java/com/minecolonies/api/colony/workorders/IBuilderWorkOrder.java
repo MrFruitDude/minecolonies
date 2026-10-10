@@ -125,4 +125,14 @@ public interface IBuilderWorkOrder extends IServerWorkOrder
      * @return the shared state.
      */
     WorkOrderCollab getCollab();
+
+    /**
+     * The project this order is a part of (e.g. a terraforming job that is built in sections); empty if none. Builders prefer
+     * the next section of the project they worked on last.
+     *
+     * @return the project id.
+     */
+    String getProjectId();
+
+    void setProjectId(String projectId);
 }

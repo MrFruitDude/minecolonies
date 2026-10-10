@@ -90,6 +90,8 @@ public abstract class AbstractWorkOrderView implements IWorkOrderView
     private int          leaseCount;
     private List<BlockPos> assistantHuts = List.of();
     private List<Integer> assistantCitizens = List.of();
+    private String        projectId         = "";
+    private List<net.minecraft.world.item.ItemStack> waitingFor = List.of();
 
     /**
      * The workorder area
@@ -305,6 +307,26 @@ public abstract class AbstractWorkOrderView implements IWorkOrderView
         }
         assistantHuts = List.copyOf(huts);
         assistantCitizens = List.copyOf(citizens);
+        projectId = buf.readUtf(32767);
+        final int waiting = buf.readInt();
+        final List<net.minecraft.world.item.ItemStack> stacks = new ArrayList<>(waiting);
+        for (int i = 0; i < waiting; i++)
+        {
+            stacks.add(com.minecolonies.api.util.Utils.deserializeCodecMess(buf));
+        }
+        waitingFor = List.copyOf(stacks);
+    }
+
+    @Override
+    public String getProjectId()
+    {
+        return projectId;
+    }
+
+    @Override
+    public List<net.minecraft.world.item.ItemStack> getWaitingFor()
+    {
+        return waitingFor;
     }
 
     @Override

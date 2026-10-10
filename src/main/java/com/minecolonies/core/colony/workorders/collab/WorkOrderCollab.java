@@ -118,6 +118,14 @@ public class WorkOrderCollab
     private boolean viewDirty;
     private int     lastSyncedPlaced = -1;
 
+    /**
+     * Something clients show has changed (e.g. what the lead waits for): send the order again soon.
+     */
+    public void touchView()
+    {
+        viewDirty = true;
+    }
+
     // ------------------------------------------------------------------ progress cursor
 
     @Nullable

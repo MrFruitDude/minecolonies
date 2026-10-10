@@ -499,6 +499,21 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             collab.setLeadPending(building.getID(), null);
             collab.blockProcessed();
         }
+        building.setWaitingFor(Map.of());
+    }
+
+    @Override
+    protected void onMissingItems(final List<ItemStack> required)
+    {
+        final Map<ItemStorage, Integer> waiting = new HashMap<>();
+        for (final ItemStack stack : required)
+        {
+            if (!stack.isEmpty())
+            {
+                waiting.merge(new ItemStorage(stack.copyWithCount(1)), stack.getCount(), Integer::sum);
+            }
+        }
+        building.setWaitingFor(waiting);
     }
 
     @Override

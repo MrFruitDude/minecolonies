@@ -70,4 +70,20 @@ public interface IWorkOrderView extends IWorkOrder
     {
         return java.util.List.of();
     }
+
+    /**
+     * The project this order belongs to, empty if none.
+     */
+    default String getProjectId()
+    {
+        return "";
+    }
+
+    /**
+     * What the lead is waiting for right now (item and count), empty if he is not blocked on materials.
+     */
+    default java.util.List<net.minecraft.world.item.ItemStack> getWaitingFor()
+    {
+        return java.util.List.of();
+    }
 }

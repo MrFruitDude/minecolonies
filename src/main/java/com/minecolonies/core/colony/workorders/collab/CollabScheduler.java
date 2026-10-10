@@ -224,7 +224,12 @@ public final class CollabScheduler
                 {
                     continue;
                 }
-                final double score = (double) remaining / (1 + collab.getAssistantCount());
+                double score = (double) remaining / (1 + collab.getAssistantCount());
+                if (!order.getProjectId().isEmpty() && order.getProjectId().equals(hut.getLastProjectId()))
+                {
+                    // a builder stays with the project he worked on
+                    score *= 1.5;
+                }
                 if (score > bestScore)
                 {
                     best = order;

@@ -76,7 +76,9 @@ public final class BuilderStageRules
         return state.getBlock() instanceof IBuilderUndestroyable
                  || state.getBlock() == Blocks.BEDROCK
                  || state.isAir()
-                 || !state.getFluidState().isEmpty();
+                 || !state.getFluidState().isEmpty()
+                 || (com.minecolonies.core.colony.workorders.collab.BuilderCollab.fastClear()
+                       && com.ldtteam.structurize.placement.handlers.placement.IPlacementHandler.doesWorldStateMatchBlueprintState(info.getBlockInfo(), pos, handler));
     }
 
     /**

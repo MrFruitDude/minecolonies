@@ -177,6 +177,15 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * The builder waits for materials.
+     *
+     * @param required what the position he cannot place needs.
+     */
+    protected void onMissingItems(final List<ItemStack> required)
+    {
+    }
+
+    /**
      * Position where the Builders constructs from.
      */
     protected BlockPos workFrom;
@@ -547,6 +556,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         if (result.getBlockResult().getResult() == BlockPlacementResult.Result.MISSING_ITEMS)
         {
             onStepBlocked(result.getBlockResult().getWorldPos());
+            onMissingItems(result.getBlockResult().getRequiredItems());
             if (hasListOfResInInvOrRequest(this, result.getBlockResult().getRequiredItems(), result.getBlockResult().getRequiredItems().size() > 1) == RECALC)
             {
                 building.getWorkOrder().setRequested(false);

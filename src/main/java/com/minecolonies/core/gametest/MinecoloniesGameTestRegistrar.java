@@ -561,7 +561,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         }
         // C1 builder collaboration (one glob: minecolonies:builder_collab_*).
         for (final String name : new String[] {"builder_collab_scheduler", "builder_collab_free_first", "builder_collab_limits", "builder_collab_level",
-          "builder_collab_persist_sync", "builder_collab_two_builders", "builder_collab_hand_off", "builder_collab_reload", "builder_collab_off"})
+          "builder_collab_persist_sync", "builder_collab_two_builders", "builder_collab_hand_off", "builder_collab_reload", "builder_collab_off",
+          "builder_collab_removal_reasons", "builder_collab_quiet_add", "builder_collab_project_affinity", "builder_collab_fast_clear"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -573,6 +574,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "builder_collab_two_builders" -> BuilderCollabGameTests::twoBuildersOneOrder;
                 case "builder_collab_hand_off" -> BuilderCollabGameTests::newOrderTakesTheHelper;
                 case "builder_collab_reload" -> BuilderCollabGameTests::reloadWhileHelping;
+                case "builder_collab_removal_reasons" -> BuilderCollabGameTests::removalReasons;
+                case "builder_collab_quiet_add" -> BuilderCollabGameTests::quietAdd;
+                case "builder_collab_project_affinity" -> BuilderCollabGameTests::projectAffinity;
+                case "builder_collab_fast_clear" -> BuilderCollabGameTests::fastClear;
                 default -> BuilderCollabGameTests::collaborationOffChangesNothing;
             };
             event.registerTest(

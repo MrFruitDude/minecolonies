@@ -80,6 +80,16 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
     private final Map<ItemStorage, Integer> carry = new LinkedHashMap<>();
 
     /**
+     * The project of the last order this hut worked on (builders prefer the next section of the same project).
+     */
+    private String lastProjectId = "";
+
+    /**
+     * What the builder cannot go on without right now (item kind, count), empty if he is not blocked on materials.
+     */
+    private final Map<ItemStorage, Integer> waitingFor = new LinkedHashMap<>();
+
+    /**
      * The order the legacy progress above was saved for (hut-level progress from before it moved to the order).
      */
     private int legacyProgressOrderId = 0;
@@ -89,6 +99,7 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
      */
     private int workOrderId;
 
+    private static final String TAG_LAST_PROJECT      = "lastProject";
     private static final String TAG_COLLAB_CARRY_LEAD = "collabCarryLead";
     private static final String TAG_COLLAB_CARRY      = "collabCarry";
     private static final String TAG_COLLAB_STACK      = "stack";
@@ -240,6 +251,7 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
         {
             this.workOrderId = compound.getIntOr(TAG_WORK_ORDER, 0);
         }
+        lastProjectId = compound.getStringOr(TAG_LAST_PROJECT, "");
         carry.clear();
         carryLead = compound.contains(TAG_COLLAB_CARRY_LEAD) ? BlockPosUtil.read(compound, TAG_COLLAB_CARRY_LEAD) : null;
         final ListTag carryList = compound.getListOrEmpty(TAG_COLLAB_CARRY);
@@ -271,6 +283,10 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
             compound.putInt(TAG_WORK_ORDER, workOrderId);
         }
 
+        if (!lastProjectId.isEmpty())
+        {
+            compound.putString(TAG_LAST_PROJECT, lastProjectId);
+        }
         if (carryLead != null && !carry.isEmpty())
         {
             BlockPosUtil.write(compound, TAG_COLLAB_CARRY_LEAD, carryLead);
@@ -612,6 +628,47 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
         return ItemMover.move(old.getItemHandlerCap(), getItemHandlerCap(), matches, Math.min(spare, missing));
     }
 
+    /**
+     * The project of the last order of this hut.
+     *
+     * @return the project id, empty if none.
+     */
+    public String getLastProjectId()
+    {
+        return lastProjectId;
+    }
+
+    /**
+     * What the builder is waiting for right now: the materials the block he cannot place needs (kind to count). Empty while he is not
+     * blocked on materials. Server side only; clients get it with the work order view.
+     *
+     * @return a copy.
+     */
+    public Map<ItemStorage, Integer> getWaitingFor()
+    {
+        return new LinkedHashMap<>(waitingFor);
+    }
+
+    /**
+     * Sets what the builder waits for (empty for nothing) and tells clients if it changed.
+     *
+     * @param items the materials the blocked position needs.
+     */
+    public void setWaitingFor(final Map<ItemStorage, Integer> items)
+    {
+        if (waitingFor.equals(items))
+        {
+            return;
+        }
+        waitingFor.clear();
+        waitingFor.putAll(items);
+        final IBuilderWorkOrder order = getWorkOrder();
+        if (order != null)
+        {
+            order.getCollab().touchView();
+        }
+    }
+
     // ------------------------------------------------------------------ cargo of a helping builder
 
     /**
@@ -805,9 +862,14 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
         {
             workOrderId = 0;
             resetNeededResources();
+            waitingFor.clear();
         }
         else
         {
+            if (order instanceof IBuilderWorkOrder builderOrder && !builderOrder.getProjectId().isEmpty())
+            {
+                lastProjectId = builderOrder.getProjectId();
+            }
             if (workOrderId != order.getID())
             {
                 // whatever was gathered for another order is not this order's list

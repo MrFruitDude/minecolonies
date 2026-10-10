@@ -70,6 +70,7 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
     private static final String TAG_IS_CLEARED          = "cleared";
     private static final String TAG_IS_REQUESTED        = "requested";
     private static final String TAG_BB = "bb";
+    private static final String TAG_PROJECT = "projectId";
 
     /**
      * Bimap of workOrder from string to class.
@@ -171,6 +172,16 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
      * The state that builders share on this order: progress cursor, leases of helpers and block counts.
      */
     protected final WorkOrderCollab collab = new WorkOrderCollab();
+
+    /**
+     * The project this order is a part of, empty if none.
+     */
+    private String projectId = "";
+
+    /**
+     * Why the order was removed from the work manager, null while it is in it.
+     */
+    private WorkOrderRemovalReason removalReason = null;
 
     /**
      * Internal flag to see if anything has been changed.
@@ -684,6 +695,7 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
         }
 
         collab.read(compound);
+        projectId = compound.getStringOr(TAG_PROJECT, "");
 
         if (compound.contains(TAG_BB))
         {
@@ -718,6 +730,7 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
         compound.putBoolean(TAG_IS_REQUESTED, requested);
         compound.putInt(TAG_STAGE, stage == null ? 0 : stage.ordinal());
         collab.write(compound);
+        compound.putString(TAG_PROJECT, projectId);
 
         if (box != Constants.EMPTY_AABB)
         {
@@ -764,6 +777,15 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
             final ICitizenData citizen = building == null ? null : building.getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule.class).getFirstCitizen();
             return citizen == null ? -1 : citizen.getId();
         });
+        buf.writeUtf(projectId);
+        final IBuilding claimant = colony == null || !isClaimed() ? null : colony.getServerBuildingManager().getBuilding(claimedBy);
+        final java.util.Map<com.minecolonies.api.crafting.ItemStorage, Integer> waiting =
+          claimant instanceof com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder hut ? hut.getWaitingFor() : java.util.Map.of();
+        buf.writeInt(waiting.size());
+        for (final java.util.Map.Entry<com.minecolonies.api.crafting.ItemStorage, Integer> entry : waiting.entrySet())
+        {
+            Utils.serializeCodecMess(buf, entry.getKey().getItemStack().copyWithCount(Math.max(1, entry.getValue())));
+        }
     }
 
     private String getMappingName()
@@ -849,7 +871,7 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
                 }
             }
         }
-        colony.getWorkManager().removeWorkOrder(this.getID());
+        colony.getWorkManager().removeWorkOrder(this.getID(), WorkOrderRemovalReason.COMPLETED);
     }
 
     /**
@@ -895,6 +917,34 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
     public boolean tooFarFromAnyBuilder(final IColony colony, final int level)
     {
         return false;
+    }
+
+    @Override
+    public String getProjectId()
+    {
+        return projectId;
+    }
+
+    @Override
+    public void setProjectId(final String projectId)
+    {
+        this.projectId = projectId == null ? "" : projectId;
+        changed = true;
+    }
+
+    /**
+     * Why the order was removed, null while it is still in the work manager.
+     *
+     * @return the reason.
+     */
+    public WorkOrderRemovalReason getRemovalReason()
+    {
+        return removalReason;
+    }
+
+    public void setRemovalReason(final WorkOrderRemovalReason reason)
+    {
+        this.removalReason = reason;
     }
 
     @Override

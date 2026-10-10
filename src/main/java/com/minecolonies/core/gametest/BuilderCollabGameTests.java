@@ -8,7 +8,13 @@ import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.workorders.IBuilderWorkOrder;
 import com.minecolonies.api.colony.workorders.IServerWorkOrder;
 import com.minecolonies.api.colony.workorders.IWorkOrderView;
+import com.minecolonies.api.colony.workorders.WorkOrderRemovalReason;
 import com.minecolonies.api.colony.workorders.WorkOrderType;
+import com.minecolonies.api.eventbus.events.colony.WorkOrderRemovedModEvent;
+import com.minecolonies.api.IMinecoloniesAPI;
+import com.minecolonies.api.crafting.ItemStorage;
+import com.minecolonies.core.entity.ai.workers.util.BuilderStageRules;
+import com.minecolonies.core.entity.ai.workers.util.CollabStructureHandler;
 import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
@@ -284,6 +290,9 @@ public final class BuilderCollabGameTests
             helper.assertTrue(spare.hasCarry() && lead.getID().equals(spare.getCarryLead()), "carry lead not saved");
             helper.assertTrue(spare.getCarry().values().stream().mapToInt(Integer::intValue).sum() == 12, "carry not saved: " + spare.getCarry());
 
+            order.setProjectId("terraform-7");
+            lead.setWaitingFor(Map.of(new ItemStorage(new ItemStack(Items.STONE)), 5));
+
             // what clients see
             final RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), f.level().registryAccess());
             order.serializeViewNetworkData(buf);
@@ -293,6 +302,12 @@ public final class BuilderCollabGameTests
             helper.assertTrue(view.getLeaseCount() == 1, "view leases " + view.getLeaseCount());
             helper.assertTrue(view.getAssistantHuts().equals(List.of(spare.getID())), "view helpers " + view.getAssistantHuts());
             helper.assertTrue(view.getAssistantCitizenIds().get(0) == (spare == f.a() ? f.ca().getId() : f.cb().getId()), "view helper citizen " + view.getAssistantCitizenIds());
+            helper.assertTrue("terraform-7".equals(view.getProjectId()), "view project " + view.getProjectId());
+            helper.assertTrue(view.getWaitingFor().size() == 1 && view.getWaitingFor().get(0).is(Items.STONE) && view.getWaitingFor().get(0).getCount() == 5, "view waiting " + view.getWaitingFor());
+            lead.setWaitingFor(Map.of());
+            final RegistryFriendlyByteBuf buf2 = new RegistryFriendlyByteBuf(Unpooled.buffer(), f.level().registryAccess());
+            order.serializeViewNetworkData(buf2);
+            helper.assertTrue(AbstractWorkOrder.createWorkOrderView(buf2).getWaitingFor().isEmpty(), "waiting not cleared");
             helper.succeed();
         }
         finally
@@ -679,5 +694,136 @@ public final class BuilderCollabGameTests
                 finish(live);
             }, () -> describe(live, order));
         });
+    }
+
+    // ------------------------------------------------------------------ small additions for the terraform work
+
+    private static final List<WorkOrderRemovedModEvent> REMOVED = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private static boolean subscribed = false;
+
+    private static WorkOrderRemovalReason removalReasonOf(final int colonyId, final IBuilderWorkOrder order)
+    {
+        for (final WorkOrderRemovedModEvent event : REMOVED)
+        {
+            if (event.getColony().getID() == colonyId && event.getWorkOrder() == order)
+            {
+                return event.getReason();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Removed orders say why: completed, cancelled, invalid, replaced.
+     */
+    public static void removalReasons(final GameTestHelper helper)
+    {
+        if (!subscribed)
+        {
+            subscribed = true;
+            IMinecoloniesAPI.getInstance().getEventBus().subscribe(WorkOrderRemovedModEvent.class, REMOVED::add);
+        }
+        final BuilderWorkOrderGameTests.Fx f = BuilderWorkOrderGameTests.fixture(helper, "C1 removal reasons", false);
+        final int id = f.colony().getID();
+        final WorkOrderDecoration cancelled = BuilderWorkOrderGameTests.order(f, "r1", new BlockPos(30, 1, 10), 0);
+        f.wm().removeWorkOrder(cancelled.getID());
+        helper.assertTrue(removalReasonOf(id, cancelled) == WorkOrderRemovalReason.CANCELLED, "cancelled: " + removalReasonOf(id, cancelled));
+
+        final WorkOrderDecoration completed = BuilderWorkOrderGameTests.order(f, "r2", new BlockPos(30, 1, 18), 0);
+        completed.onCompleted(f.colony(), f.ca());
+        helper.assertTrue(removalReasonOf(id, completed) == WorkOrderRemovalReason.COMPLETED, "completed: " + removalReasonOf(id, completed));
+
+        final WorkOrderDecoration replaced = BuilderWorkOrderGameTests.order(f, "r3", new BlockPos(30, 1, 26), 0);
+        final WorkOrderDecoration again = WorkOrderDecoration.create(WorkOrderType.BUILD, "Minecolonies Original", "gametest/r3.blueprint", "gametest.r3",
+          helper.absolutePos(new BlockPos(30, 1, 26)), RotationMirror.NONE, 0);
+        again.setBlueprint(BuilderWorkOrderGameTests.smallBlueprint("r3"), f.level());
+        f.wm().addWorkOrder(again, true);
+        helper.assertTrue(removalReasonOf(id, replaced) == WorkOrderRemovalReason.REPLACED, "replaced: " + removalReasonOf(id, replaced));
+
+        final var warehouse = MinecoloniesGameTests.placeProductionBuilding(helper, f.colony(), ModBlocks.blockHutWareHouse, new BlockPos(24, 1, 2), "craftsmanship/storage/warehouse1.blueprint");
+        final var invalid = com.minecolonies.core.colony.workorders.WorkOrderBuilding.create(WorkOrderType.UPGRADE, warehouse);
+        invalid.setBlueprint(BuilderWorkOrderGameTests.smallBlueprint("r4"), f.level());
+        f.wm().addWorkOrder(invalid, true);
+        f.colony().getServerBuildingManager().removeBuilding(warehouse, java.util.Collections.emptySet());
+        f.tick();
+        helper.assertTrue(removalReasonOf(id, invalid) == WorkOrderRemovalReason.INVALID, "invalid: " + removalReasonOf(id, invalid));
+        helper.succeed();
+    }
+
+    /**
+     * Quiet add: the order is in, no tape, and orders outside the colony are refused without a message.
+     */
+    public static void quietAdd(final GameTestHelper helper)
+    {
+        final BuilderWorkOrderGameTests.Fx f = BuilderWorkOrderGameTests.fixture(helper, "C1 quiet add", false);
+        final WorkOrderDecoration inside = WorkOrderDecoration.create(WorkOrderType.BUILD, "Minecolonies Original", "fundamentals/builder1.blueprint", "gametest.quiet",
+          helper.absolutePos(new BlockPos(24, 1, 12)), RotationMirror.NONE, 0);
+        helper.assertTrue(f.wm().addWorkOrderQuietly(inside) && inside.getID() > 0 && f.wm().getWorkOrder(inside.getID()) == inside, "order inside the colony not added");
+        final WorkOrderDecoration outside = WorkOrderDecoration.create(WorkOrderType.BUILD, "Minecolonies Original", "fundamentals/builder1.blueprint", "gametest.far",
+          helper.absolutePos(new BlockPos(600, 1, 12)), RotationMirror.NONE, 0);
+        helper.assertTrue(!f.wm().addWorkOrderQuietly(outside) && f.wm().getWorkOrder(outside.getID()) == null, "order outside the colony added");
+        helper.succeed();
+    }
+
+    /**
+     * The next section of a project goes to the builder who did the last one, if collaboration is on.
+     */
+    public static void projectAffinity(final GameTestHelper helper)
+    {
+        try
+        {
+            BuilderCollab.overrideForTests(true, 3, 40, 10, 100_000, 8, 2400);
+            for (int round = 0; round < 2; round++)
+            {
+                final BuilderWorkOrderGameTests.Fx f = BuilderWorkOrderGameTests.fixture(helper, "C1 affinity " + round, true);
+                final BuildingBuilder first = round == 0 ? f.a() : f.b();
+                final WorkOrderDecoration s1 = BuilderWorkOrderGameTests.order(f, "a1r" + round, new BlockPos(30, 1, 10), 0);
+                s1.setProjectId("terraform-1");
+                BuilderWorkOrderGameTests.claim(first, s1);
+                f.wm().removeWorkOrder(s1.getID(), WorkOrderRemovalReason.COMPLETED);
+                first.setWorkOrder(null);
+                helper.assertTrue("terraform-1".equals(first.getLastProjectId()), "the hut does not remember its project");
+
+                final WorkOrderDecoration s2 = BuilderWorkOrderGameTests.order(f, "a3r" + round, new BlockPos(30, 1, 28), 0);
+                s2.setProjectId("terraform-1");
+                BuilderCollab.overrideForTests(true, 3, 40, 10, 100_000, 8, 2400);
+                f.tick();
+                helper.assertTrue(s2.getClaimedBy().equals(first.getID()), "round " + round + ": the next section went to " + s2.getClaimedBy() + " not to the builder of the project " + first.getID());
+            }
+            helper.succeed();
+        }
+        finally
+        {
+            BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
+        }
+    }
+
+    /**
+     * Fast clear: a block that already is what the blueprint wants is not mined, if the setting is on.
+     */
+    public static void fastClear(final GameTestHelper helper)
+    {
+        try
+        {
+            final BuilderWorkOrderGameTests.Fx f = BuilderWorkOrderGameTests.fixture(helper, "C1 fast clear", false);
+            final WorkOrderDecoration order = BuilderWorkOrderGameTests.order(f, "fc", new BlockPos(24, 1, 10), 0);
+            final CollabStructureHandler handler = new CollabStructureHandler(f.level(), order, BuildingProgressStage.CLEAR, null, () -> Blocks.DIRT.defaultBlockState());
+            final BlockPos stoneCell = new BlockPos(0, 0, 0);
+            final BlockPos grassCell = new BlockPos(2, 1, 2);
+            f.level().setBlock(handler.getProgressPosInWorld(stoneCell), Blocks.STONE.defaultBlockState(), 3);
+            f.level().setBlock(handler.getProgressPosInWorld(grassCell), Blocks.DIRT.defaultBlockState(), 3);
+            final var stoneInfo = order.getBlueprint().getBluePrintPositionInfo(stoneCell, false);
+            final var otherInfo = order.getBlueprint().getBluePrintPositionInfo(grassCell, false);
+            BuilderCollab.overrideFastClearForTests(false);
+            helper.assertTrue(!BuilderStageRules.skipClearing(stoneInfo, handler.getProgressPosInWorld(stoneCell), handler), "a stone to build over stone is skipped with fast clear off");
+            BuilderCollab.overrideFastClearForTests(true);
+            helper.assertTrue(BuilderStageRules.skipClearing(stoneInfo, handler.getProgressPosInWorld(stoneCell), handler), "a stone to build over stone is mined with fast clear on");
+            helper.assertTrue(!BuilderStageRules.skipClearing(otherInfo, handler.getProgressPosInWorld(grassCell), handler), "dirt where the blueprint wants air is skipped");
+            helper.succeed();
+        }
+        finally
+        {
+            BuilderCollab.overrideFastClearForTests(null);
+        }
     }
 }

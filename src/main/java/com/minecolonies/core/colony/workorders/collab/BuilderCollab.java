@@ -64,6 +64,36 @@ public final class BuilderCollab
         }
     }
 
+    private static volatile Boolean fastClearOverride;
+
+    /**
+     * Only for tests: overrides the fast clear setting.
+     */
+    public static void overrideFastClearForTests(final Boolean fastClear)
+    {
+        fastClearOverride = fastClear;
+    }
+
+    /**
+     * Whether the clear stage skips blocks that already match the blueprint.
+     */
+    public static boolean fastClear()
+    {
+        final Boolean override = fastClearOverride;
+        if (override != null)
+        {
+            return override;
+        }
+        try
+        {
+            return MinecoloniesAPIProxy.getInstance().getConfig().getServer().builderFastClear.get();
+        }
+        catch (final RuntimeException e)
+        {
+            return false;
+        }
+    }
+
     public static boolean enabled()
     {
         final Boolean override = enabledOverride;

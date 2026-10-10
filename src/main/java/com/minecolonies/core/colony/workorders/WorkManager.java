@@ -10,6 +10,9 @@ import com.minecolonies.api.colony.workorders.IBuilderWorkOrder;
 import com.minecolonies.api.colony.workorders.IServerWorkOrder;
 import com.minecolonies.api.colony.workorders.IWorkManager;
 import com.minecolonies.api.colony.workorders.IWorkOrder;
+import com.minecolonies.api.colony.workorders.WorkOrderRemovalReason;
+import com.minecolonies.api.IMinecoloniesAPI;
+import com.minecolonies.api.eventbus.events.colony.WorkOrderRemovedModEvent;
 import com.minecolonies.api.util.ColonyUtils;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.MessageUtils;
@@ -97,6 +100,12 @@ public class WorkManager implements IWorkManager
     @Override
     public void removeWorkOrder(final int orderId)
     {
+        removeWorkOrder(orderId, WorkOrderRemovalReason.CANCELLED);
+    }
+
+    @Override
+    public void removeWorkOrder(final int orderId, final WorkOrderRemovalReason reason)
+    {
         final IWorkOrder workOrder = workOrders.get(orderId);
         if (workOrder != null)
         {
@@ -112,11 +121,16 @@ public class WorkManager implements IWorkManager
             dirty = true;
             workOrders.remove(orderId);
             colony.removeWorkOrderInView(orderId);
+            if (workOrder instanceof AbstractWorkOrder abstractWorkOrder)
+            {
+                abstractWorkOrder.setRemovalReason(reason);
+            }
             if (workOrder instanceof IBuilderWorkOrder builderWorkOrder)
             {
                 builderWorkOrder.onRemoved(colony);
             }
             colony.markDirty();
+            IMinecoloniesAPI.getInstance().getEventBus().post(new WorkOrderRemovedModEvent(colony, workOrder, reason));
         }
     }
 
@@ -341,7 +355,7 @@ public class WorkManager implements IWorkManager
                 if (or.getLocation().equals(order.getLocation()) && or.getStructurePath().equals(order.getStructurePath()) && or.getStructurePack().equals(order.getStructurePack()))
                 {
                     Log.getLogger().warn("Avoiding adding duplicate workOrder");
-                    removeWorkOrder(or);
+                    removeWorkOrder(or.getID(), WorkOrderRemovalReason.REPLACED);
                     break;
                 }
             }
@@ -380,6 +394,36 @@ public class WorkManager implements IWorkManager
         order.setColony(colony);
         workOrders.put(order.getID(), order);
         order.onAdded(colony, readingFromNbt);
+    }
+
+    @Override
+    public boolean addWorkOrderQuietly(@NotNull final IServerWorkOrder order)
+    {
+        dirty = true;
+        if (!(order instanceof WorkOrderMiner))
+        {
+            for (final IServerWorkOrder or : workOrders.values())
+            {
+                if (or.getLocation().equals(order.getLocation()) && or.getStructurePath().equals(order.getStructurePath()) && or.getStructurePack().equals(order.getStructurePack()))
+                {
+                    removeWorkOrder(or.getID(), WorkOrderRemovalReason.REPLACED);
+                    break;
+                }
+            }
+            if (!isWorkOrderWithinColony(order))
+            {
+                return false;
+            }
+        }
+        if (order.getID() == 0)
+        {
+            topWorkOrderId++;
+            order.setID(topWorkOrderId);
+        }
+        order.setColony(colony);
+        workOrders.put(order.getID(), order);
+        order.onAdded(colony, true);
+        return true;
     }
 
     /**
@@ -448,7 +492,7 @@ public class WorkManager implements IWorkManager
         }
         if (invalid != null)
         {
-            invalid.forEach(this::removeWorkOrder);
+            invalid.forEach(o -> removeWorkOrder(o.getID(), WorkOrderRemovalReason.INVALID));
         }
 
         final boolean collaborate = BuilderCollab.enabled();
@@ -493,7 +537,15 @@ public class WorkManager implements IWorkManager
         // unclaimed orders go to free builders in priority order
         for (final IServerWorkOrder wo : getOrderedList(o -> !o.isClaimed(), BlockPos.ZERO))
         {
-            tryAssignWorkOrder(wo, wo::canBuild);
+            if (collaborate && wo instanceof IBuilderWorkOrder builderOrder && !builderOrder.getProjectId().isEmpty())
+            {
+                // the builder who worked on the last section of the project takes the next one
+                tryAssignWorkOrder(wo, b -> wo.canBuild(b) && b instanceof AbstractBuildingStructureBuilder hut && builderOrder.getProjectId().equals(hut.getLastProjectId()));
+            }
+            if (!wo.isClaimed())
+            {
+                tryAssignWorkOrder(wo, wo::canBuild);
+            }
         }
 
         if (collaborate)

@@ -127,6 +127,7 @@ public class ServerConfiguration extends AbstractConfiguration
     public final IntValue     builderCollaborationStaySeconds;
     public final IntValue     builderCollaborationLeaseSize;
     public final IntValue     builderCollaborationLeaseSeconds;
+    public final BooleanValue builderFastClear;
 
     /**
      * Builds server configuration.
@@ -229,6 +230,8 @@ public class ServerConfiguration extends AbstractConfiguration
         builderCollaborationStaySeconds = defineInteger("collaborationStaySeconds", 120, 0, 3600);
         builderCollaborationLeaseSize = defineInteger("collaborationLeaseSize", 12, 1, 64);
         builderCollaborationLeaseSeconds = defineInteger("collaborationLeaseSeconds", 120, 10, 3600);
+        // The clear stage leaves blocks alone that already are what the blueprint wants there (instead of mining and placing them again).
+        builderFastClear = defineBoolean("fastClear", false);
 
         finishCategory();
     }
