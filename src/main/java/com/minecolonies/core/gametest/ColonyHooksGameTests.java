@@ -325,6 +325,55 @@ public final class ColonyHooksGameTests
     }
 
     /**
+     * L3: the worker speed setting (workers.speedMultiplier) multiplies the pace of the one pace provider inside the AI's wait step: a provider at 2x and the
+     * setting at 1.5 count a wait down 3 times as fast, the provider alone at 1x gives the setting alone, and with the setting at 1.0 nothing changes.
+     */
+    public static void paceProviderComposesWithWorkerSpeed(final GameTestHelper helper)
+    {
+        crafterFixture(helper, "L3 pace composition colony", (colony, worker) -> {
+            final IMinecoloniesAPI api = IMinecoloniesAPI.getInstance();
+            final IColonyPaceProvider previous = api.getColonyPaceProvider();
+            final StubPaceProvider stub = new StubPaceProvider(colony.getID());
+            api.setColonyPaceProvider(stub);
+            final AbstractEntityAIBasic<?, ?> ai = workAi(worker);
+            final int tickRate = ai.getTickRate();
+            try
+            {
+                final List<String> failures = new ArrayList<>();
+                com.minecolonies.core.entity.ai.workers.util.WorkerSettings.overrideForTests(1.5D, null, null, null, null, null);
+                stub.work = 2.0D;
+                final int both = countDown(ai, 40);
+                stub.work = 1.0D;
+                final int settingOnly = countDown(ai, 40);
+                com.minecolonies.core.entity.ai.workers.util.WorkerSettings.overrideForTests(1.0D, null, null, null, null, null);
+                stub.work = 2.0D;
+                final int providerOnly = countDown(ai, 40);
+                stub.work = 1.0D;
+                final int neither = countDown(ai, 40);
+                if (Math.abs(both - 120 * tickRate) > 1)
+                {
+                    failures.add("pace 2 x setting 1.5 counted " + both + ", expected " + 120 * tickRate);
+                }
+                if (Math.abs(settingOnly - 60 * tickRate) > 1)
+                {
+                    failures.add("pace 1 x setting 1.5 counted " + settingOnly + ", expected " + 60 * tickRate);
+                }
+                if (providerOnly != 80 * tickRate || neither != 40 * tickRate)
+                {
+                    failures.add("setting 1.0 changes the pace: provider only " + providerOnly + " (expected " + 80 * tickRate + "), neither " + neither + " (expected " + 40 * tickRate + ")");
+                }
+                helper.assertTrue(failures.isEmpty(), "worker speed not composed with the pace provider: " + failures);
+            }
+            finally
+            {
+                api.setColonyPaceProvider(previous);
+                com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
+            }
+            helper.succeed();
+        });
+    }
+
+    /**
      * G0b: the pace covers the whole act-and-wait cycle, not only the wait. On the sawmill worker's real AI, its own
      * wait step (AbstractEntityAIBasic#waitingForSomething) is driven directly, one call per AI step, and every step on
      * which it does not wait counts as an action that sets the same delay again, as a builder's placement does. At 1x a
