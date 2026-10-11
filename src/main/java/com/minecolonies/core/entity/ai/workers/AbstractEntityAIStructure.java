@@ -1465,7 +1465,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         if (usesPhysicalReach() && target.equals(reachTarget))
         {
             // the spot from which the block is in reach (and the blocks after it)
-            final List<ReachSpots.Spot> spots = ReachSpots.best(world, workAhead(target), WorkerSettings.reach(), worker.getEyeHeight(), worker.blockPosition(), null, 1);
+            // only spots that connect to the ground by the hut: the top of a wall is no place to be put on (there is no way down from it)
+            final BlockPos home = StandSpots.nearest(world, building.getPosition(), 8, 4, 4, null);
+            final Set<BlockPos> connected = home == null ? null : StandSpots.reachableFrom(world, home, 40, 40000);
+            final List<ReachSpots.Spot> spots = ReachSpots.best(world, workAhead(target), WorkerSettings.reach(), worker.getEyeHeight(), worker.blockPosition(),
+              connected == null ? null : p -> connected.contains(p), 1);
             if (!spots.isEmpty())
             {
                 spot = spots.get(0).feet();

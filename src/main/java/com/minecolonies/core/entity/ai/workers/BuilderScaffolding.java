@@ -63,7 +63,7 @@ public final class BuilderScaffolding
     static final double DISMANTLE_NEAR = 12.0D;
 
     /** Ticks without progress on one block before the colony takes the rest of a tower down without the builder. */
-    static final int WORK_TIMEOUT = 700;
+    static final int WORK_TIMEOUT = 500;
 
     private final AbstractEntityAIStructure<?, ?> ai;
 
