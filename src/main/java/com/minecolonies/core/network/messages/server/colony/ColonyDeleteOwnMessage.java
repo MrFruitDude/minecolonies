@@ -54,7 +54,7 @@ public class ColonyDeleteOwnMessage extends AbstractServerPlayMessage
         super(buf, type);
         if (buf.readBoolean())
         {
-            dimension = ResourceKey.create(Registries.DIMENSION, Identifier.parse(buf.readUtf(256)));
+            dimension = ResourceKey.create(Registries.DIMENSION, OwnedColonyTarget.readDimension(buf));
             colonyId = buf.readInt();
         }
         else

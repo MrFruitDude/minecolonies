@@ -51,15 +51,24 @@ public class TriggerConnectionEventMessage extends AbstractColonyServerMessage
             return;
         }
 
-        if (colony.getPermissions().hasPermission(player, Action.MANAGE_HUTS))
+        // The event is the sending colony's own: its origin is the colony the message is sent for, never another one (the id came from the client).
+        if (connectionEventData.id() != colony.getID())
         {
-            final IColony targetColony = IColonyManager.getInstance().getColonyByDimension(targetColonyId, colony.getDimension());
-            if (targetColony == null)
-            {
-                Log.getLogger().error("Tried to trigger connection event at null colony: {}", targetColonyId);
-                return;
-            }
+            return;
+        }
 
+        final IColony targetColony = IColonyManager.getInstance().getColonyByDimension(targetColonyId, colony.getDimension());
+        if (targetColony == null)
+        {
+            Log.getLogger().error("Tried to trigger connection event at null colony: {}", targetColonyId);
+            return;
+        }
+
+        // A status between two colonies is a decision of both: the sender needs the right to manage huts in each of them.
+        if (targetColony != colony
+              && colony.getPermissions().hasPermission(player, Action.MANAGE_HUTS)
+              && targetColony.getPermissions().hasPermission(player, Action.MANAGE_HUTS))
+        {
             targetColony.getConnectionManager().triggerConnectionEvent(connectionEventData);
         }
     }

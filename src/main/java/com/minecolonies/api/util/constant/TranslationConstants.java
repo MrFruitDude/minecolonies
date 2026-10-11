@@ -566,6 +566,7 @@ public final class TranslationConstants
     public static final String MESSAGE_COLONY_CREATE_DENIED_EXISTING              = "com.minecolonies.coremod.gui.colony.denied.existing";
     @NonNls
     public static final String MESSAGE_COLONY_CREATE_DENIED_TOO_CLOSE             = "com.minecolonies.coremod.gui.colony.denied.tooclose";
+    public static final String MESSAGE_COLONY_CREATE_DENIED_TOO_CLOSE_GENERIC     = "com.minecolonies.coremod.gui.colony.denied.tooclose.generic";
     @NonNls
     public static final String MESSAGE_COLONY_CREATE_ALLOWED                      = "com.minecolonies.coremod.gui.colony.allowed.create";
     @NonNls
