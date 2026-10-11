@@ -60,12 +60,12 @@ public final class StorageNetworkGameTests
     {
         final String[] names = {"index_tracks_racks", "available_reserve_aware", "capacity_and_full", "any_courier_serves_any_warehouse", "courier_locked_flag_off",
           "completion_time_beats_nearest", "request_splits_across_warehouses", "no_routing_to_unserved_warehouse", "dump_continues_past_full_rack", "dump_stops_flag_off",
-          "dump_goes_to_warehouse_with_room", "dump_stays_flag_off", "save_load_mid_delivery", "conservation", "full_storage_pickups_wait"};
+          "dump_goes_to_warehouse_with_room", "dump_stays_flag_off", "save_load_mid_delivery", "conservation", "full_storage_pickups_wait", "flag_flip_loses_nothing"};
         final java.util.List<java.util.function.Consumer<GameTestHelper>> bodies = List.of(StorageNetworkGameTests::indexTracksRacks, StorageNetworkGameTests::availableIsReserveAware,
           StorageNetworkGameTests::capacityAndFull, StorageNetworkGameTests::anyCourierServesAnyWarehouse, StorageNetworkGameTests::courierLockedFlagOff,
           StorageNetworkGameTests::completionTimeBeatsNearest, StorageNetworkGameTests::requestSplitsAcrossWarehouses, StorageNetworkGameTests::noRoutingToUnservedWarehouse,
           StorageNetworkGameTests::dumpContinuesPastFullRack, StorageNetworkGameTests::dumpStopsFlagOff, StorageNetworkGameTests::dumpGoesToWarehouseWithRoom,
-          StorageNetworkGameTests::dumpStaysFlagOff, StorageNetworkGameTests::saveLoadMidDelivery, StorageNetworkGameTests::conservation, StorageNetworkGameTests::fullStoragePickupsWait);
+          StorageNetworkGameTests::dumpStaysFlagOff, StorageNetworkGameTests::saveLoadMidDelivery, StorageNetworkGameTests::conservation, StorageNetworkGameTests::fullStoragePickupsWait, StorageNetworkGameTests::flagFlipLosesNothing);
         for (int i = 0; i < names.length; i++)
         {
             final String name = "storage_" + names[i];
@@ -402,6 +402,8 @@ public final class StorageNetworkGameTests
                 helper.assertTrue(InventoryUtils.getCountFromBuilding(n.f.builder, LOGS) == 8,
                   "a courier of warehouse A carried the logs from warehouse B: builder has " + InventoryUtils.getCountFromBuilding(n.f.builder, LOGS)
                     + ", A has " + n.a.hasEnoughElseCount(LOGS, 100) + ", B has " + n.b.hasEnoughElseCount(LOGS, 100) + " / " + n.f.describe(token));
+                helper.assertTrue(n.storage().flowsSince(0).stream().anyMatch(flow -> flow.from().equals(n.b.getID()) && flow.to().equals(n.f.builder.getID()) && flow.count() == 8),
+                  "the network flows show 8 logs from warehouse B to the builder: " + n.storage().flowsSince(0));
             });
         });
     }
@@ -622,6 +624,8 @@ public final class StorageNetworkGameTests
         {
             helper.assertTrue(count(courier, DIRT) == 0 && count(courier, COBBLE) == 0, "the courier dumped everything: " + count(courier, DIRT) + "/" + count(courier, COBBLE));
             helper.assertTrue(n.b.hasEnoughElseCount(DIRT, 100) == 5 && n.b.hasEnoughElseCount(COBBLE, 100) == 4, "into warehouse B");
+            helper.assertTrue(n.storage().flowsSince(0).stream().anyMatch(flow -> flow.to().equals(n.b.getID()) && flow.stack().is(Items.DIRT) && flow.count() == 5),
+              "the dump is a flow into warehouse B: " + n.storage().flowsSince(0));
         }
         else
         {
@@ -755,5 +759,28 @@ public final class StorageNetworkGameTests
         helper.assertTrue(!n.storage().isFull(), "fixture: room again");
         n.f.manager().onColonyUpdate(request -> request.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Pickup);
         helper.succeedWhen(() -> helper.assertTrue(queued(n.a) + queued(n.b) == 1, "with room the pickup is queued for a courier: " + (queued(n.a) + queued(n.b))));
+    }
+
+    /**
+     * A world saved with the network on and loaded with it off: the delivery queued in the queue of a warehouse nobody works for is taken by
+     * the other warehouse's courier (nothing is stranded), and the request still ends in its delivery.
+     */
+    public static void flagFlipLosesNothing(final GameTestHelper helper)
+    {
+        RsFlags.overrideStorageNetwork(true);
+        RsFlags.overrideReservations(true);
+        final Net n = Net.found(helper, "storage-flip", 2, 2);
+        n.stockB(0, new ItemStack(Items.OAK_LOG, 10));
+        final ICitizenData courier = n.quietCourier(n.a, new BlockPos(34, 1, 8));
+        final IToken<?> token = ask(n.f.builder, 8);
+        helper.assertTrue(queued(n.b) == 1 && queued(n.a) == 0, "network on: the delivery sits in warehouse B's queue: A " + queued(n.a) + " B " + queued(n.b));
+
+        RsFlags.overrideStorageNetwork(false);
+        final JobDeliveryman job = courier.getJob(JobDeliveryman.class);
+        final IRequest<?> task = job.getCurrentTask();
+        helper.assertTrue(task != null && n.f.request(token).getChildren().contains(task.getId()), "network off: the courier of A takes the delivery out of the orphaned queue of B: " + task);
+        helper.assertTrue(queued(n.b) == 0, "and it left the queue");
+        helper.assertTrue(n.f.ledger().reservedStock(n.b.getID(), LOGS) == 8, "the promise at B is still held: " + n.f.ledger().all());
+        helper.succeed();
     }
 }
