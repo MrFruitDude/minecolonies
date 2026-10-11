@@ -63,6 +63,9 @@ public final class ClaimOwnerGameTests
         final IColony a = IColonyManager.getInstance().createColony(level, hallA, first, "claims A", PACK);
         final IColony b = IColonyManager.getInstance().createColony(level, hallB, second, "claims B", PACK);
         helper.assertTrue(a != null && b != null, "colonies not created: " + a + " " + b);
+        // The town halls are registered as buildings (a building's claim is what is under test).
+        a.getServerBuildingManager().addNewBuilding((TileEntityColonyBuilding) level.getBlockEntity(hallA), level);
+        b.getServerBuildingManager().addNewBuilding((TileEntityColonyBuilding) level.getBlockEntity(hallB), level);
         helper.assertTrue(!a.getPermissions().getOwner().equals(b.getPermissions().getOwner()), "same owner");
 
         final ChunkPos chunkA = ChunkPos.containing(hallA);
