@@ -9,6 +9,7 @@ import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.WorldUtil;
 import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.ColonyView;
+import com.minecolonies.core.colony.requestsystem.RsProbe;
 import com.minecolonies.core.colony.requestsystem.management.manager.RequestSystemViewSync;
 import com.minecolonies.core.colony.requestsystem.management.manager.StandardRequestManager;
 import com.minecolonies.core.colony.permissions.Permissions;
@@ -287,6 +288,26 @@ public class ColonyPackageManager implements IColonyPackageManager
      */
     public void sendRequestSystemPackets()
     {
+        final boolean probe = RsProbe.enabled;
+        if (probe)
+        {
+            RsProbe.begin(RsProbe.VIEW_SYNC);
+        }
+        try
+        {
+            sendRequestSystemPackets0();
+        }
+        finally
+        {
+            if (probe)
+            {
+                RsProbe.end(RsProbe.VIEW_SYNC);
+            }
+        }
+    }
+
+    private void sendRequestSystemPackets0()
+    {
         if (!(colony.getRequestManager() instanceof StandardRequestManager manager))
         {
             return;
@@ -321,7 +342,22 @@ public class ColonyPackageManager implements IColonyPackageManager
         final RequestSystemViewSync.Snapshot snapshot;
         try
         {
-            snapshot = RequestSystemViewSync.snapshot(manager, colony.getWorld().registryAccess());
+            if (RsProbe.enabled)
+            {
+                RsProbe.begin(RsProbe.SNAPSHOT);
+                try
+                {
+                    snapshot = RequestSystemViewSync.snapshot(manager, colony.getWorld().registryAccess());
+                }
+                finally
+                {
+                    RsProbe.end(RsProbe.SNAPSHOT);
+                }
+            }
+            else
+            {
+                snapshot = RequestSystemViewSync.snapshot(manager, colony.getWorld().registryAccess());
+            }
         }
         catch (final Exception e)
         {
@@ -375,6 +411,10 @@ public class ColonyPackageManager implements IColonyPackageManager
         if (players.isEmpty())
         {
             return;
+        }
+        if (RsProbe.enabled)
+        {
+            RsProbe.addSent(payload.readableBytes(), players.size());
         }
         final ColonyViewRequestSystemMessage message = new ColonyViewRequestSystemMessage(colony.getID(), colony.getDimension(), payload);
         sendView(message, players);

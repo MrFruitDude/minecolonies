@@ -7,6 +7,9 @@ import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Deliver
 import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
+import com.minecolonies.core.colony.storage.ColonyStorage;
+import com.minecolonies.core.colony.storage.StorageNetwork;
+import net.minecraft.core.BlockPos;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationKind;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationReason;
@@ -47,6 +50,15 @@ public final class RsCourierHooks
      */
     public static void arrived(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends Delivery> delivery)
     {
+        if (StorageNetwork.on(manager) && manager.getColony() instanceof final Colony colony)
+        {
+            final ColonyStorage storage = ColonyStorage.of(colony);
+            final BlockPos source = storage.owningWarehouse(delivery.getRequest().getStart().getInDimensionLocation());
+            storage.recordFlow(source == null ? delivery.getRequest().getStart().getInDimensionLocation() : source,
+              delivery.getRequest().getTarget().getInDimensionLocation(), delivery.getRequest().getStack());
+        }
+        RsStats.itemsDelivered += delivery.getRequest().getStack().getCount();
+        RsStats.deliveriesArrived++;
         final ReservationLedger ledger = RsAccess.ledger(manager);
         if (ledger == null)
         {

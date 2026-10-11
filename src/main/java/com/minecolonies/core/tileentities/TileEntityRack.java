@@ -301,7 +301,8 @@ public class TileEntityRack extends AbstractTileEntityRack implements IMateriall
         final BlockState state = level.getBlockState(worldPosition);
         level.sendBlockUpdated(worldPosition, state, state, 0x03);
         invalidateCap();
-        notifyIndexContentChanged();
+        // The new inventory has more slots: the free slot count and the content map are read again (and the indexes told).
+        updateContent();
     }
 
     @Override

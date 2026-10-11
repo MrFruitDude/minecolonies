@@ -88,7 +88,26 @@ public final class RequestScoring
     public static long courierScore(@NotNull final IColony colony, @NotNull final IRequest<?> task, @Nullable final BlockPos source, @Nullable final BlockPos target,
       final boolean targetLoaded)
     {
-        return compute(colony, task, source, target, targetLoaded, true).score();
+        return compute(colony, task, source, target, targetLoaded, true, -1).score();
+    }
+
+    /**
+     * Like {@link #courierScore(IColony, IRequest, BlockPos, BlockPos, boolean)}, with the tiebreak term given by the caller
+     * instead of the walking distance: the storage network ranks tasks that tie on importance, priority and wait by their
+     * estimated completion time.
+     *
+     * @param colony       the colony.
+     * @param task         the delivery or pickup.
+     * @param source       where it starts, null when unknown.
+     * @param target       the building it serves.
+     * @param targetLoaded false when the target's chunk is not loaded.
+     * @param tiebreak     the term that decides between tied tasks, nearer/quicker is smaller (0..65535).
+     * @return the score.
+     */
+    public static long courierScore(@NotNull final IColony colony, @NotNull final IRequest<?> task, @Nullable final BlockPos source, @Nullable final BlockPos target,
+      final boolean targetLoaded, final int tiebreak)
+    {
+        return compute(colony, task, source, target, targetLoaded, true, Math.max(0, tiebreak)).score();
     }
 
     /**
@@ -99,12 +118,12 @@ public final class RequestScoring
     public static Explanation explain(@NotNull final IColony colony, @NotNull final IRequest<?> task, @Nullable final BlockPos source, @Nullable final BlockPos target,
       final boolean targetLoaded)
     {
-        return compute(colony, task, source, target, targetLoaded, false);
+        return compute(colony, task, source, target, targetLoaded, false, -1);
     }
 
     @NotNull
     private static Explanation compute(@NotNull final IColony colony, @NotNull final IRequest<?> task, @Nullable final BlockPos source, @Nullable final BlockPos target,
-      final boolean targetLoaded, final boolean startClock)
+      final boolean targetLoaded, final boolean startClock, final int tiebreak)
     {
         final IRequestManager manager = colony.getRequestManager();
         final BuildingPriorities priorities = manager instanceof IStandardRequestManager standard ? standard.getBuildingPriorities() : null;
@@ -114,7 +133,7 @@ public final class RequestScoring
         final int priority = priorities == null || target == null ? BuildingPriorities.DEFAULT_PRIORITY : priorities.effective(target, now);
         final boolean alarm = priorities != null && target != null && priorities.isAlarm(target, now);
         final long waited = priorities == null ? 0L : startClock ? priorities.waited(task.getId(), now) : priorities.peekWaited(task.getId(), now);
-        final int distance = source == null || target == null ? 0 : (int) Math.sqrt(source.distManhattan(target));
+        final int distance = tiebreak >= 0 ? tiebreak : source == null || target == null ? 0 : (int) Math.sqrt(source.distManhattan(target));
 
         long score = score(importance, priority, waited, distance);
         if (task.getRequest() instanceof Pickup pickup && pickup.getDay() > colony.getDay())
