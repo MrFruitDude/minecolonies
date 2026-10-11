@@ -399,24 +399,37 @@ final class BuilderScaffoldGameTests
         tallStructure(helper, "tall14", () -> ring("tall14", 14), true, 30_000, true);
     }
 
-    public static void sealedRoof(final GameTestHelper helper)
+    private static void buildSealedWalls(final WorkerEfficiencyGameTests.Live live, final BlockPos origin)
     {
-        // the walls stand already (the builder is outside), the roof is left: its middle is out of reach from the ground
-        tallStructure(helper, "sealed", () -> sealedBox("sealed"), true, 30_000, true, (live, origin) -> {
-            for (int y = 0; y < 4; y++)
+        for (int y = 0; y < 4; y++)
+        {
+            for (int x = 0; x < 11; x++)
             {
-                for (int x = 0; x < 11; x++)
+                for (int z = 0; z < 11; z++)
                 {
-                    for (int z = 0; z < 11; z++)
+                    if (x == 0 || z == 0 || x == 10 || z == 10)
                     {
-                        if (x == 0 || z == 0 || x == 10 || z == 10)
-                        {
-                            live.level.setBlock(origin.offset(x, y, z), WorkerEfficiencyGameTests.BUILD_BLOCK.defaultBlockState(), 3);
-                        }
+                        live.level.setBlock(origin.offset(x, y, z), WorkerEfficiencyGameTests.BUILD_BLOCK.defaultBlockState(), 3);
                     }
                 }
             }
-        });
+        }
+    }
+
+    public static void sealedRoof(final GameTestHelper helper)
+    {
+        // the walls stand already (the builder is outside), the roof is left: its middle is out of reach from the ground
+        tallStructure(helper, "sealed", () -> sealedBox("sealed"), true, 30_000, true, BuilderScaffoldGameTests::buildSealedWalls);
+    }
+
+    public static void sealedRoofLegacy(final GameTestHelper helper)
+    {
+        tallStructure(helper, "sealed_legacy", () -> sealedBox("sealed_legacy"), false, 30_000, false, BuilderScaffoldGameTests::buildSealedWalls);
+    }
+
+    public static void overhangLegacy(final GameTestHelper helper)
+    {
+        tallStructure(helper, "overhang_legacy", () -> overhang("overhang_legacy"), false, 30_000, false);
     }
 
     public static void overhangSlab(final GameTestHelper helper)
@@ -581,10 +594,21 @@ final class BuilderScaffoldGameTests
      */
     public static void twoBuilders(final GameTestHelper helper)
     {
+        twoBuilders(helper, "two", () -> shape("two", 7, 11, 7, (x, y, z) -> x == 0 || z == 0 || x == 6 || z == 6), 40_000);
+    }
+
+    /** The 11 by 11 ring, 12 high, with two builders. */
+    public static void twoBuildersBig(final GameTestHelper helper)
+    {
+        twoBuilders(helper, "twobig", () -> shape("twobig", 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10), 25_000);
+    }
+
+    static void twoBuilders(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final int maxTicks)
+    {
         WorkerSettings.overrideReachForTests(null, null, null, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
-        WorkerEfficiencyGameTests.scene(helper, "WSCAF two", live -> {
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF " + name, live -> {
             BuilderCollab.overrideForTests(true, 3, 40, 10, 100_000, 8, 2400);
             final BuildingBuilder other = live.colony.getServerBuildingManager().getBuildings().values().stream()
                                             .filter(b -> b instanceof BuildingBuilder && b != live.hut).map(b -> (BuildingBuilder) b).findFirst().orElseThrow();
@@ -595,15 +619,15 @@ final class BuilderScaffoldGameTests
             {
                 InventoryUtils.addItemStackToItemHandler(second.getInventory(), new ItemStack(tool));
             }
-            final Blueprint blueprint = shape("two", 7, 11, 7, (x, y, z) -> x == 0 || z == 0 || x == 6 || z == 6);
+            final Blueprint blueprint = blueprintOf.get();
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
             live.stock(Items.SCAFFOLDING, 32);
             helper.assertTrue(InventoryUtils.forceItemStackToItemHandler(other.getItemHandlerCap(), new ItemStack(Items.SCAFFOLDING, 32), s -> true).isEmpty(), "no room in the second hut");
-            final WorkOrderDecoration order = live.orderFor("two", SITE, blueprint);
+            final WorkOrderDecoration order = live.orderFor(name, SITE, blueprint);
             final BlockPos origin = order.getLocation();
             final Watch watch = new Watch();
             final int[] doneTick = {0};
-            WorkerEfficiencyGameTests.everyTick(live, 40_000, tick -> {
+            WorkerEfficiencyGameTests.everyTick(live, maxTicks, tick -> {
                 watch(live, watch, origin, 64, tick);
                 doneTick[0] = tick;
                 if (tick % 500 == 0)
@@ -613,9 +637,9 @@ final class BuilderScaffoldGameTests
                 }
                 return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
             }, () -> {
-                Log.getLogger().info("WSCAF two done t={} towers={} cells={} placedBy={} maxScaffold={}", doneTick[0], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced,
+                Log.getLogger().info("WBENCH RESULT " + name + " builders=2 ticks={} towers={} cells={} placedBy={} maxScaffold={}", doneTick[0], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced,
                   BuilderScaffolding.placedBy.values(), watch.maxScaffold);
-                helper.assertTrue(missing(live, blueprint, origin) <= 2, "structure not complete: missing " + missing(live, blueprint, origin));
+                helper.assertTrue(missing(live, blueprint, origin) == 0, "structure not complete: missing " + missing(live, blueprint, origin));
                 helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left: " + scaffoldInWorld(live, origin));
                 helper.assertTrue(ledgerSize(live) == 0 && ((WorkManager) live.colony.getWorkManager()).getOrphanScaffolds().isEmpty(), "ledger left");
                 helper.assertTrue(scaffoldItems(live, origin) == 64, "items not conserved: " + scaffoldItems(live, origin));
@@ -915,6 +939,95 @@ final class BuilderScaffoldGameTests
                     }
                 }
             }
+        });
+    }
+
+    /**
+     * Probe: the search of walkable spots from the top of a column of scaffolding reaches the ground again (a builder who stands on top of a
+     * tower must be able to go down it).
+     */
+    public static void descendProbe(final GameTestHelper helper)
+    {
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF descend", live -> {
+            final BlockPos site = helper.absolutePos(SITE);
+            for (int y = 0; y < 6; y++)
+            {
+                live.level.setBlock(site.offset(3, y, 0), Blocks.SCAFFOLDING.defaultBlockState().setValue(net.minecraft.world.level.block.ScaffoldingBlock.DISTANCE, 0), 3);
+            }
+            for (final int topFeet : new int[] {6, 5})
+            {
+                final BlockPos top = site.offset(3, topFeet, 0);
+                final var reach = com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(live.level, top, 28, 30000);
+                Log.getLogger().info("PROBE descend from feet {} (floor {}, standable {}): {} nodes, contains ground={} contains cell below={}", topFeet, live.level.getBlockState(top.below()).getBlock(),
+                  com.minecolonies.core.entity.ai.workers.util.StandSpots.canStandAt(live.level, top), reach.size(), reach.contains(site), reach.contains(top.below()));
+                helper.assertTrue(reach.contains(site), "no way down from feet " + topFeet);
+            }
+            helper.succeed();
+        });
+    }
+
+    // ------------------------------------------------------------------ a pit
+
+    /**
+     * A builder who fell into a pit of 5 blocks (no path out): he puts a column at the wall of the pit up to the rim and climbs out, instead of
+     * being put on the rim. Then he builds a small ring and the scaffolding comes down.
+     */
+    public static void escapeFromPit(final GameTestHelper helper)
+    {
+        WorkerSettings.overrideReachForTests(null, null, null, 16);
+        ReachAudit.enable(true);
+        BuilderScaffolding.resetCounters();
+        com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.teleports = 0;
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF pit", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            final Blueprint blueprint = ring("pit", 3);
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            live.stock(Items.SCAFFOLDING, 32);
+            final BlockPos site = helper.absolutePos(SITE);
+            // a pit of 3 by 3 and 5 deep, a few blocks from the hut
+            final BlockPos pit = site.offset(-14, 0, 0);
+            for (int x = 0; x < 3; x++)
+            {
+                for (int z = 0; z < 3; z++)
+                {
+                    for (int y = -1; y >= -5; y--)
+                    {
+                        live.level.setBlock(pit.offset(x, y, z), Blocks.AIR.defaultBlockState(), 2);
+                    }
+                }
+            }
+            final WorkOrderDecoration order = live.orderFor("pit", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            final BlockPos bottom = pit.offset(1, -5, 1);
+            live.citizen.getEntity().ifPresent(e -> e.setPos(bottom.getX() + 0.5D, bottom.getY(), bottom.getZ() + 0.5D));
+            final Watch watch = new Watch();
+            final int[] doneTick = {0};
+            final boolean[] out = {false};
+            WorkerEfficiencyGameTests.everyTick(live, 20_000, tick -> {
+                watch(live, watch, origin, 32, tick);
+                doneTick[0] = tick;
+                live.citizen.getEntity().ifPresent(e -> out[0] |= e.getY() >= site.getY() - 0.5D && e.position().distanceTo(Vec3.atCenterOf(pit)) < 8.0D);
+                if (tick % 500 == 0)
+                {
+                    Log.getLogger().info("WSCAF pit t={} out={} missing={} scaffold={} teleports={} {}", tick, out[0], missing(live, blueprint, origin), scaffoldInWorld(live, origin),
+                      com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.teleports, live.ai());
+                }
+                return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
+            }, () -> {
+                Log.getLogger().info("WBENCH RESULT pit ticks={} escapes={} teleports={} cells={}", doneTick[0], BuilderScaffolding.escapes,
+                  com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.teleports, BuilderScaffolding.cellsPlaced);
+                helper.assertTrue(built(live, blueprint, origin), "structure not complete: missing " + missing(live, blueprint, origin));
+                helper.assertTrue(BuilderScaffolding.escapes > 0, "no tower was put up to get out of the pit");
+                helper.assertTrue(com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.teleports == 0, "the builder was teleported: " + com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.teleports);
+                helper.assertTrue(scaffoldInWorld(live, origin) == 0 && scaffoldInWorld(live, pit) == 0, "scaffolding left");
+                helper.assertTrue(ledgerSize(live) == 0, "ledger left");
+                helper.assertTrue(scaffoldItems(live, origin) == 32, "items not conserved: " + scaffoldItems(live, origin));
+                helper.assertTrue(watch.conservationBreak == null, "items lost or made: " + watch.conservationBreak);
+                WorkerSettings.clearOverrides();
+                ReachAudit.enable(false);
+                helper.succeed();
+            }, () -> "out=" + out[0] + " missing=" + missing(live, blueprint, origin) + " scaffold=" + scaffoldInWorld(live, origin) + " " + live.ai());
         });
     }
 }

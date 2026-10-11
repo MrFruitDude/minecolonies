@@ -337,7 +337,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
 
     @Override
-    protected List<BlockPos> workAhead(final BlockPos target)
+    protected List<BlockPos> workAhead(final BlockPos target, final int n)
     {
         if (assistOrder != null && !building.hasWorkOrder() && !batch.isEmpty())
         {
@@ -353,7 +353,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             }
             return list;
         }
-        return super.workAhead(target);
+        return super.workAhead(target, n);
     }
 
     @Override

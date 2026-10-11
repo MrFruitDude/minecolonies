@@ -56,6 +56,9 @@ public final class BuilderScaffolding
     /** After that long without a tower being possible, the next try. */
     static final int DENY_TICKS = 3000;
 
+    /** How many of the next blocks the plan of a tower looks at: a tower is picked for what is left to build, not for the next layer. */
+    static final int PLAN_LOOKAHEAD = 160;
+
     /** Ticks a tower has to be of no use before it comes down. */
     static final int IDLE_GRACE = 1200;
 
@@ -328,7 +331,7 @@ public final class BuilderScaffolding
         }
 
         final int stock = WorkerSettings.scaffoldStock();
-        final List<BlockPos> blocks = ai.workAhead(target);
+        final List<BlockPos> blocks = ai.workAhead(target, PLAN_LOOKAHEAD);
         ScaffoldPlanner.Plan found = ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, stock, ai.servesAnyOrder());
         if (found == null && !order.getScaffolds().isEmpty()
               && ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, 128, ai.servesAnyOrder()) != null)
@@ -920,7 +923,15 @@ public final class BuilderScaffolding
         }
         final BlockPos below = cell.below();
         final boolean descent = ledger.contains(below) || ai.world.getBlockState(below).isFaceSturdy(ai.world, below, Direction.UP);
-        if (!ai.walkIntoReachFor(cell, () -> List.of(cell), true, feet -> !feet.below().equals(cell) || descent))
+        // on the tower itself (he goes down with it) or at the foot of it: never on a wall he would then be stranded on
+        int base = cell.getY();
+        for (final ScaffoldLedger.Cell other : ledger.all())
+        {
+            base = Math.min(base, other.pos().getY());
+        }
+        final int baseY = base;
+        if (!ai.walkIntoReachFor(cell, () -> List.of(cell), true,
+          feet -> (!feet.below().equals(cell) || descent) && (ledger.contains(feet.below()) || feet.getY() <= baseY + 1)))
         {
             return true;
         }

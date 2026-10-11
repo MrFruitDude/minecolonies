@@ -1510,7 +1510,16 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     protected List<BlockPos> workAhead(final BlockPos target)
     {
-        final List<BlockPos> ahead = peekWork(REACH_LOOKAHEAD);
+        return workAhead(target, REACH_LOOKAHEAD);
+    }
+
+    /**
+     * @param n how many of the next blocks at most.
+     * @see #workAhead(BlockPos)
+     */
+    protected List<BlockPos> workAhead(final BlockPos target, final int n)
+    {
+        final List<BlockPos> ahead = peekWork(n);
         if (ahead.isEmpty() || !ahead.get(0).equals(target))
         {
             final List<BlockPos> list = new ArrayList<>(ahead.size() + 1);
@@ -1748,6 +1757,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         {
             Log.getLogger().info("SCAFFOLD {} teleports from {} to {} for {}", worker.getName().getString(), worker.blockPosition(), spot, target);
         }
+        teleports++;
         puffAt(worker.position());
         worker.getNavigation().stop();
         worker.snapTo(spot.getX() + 0.5D, spot.getY(), spot.getZ() + 0.5D);
@@ -1755,6 +1765,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         resetWalkTarget();
         workFrom = spot;
     }
+
+    /**
+     * How often a structure worker was put on a spot by the unstuck ladder (for the tests).
+     */
+    public static volatile int teleports = 0;
 
     private void puffAt(final Vec3 position)
     {
