@@ -426,6 +426,11 @@ public final class MacroRun
         {
             // Midday, always: citizens stop working at night and in the rain, which would only add noise.
             level.getServer().clockManager().setTotalTicks(level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
+            // ... and never rain: couriers do not work in the rain, and a long run reaches the first rain by chance
+            final var weather = level.getWeatherData();
+            weather.setRaining(false);
+            weather.setThundering(false);
+            weather.setClearWeatherTime(1_000_000);
         }
         if (tick % 200 == 0)
         {
