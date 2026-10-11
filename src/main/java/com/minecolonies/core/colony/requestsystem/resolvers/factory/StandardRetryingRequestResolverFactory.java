@@ -75,11 +75,13 @@ public class StandardRetryingRequestResolverFactory implements IFactory<IRequest
 
             return assignmentCompound;
         }).collect(NBTUtils.toListNBT()));
-        compound.put(NBT_DELAYS, standardRetryingRequestResolver.getDelays().keySet().stream().map(t -> {
+        // getDelays() makes a copy: ask once, not once per entry
+        final Map<IToken<?>, Integer> delays = standardRetryingRequestResolver.getDelays();
+        compound.put(NBT_DELAYS, delays.keySet().stream().map(t -> {
             final CompoundTag delayCompound = new CompoundTag();
 
             delayCompound.put(NBT_TOKEN, controller.serializeTag(provider, t));
-            delayCompound.putInt(NBT_VALUE, standardRetryingRequestResolver.getDelays().get(t));
+            delayCompound.putInt(NBT_VALUE, delays.get(t));
 
             return delayCompound;
         }).collect(NBTUtils.toListNBT()));
@@ -125,8 +127,9 @@ public class StandardRetryingRequestResolverFactory implements IFactory<IRequest
             packetBuffer.writeInt(value);
         });
 
-        packetBuffer.writeInt(input.getDelays().size());
-        input.getDelays().forEach((key, value) -> {
+        final Map<IToken<?>, Integer> delays = input.getDelays();
+        packetBuffer.writeInt(delays.size());
+        delays.forEach((key, value) -> {
             controller.serialize(packetBuffer, key);
             packetBuffer.writeInt(value);
         });

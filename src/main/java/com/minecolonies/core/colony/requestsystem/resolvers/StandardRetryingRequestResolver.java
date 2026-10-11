@@ -45,8 +45,23 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     private final ILocation                   location;
     private final IToken<?>                   id;
     private       IToken<?>                   current;
-    private final HashMap<IToken<?>, Integer> delays           = new HashMap<>();
     private final HashMap<IToken<?>, Integer> assignedRequests = new HashMap<>();
+
+    /**
+     * Retry clock: counts request-system ticks. A request's delay is kept as the clock value it falls due at, so a tick
+     * does not touch the requests that are still waiting.
+     */
+    private long ticks;
+
+    /**
+     * Request to the clock value it falls due at.
+     */
+    private final HashMap<IToken<?>, Long> dueAt = new HashMap<>();
+
+    /**
+     * Clock value to the requests that fall due then (in the order they were set).
+     */
+    private final HashMap<Long, LinkedHashSet<IToken<?>>> dueBuckets = new HashMap<>();
 
     public StandardRetryingRequestResolver(final IFactoryController factoryController, final IRequestManager manager)
     {
@@ -125,7 +140,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
         assignedRequests.put(request.getId(), attempt);
         if (RsFlags.smartRetry())
         {
-            delays.put(request.getId(), backoff(attempt));
+            setDelay(request.getId(), backoff(attempt));
             final RequestWaitTracker tracker = RequestWaitTracker.of(manager);
             if (tracker != null)
             {
@@ -133,7 +148,35 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
             }
             return;
         }
-        delays.put(request.getId(), getMaximalDelayBetweenRetriesInTicks());
+        setDelay(request.getId(), getMaximalDelayBetweenRetriesInTicks());
+    }
+
+    /**
+     * Sets the number of ticks until the request is retried.
+     */
+    private void setDelay(final IToken<?> token, final int delay)
+    {
+        removeDelay(token);
+        final long due = ticks + delay;
+        dueAt.put(token, due);
+        dueBuckets.computeIfAbsent(due, k -> new LinkedHashSet<>()).add(token);
+    }
+
+    private void removeDelay(final IToken<?> token)
+    {
+        final Long due = dueAt.remove(token);
+        if (due != null)
+        {
+            final LinkedHashSet<IToken<?>> bucket = dueBuckets.get(due);
+            if (bucket != null)
+            {
+                bucket.remove(token);
+                if (bucket.isEmpty())
+                {
+                    dueBuckets.remove(due);
+                }
+            }
+        }
     }
 
     /**
@@ -154,7 +197,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     {
         if (assignedRequests.containsKey(token))
         {
-            delays.put(token, 1);
+            setDelay(token, 1);
         }
     }
 
@@ -181,7 +224,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     {
         if (assignedRequests.containsKey(request.getId()))
         {
-            delays.remove(request.getId());
+            removeDelay(request.getId());
             assignedRequests.remove(request.getId());
         }
     }
@@ -204,14 +247,24 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     {
         manager.log("Starting reassignment.");
 
-        //Lets decrement all delays
-        getAllAssignedRequests().forEach(t -> {
-            Integer current = delays.remove(t);
-            delays.put(t, --current);
-        });
-
-        //Lets get all keys with 0 residual delay:
-        final Set<IToken<?>> retryables = delays.keySet().stream().filter(t -> delays.get(t) == 0).collect(Collectors.toSet());
+        //Lets advance the clock; the requests whose delay runs out now are the ones due at this value
+        ticks++;
+        final LinkedHashSet<IToken<?>> bucket = dueBuckets.remove(ticks);
+        if (bucket == null)
+        {
+            manager.log("Finished reassignment.");
+            return;
+        }
+        final Set<IToken<?>> retryables = new LinkedHashSet<>();
+        for (final IToken<?> t : bucket)
+        {
+            // as before, only a request that is still held can be retried
+            if (assignedRequests.containsKey(t))
+            {
+                retryables.add(t);
+            }
+            dueAt.remove(t);
+        }
         final Set<IToken<?>> successfully = retryables.stream().filter(t -> {
             final Set<IToken<?>> blackList = RsFlags.smartRetry() || assignedRequests.get(t) < getMaximalTries() ? ImmutableSet.of() : ImmutableSet.of(id);
 
@@ -227,7 +280,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
             catch (Exception ex)
             {
                 assignedRequests.remove(t);
-                delays.remove(t);
+                removeDelay(t);
                 return false;
             }
 
@@ -238,12 +291,12 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
             if (resultingResolver != null && !resultingResolver.equals(getId()))
             {
                 assignedRequests.remove(t);
-                delays.remove(t);
+                removeDelay(t);
             }
             else if (resultingResolver != null && RsFlags.smartRetry())
             {
                 // Back here: wait twice as long before the next fallback retry (events still wake it sooner).
-                delays.put(t, backoff(currentAttempt));
+                setDelay(t, backoff(currentAttempt));
             }
 
             return resultingResolver != null;
@@ -266,7 +319,8 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     public void onSystemReset()
     {
         assignedRequests.clear();
-        delays.clear();
+        dueAt.clear();
+        dueBuckets.clear();
     }
 
     public void setCurrent(@Nullable final IToken<?> token)
@@ -311,12 +365,18 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
         this.assignedRequests.clear();
         this.assignedRequests.putAll(newAssignedRequests);
 
-        this.delays.clear();
-        this.delays.putAll(newDelays);
+        this.dueAt.clear();
+        this.dueBuckets.clear();
+        newDelays.forEach(this::setDelay);
     }
 
+    /**
+     * @return the ticks left until each request is retried (a copy).
+     */
     public Map<IToken<?>, Integer> getDelays()
     {
+        final Map<IToken<?>, Integer> delays = new HashMap<>();
+        dueAt.forEach((token, due) -> delays.put(token, (int) (due - ticks)));
         return delays;
     }
 
