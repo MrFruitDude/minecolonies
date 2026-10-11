@@ -323,7 +323,16 @@ public final class BuilderScaffolding
                 occupied.add(citizen.blockPosition().below());
                 occupied.add(citizen.blockPosition());
             }
-            ScaffoldSweeper.sweep(ai.worker.getCitizenColonyHandler().getColonyOrRegister(), order.getScaffolds(), cell -> !occupied.contains(cell.pos()) && !occupied.contains(cell.pos().above()), 64);
+            // whole towers only: a tower that loses its lower cells while somebody stands on its upper ones would collapse
+            final java.util.Set<BlockPos> free = new java.util.HashSet<>();
+            for (final List<ScaffoldLedger.Cell> tower : order.getScaffolds().components(null))
+            {
+                if (tower.stream().noneMatch(c -> occupied.contains(c.pos()) || occupied.contains(c.pos().above())))
+                {
+                    tower.forEach(c -> free.add(c.pos()));
+                }
+            }
+            ScaffoldSweeper.sweep(ai.worker.getCitizenColonyHandler().getColonyOrRegister(), order.getScaffolds(), cell -> free.contains(cell.pos()), 256);
             found = ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, stock, ai.servesAnyOrder());
         }
         if (found == null)

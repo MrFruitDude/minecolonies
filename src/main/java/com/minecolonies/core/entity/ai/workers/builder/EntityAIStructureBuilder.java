@@ -508,12 +508,27 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         if (walked != 0)
         {
             scaffold.note("walk to " + walk.spot + " ended (" + walked + ") at " + worker.blockPosition() + " for " + target + " nav stuck=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n && n.isStuck())
-                            + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() : "-"));
+                            + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-"));
             // the walk is over, and the block is still out of reach: this spot does not work
             walk.bad.add(walk.spot);
             walk.spot = null;
         }
         return false;
+    }
+
+    private static String pathDescription(final MinecoloniesAdvancedPathNavigate nav)
+    {
+        final var path = nav.getPathResult().getPath();
+        if (path == null)
+        {
+            return "no path";
+        }
+        final StringBuilder sb = new StringBuilder("nodes=" + path.getNodeCount() + " next=" + path.getNextNodeIndex() + " [");
+        for (int i = 0; i < path.getNodeCount() && i < 14; i++)
+        {
+            sb.append(path.getNode(i).asBlockPos().toShortString()).append(' ');
+        }
+        return sb.append(']').toString();
     }
 
     /**
@@ -995,7 +1010,16 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         if (assistOrder != null && !assistOrder.getScaffolds().isEmpty())
         {
             final BlockPos hutPos = building.getPosition();
-            com.minecolonies.core.colony.workorders.scaffold.ScaffoldSweeper.sweep(building.getColony(), assistOrder.getScaffolds(), cell -> hutPos.equals(cell.hut()), Integer.MAX_VALUE);
+            // the towers that are all his; a tower with cells of the lead on it stays for the lead to take down
+            final Set<BlockPos> mine = new HashSet<>();
+            for (final List<com.minecolonies.core.colony.workorders.scaffold.ScaffoldLedger.Cell> tower : assistOrder.getScaffolds().components(null))
+            {
+                if (tower.stream().allMatch(c -> hutPos.equals(c.hut())))
+                {
+                    tower.forEach(c -> mine.add(c.pos()));
+                }
+            }
+            com.minecolonies.core.colony.workorders.scaffold.ScaffoldSweeper.sweep(building.getColony(), assistOrder.getScaffolds(), cell -> mine.contains(cell.pos()), Integer.MAX_VALUE);
         }
         scaffold.reset();
         assistGaveUp.clear();

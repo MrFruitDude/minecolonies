@@ -152,28 +152,33 @@ public final class ScaffoldSweeper
             {
                 continue;
             }
-            final Predicate<ScaffoldLedger.Cell> leftBehind = cell ->
+            // whole towers only: when a builder of a tower is still at work, the cells of other builders on it stay up
+            final java.util.Set<BlockPos> leave = new java.util.HashSet<>();
+            for (final java.util.List<ScaffoldLedger.Cell> tower : builderOrder.getScaffolds().components(null))
             {
-                final long key = ((long) order.getID() << 32) ^ cell.hut().asLong();
-                if (isActive(colony, builderOrder, cell.hut()))
+                boolean released = true;
+                for (final ScaffoldLedger.Cell cell : tower)
                 {
-                    inactive.remove(key);
-                    return false;
+                    final long key = ((long) order.getID() << 32) ^ cell.hut().asLong();
+                    if (isActive(colony, builderOrder, cell.hut()))
+                    {
+                        inactive.remove(key);
+                        released = false;
+                    }
+                    else
+                    {
+                        final long since = inactive.computeIfAbsent(key, k -> now);
+                        released &= now - since >= GRACE_TICKS;
+                    }
                 }
-                final long since = inactive.computeIfAbsent(key, k -> now);
-                return now - since >= GRACE_TICKS;
-            };
-            if (budget > 0)
-            {
-                budget -= sweep(colony, builderOrder.getScaffolds(), leftBehind, budget);
+                if (released)
+                {
+                    tower.forEach(c -> leave.add(c.pos()));
+                }
             }
-            else
+            if (budget > 0 && !leave.isEmpty())
             {
-                // keep the grace book up to date
-                for (final ScaffoldLedger.Cell cell : builderOrder.getScaffolds().all())
-                {
-                    leftBehind.test(cell);
-                }
+                budget -= sweep(colony, builderOrder.getScaffolds(), cell -> leave.contains(cell.pos()), budget);
             }
         }
     }
