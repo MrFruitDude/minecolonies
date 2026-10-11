@@ -14,7 +14,9 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
@@ -25,6 +27,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.UUID;
 
@@ -237,7 +240,10 @@ public interface IColonyManager
     /**
      * Side neutral method to get colony. On clients it returns the view. On servers it returns the colony itself.
      * <p>
-     * Returns a colony or view with the given Player as owner.
+     * Returns a colony or view with the given Player as owner, in the dimension of the world: the player's selected
+     * colony ({@link #getSelectedColony}) if it is in this dimension, otherwise the oldest colony the player owns here,
+     * otherwise null. A player may own several colonies (see {@link #getIColoniesByOwner}); this keeps callers that
+     * want one colony of the player working. On clients only the views the client holds are known.
      *
      * @param w     World.
      * @param owner Entity Player.
@@ -249,7 +255,9 @@ public interface IColonyManager
     /**
      * Side neutral method to get colony. On clients it returns the view. On servers it returns the colony itself.
      * <p>
-     * Returns a colony or view with given Player as owner.
+     * Returns a colony or view with given Player as owner, in the dimension of the world: the player's selected colony
+     * ({@link #getSelectedColony}) if it is in this dimension, otherwise the oldest colony the player owns here,
+     * otherwise null. On clients only the views the client holds are known.
      *
      * @param w     World
      * @param owner UUID of the owner.
@@ -257,6 +265,112 @@ public interface IColonyManager
      */
     @Nullable
     IColony getIColonyByOwner(@NotNull Level w, UUID owner);
+
+    /**
+     * Server side. All colonies a player owns, in every dimension, oldest colony first. Backed by an owner index that
+     * is built per level on first use and kept current when colonies are created, deleted or change owner, so the cost
+     * is the size of the answer, not a scan of all colonies.
+     *
+     * @param owner UUID of the owner.
+     * @return a new list, empty if the player owns none.
+     */
+    @NotNull
+    List<IColony> getIColoniesByOwner(@NotNull UUID owner);
+
+    /**
+     * Server side. The colony the player has selected: the one set with {@link #setSelectedColony}, or, for a player
+     * without a (still valid) selection, the oldest colony the player owns. The selection is saved per player.
+     *
+     * @param owner UUID of the owner.
+     * @return the selected colony, null if the player owns none.
+     */
+    @Nullable
+    IColony getSelectedColony(@NotNull UUID owner);
+
+    /**
+     * Server side. Selects one of the colonies the player owns, and tells the player's client (see
+     * {@link OwnedColonySummary}). The selection is saved. Deleting or abandoning the selected colony drops the
+     * selection (the oldest colony is selected again).
+     *
+     * @param owner UUID of the owner.
+     * @param dim   dimension of the colony.
+     * @param id    colony id.
+     * @return true if the colony exists and is owned by the player, false (nothing changes) otherwise.
+     */
+    boolean setSelectedColony(@NotNull UUID owner, @NotNull ResourceKey<Level> dim, int id);
+
+    /**
+     * How many colonies one player may own: the {@code colonies.maxPerPlayer} config, 1 by default.
+     *
+     * @return the limit, at least 1.
+     */
+    int getMaxColoniesPerPlayer();
+
+    /**
+     * Server side. Asks whether the player may found one more colony at the position: refuses when the player owns
+     * {@link #getMaxColoniesPerPlayer()} colonies already, and posts the cancellable
+     * {@link com.minecolonies.api.eventbus.events.colony.ColonyFoundingEvent} for everything else to veto. Distance,
+     * claim and spawn rules are not part of this check (they are checked where the founding happens, as before).
+     *
+     * @param level   the level of the new colony.
+     * @param pos     the town hall position.
+     * @param player  the founding player.
+     * @param preview true if this only decides whether the founding screen opens (the event is then marked preview).
+     * @return empty if the player may found the colony, otherwise the reason to show the player.
+     */
+    @NotNull
+    Optional<Component> checkFounding(@NotNull ServerLevel level, @NotNull BlockPos pos, @NotNull Player player, boolean preview);
+
+    /**
+     * Client side. The colonies the local player owns, as last sent by the server (on login and on every change),
+     * also for colonies the client is not subscribed to. Empty on a dedicated server.
+     *
+     * @return an unmodifiable list, oldest colony first; the selected colony has {@link OwnedColonySummary#selected()} set.
+     */
+    @NotNull
+    List<OwnedColonySummary> getOwnedColonySummaries();
+
+    /**
+     * Server side. The summaries {@link #getOwnedColonySummaries()} shows a player, built from the current state.
+     *
+     * @param owner UUID of the owner.
+     * @return the summaries, oldest colony first.
+     */
+    @NotNull
+    List<OwnedColonySummary> computeOwnedColonySummaries(@NotNull UUID owner);
+
+    /**
+     * Server side. Sends a player their owned colonies, when they differ from what the player got last (or always if forced).
+     * Done on login, when the owned colonies or the selection change, and by a periodic check for the rest (name, citizens, flag).
+     *
+     * @param player the player.
+     * @param force  send even if nothing changed.
+     */
+    void syncOwnedColonies(@NotNull ServerPlayer player, boolean force);
+
+    /**
+     * Server side. What the player was sent last by {@link #syncOwnedColonies}.
+     *
+     * @param owner UUID of the player.
+     * @return the list, null if nothing was sent since the player logged in.
+     */
+    @Nullable
+    List<OwnedColonySummary> getLastSentOwnedColonySummaries(@NotNull UUID owner);
+
+    /**
+     * Client side. Stores what the server sent.
+     *
+     * @param summaries the owned colonies.
+     */
+    void handleOwnedColoniesMessage(@NotNull List<OwnedColonySummary> summaries);
+
+    /**
+     * Called by the permissions when the owner of a colony changes (founding, setowner, abandon), to keep the owner index current.
+     *
+     * @param colony        the colony.
+     * @param previousOwner its owner before, null if it had none.
+     */
+    void onColonyOwnerChanged(@NotNull IColony colony, @Nullable UUID previousOwner);
 
     /**
      * Returns the minimum distance between two town halls, to not make colonies collide.

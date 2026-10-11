@@ -65,13 +65,14 @@ public final class TeleportHelper
     }
 
     /**
-     * Teleports the player to his home colony.
+     * Teleports the player to his home colony: the colony the player has selected (any dimension), which is the oldest
+     * colony the player owns until they select another.
      *
      * @param player the player to teleport home.
      */
     public static void homeTeleport(@NotNull final ServerPlayer player)
     {
-        final IColony colony = IColonyManager.getInstance().getIColonyByOwner(player.level(), player);
+        final IColony colony = IColonyManager.getInstance().getSelectedColony(player.getUUID());
         if (colony == null)
         {
             MessageUtils.format(COMMAND_COLONY_ID_NOT_FOUND).sendTo(player);

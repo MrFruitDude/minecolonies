@@ -15,6 +15,8 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 import net.minecraft.sounds.SoundEvents;
 
 import static com.minecolonies.api.util.constant.WindowConstants.*;
@@ -37,10 +39,23 @@ public class WindowTownHallDeleteAbandonColony extends AbstractWindowSkeleton
      */
     private final BlockPos pos;
 
-    public WindowTownHallDeleteAbandonColony(final BlockPos pos, final String oldColonyName, final BlockPos oldColonyPos)
+    /**
+     * The colony this window deletes or abandons: the server names it, so the message acts on this very colony.
+     */
+    private final int                oldColonyId;
+    private final ResourceKey<Level> oldColonyDimension;
+
+    public WindowTownHallDeleteAbandonColony(
+      final BlockPos pos,
+      final String oldColonyName,
+      final BlockPos oldColonyPos,
+      final int oldColonyId,
+      final ResourceKey<Level> oldColonyDimension)
     {
         super(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gui/townhall/windowdeleteabandoncolony.xml"));
         this.pos = pos;
+        this.oldColonyId = oldColonyId;
+        this.oldColonyDimension = oldColonyDimension;
         mc.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.BOOK_PAGE_TURN, 1.0F));
 
         registerButton(BUTTON_CANCEL, this::close);
@@ -66,14 +81,14 @@ public class WindowTownHallDeleteAbandonColony extends AbstractWindowSkeleton
 
     private void confirmAbandonColony()
     {
-        new ColonyAbandonOwnMessage().sendToServer();
+        new ColonyAbandonOwnMessage(oldColonyDimension, oldColonyId).sendToServer();
         new GetColonyInfoMessage(pos).sendToServer();
         close();
     }
 
     private void confirmDeleteColony()
     {
-        new ColonyDeleteOwnMessage().sendToServer();
+        new ColonyDeleteOwnMessage(oldColonyDimension, oldColonyId).sendToServer();
         new GetColonyInfoMessage(pos).sendToServer();
         close();
     }

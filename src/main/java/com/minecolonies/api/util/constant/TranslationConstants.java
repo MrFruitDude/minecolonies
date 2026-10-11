@@ -665,6 +665,8 @@ public final class TranslationConstants
     @NonNls
     public static final String MESSAGE_COLONY_REACTIVATED                         = "com.minecolonies.coremod.progress.colony_reactivated";
     @NonNls
+    public static final String COLONY_LIMIT_REACHED                               = "com.minecolonies.core.founding.colonylimit";
+    public static final String COLONY_FOUNDING_VETOED                             = "com.minecolonies.core.founding.vetoed";
     public static final String WARNING_COLONY_FOUNDING_FAILED                     = "com.minecolonies.coremod.gui.colony.create.failed";
     @NonNls
     public static final String WARNING_CRUSHER_DAILY_LIMIT                        = "com.minecolonies.coremod.crusher.toomuch";

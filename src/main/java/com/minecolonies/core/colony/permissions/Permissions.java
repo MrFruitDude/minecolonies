@@ -498,6 +498,7 @@ public class Permissions implements IPermissions
     @Override
     public boolean setOwner(final Player player)
     {
+        final UUID previousOwner = ownerUUID;
         players.remove(getOwner());
 
         ownerName = player.getName().getString();
@@ -508,7 +509,22 @@ public class Permissions implements IPermissions
         fullyAbandoned = false;
 
         markDirty();
+        notifyOwnerChanged(previousOwner);
         return true;
+    }
+
+    /**
+     * Tells the colony manager the owner changed, so its owner index stays current.
+     *
+     * @param previousOwner the owner before, or null if there was none.
+     */
+    private void notifyOwnerChanged(@Nullable final UUID previousOwner)
+    {
+        final IMinecoloniesAPI api = IMinecoloniesAPI.getInstance();
+        if (api != null && api.getColonyManager() != null)
+        {
+            api.getColonyManager().onColonyOwnerChanged(colony, previousOwner);
+        }
     }
 
     /**
@@ -517,6 +533,7 @@ public class Permissions implements IPermissions
     @Override
     public void setOwnerAbandoned()
     {
+        final UUID previousOwner = ownerUUID;
         players.remove(ownerUUID);
 
         ownerName = "[abandoned]";
@@ -526,6 +543,7 @@ public class Permissions implements IPermissions
 
         checkFullyAbandoned();
         markDirty();
+        notifyOwnerChanged(previousOwner);
     }
 
     /**

@@ -39,10 +39,12 @@ public class FMLEventHandler
     @SubscribeEvent
     public static void onPlayerLogin(@NotNull final PlayerEvent.PlayerLoggedInEvent event)
     {
-        if (event.getEntity() instanceof ServerPlayer)
+        if (event.getEntity() instanceof final ServerPlayer player)
         {
-            // This automatically reloads the owner of the colony if failed.
-            IColonyManager.getInstance().getIColonyByOwner(event.getEntity().level(), event.getEntity());
+            // Looking up the owned colonies reloads the owner of a colony if it failed to load, and builds the owner index.
+            // The client then learns which colonies the player owns, also the ones it is not subscribed to.
+            IColonyManager.getInstance().getIColoniesByOwner(player.getUUID());
+            IColonyManager.getInstance().syncOwnedColonies(player, true);
             //ColonyManager.syncAllColoniesAchievements();
         }
     }

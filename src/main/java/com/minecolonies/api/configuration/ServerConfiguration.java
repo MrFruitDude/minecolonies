@@ -22,6 +22,11 @@ public class ServerConfiguration extends AbstractConfiguration
     public final IntValue     initialCitizenAmount;
     public final BooleanValue allowInfiniteSupplyChests;
     public final BooleanValue allowInfiniteColonies;
+
+    /**
+     * How many colonies one player may own at once (all dimensions). 1 is the classic MineColonies rule.
+     */
+    public final IntValue maxColoniesPerPlayer;
     public final BooleanValue allowOtherDimColonies;
     public final IntValue     maxCitizenPerColony;
     public final BooleanValue enableInDevelopmentFeatures;
@@ -169,6 +174,10 @@ public class ServerConfiguration extends AbstractConfiguration
         maxTreeSize = defineInteger("maxtreesize", 400, 1, 1000);
         noSupplyPlacementRestrictions = defineBoolean("nosupplyplacementrestrictions", false);
         skyRaiders = defineBoolean("skyraiders", false);
+
+        swapToCategory("colonies");
+        // Founding more than one colony stays refused by the founding rules of a mod that raises this; the config alone only lifts the cap.
+        maxColoniesPerPlayer = defineInteger("maxPerPlayer", 1, 1, 64);
 
         swapToCategory("research");
         researchCreativeCompletion = defineBoolean("researchcreativecompletion", true);

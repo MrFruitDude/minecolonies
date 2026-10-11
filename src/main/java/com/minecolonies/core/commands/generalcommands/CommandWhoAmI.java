@@ -8,6 +8,9 @@ import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.core.BlockPos;
 
 import static com.minecolonies.api.util.constant.translation.CommandTranslationConstants.COMMAND_WHO_AM_I_HAS_COLONY;
@@ -29,19 +32,27 @@ public class CommandWhoAmI implements IMCCommand
             return 0;
         }
 
-        final IColony colony = IColonyManager.getInstance().getIColonyByOwner(sender.level(), sender.getUUID());
+        // Every colony the player owns, the selected one first.
+        final List<IColony> owned = new ArrayList<>(IColonyManager.getInstance().getIColoniesByOwner(sender.getUUID()));
+        final IColony selected = IColonyManager.getInstance().getSelectedColony(sender.getUUID());
+        if (selected != null && owned.remove(selected))
+        {
+            owned.add(0, selected);
+        }
 
-        if (colony == null)
+        if (owned.isEmpty())
         {
             MessageUtils.format(COMMAND_WHO_AM_I_NO_COLONY).sendTo((Player) sender);
             return 0;
         }
 
-        final BlockPos pos = colony.getCenter();
-        final String colonyName = colony.getName();
         final String playerName = sender.getDisplayName().getString();
-        final String posString = "x: " + pos.getX() + " y: " + pos.getY() + " z: " + pos.getZ();
-        MessageUtils.format(COMMAND_WHO_AM_I_HAS_COLONY, playerName, colonyName, colony.getID(), posString).sendTo((Player) sender);
+        for (final IColony colony : owned)
+        {
+            final BlockPos pos = colony.getCenter();
+            final String posString = "x: " + pos.getX() + " y: " + pos.getY() + " z: " + pos.getZ();
+            MessageUtils.format(COMMAND_WHO_AM_I_HAS_COLONY, playerName, colony.getName(), colony.getID(), posString).sendTo((Player) sender);
+        }
         return 1;
     }
 

@@ -19,6 +19,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import java.util.Optional;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import static com.minecolonies.api.util.constant.BuildingConstants.DEACTIVATED;
@@ -70,15 +71,19 @@ public class GetColonyInfoMessage extends AbstractServerPlayMessage
             return;
         }
 
-        if (IColonyManager.getInstance().getIColonyByOwner(world, sender) instanceof Colony colony)
+        // A player who owns as many colonies as allowed has to give one up first: the selected one is offered.
+        final IColonyManager manager = IColonyManager.getInstance();
+        if (manager.getIColoniesByOwner(sender.getUUID()).size() >= manager.getMaxColoniesPerPlayer()
+              && manager.getSelectedColony(sender.getUUID()) instanceof Colony colony)
         {
-            new OpenDeleteAbandonColonyMessage(pos, colony.getName(), colony.getCenter(), colony.getID()).sendToPlayer(sender);
+            new OpenDeleteAbandonColonyMessage(pos, colony.getName(), colony.getCenter(), colony.getID(), colony.getDimension()).sendToPlayer(sender);
             return;
         }
 
         final IColony nextColony = IColonyManager.getInstance().getClosestColony(world, pos);
         if (IColonyManager.getInstance().isFarEnoughFromColonies(world, pos))
         {
+            Optional<Component> founding;
             final double spawnDistance = Math.sqrt(BlockPosUtil.getDistanceSquared2D(pos, world.getLevelData().getRespawnData().pos()));
             if (spawnDistance < MineColonies.getConfig().getServer().minDistanceFromWorldSpawn.get())
             {
@@ -87,6 +92,10 @@ public class GetColonyInfoMessage extends AbstractServerPlayMessage
             else if (spawnDistance > MineColonies.getConfig().getServer().maxDistanceFromWorldSpawn.get())
             {
                 new OpenCantFoundColonyWarningMessage(Component.translatable("com.minecolonies.core.founding.toofarfromspawn", (int) (spawnDistance - MineColonies.getConfig().getServer().maxDistanceFromWorldSpawn.get())), pos, true).sendToPlayer(sender);
+            }
+            else if ((founding = manager.checkFounding(sender.level(), pos, sender, true)).isPresent())
+            {
+                new OpenCantFoundColonyWarningMessage(founding.get(), pos, false).sendToPlayer(sender);
             }
             else if (world.getBlockEntity(pos) instanceof TileEntityColonyBuilding townhall && townhall.getPositionedTags().containsKey(BlockPos.ZERO) && townhall.getPositionedTags().get(BlockPos.ZERO).contains(DEACTIVATED))
             {

@@ -75,6 +75,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static com.minecolonies.api.colony.ColonyState.*;
 import static com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.TickRateConstants.MAX_TICKRATE;
@@ -337,6 +338,26 @@ public class Colony implements IColony
     private int forceLoadTimer = 0;
 
     /**
+     * Last founding time handed out, so two colonies created in the same millisecond still get distinct, increasing times.
+     */
+    private static final AtomicLong LAST_FOUNDED_TIME = new AtomicLong();
+
+    /**
+     * Most chunks a force active colony keeps loaded (a bound, not a target: only chunks with buildings count).
+     */
+    public static final int MAX_FORCE_ACTIVE_CHUNKS = 64;
+
+    /**
+     * When the colony was founded, epoch milliseconds, 0 if unknown (colony saved before this was recorded).
+     */
+    private long foundedTime = 0L;
+
+    /**
+     * Set by {@link #setForceActive(boolean)}. Not saved.
+     */
+    private volatile boolean forceActive = false;
+
+    /**
      * The texture set of the colony.
      */
     private String textureStyle = "default";
@@ -392,6 +413,7 @@ public class Colony implements IColony
 
         if (world != null)
         {
+            this.foundedTime = LAST_FOUNDED_TIME.updateAndGet(last -> Math.max(System.currentTimeMillis(), last + 1));
             this.colonyFlag = new BannerPatternLayers.Builder().add(Utils.getRegistryValue(BannerPatterns.BASE, world), DyeColor.WHITE).build();
             this.dimensionId = world.dimension();
             onWorldLoad(world);
@@ -451,7 +473,7 @@ public class Colony implements IColony
         }
         packageManager.updateAwayTime();
 
-        if (!packageManager.getCloseSubscribers().isEmpty() || (loadedChunks.size() > 40 && !packageManager.getImportantColonyPlayers().isEmpty()))
+        if (isForceActiveEffective() || !packageManager.getCloseSubscribers().isEmpty() || (loadedChunks.size() > 40 && !packageManager.getImportantColonyPlayers().isEmpty()))
         {
             isDirty = true;
             return ACTIVE;
@@ -557,6 +579,12 @@ public class Colony implements IColony
     {
         if (getConfig().getServer().forceLoadColony.get())
         {
+            if (isForceActiveEffective())
+            {
+                keepBuildingChunksLoaded();
+                return;
+            }
+
             for (final ServerPlayer sub : getPackageManager().getCloseSubscribers())
             {
                 if (getPermissions().getRank(sub).isColonyManager())
@@ -881,6 +909,7 @@ public class Colony implements IColony
             getRequestManager().deserializeNBT(provider, compound.getCompoundOrEmpty(TAG_REQUESTMANAGER));
         }
         this.lastOnlineTime = compound.getLongOr(TAG_LAST_ONLINE, 0L);
+        this.foundedTime = compound.getLongOr(TAG_FOUNDED_TIME, 0L);
         if (compound.contains(TAG_COL_TEXT))
         {
             this.textureStyle = compound.getStringOr(TAG_COL_TEXT, "");
@@ -1021,6 +1050,7 @@ public class Colony implements IColony
         compound.putInt(TAG_TEAM_COLOR, colonyTeamColor.ordinal());
         compound.put(TAG_FLAG_PATTERNS, Utils.serializeCodecMess(BannerPatternLayers.CODEC, provider, colonyFlag));
         compound.putLong(TAG_LAST_ONLINE, lastOnlineTime);
+        compound.putLong(TAG_FOUNDED_TIME, foundedTime);
         compound.putString(TAG_COL_TEXT, textureStyle);
         compound.putString(TAG_COL_NAME_STYLE, nameStyle);
         compound.putInt(COLONY_DAY, day);
@@ -1962,6 +1992,94 @@ public class Colony implements IColony
     public boolean isActive()
     {
         return colonyStateMachine.getState() != INACTIVE;
+    }
+
+    @Override
+    public void setForceActive(final boolean forceActive)
+    {
+        if (this.forceActive == forceActive)
+        {
+            return;
+        }
+        this.forceActive = forceActive;
+        if (forceActive)
+        {
+            if (getConfig().getServer().forceLoadColony.get() && isForceActiveEffective())
+            {
+                keepBuildingChunksLoaded();
+            }
+        }
+        else
+        {
+            // Let the tickets expire at the next load timer update, unless a manager standing in the colony keeps them alive.
+            forceLoadTimer = Math.min(forceLoadTimer, MAX_TICKRATE);
+        }
+        refreshState();
+    }
+
+    @Override
+    public boolean isForceActive()
+    {
+        return forceActive;
+    }
+
+    @Override
+    public long getFoundedTime()
+    {
+        return foundedTime;
+    }
+
+    /**
+     * Force active only counts while a manager of the colony is online, so the flag can never simulate a colony nobody watches.
+     */
+    private boolean isForceActiveEffective()
+    {
+        return forceActive && world != null && !packageManager.getImportantColonyPlayers().isEmpty();
+    }
+
+    /**
+     * Applies the colony state now instead of at the next state check.
+     */
+    private void refreshState()
+    {
+        if (colonyStateMachine == null || world == null)
+        {
+            return;
+        }
+        colonyStateMachine.transitionToNext(new TickingTransition<>(colonyStateMachine.getState(), () -> true, this::updateState, UPDATE_STATE_INTERVAL));
+    }
+
+    /**
+     * Keeps the chunks with buildings loaded through the colony's force load tickets, as a manager standing in the colony does.
+     * Bounded by {@link #MAX_FORCE_ACTIVE_CHUNKS}; the town hall chunk comes first.
+     */
+    private void keepBuildingChunksLoaded()
+    {
+        this.forceLoadTimer = getConfig().getServer().loadtime.get() * 20 * 60;
+        final Set<ChunkPos> wanted = new LinkedHashSet<>();
+        if (buildingManager.getTownHall() != null)
+        {
+            wanted.add(ChunkPos.containing(buildingManager.getTownHall().getPosition()));
+        }
+        for (final BlockPos buildingPos : buildingManager.getBuildings().keySet())
+        {
+            if (wanted.size() >= MAX_FORCE_ACTIVE_CHUNKS)
+            {
+                break;
+            }
+            wanted.add(ChunkPos.containing(buildingPos));
+        }
+
+        for (final ChunkPos chunkPos : wanted)
+        {
+            final long packed = chunkPos.pack();
+            pendingToUnloadChunks.remove(packed);
+            if (ticketedChunks.add(packed))
+            {
+                ticketedChunksDirty = true;
+                world.getChunkSource().addTicketWithRadius(KEEP_LOADED_TYPE, chunkPos, 2);
+            }
+        }
     }
 
     @Override

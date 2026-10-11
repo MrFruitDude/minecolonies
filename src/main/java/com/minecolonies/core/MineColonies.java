@@ -407,6 +407,8 @@ public class MineColonies
         CreateColonyMessage.TYPE.register(registry);
         ColonyDeleteOwnMessage.TYPE.register(registry);
         ColonyViewRemoveMessage.TYPE.register(registry);
+        OwnedColoniesMessage.TYPE.register(registry);
+        SelectColonyMessage.TYPE.register(registry);
         GiveToolMessage.TYPE.register(registry);
         GetColonyInfoMessage.TYPE.register(registry);
         MarkStoryReadOnItem.TYPE.register(registry);

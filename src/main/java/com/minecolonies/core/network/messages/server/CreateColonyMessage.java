@@ -16,6 +16,7 @@ import com.minecolonies.api.util.MessageUtils.MessagePriority;
 import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.core.MineColonies;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -23,6 +24,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
+import java.util.Optional;
 
 import static com.minecolonies.api.util.constant.BuildingConstants.DEACTIVATED;
 import static com.minecolonies.api.util.constant.TranslationConstants.*;
@@ -149,9 +151,13 @@ public class CreateColonyMessage extends AbstractServerPlayMessage
             return;
         }
 
-        final IColony ownedColony = IColonyManager.getInstance().getIColonyByOwner(world, sender);
+        // A player may found colonies up to colonies.maxPerPlayer (1 unless raised), and a listener of
+        // ColonyFoundingEvent may still refuse this one.
+        final IColonyManager manager = IColonyManager.getInstance();
+        final boolean atLimit = manager.getIColoniesByOwner(sender.getUUID()).size() >= manager.getMaxColoniesPerPlayer();
+        final Optional<Component> refusal = manager.checkFounding(world, townHall, sender, false);
 
-        if (ownedColony == null)
+        if (refusal.isEmpty())
         {
             final IColony createdColony = IColonyManager.getInstance().createColony(world, townHall, sender, colonyName, pack);
             final IBuilding building = createdColony.getServerBuildingManager().addNewBuilding((TileEntityColonyBuilding) tileEntity, world);
@@ -175,10 +181,21 @@ public class CreateColonyMessage extends AbstractServerPlayMessage
             return;
         }
 
-        ownedColony.getPackageManager().sendColonyViewPackets();
-        ownedColony.getPackageManager().sendPermissionsPackets();
-        MessageUtils.format(WARNING_COLONY_FOUNDING_FAILED)
-          .withPriority(MessagePriority.DANGER)
-          .sendTo(sender);
+        if (atLimit)
+        {
+            final IColony ownedColony = manager.getSelectedColony(sender.getUUID());
+            if (ownedColony != null)
+            {
+                ownedColony.getPackageManager().sendColonyViewPackets();
+                ownedColony.getPackageManager().sendPermissionsPackets();
+            }
+            MessageUtils.format(WARNING_COLONY_FOUNDING_FAILED)
+              .withPriority(MessagePriority.DANGER)
+              .sendTo(sender);
+        }
+        else
+        {
+            sender.sendSystemMessage(refusal.get());
+        }
     }
 }

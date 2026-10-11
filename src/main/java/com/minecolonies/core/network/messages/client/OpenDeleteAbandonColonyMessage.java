@@ -5,7 +5,11 @@ import com.ldtteam.common.network.PlayMessageType;
 import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.core.client.gui.townhall.WindowTownHallDeleteAbandonColony;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
@@ -37,6 +41,11 @@ public class OpenDeleteAbandonColonyMessage  extends AbstractClientPlayMessage
     private int oldColonyId;
 
     /**
+     * Old colony dimension.
+     */
+    private ResourceKey<Level> oldColonyDimension;
+
+    /**
      * Default constructor
      **/
     public OpenDeleteAbandonColonyMessage(RegistryFriendlyByteBuf buf, final PlayMessageType<?> type)
@@ -46,21 +55,23 @@ public class OpenDeleteAbandonColonyMessage  extends AbstractClientPlayMessage
         this.oldColonyName = buf.readUtf(32767);
         this.oldColonyPos = buf.readBlockPos();
         this.oldColonyId = buf.readInt();
+        this.oldColonyDimension = ResourceKey.create(Registries.DIMENSION, Identifier.parse(buf.readUtf(256)));
     }
 
-    public OpenDeleteAbandonColonyMessage(final BlockPos currentTownHallPos, final String oldColonyName, final BlockPos oldColonyPos, final int oldColonyId)
+    public OpenDeleteAbandonColonyMessage(final BlockPos currentTownHallPos, final String oldColonyName, final BlockPos oldColonyPos, final int oldColonyId, final ResourceKey<Level> oldColonyDimension)
     {
         super(TYPE);
         this.currentTownHallPos = currentTownHallPos;
         this.oldColonyName = oldColonyName;
         this.oldColonyPos = oldColonyPos;
         this.oldColonyId = oldColonyId;
+        this.oldColonyDimension = oldColonyDimension;
     }
 
     @Override
     protected void onExecute(final IPayloadContext ctxIn, final Player player)
     {
-        new WindowTownHallDeleteAbandonColony(currentTownHallPos, oldColonyName, oldColonyPos).open();
+        new WindowTownHallDeleteAbandonColony(currentTownHallPos, oldColonyName, oldColonyPos, oldColonyId, oldColonyDimension).open();
     }
 
     @Override
@@ -70,5 +81,6 @@ public class OpenDeleteAbandonColonyMessage  extends AbstractClientPlayMessage
         buf.writeUtf(oldColonyName);
         buf.writeBlockPos(oldColonyPos);
         buf.writeInt(oldColonyId);
+        buf.writeUtf(oldColonyDimension.identifier().toString());
     }
 }

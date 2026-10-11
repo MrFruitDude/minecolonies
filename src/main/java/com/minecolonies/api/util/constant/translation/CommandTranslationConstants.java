@@ -77,6 +77,7 @@ public class CommandTranslationConstants
     public static final String COMMAND_CAN_RAIDER_SPAWN_SUCCESS              = "com.minecolonies.command.canspawnraider.success";
     @NonNls
     public static final String COMMAND_OWNER_CHANGE_SUCCESS                  = "com.minecolonies.command.ownerchange.success";
+    public static final String COMMAND_OWNER_CHANGE_LIMIT                    = "com.minecolonies.command.ownerchange.limit";
     @NonNls
     public static final String COMMAND_CLAIM_SUCCESS                         = "com.minecolonies.command.claim.success";
     @NonNls

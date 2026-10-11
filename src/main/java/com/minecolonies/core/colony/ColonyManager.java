@@ -7,6 +7,7 @@ import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.colony.IColonyView;
+import com.minecolonies.api.colony.OwnedColonySummary;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.claim.ChunkClaimData;
@@ -20,6 +21,7 @@ import com.minecolonies.api.crafting.IRecipeManager;
 import com.minecolonies.api.eventbus.events.ColonyManagerLoadedModEvent;
 import com.minecolonies.api.eventbus.events.ColonyManagerUnloadedModEvent;
 import com.minecolonies.api.eventbus.events.colony.ColonyDeletedModEvent;
+import com.minecolonies.api.eventbus.events.colony.ColonyFoundingEvent;
 import com.minecolonies.api.eventbus.events.colony.ColonyViewUpdatedModEvent;
 import com.minecolonies.api.sounds.SoundManager;
 import com.minecolonies.api.util.BlockPosUtil;
@@ -30,6 +32,7 @@ import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.client.gui.WindowReactivateBuilding;
 import com.minecolonies.core.colony.requestsystem.management.manager.StandardRecipeManager;
 import com.minecolonies.core.network.messages.client.colony.ColonyViewRemoveMessage;
+import com.minecolonies.core.network.messages.client.colony.OwnedColoniesMessage;
 import com.minecolonies.core.util.BackUpHelper;
 import com.minecolonies.core.util.ChunkDataHelper;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -38,8 +41,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -59,6 +66,8 @@ import java.util.stream.Collectors;
 
 import static com.minecolonies.api.util.constant.ColonyManagerConstants.*;
 import static com.minecolonies.api.util.constant.Constants.BLOCKS_PER_CHUNK;
+import static com.minecolonies.api.util.constant.TranslationConstants.COLONY_FOUNDING_VETOED;
+import static com.minecolonies.api.util.constant.TranslationConstants.COLONY_LIMIT_REACHED;
 import static com.minecolonies.api.util.constant.NbtTagConstants.TAG_COMPATABILITY_MANAGER;
 import static com.minecolonies.core.MineColonies.getConfig;
 
@@ -104,6 +113,31 @@ public final class ColonyManager implements IColonyManager
      */
     private SoundManager clientSoundManager;
 
+    /**
+     * Server side: owner to owned colonies.
+     */
+    private final OwnerIndex ownerIndex = new OwnerIndex();
+
+    /**
+     * Server side: what each player was sent last as their owned colonies.
+     */
+    private final Map<UUID, List<OwnedColonySummary>> lastSentOwned = new HashMap<>();
+
+    /**
+     * Server side: owners whose owned colonies changed and who are told on the next server tick.
+     */
+    private final Set<UUID> dirtyOwners = new LinkedHashSet<>();
+
+    /**
+     * Client side: the colonies the local player owns, as last sent by the server.
+     */
+    private volatile List<OwnedColonySummary> clientOwnedColonies = List.of();
+
+    /**
+     * How often the owned colonies of the online players are compared with what they were sent, in ticks.
+     */
+    private static final int OWNED_SYNC_INTERVAL = 100;
+
     @Nullable
     private IServerColonySaveData getColonySaveData(final ServerLevel w)
     {
@@ -138,6 +172,8 @@ public final class ColonyManager implements IColonyManager
         }
 
         ChunkDataHelper.claimColonyChunks(w, true, (Colony) colony, colony.getCenter());
+        ownerIndex.add(colony);
+        markOwnerDirty(colony.getPermissions().getOwner());
         return colony;
     }
 
@@ -228,6 +264,10 @@ public final class ColonyManager implements IColonyManager
             }
 
             IMinecoloniesAPI.getInstance().getEventBus().post(new ColonyDeletedModEvent(colony));
+            final UUID formerOwner = colony.getPermissions().getOwner();
+            ownerIndex.remove(colony.getDimension(), id, formerOwner);
+            dropSelection(formerOwner, colony.getDimension(), id);
+            markOwnerDirty(formerOwner);
             cap.deleteColony(id);
             BackUpHelper.markColonyDeleted(colony.getID(), colony.getDimension());
             colony.getImportantMessageEntityPlayers()
@@ -554,11 +594,16 @@ public final class ColonyManager implements IColonyManager
     @Nullable
     public IColony getIColonyByOwner(@NotNull final Level w, final UUID owner)
     {
-        return w.isClientSide() ? getColonyViewByOwner(owner, w.dimension()) : getColonyByOwner(owner);
+        if (owner == null)
+        {
+            return null;
+        }
+        return w.isClientSide() ? getColonyViewByOwner(owner, w.dimension()) : getColonyByOwner(owner, w.dimension());
     }
 
     /**
-     * Returns a ColonyView with specific owner.
+     * Returns a ColonyView with specific owner: the selected colony if it is in the dimension, otherwise the owned colony
+     * in the dimension with the lowest id. Only knows the views the client holds.
      *
      * @param owner     UUID of the owner.
      * @param dimension the dimension id.
@@ -566,38 +611,323 @@ public final class ColonyManager implements IColonyManager
      */
     private IColony getColonyViewByOwner(final UUID owner, final ResourceKey<Level> dimension)
     {
+        IColonyView first = null;
         if (colonyViews.containsKey(dimension))
         {
+            final OwnedColonySummary selected = clientOwnedColonies.stream().filter(OwnedColonySummary::selected).findFirst().orElse(null);
             for (@NotNull final IColonyView c : colonyViews.get(dimension))
             {
                 final ColonyPlayer p = c.getPlayers().get(owner);
                 if (p != null && p.getRank().equals(c.getPermissions().getRankOwner()))
                 {
-                    return c;
+                    if (selected != null && selected.id() == c.getID() && selected.dimension().equals(dimension))
+                    {
+                        return c;
+                    }
+                    if (first == null || c.getID() < first.getID())
+                    {
+                        first = c;
+                    }
                 }
             }
         }
 
-        return null;
+        return first;
     }
 
+    /**
+     * Server: the owner's selected colony if it is in the dimension, otherwise their oldest colony in the dimension.
+     */
     @Nullable
-    private IColony getColonyByOwner(@Nullable final UUID owner)
+    private IColony getColonyByOwner(@NotNull final UUID owner, @NotNull final ResourceKey<Level> dimension)
     {
-        if (owner == null)
+        final List<IColony> owned = getIColoniesByOwner(owner);
+        if (owned.isEmpty())
         {
             return null;
         }
-
-        for (final IColony colony : getAllColonies())
+        final IColony selected = selectedOf(owner, owned);
+        if (selected != null && selected.getDimension().equals(dimension))
         {
-            if (colony.getPermissions().getOwner().equals(owner))
+            return selected;
+        }
+        for (final IColony colony : owned)
+        {
+            if (colony.getDimension().equals(dimension))
             {
                 return colony;
             }
         }
-
         return null;
+    }
+
+    /**
+     * Binds the owner index to the current server and builds it for the levels that are not indexed yet.
+     *
+     * @return the server, null if there is none.
+     */
+    @Nullable
+    private MinecraftServer ensureIndexed()
+    {
+        final MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null)
+        {
+            return null;
+        }
+        ownerIndex.bind(server);
+        for (final ServerLevel level : server.getAllLevels())
+        {
+            if (!ownerIndex.isIndexed(level.dimension()))
+            {
+                ownerIndex.rebuild(level.dimension(), getColonies(level));
+            }
+        }
+        return server;
+    }
+
+    @Override
+    @NotNull
+    public List<IColony> getIColoniesByOwner(@NotNull final UUID owner)
+    {
+        final List<IColony> result = new ArrayList<>();
+        if (ensureIndexed() == null)
+        {
+            return result;
+        }
+        for (final OwnerIndex.Entry entry : ownerIndex.entries(owner))
+        {
+            final IColony colony = getColonyByDimension(entry.id(), entry.dimension());
+            if (colony != null && owner.equals(colony.getPermissions().getOwner()))
+            {
+                result.add(colony);
+            }
+            else
+            {
+                // Stale: deleted, or owned by someone else by a path that did not tell the manager.
+                ownerIndex.remove(entry.dimension(), entry.id(), owner);
+                if (colony != null)
+                {
+                    ownerIndex.add(colony);
+                }
+            }
+        }
+        return result;
+    }
+
+    @Override
+    @Nullable
+    public IColony getSelectedColony(@NotNull final UUID owner)
+    {
+        final List<IColony> owned = getIColoniesByOwner(owner);
+        return owned.isEmpty() ? null : selectedOf(owner, owned);
+    }
+
+    /**
+     * The saved selection of the owner if it is one of the owned colonies, else the oldest.
+     */
+    @Nullable
+    private IColony selectedOf(@NotNull final UUID owner, @NotNull final List<IColony> owned)
+    {
+        final MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server != null)
+        {
+            final SelectedColonySavedData.Selection selection = SelectedColonySavedData.get(server).get(owner);
+            if (selection != null)
+            {
+                for (final IColony colony : owned)
+                {
+                    if (colony.getID() == selection.id() && colony.getDimension().equals(selection.dimension()))
+                    {
+                        return colony;
+                    }
+                }
+            }
+        }
+        return owned.isEmpty() ? null : owned.get(0);
+    }
+
+    @Override
+    public boolean setSelectedColony(@NotNull final UUID owner, @NotNull final ResourceKey<Level> dim, final int id)
+    {
+        final MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null)
+        {
+            return false;
+        }
+        for (final IColony colony : getIColoniesByOwner(owner))
+        {
+            if (colony.getID() == id && colony.getDimension().equals(dim))
+            {
+                SelectedColonySavedData.get(server).set(owner, new SelectedColonySavedData.Selection(dim, id));
+                markOwnerDirty(owner);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public int getMaxColoniesPerPlayer()
+    {
+        return ColonyLimits.maxPerPlayer();
+    }
+
+    @Override
+    @NotNull
+    public Optional<Component> checkFounding(@NotNull final ServerLevel level, @NotNull final BlockPos pos, @NotNull final Player player, final boolean preview)
+    {
+        final int owned = getIColoniesByOwner(player.getUUID()).size();
+        final int max = getMaxColoniesPerPlayer();
+        if (owned >= max)
+        {
+            return Optional.of(Component.translatable(COLONY_LIMIT_REACHED, max));
+        }
+
+        final ColonyFoundingEvent event = new ColonyFoundingEvent(player, level, pos, owned, preview);
+        IMinecoloniesAPI.getInstance().getEventBus().post(event);
+        if (event.isCanceled())
+        {
+            final Component reason = event.getCancelMessage();
+            return Optional.of(reason != null ? reason : Component.translatable(COLONY_FOUNDING_VETOED));
+        }
+        return Optional.empty();
+    }
+
+    @Override
+    @NotNull
+    public List<OwnedColonySummary> getOwnedColonySummaries()
+    {
+        return clientOwnedColonies;
+    }
+
+    @Override
+    @NotNull
+    public List<OwnedColonySummary> computeOwnedColonySummaries(@NotNull final UUID owner)
+    {
+        final List<IColony> owned = getIColoniesByOwner(owner);
+        final IColony selected = owned.isEmpty() ? null : selectedOf(owner, owned);
+        final List<OwnedColonySummary> result = new ArrayList<>(owned.size());
+        for (final IColony colony : owned)
+        {
+            final BlockPos townHall = colony.getServerBuildingManager().getTownHall() != null
+                                        ? colony.getServerBuildingManager().getTownHall().getPosition()
+                                        : colony.getCenter();
+            final TextColor color = Style.EMPTY.applyFormat(colony.getTeamColonyColor()).getColor();
+            result.add(new OwnedColonySummary(colony.getID(),
+              colony.getDimension(),
+              colony.getName(),
+              townHall,
+              colony.getCitizenManager().getCurrentCitizenCount(),
+              color == null ? 0xFFFFFF : color.getValue(),
+              colony.getColonyFlag(),
+              colony == selected));
+        }
+        return result;
+    }
+
+    @Override
+    public void syncOwnedColonies(@NotNull final ServerPlayer player, final boolean force)
+    {
+        final UUID uuid = player.getUUID();
+        final List<OwnedColonySummary> now = List.copyOf(computeOwnedColonySummaries(uuid));
+        final List<OwnedColonySummary> last = lastSentOwned.get(uuid);
+        if (!force && (last == null ? now.isEmpty() : now.equals(last)))
+        {
+            return;
+        }
+        lastSentOwned.put(uuid, now);
+        new OwnedColoniesMessage(now).sendToPlayer(player);
+    }
+
+    @Override
+    @Nullable
+    public List<OwnedColonySummary> getLastSentOwnedColonySummaries(@NotNull final UUID owner)
+    {
+        return lastSentOwned.get(owner);
+    }
+
+    @Override
+    public void handleOwnedColoniesMessage(@NotNull final List<OwnedColonySummary> summaries)
+    {
+        clientOwnedColonies = List.copyOf(summaries);
+    }
+
+    @Override
+    public void onColonyOwnerChanged(@NotNull final IColony colony, @Nullable final UUID previousOwner)
+    {
+        if (colony.getDimension() == null)
+        {
+            return;
+        }
+        ownerIndex.remove(colony.getDimension(), colony.getID(), previousOwner);
+        ownerIndex.add(colony);
+        if (previousOwner != null && !previousOwner.equals(colony.getPermissions().getOwner()))
+        {
+            dropSelection(previousOwner, colony.getDimension(), colony.getID());
+        }
+        markOwnerDirty(previousOwner);
+        markOwnerDirty(colony.getPermissions().getOwner());
+    }
+
+    /**
+     * A player no longer owns a colony: if it was their selected one, the selection goes (the oldest colony is selected again).
+     * Only once the level is indexed, i.e. after loading: the saved data is not touched while colonies are loaded.
+     */
+    private void dropSelection(@Nullable final UUID owner, @NotNull final ResourceKey<Level> dimension, final int id)
+    {
+        final MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (owner == null || server == null || !ownerIndex.isIndexed(dimension))
+        {
+            return;
+        }
+        final SelectedColonySavedData data = SelectedColonySavedData.get(server);
+        final SelectedColonySavedData.Selection selection = data.get(owner);
+        if (selection != null && selection.id() == id && selection.dimension().equals(dimension))
+        {
+            data.remove(owner);
+        }
+    }
+
+    private void markOwnerDirty(@Nullable final UUID owner)
+    {
+        if (owner != null)
+        {
+            synchronized (dirtyOwners)
+            {
+                dirtyOwners.add(owner);
+            }
+        }
+    }
+
+    /**
+     * Tells the online players their owned colonies when they changed: at once for owners marked dirty (colony founded,
+     * deleted, abandoned, selection changed), and for the rest (name, citizens, flag) every {@value #OWNED_SYNC_INTERVAL} ticks.
+     */
+    private void syncOwnedColoniesOfOnlinePlayers(@NotNull final MinecraftServer server)
+    {
+        final List<UUID> dirty;
+        synchronized (dirtyOwners)
+        {
+            dirty = dirtyOwners.isEmpty() ? List.of() : new ArrayList<>(dirtyOwners);
+            dirtyOwners.clear();
+        }
+        for (final UUID uuid : dirty)
+        {
+            final ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+            if (player != null)
+            {
+                syncOwnedColonies(player, false);
+            }
+        }
+
+        if (server.getTickCount() % OWNED_SYNC_INTERVAL == 0)
+        {
+            lastSentOwned.keySet().removeIf(uuid -> server.getPlayerList().getPlayer(uuid) == null);
+            for (final ServerPlayer player : server.getPlayerList().getPlayers())
+            {
+                syncOwnedColonies(player, false);
+            }
+        }
     }
 
     @Override
@@ -614,6 +944,7 @@ public final class ColonyManager implements IColonyManager
         {
             c.onServerTick(event);
         }
+        syncOwnedColoniesOfOnlinePlayers(event.getServer());
     }
 
     @Override
@@ -650,6 +981,10 @@ public final class ColonyManager implements IColonyManager
         {
             //  Player has left the game, clear the Colony View cache
             colonyViews.clear();
+        }
+        if (Minecraft.getInstance().level == null && !clientOwnedColonies.isEmpty())
+        {
+            clientOwnedColonies = List.of();
         }
 
 
@@ -698,6 +1033,7 @@ public final class ColonyManager implements IColonyManager
     {
         if (!world.isClientSide())
         {
+            ownerIndex.dropLevel(world.dimension());
             boolean hasColonies = false;
             for (@NotNull final IColony c : getColonies(world))
             {
@@ -895,6 +1231,7 @@ public final class ColonyManager implements IColonyManager
     public void resetColonyViews()
     {
         colonyViews.clear();
+        clientOwnedColonies = List.of();
         chunkClaimData.clear();
         ClaimRevision.bump();
     }
@@ -906,6 +1243,8 @@ public final class ColonyManager implements IColonyManager
         if (cap != null)
         {
             cap.addColony(colony);
+            ownerIndex.add(colony);
+            markOwnerDirty(colony.getPermissions().getOwner());
         }
     }
 

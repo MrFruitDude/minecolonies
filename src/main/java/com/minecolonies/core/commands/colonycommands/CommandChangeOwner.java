@@ -1,6 +1,7 @@
 package com.minecolonies.core.commands.colonycommands;
 
 import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.util.constant.translation.CommandTranslationConstants;
 import com.minecolonies.core.commands.arguments.ColonyIdArgument;
 import com.minecolonies.core.commands.commandTypes.IMCColonyOfficerCommand;
@@ -13,6 +14,8 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
+
+import java.util.List;
 
 import static com.minecolonies.core.commands.CommandArgumentNames.COLONYID_ARG;
 import static com.minecolonies.core.commands.CommandArgumentNames.PLAYERNAME_ARG;
@@ -45,6 +48,14 @@ public class CommandChangeOwner implements IMCColonyOfficerCommand
         {
             // could not find player with given name.
             context.getSource().sendSuccess(() -> Component.translatableEscape(CommandTranslationConstants.COMMAND_PLAYER_NOT_FOUND, profile.name()), true);
+            return 0;
+        }
+
+        // A player may own colonies.maxPerPlayer colonies; /colony setowner is no way around that limit.
+        final List<IColony> owned = IColonyManager.getInstance().getIColoniesByOwner(player.getUUID());
+        if (!owned.contains(colony) && owned.size() >= IColonyManager.getInstance().getMaxColoniesPerPlayer())
+        {
+            context.getSource().sendFailure(Component.translatableEscape(CommandTranslationConstants.COMMAND_OWNER_CHANGE_LIMIT, profile.name(), IColonyManager.getInstance().getMaxColoniesPerPlayer()));
             return 0;
         }
 

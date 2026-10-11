@@ -404,6 +404,40 @@ public interface IColony
     boolean isActive();
 
     /**
+     * Keeps the colony ACTIVE (simulating) without a player standing in it, for as long as a colony manager (the owner,
+     * an officer) of it is online. A manager of the player's colonies uses this to keep the owned colonies of an online
+     * player running although the player is in only one of them. The flag does not simulate anything offline: while no
+     * manager is online it has no effect, and it is not saved. It also asks for the colony's building chunks to be
+     * force loaded through the existing {@code forceloadcolony} mechanism (same bounds, same config switch), and the
+     * state changes at once instead of at the next state check.
+     *
+     * @param forceActive true to keep the colony active, false to release it again (the colony is then active only when a
+     *                    player is close, like any colony, and its force load tickets expire).
+     */
+    default void setForceActive(final boolean forceActive)
+    {
+    }
+
+    /**
+     * @return true if {@link #setForceActive(boolean)} is set (it may have no effect while no manager is online).
+     */
+    default boolean isForceActive()
+    {
+        return false;
+    }
+
+    /**
+     * When the colony was founded, as epoch milliseconds (strictly increasing between colonies created in one run).
+     * 0 for a colony saved before this was recorded; those are older than any other. Used to find a player's oldest colony.
+     *
+     * @return the founding time, 0 if unknown.
+     */
+    default long getFoundedTime()
+    {
+        return 0L;
+    }
+
+    /**
      * Get the set of chunk positions which the colony is loading through tickets
      *
      * @return set of positions
