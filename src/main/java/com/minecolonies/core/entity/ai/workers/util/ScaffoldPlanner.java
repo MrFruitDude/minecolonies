@@ -136,7 +136,8 @@ public final class ScaffoldPlanner
                 for (int dz = -r; dz <= r; dz++)
                 {
                     final BlockPos feet = target.offset(dx, dy, dz);
-                    if (!BuildReach.inReachFromFeet(feet, eyeHeight, target, usable) || feet.getY() - 1 < grid.minY() || feet.getY() + 1 > grid.maxY())
+                    // the builder who climbs the column ends up inside its top cell, one lower than the spot on top of it: that is where he must reach from
+                    if (!BuildReach.inReachFromFeet(feet.below(), eyeHeight, target, usable) || feet.getY() - 1 < grid.minY() || feet.getY() + 1 > grid.maxY())
                     {
                         continue;
                     }
@@ -151,7 +152,7 @@ public final class ScaffoldPlanner
                     {
                         continue;
                     }
-                    final int covered = anyOrder ? BuildReach.countInReach(feet, eyeHeight, blocks, usable) : BuildReach.prefixInReach(feet, eyeHeight, blocks, usable);
+                    final int covered = anyOrder ? BuildReach.countInReach(feet.below(), eyeHeight, blocks, usable) : BuildReach.prefixInReach(feet.below(), eyeHeight, blocks, usable);
                     final double cost = support.cells.size() * CELL_COST + support.penalty + penaltyOf(grid, feet) + penaltyOf(grid, head) - covered;
                     if (best == null || cost < best.cost || (cost == best.cost && support.cells.size() < best.cells.size()))
                     {

@@ -116,7 +116,9 @@ public final class ReachSpots
                 for (int dz = -r; dz <= r; dz++)
                 {
                     final BlockPos feet = target.offset(dx, dy, dz);
-                    if (!BuildReach.inReachFromFeet(feet, eyeHeight, target, usable))
+                    // a builder who walks to the top of a column of scaffolding ends up inside its top cell, one lower than the spot on top of it
+                    final BlockPos at = level.getBlockState(feet.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? feet.below() : feet;
+                    if (!BuildReach.inReachFromFeet(at, eyeHeight, target, usable))
                     {
                         continue;
                     }
@@ -128,7 +130,7 @@ public final class ReachSpots
                     {
                         continue;
                     }
-                    spots.add(new Spot(feet, anyOrder ? BuildReach.countInReach(feet, eyeHeight, blocks, usable) : BuildReach.prefixInReach(feet, eyeHeight, blocks, usable), walkCost(from, feet)));
+                    spots.add(new Spot(feet, anyOrder ? BuildReach.countInReach(at, eyeHeight, blocks, usable) : BuildReach.prefixInReach(at, eyeHeight, blocks, usable), walkCost(from, feet)));
                 }
             }
         }

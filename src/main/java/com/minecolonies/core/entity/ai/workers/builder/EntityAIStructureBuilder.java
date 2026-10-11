@@ -456,8 +456,15 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             final double distance = ReachSpots.walkCost(worker.blockPosition(), walk.spot);
             final boolean timedOut = now - walk.since > 100 + 12L * (long) Math.ceil(distance);
-            if (timedOut || !StandSpots.canStandAt(world, walk.spot) || !BuildReach.inReachFromFeet(walk.spot, worker.getEyeHeight(), target, margin)
-                  || (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate nav && nav.isStuck()))
+            final BlockPos effective = world.getBlockState(walk.spot.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? walk.spot.below() : walk.spot;
+            if (!timedOut && StandSpots.canStandAt(world, walk.spot) && !BuildReach.inReachFromFeet(effective, worker.getEyeHeight(), target, margin)
+                  && !(worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate nav0 && nav0.isStuck()))
+            {
+                // the block the spot was picked for is not the one he works on now: another spot (this one is no worse for it)
+                walk.spot = null;
+                worker.getNavigation().stop();
+            }
+            else if (walk.spot != null && (timedOut || !StandSpots.canStandAt(world, walk.spot) || (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate nav && nav.isStuck())))
             {
                 scaffold.note("spot " + walk.spot + " for " + target + " does not work (timedOut=" + timedOut + ") builder at " + worker.blockPosition());
                 walk.bad.add(walk.spot);
@@ -466,7 +473,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             }
         }
         if (walk == mainWalk && walk.spot == null && workFrom != null && !workFrom.equals(worker.blockPosition()) && !walk.bad.contains(workFrom)
-              && StandSpots.canStandAt(world, workFrom) && BuildReach.inReachFromFeet(workFrom, worker.getEyeHeight(), target, margin))
+              && StandSpots.canStandAt(world, workFrom)
+              && BuildReach.inReachFromFeet(world.getBlockState(workFrom.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? workFrom.below() : workFrom, worker.getEyeHeight(), target, margin))
         {
             // a spot the unstuck ladder or a tower picked
             walk.spot = workFrom;

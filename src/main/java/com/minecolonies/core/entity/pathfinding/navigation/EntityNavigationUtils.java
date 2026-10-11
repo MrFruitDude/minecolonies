@@ -205,8 +205,9 @@ public class EntityNavigationUtils
      */
     public static <T extends Mob> int walkToBlock(final T entity, final BlockPos pos)
     {
-        if (entity.blockPosition().equals(pos))
+        if (entity.blockPosition().equals(pos) || (entity.blockPosition().equals(pos.below()) && entity.level().getBlockState(pos.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING)))
         {
+            // (the path ends inside the top cell of a column of scaffolding, one below the spot on top of it)
             ((MinecoloniesAdvancedPathNavigate) entity.getNavigation()).stop();
             return 1;
         }
