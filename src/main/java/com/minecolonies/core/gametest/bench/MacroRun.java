@@ -284,6 +284,8 @@ public final class MacroRun
                     {
                         stray.discard();
                     }
+                    // what the workers already carry (they may have picked up something an earlier repeat left) is the starting stock
+                    injectedUnits = ItemUnits.unitsInWorld(this);
                     scenario.begin(this);
                 }
                 catch (final Throwable t)
