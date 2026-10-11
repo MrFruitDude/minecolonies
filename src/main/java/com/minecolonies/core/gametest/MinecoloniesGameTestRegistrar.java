@@ -619,6 +619,23 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_reserve_building_handout"),
           info -> new MinecoloniesGameTestInstance(info, RequestReservationGameTests::buildingHandoutHeld),
           isolatedColonyData(event, "rs_reserve_building_handout"));
+        // The acceptance test (own glob: minecolonies:rsx_*): a hut placed with zero materials gets built.
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_flags_off"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, false)),
+          longIsolatedColonyData(event, "rsx_headline_flags_off", 60_000));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_flags_on"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, true)),
+          longIsolatedColonyData(event, "rsx_headline_flags_on", 60_000));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_split_off"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, false, true)),
+          longIsolatedColonyData(event, "rsx_headline_split_off", 60_000));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_split_on"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, true, true)),
+          longIsolatedColonyData(event, "rsx_headline_split_on", 60_000));
         // RS2: named wait reasons, event-driven re-evaluation.
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_unproducible_player_once"),
