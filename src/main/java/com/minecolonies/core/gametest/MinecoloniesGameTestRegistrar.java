@@ -920,7 +920,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     {
         for (final String name : new String[] {"scaffold_reach_box_l40", "scaffold_reach_box_l1", "scaffold_reach_clear_l40", "scaffold_legacy_box_l40", "scaffold_legacy_box_l1",
           "scaffold_tall_wall8", "scaffold_tall_tower14", "scaffold_sealed_roof", "scaffold_overhang", "scaffold_tall_tower14_legacy", "scaffold_tall_wall8_legacy",
-          "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held", "scaffold_probe_top1", "scaffold_probe_top3", "scaffold_probe_top8", "scaffold_probe_inside5", "scaffold_stock_arrives"})
+          "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held", "scaffold_probe_top1", "scaffold_probe_top3", "scaffold_shaft_r1", "scaffold_shaft_r2", "scaffold_shaft_r3", "scaffold_shaft_r4", "scaffold_shaft_r5", "scaffold_shaft_r6", "scaffold_probe_top8", "scaffold_probe_inside5", "scaffold_stock_arrives"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -942,6 +942,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_no_items" -> BuilderScaffoldGameTests::noScaffoldingItems;
                 case "scaffold_lava" -> BuilderScaffoldGameTests::impossibleOverLava;
                 case "scaffold_held" -> BuilderScaffoldGameTests::positionUnderScaffolding;
+                case "scaffold_shaft_r1", "scaffold_shaft_r2", "scaffold_shaft_r3", "scaffold_shaft_r4", "scaffold_shaft_r5", "scaffold_shaft_r6" -> WorkerEfficiencyGameTests::stuckInShaft;
                 case "scaffold_probe_top1" -> BuilderScaffoldGameTests::climbTop1;
                 case "scaffold_probe_top3" -> BuilderScaffoldGameTests::climbTop3;
                 case "scaffold_probe_top8" -> BuilderScaffoldGameTests::climbTop8;
