@@ -29,6 +29,7 @@ import com.minecolonies.core.colony.requestsystem.management.manager.wrapped.Wra
 import com.minecolonies.core.colony.requestsystem.RsFlags;
 import com.minecolonies.core.colony.requestsystem.RsProbe;
 import com.minecolonies.core.colony.requestsystem.RsStats;
+import com.minecolonies.core.colony.requestsystem.priority.BuildingPriorities;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
 import com.minecolonies.api.colony.requestsystem.request.WaitReason;
@@ -69,6 +70,7 @@ public class StandardRequestManager implements IStandardRequestManager
     private static final String NBT_ID_RETRYING                     = "RetryingRequestResolverId";
     private static final String NBT_VERSION                         = "Version";
     private static final String NBT_RESERVATIONS                    = "ReservationLedger";
+    private static final String NBT_PRIORITIES                      = "BuildingPriorities";
     ////---------------------------NBTTags-------------------------\\\\
 
     private IToken<?> requestIdentitiesDataStoreId;
@@ -123,6 +125,12 @@ public class StandardRequestManager implements IStandardRequestManager
     private final ReservationLedger reservationLedger = new ReservationLedger();
 
     /**
+     * RS3: building priorities, alarms and the courier wait clock.
+     */
+    @NotNull
+    private final BuildingPriorities buildingPriorities = new BuildingPriorities();
+
+    /**
      * RS2: waiting requests and why.
      */
     @NotNull
@@ -137,6 +145,8 @@ public class StandardRequestManager implements IStandardRequestManager
      * Request-system ticks since the manager was created; paces the ledger sweep.
      */
     private int sweepCounter;
+
+    private int priorityCounter;
 
     /**
      * Game ticks after which items handed out to a requester that never took them are no longer held for it: 20 minutes.
@@ -183,6 +193,7 @@ public class StandardRequestManager implements IStandardRequestManager
     {
         waitTracker.clear();
         reservationLedger.clear();
+        buildingPriorities.clear();
         freedStock.clear();
         dataStoreManager = StandardFactoryController.getInstance().getNewInstance(TypeConstants.DATA_STORE_MANAGER);
         enableLogging = IMinecoloniesAPI.getInstance().getConfig().getCommon().rsEnableDebugLogging.get();
@@ -625,6 +636,10 @@ public class StandardRequestManager implements IStandardRequestManager
         {
             systemCompound.put(NBT_RESERVATIONS, reservationLedger.write(provider, getFactoryController()));
         }
+        if (!buildingPriorities.isEmpty())
+        {
+            systemCompound.put(NBT_PRIORITIES, buildingPriorities.write());
+        }
 
         return systemCompound;
     }
@@ -728,6 +743,11 @@ public class StandardRequestManager implements IStandardRequestManager
             {
                 Log.getLogger().warn("Dropped " + dropped + " reservations without a request");
             }
+        }
+
+        if (nbt.contains(NBT_PRIORITIES))
+        {
+            buildingPriorities.read(nbt.getCompoundOrEmpty(NBT_PRIORITIES));
         }
 
         updateIfRequired();
@@ -895,6 +915,29 @@ public class StandardRequestManager implements IStandardRequestManager
             sweepCounter = 0;
             sweepReservations();
         }
+        if (++priorityCounter >= SWEEP_INTERVAL)
+        {
+            priorityCounter = 0;
+            sweepPriorities();
+        }
+    }
+
+    /**
+     * RS3 housekeeping: ends alarms that ran out, forgets the settings of removed buildings and the wait clocks of requests that are gone.
+     */
+    private void sweepPriorities()
+    {
+        final IColony colony = getColony();
+        if (colony == null || colony.getWorld() == null)
+        {
+            return;
+        }
+        buildingPriorities.expire(colony.getWorld().getGameTime());
+        if (!buildingPriorities.isEmpty())
+        {
+            buildingPriorities.prune(pos -> colony.getRequesterBuildingForPosition(pos) != null);
+        }
+        buildingPriorities.pruneWaits(token -> getRequestIdentitiesDataStore().getIdentities().containsKey(token));
     }
 
     /**
@@ -923,6 +966,13 @@ public class StandardRequestManager implements IStandardRequestManager
     public ReservationLedger getReservationLedger()
     {
         return reservationLedger;
+    }
+
+    @NotNull
+    @Override
+    public BuildingPriorities getBuildingPriorities()
+    {
+        return buildingPriorities;
     }
 
     @NotNull

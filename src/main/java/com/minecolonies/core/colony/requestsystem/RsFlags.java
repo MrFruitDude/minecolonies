@@ -15,6 +15,9 @@ public final class RsFlags
     @Nullable
     private static volatile Boolean smartRetryOverride;
 
+    @Nullable
+    private static volatile Boolean priorityClassesOverride;
+
     private RsFlags()
     {
     }
@@ -74,6 +77,33 @@ public final class RsFlags
     }
 
     /**
+     * RS3: importance classes, per-building priority and alarm in the courier's choice of task.
+     *
+     * @return true when the courier picks by (importance, building priority, wait) with distance only as the tiebreak.
+     */
+    public static boolean priorityClasses()
+    {
+        final Boolean override = priorityClassesOverride;
+        if (override != null)
+        {
+            return override;
+        }
+        final Boolean env = fromEnvironment("MINECOLONIES_RS_PRIORITY");
+        if (env != null)
+        {
+            return env;
+        }
+        try
+        {
+            return MinecoloniesAPIProxy.getInstance().getConfig().getServer().priorityClasses.get();
+        }
+        catch (final RuntimeException | LinkageError e)
+        {
+            return false;
+        }
+    }
+
+    /**
      * A switch forced from the environment (benchmark and regression runs of the whole test suite with a phase off).
      */
     @Nullable
@@ -101,5 +131,15 @@ public final class RsFlags
     public static void overrideSmartRetry(@Nullable final Boolean value)
     {
         smartRetryOverride = value;
+    }
+
+    /**
+     * Forces the priority-classes switch, for tests. Null returns to the config value.
+     *
+     * @param value the forced value.
+     */
+    public static void overridePriorityClasses(@Nullable final Boolean value)
+    {
+        priorityClassesOverride = value;
     }
 }

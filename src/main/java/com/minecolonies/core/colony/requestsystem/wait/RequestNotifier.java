@@ -10,6 +10,7 @@ import com.minecolonies.core.colony.Colony;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
@@ -31,6 +32,38 @@ public final class RequestNotifier
     public static final long REPEAT_TICKS = 6000L;
 
     private static final int LOG_SIZE = 64;
+
+    /**
+     * Where a warning goes instead of the chat, for a mod that has a notification queue of its own.
+     */
+    @FunctionalInterface
+    public interface Sink
+    {
+        /**
+         * Called once per request and reason, after the repeat limit of five minutes per topic passed.
+         *
+         * @param colony   the colony.
+         * @param request  the stuck request.
+         * @param reason   why it waits.
+         * @param itemName the name of what it asks for, as the chat message would show it.
+         * @param now      the game time.
+         * @return true when the sink took the warning, so that no chat message is sent.
+         */
+        boolean accept(IColony colony, IRequest<?> request, WaitReason reason, String itemName, long now);
+    }
+
+    @Nullable
+    private static volatile Sink sink;
+
+    /**
+     * Routes the warnings of every colony to a sink. Null sends them to the chat again.
+     *
+     * @param newSink the sink.
+     */
+    public static void setSink(@Nullable final Sink newSink)
+    {
+        sink = newSink;
+    }
 
     /**
      * Requests already reported, by reason.
@@ -81,6 +114,21 @@ public final class RequestNotifier
             sentLog.pollFirst();
         }
         sentLog.addLast(reason + " " + what);
+        final Sink current = sink;
+        if (current != null)
+        {
+            try
+            {
+                if (current.accept(colony, request, reason, what, now))
+                {
+                    return true;
+                }
+            }
+            catch (final RuntimeException e)
+            {
+                Log.getLogger().warn("A request notification sink failed", e);
+            }
+        }
         try
         {
             if (colony instanceof Colony serverColony)
