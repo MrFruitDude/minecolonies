@@ -68,6 +68,9 @@ public final class BuilderScaffolding
     /** Ticks without progress on one block before the colony takes the rest of a tower down without the builder. */
     static final int WORK_TIMEOUT = 500;
 
+    /** Ticks without a spot to take a tower down from, before the colony takes it down. */
+    static final int TAKE_DOWN_PATIENCE = 240;
+
     private final AbstractEntityAIStructure<?, ?> ai;
 
     private Phase  phase = Phase.IDLE;
@@ -904,7 +907,7 @@ public final class BuilderScaffolding
             return false;
         }
         final BlockPos cell = cellsToTakeDown.get(0);
-        if (now - stepSince > WORK_TIMEOUT || !WorldUtil.isBlockLoaded(ai.world, cell))
+        if (now - stepSince > TAKE_DOWN_PATIENCE || !WorldUtil.isBlockLoaded(ai.world, cell))
         {
             // he cannot get there: the colony takes the rest down
             log("cannot get to " + cell + " to take scaffolding down, builder at " + ai.worker.blockPosition());

@@ -979,6 +979,38 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * Whether a perch high above the base of the structure has a way down: a ladder or scaffolding next to it, or ground within a drop of three
+     * blocks. A builder who stands on top of a wall that grows under him must not be left with a fall of ten blocks.
+     *
+     * @param feet the spot.
+     * @return true if he could get off it again.
+     */
+    protected final boolean hasWayDown(final BlockPos feet)
+    {
+        final BlockPos[] area = workArea();
+        if (area == null || feet.getY() <= area[0].getY() + 3)
+        {
+            return true;
+        }
+        for (final net.minecraft.core.Direction dir : net.minecraft.core.Direction.Plane.HORIZONTAL)
+        {
+            final BlockPos near = feet.relative(dir);
+            if (world.getBlockState(near).is(net.minecraft.tags.BlockTags.CLIMBABLE) || world.getBlockState(near.below()).is(net.minecraft.tags.BlockTags.CLIMBABLE))
+            {
+                return true;
+            }
+            for (int drop = 0; drop <= 3 && StandSpots.isFree(world, near.below(Math.max(0, drop - 1))); drop++)
+            {
+                if (StandSpots.canStandAt(world, near.below(drop)))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Whether the worker is cut off from his hut by a drop he cannot climb (a pit), as far as a search of the standable spots around him tells.
      */
     protected final boolean isStrandedInHole()

@@ -46,7 +46,7 @@ public final class StandSpots
         return isFree(level, feet) && isFree(level, feet.above());
     }
 
-    private static boolean isFree(final Level level, final BlockPos pos)
+    public static boolean isFree(final Level level, final BlockPos pos)
     {
         final BlockState state = level.getBlockState(pos);
         return state.getFluidState().isEmpty() && state.getCollisionShape(level, pos, CollisionContext.empty()).isEmpty();
