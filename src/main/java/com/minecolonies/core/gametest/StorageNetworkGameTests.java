@@ -171,6 +171,65 @@ public final class StorageNetworkGameTests
         }
     }
 
+    /**
+     * The racks of a warehouse as the building lists them (the hut's own inventory is one of them).
+     */
+    private static List<TileEntityRack> containersOf(final Net n, final BuildingWareHouse warehouse)
+    {
+        final List<TileEntityRack> list = new ArrayList<>();
+        for (final BlockPos pos : warehouse.getContainers())
+        {
+            if (n.f.level.getBlockEntity(pos) instanceof final TileEntityRack rack)
+            {
+                list.add(rack);
+            }
+        }
+        return list;
+    }
+
+    private static int bruteSlots(final Net n)
+    {
+        int total = 0;
+        for (final BuildingWareHouse warehouse : List.of(n.a, n.b))
+        {
+            for (final TileEntityRack rack : containersOf(n, warehouse))
+            {
+                total += rack.getInventory().getSlots();
+            }
+        }
+        return total;
+    }
+
+    private static int bruteUsed(final Net n)
+    {
+        int used = 0;
+        for (final BuildingWareHouse warehouse : List.of(n.a, n.b))
+        {
+            for (final TileEntityRack rack : containersOf(n, warehouse))
+            {
+                for (int slot = 0; slot < rack.getInventory().getSlots(); slot++)
+                {
+                    if (!rack.getInventory().getStackInSlot(slot).isEmpty())
+                    {
+                        used++;
+                    }
+                }
+            }
+        }
+        return used;
+    }
+
+    /**
+     * Every slot of every container of the warehouse holds a full stack of the item.
+     */
+    private static void fillWarehouse(final Net n, final BuildingWareHouse warehouse, final ItemStack stack)
+    {
+        for (final TileEntityRack rack : containersOf(n, warehouse))
+        {
+            fillRack(rack, stack, rack.getInventory().getSlots());
+        }
+    }
+
     private static void insert(final GameTestHelper helper, final TileEntityRack rack, final ItemStack stack)
     {
         ItemStack rest = stack.copy();
@@ -221,7 +280,8 @@ public final class StorageNetworkGameTests
     {
         final Net n = Net.found(helper, "storage-index", 3, 3);
         final IColonyStorage storage = n.storage();
-        helper.assertTrue(storage.physical(LOGS, Integer.MAX_VALUE) == 0 && storage.usage().totalSlots() == 6 * 27, "empty fixture: " + storage.usage());
+        helper.assertTrue(storage.physical(LOGS, Integer.MAX_VALUE) == 0 && storage.usage().totalSlots() == bruteSlots(n) && storage.usage().usedSlots() == 0, "empty fixture: " + storage.usage()
+                                                                                                                                                      + " brute " + bruteSlots(n));
 
         n.stockA(0, new ItemStack(Items.OAK_LOG, 100));
         n.stockB(1, new ItemStack(Items.OAK_LOG, 30));
@@ -230,7 +290,7 @@ public final class StorageNetworkGameTests
         helper.assertTrue(storage.physical(new ItemStorage(new ItemStack(Items.DIRT))) == 7, "dirt by key");
         helper.assertTrue(storage.physicalIn(n.a.getID(), LOGS, Integer.MAX_VALUE) == 100 && storage.physicalIn(n.b.getID(), LOGS, Integer.MAX_VALUE) == 30, "per warehouse");
         helper.assertTrue(storage.usage().items() == 137 && storage.usage().distinctItems() == 2, "items " + storage.usage());
-        helper.assertTrue(storage.usage().usedSlots() == 2 + 1 + 1, "used slots (100 logs = 2 stacks, 30 logs, 7 dirt): " + storage.usage());
+        helper.assertTrue(storage.usage().usedSlots() == 2 + 1 + 1 && bruteUsed(n) == 4, "used slots (100 logs = 2 stacks, 30 logs, 7 dirt): " + storage.usage());
 
         // Extract through the handler (what a courier does).
         final ItemStack taken = n.f.rack(0).getInventory().extractItem(0, 40, false);
@@ -238,27 +298,29 @@ public final class StorageNetworkGameTests
         helper.assertTrue(storage.physical(LOGS, Integer.MAX_VALUE) == 90 && n.bruteForce(LOGS) == 90, "logs after the extract: " + storage.physical(LOGS, Integer.MAX_VALUE));
 
         // A rack is added to warehouse B, with content.
+        final int slotsBefore = storage.usage().totalSlots();
         final BlockPos rel = new BlockPos(22 + 2 * 3, 1, 22);
         helper.setBlock(rel, ModBlocks.blockRack.defaultBlockState());
         final BlockPos abs = helper.absolutePos(rel);
         n.b.registerBlockPosition(ModBlocks.blockRack, abs, n.f.level);
         n.racksB.add(abs);
-        helper.assertTrue(storage.usage().totalSlots() == 7 * 27, "the new rack's slots count: " + storage.usage());
+        helper.assertTrue(storage.usage().totalSlots() == bruteSlots(n) && storage.usage().totalSlots() == slotsBefore + 27, "the new rack's slots count: " + storage.usage());
         n.stockB(3, new ItemStack(Items.OAK_LOG, 10));
         helper.assertTrue(storage.physical(LOGS, Integer.MAX_VALUE) == 100 && n.bruteForce(LOGS) == 100, "logs after the added rack: " + storage.physical(LOGS, Integer.MAX_VALUE));
 
         // A rack is broken.
         helper.setBlock(new BlockPos(22 + 2 * 3, 1, 22), Blocks.AIR.defaultBlockState());
         helper.assertTrue(storage.physical(LOGS, Integer.MAX_VALUE) == 90 && n.bruteForce(LOGS) == 90, "logs after the rack was broken: " + storage.physical(LOGS, Integer.MAX_VALUE));
-        helper.assertTrue(storage.usage().totalSlots() == 6 * 27, "the broken rack's slots are gone: " + storage.usage());
+        helper.assertTrue(storage.usage().totalSlots() == slotsBefore && storage.usage().totalSlots() == bruteSlots(n), "the broken rack's slots are gone: " + storage.usage());
 
         // A storage upgrade of the racks: more slots.
         n.a.upgradeContainers(n.f.level);
-        helper.assertTrue(storage.usage().totalSlots() == 3 * 36 + 3 * 27, "an upgraded warehouse has more slots: " + storage.usage());
+        helper.assertTrue(storage.usage().totalSlots() > slotsBefore && storage.usage().totalSlots() == bruteSlots(n) && storage.usage().usedSlots() == bruteUsed(n),
+          "an upgraded warehouse has more slots: " + storage.usage() + " brute " + bruteSlots(n));
 
         // A warehouse goes away: its stock leaves the colony's.
         n.f.colony.getServerBuildingManager().removeBuilding(n.b, java.util.Collections.emptySet());
-        helper.assertTrue(storage.physical(LOGS, Integer.MAX_VALUE) == 50 && storage.physical(new ItemStorage(new ItemStack(Items.DIRT))) == 0,
+        helper.assertTrue(storage.physical(LOGS, Integer.MAX_VALUE) == 60 && storage.physical(new ItemStorage(new ItemStack(Items.DIRT))) == 0,
           "logs and dirt after warehouse B was removed: " + storage.physical(LOGS, Integer.MAX_VALUE) + " dirt " + storage.physical(new ItemStorage(new ItemStack(Items.DIRT))));
         helper.assertTrue(storage.warehouses().size() == 1 && storage.usage().warehouses() == 1, "one warehouse left: " + storage.warehouses());
         helper.succeed();
@@ -298,23 +360,17 @@ public final class StorageNetworkGameTests
         final Net n = Net.found(helper, "storage-capacity", 1, 1);
         final IColonyStorage storage = n.storage();
         StorageUsage usage = storage.usage();
-        helper.assertTrue(usage.totalSlots() == 54 && usage.usedSlots() == 0 && !storage.isFull() && usage.warehouses() == 2, "empty: " + usage);
+        helper.assertTrue(usage.totalSlots() == bruteSlots(n) && usage.usedSlots() == 0 && !storage.isFull() && usage.warehouses() == 2, "empty: " + usage);
         helper.assertTrue(storage.hasRoomFor(new ItemStack(Items.DIRT)), "room for dirt");
 
-        for (int slot = 0; slot < 27; slot++)
-        {
-            n.f.rack(0).getInventory().insertItem(slot, new ItemStack(Items.STONE, 64), false);
-        }
+        fillWarehouse(n, n.a, new ItemStack(Items.STONE));
         usage = storage.usage();
-        helper.assertTrue(usage.usedSlots() == 27 && !storage.isFull(), "one warehouse full, the colony is not: " + usage);
+        helper.assertTrue(usage.usedSlots() == bruteUsed(n) && usage.usedSlots() > 0 && !storage.isFull(), "one warehouse full, the colony is not: " + usage);
         final List<WarehouseUsage> per = storage.warehouses();
-        helper.assertTrue(per.size() == 2 && per.stream().anyMatch(w -> w.usedSlots() == 27 && w.totalSlots() == 27 && w.fill() >= 1.0D)
+        helper.assertTrue(per.size() == 2 && per.stream().anyMatch(w -> w.usedSlots() == w.totalSlots() && w.totalSlots() > 0 && w.fill() >= 1.0D)
                             && per.stream().anyMatch(w -> w.usedSlots() == 0), "per warehouse fill: " + per);
 
-        for (int slot = 0; slot < 27; slot++)
-        {
-            n.rackB(0).getInventory().insertItem(slot, new ItemStack(Items.COBBLESTONE, 64), false);
-        }
+        fillWarehouse(n, n.b, new ItemStack(Items.COBBLESTONE));
         helper.assertTrue(storage.isFull() && storage.usage().freeSlots() == 0, "both full: " + storage.usage());
         helper.assertTrue(!storage.hasRoomFor(new ItemStack(Items.DIRT)), "no room for dirt");
         helper.assertTrue(!storage.hasRoomFor(new ItemStack(Items.STONE)), "full stacks of stone have nothing to merge into");
@@ -493,10 +549,11 @@ public final class StorageNetworkGameTests
     {
         RsFlags.overrideStorageNetwork(network);
         final Net n = Net.found(helper, "storage-dump-rack-" + network, 1, 0);
-        // One rack, no free slot, but a part-filled cobblestone stack that takes more.
-        fillRack(n.f.rack(0), new ItemStack(Items.STONE), 26);
-        n.f.rack(0).getInventory().insertItem(26, new ItemStack(Items.COBBLESTONE, 10), false);
-        helper.assertTrue(n.f.rack(0).getFreeSlots() == 0, "the rack is full");
+        // No free slot anywhere in the warehouse, but a part-filled cobblestone stack that takes more.
+        fillWarehouse(n, n.a, new ItemStack(Items.STONE));
+        final TileEntityRack first = containersOf(n, n.a).get(0);
+        first.getInventory().setStackInSlot(0, new ItemStack(Items.COBBLESTONE, 10));
+        helper.assertTrue(bruteUsed(n) == containersOf(n, n.a).stream().mapToInt(r -> r.getInventory().getSlots()).sum(), "every container of warehouse A is full");
         final ICitizenData courier = n.quietCourier(n.a, new BlockPos(20, 1, 6));
         courier.getInventory().insertItem(0, new ItemStack(Items.DIRT, 5), false);
         courier.getInventory().insertItem(1, new ItemStack(Items.COBBLESTONE, 4), false);
@@ -532,7 +589,7 @@ public final class StorageNetworkGameTests
     {
         RsFlags.overrideStorageNetwork(network);
         final Net n = Net.found(helper, "storage-dump-wh-" + network, 1, 1);
-        fillRack(n.f.rack(0), new ItemStack(Items.STONE), 27);
+        fillWarehouse(n, n.a, new ItemStack(Items.STONE));
         final ICitizenData courier = n.quietCourier(n.a, new BlockPos(20, 1, 6));
         courier.getInventory().insertItem(0, new ItemStack(Items.DIRT, 5), false);
         courier.getInventory().insertItem(1, new ItemStack(Items.COBBLESTONE, 4), false);
@@ -627,13 +684,17 @@ public final class StorageNetworkGameTests
         RsFlags.overrideReservations(true);
         final Net n = Net.found(helper, "storage-conservation", 3, 3);
         final IBuilding second = n.f.place(ModBlocks.blockHutBuilder, new BlockPos(8, 1, 12), "fundamentals/builder1.blueprint");
+        final IBuilding hut2 = n.f.place(ModBlocks.blockHutDeliveryman, new BlockPos(32, 1, 6), "craftsmanship/storage/deliveryman1.blueprint");
         n.stockA(0, new ItemStack(Items.OAK_LOG, 40));
         n.stockA(1, new ItemStack(Items.DIRT, 30));
         n.stockB(0, new ItemStack(Items.OAK_LOG, 40));
         n.stockB(1, new ItemStack(Items.COBBLESTONE, 50));
         final List<ICitizenData> couriers = new ArrayList<>();
         couriers.add(n.courier(n.a, new BlockPos(34, 1, 8)));
-        couriers.add(n.courier(n.b, new BlockPos(34, 1, 10)));
+        final ICitizenData second2 = n.f.spawn(new BlockPos(34, 1, 10), false);
+        helper.assertTrue(hut2.getModule(BuildingModules.COURIER_WORK).assignCitizen(second2), "second courier not assigned to the second courier hut");
+        helper.assertTrue(n.b.getModule(BuildingModules.WAREHOUSE_COURIERS).assignCitizen(second2), "second courier not assigned to warehouse B");
+        couriers.add(second2);
         for (final ICitizenData courier : couriers)
         {
             courier.getEntity().ifPresent(e -> e.setPos(n.hut.getID().getX() + 0.5D, n.hut.getID().getY(), n.hut.getID().getZ() + 0.5D));

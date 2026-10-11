@@ -227,6 +227,16 @@ public final class WarehouseStock
         {
             items.put(entry.getKey(), entry.getValue().intValue());
         }
-        return new Contribution(items, rack.getInventory().getSlots(), rack.getFreeSlots(), true);
+        // The free slots are counted here, not taken from the rack: the rack's own counter lags behind an inventory resize.
+        final var inventory = rack.getInventory();
+        int free = 0;
+        for (int slot = 0; slot < inventory.getSlots(); slot++)
+        {
+            if (inventory.getStackInSlot(slot).isEmpty())
+            {
+                free++;
+            }
+        }
+        return new Contribution(items, inventory.getSlots(), free, true);
     }
 }
