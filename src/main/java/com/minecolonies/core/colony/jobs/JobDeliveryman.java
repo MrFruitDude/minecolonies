@@ -29,6 +29,8 @@ import com.minecolonies.core.colony.buildings.modules.CourierAssignmentModule;
 import com.minecolonies.api.colony.requestsystem.request.WaitReason;
 import com.minecolonies.core.colony.requestsystem.RsFlags;
 import com.minecolonies.core.colony.requestsystem.RsStats;
+import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
+import com.minecolonies.core.colony.requestsystem.priority.RequestScoring;
 import com.minecolonies.core.colony.requestsystem.requests.StandardRequests;
 import com.minecolonies.core.colony.requestsystem.wait.CourierWatchdog;
 import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
@@ -270,6 +272,20 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         getCitizen().getWorkBuilding().markDirty();
     }
 
+    /**
+     * The score of a task in the warehouse queue; the highest is taken. RS3 (flag {@code priorityClasses}) scores by importance,
+     * building priority and the real wait; otherwise the old sum with the aging counter.
+     */
+    private long getTaskScore(final IRequest<?> req, final int queueIndex, final int queueSize)
+    {
+        if (!RsFlags.priorityClasses())
+        {
+            return getRequestPriority(req, queueIndex, queueSize);
+        }
+        final BlockPos target = getTarget(req);
+        return RequestScoring.courierScore(getColony(), req, getSource(req), target, WorldUtil.isBlockLoaded(getColony().getWorld(), target));
+    }
+
     private int getRequestPriority(final IRequest<?> req, final int queueIndex, final int queueSize)
     {
         int priority = 1;
@@ -328,7 +344,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
 
         IToken<?> resultRequestId = null;
         int resultIndex = -1;
-        int priority = Integer.MIN_VALUE;
+        long priority = Long.MIN_VALUE;
         final int queueSize = wareHouseModule.getMutableRequestList().size();
         int queueIndex = 0;
         for (final IToken<?> reqId : wareHouseModule.getMutableRequestList())
@@ -340,7 +356,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
                 reqsToRemove.add(reqId);
                 continue;
             }
-            final int localPriority = getRequestPriority(req, position, queueSize);
+            final long localPriority = getTaskScore(req, position, queueSize);
             if (localPriority > priority)
             {
                 priority = localPriority;
@@ -355,6 +371,10 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         }
 
         reqsToRemove.add(resultRequestId);
+        if (RsFlags.priorityClasses() && getColony().getRequestManager() instanceof IStandardRequestManager standard)
+        {
+            standard.getBuildingPriorities().forgetWait(resultRequestId);
+        }
 
         final IRequest<?> resultRequest = getColony().getRequestManager().getRequestForToken(resultRequestId);
         if (resultRequest instanceof StandardRequests.DeliveryRequest)

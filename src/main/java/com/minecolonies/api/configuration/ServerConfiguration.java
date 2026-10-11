@@ -156,6 +156,11 @@ public class ServerConfiguration extends AbstractConfiguration
     public final BooleanValue smartRetry;
 
     /**
+     * RS3: couriers pick tasks by (importance, building priority, wait time), distance only as the tiebreak.
+     */
+    public final BooleanValue priorityClasses;
+
+    /**
      * Builds server configuration.
      *
      * @param builder config builder
@@ -255,6 +260,7 @@ public class ServerConfiguration extends AbstractConfiguration
         creativeResolve = defineBoolean("creativeresolve", false);
         reservations = defineBoolean("reservations", true);
         smartRetry = defineBoolean("smartRetry", true);
+        priorityClasses = defineBoolean("priorityClasses", false);
 
         swapToCategory("builders");
 

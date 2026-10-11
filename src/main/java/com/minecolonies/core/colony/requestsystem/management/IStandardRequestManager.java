@@ -4,6 +4,7 @@ import com.minecolonies.api.colony.requestsystem.data.*;
 import com.minecolonies.api.colony.requestsystem.management.*;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import com.minecolonies.core.colony.requestsystem.management.manager.StandardRequestManager;
+import com.minecolonies.core.colony.requestsystem.priority.BuildingPriorities;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
 import org.jetbrains.annotations.NotNull;
@@ -44,6 +45,14 @@ public interface IStandardRequestManager extends IRequestManager
      */
     @NotNull
     RequestWaitTracker getWaitTracker();
+
+    /**
+     * RS3: the colony's building priorities and alarms. Always present; used when the {@code priorityClasses} flag is on.
+     *
+     * @return the priorities.
+     */
+    @NotNull
+    BuildingPriorities getBuildingPriorities();
 
     IProviderHandler getProviderHandler();
 
