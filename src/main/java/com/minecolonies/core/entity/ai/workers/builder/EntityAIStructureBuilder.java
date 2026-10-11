@@ -918,6 +918,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     private StructurePlacer                  assistPlacer  = null;
     private BlockPos                         assistMine    = null;
     private int                              assistTries   = 0;
+    private final Set<BlockPos>              assistGaveUp  = new HashSet<>();
     private boolean                          gatherFromLead = false;
     private int                              gatherSteps    = 0;
 
@@ -960,6 +961,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             com.minecolonies.core.colony.workorders.scaffold.ScaffoldSweeper.sweep(building.getColony(), assistOrder.getScaffolds(), cell -> hutPos.equals(cell.hut()), Integer.MAX_VALUE);
         }
         scaffold.reset();
+        assistGaveUp.clear();
         dropBatch();
         assistOrder = null;
         assistHandler = null;
@@ -1074,7 +1076,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
               key -> stockMemo.computeIfAbsent(key, k -> Math.max(0, InventoryUtils.getItemCountInItemHandler(lead.getItemHandlerCap(), sameAs(k.getItemStack()))
                                                                     - AssistReservations.heldByOthers(lead, building, k.getItemStack()))
                                                       + leadCarried(lead, k.getItemStack())
-                                                      + InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), sameAs(k.getItemStack()))), room);
+                                                      + InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), sameAs(k.getItemStack()))), room,
+              assistGaveUp::contains);
             if (plan.isEmpty())
             {
                 setDelay(40);
@@ -1309,7 +1312,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             if (escalateStuck(planned.world()) == WorkStuckTracker.Step.DEFER)
             {
-                // the helper cannot get there: the lead gets the position back
+                // the helper cannot get there: the lead gets the position back, and the helper does not take it again
+                assistGaveUp.add(planned.world().immutable());
                 collab.releaseLease(planned.world());
                 batch.remove(0);
             }
@@ -1365,6 +1369,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             if (escalateStuck(assistMine) == WorkStuckTracker.Step.DEFER)
             {
+                assistGaveUp.add(planned.world().immutable());
                 assistOrder.getCollab().releaseLease(planned.world());
                 batch.remove(planned);
                 assistMine = null;

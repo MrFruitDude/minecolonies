@@ -78,6 +78,27 @@ public final class LeaseAllocator
       final ToIntFunction<ItemStorage> stock,
       final int stackBudget)
     {
+        return plan(world, order, stage, handler, placer, max, leadBuffer, stock, stackBudget, pos -> false);
+    }
+
+    /**
+     * Like {@link #plan(Level, IBuilderWorkOrder, BuildingProgressStage, CollabStructureHandler, StructurePlacer, int, int, ToIntFunction, int)},
+     * but the helper leaves positions alone that he gave up on (he cannot get to them).
+     *
+     * @param helperSkips positions the helper does not take.
+     */
+    public static List<Planned> plan(
+      final Level world,
+      final IBuilderWorkOrder order,
+      final BuildingProgressStage stage,
+      final CollabStructureHandler handler,
+      final StructurePlacer placer,
+      final int max,
+      final int leadBuffer,
+      final ToIntFunction<ItemStorage> stock,
+      final int stackBudget,
+      final java.util.function.Predicate<BlockPos> helperSkips)
+    {
         final WorkOrderCollab collab = order.getCollab();
         final TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> rule = BuilderStageRules.skipRule(stage);
         final List<Planned> planned = new ArrayList<>();
@@ -89,7 +110,7 @@ public final class LeaseAllocator
         final boolean backwards = BuilderStageRules.walksBackwards(stage);
         final boolean placing = stage != BuildingProgressStage.CLEAR && !handler.isCreative();
         final TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> skip =
-          (info, pos, h) -> collab.isLeased(pos) || rule.test(info, pos, h);
+          (info, pos, h) -> collab.isLeased(pos) || helperSkips.test(pos) || rule.test(info, pos, h);
 
         final AbstractBlueprintIterator iterator = placer.getIterator();
         BlockPos start = collab.getScanCursor();
