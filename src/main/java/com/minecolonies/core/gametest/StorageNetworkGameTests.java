@@ -60,12 +60,12 @@ public final class StorageNetworkGameTests
     {
         final String[] names = {"index_tracks_racks", "available_reserve_aware", "capacity_and_full", "any_courier_serves_any_warehouse", "courier_locked_flag_off",
           "completion_time_beats_nearest", "request_splits_across_warehouses", "no_routing_to_unserved_warehouse", "dump_continues_past_full_rack", "dump_stops_flag_off",
-          "dump_goes_to_warehouse_with_room", "dump_stays_flag_off", "save_load_mid_delivery", "conservation", "full_storage_pickups_wait", "flag_flip_loses_nothing"};
+          "dump_goes_to_warehouse_with_room", "dump_stays_flag_off", "save_load_mid_delivery", "conservation", "full_storage_pickups_wait", "flag_flip_loses_nothing", "item_cap_stops_collection", "no_cap_collects"};
         final java.util.List<java.util.function.Consumer<GameTestHelper>> bodies = List.of(StorageNetworkGameTests::indexTracksRacks, StorageNetworkGameTests::availableIsReserveAware,
           StorageNetworkGameTests::capacityAndFull, StorageNetworkGameTests::anyCourierServesAnyWarehouse, StorageNetworkGameTests::courierLockedFlagOff,
           StorageNetworkGameTests::completionTimeBeatsNearest, StorageNetworkGameTests::requestSplitsAcrossWarehouses, StorageNetworkGameTests::noRoutingToUnservedWarehouse,
           StorageNetworkGameTests::dumpContinuesPastFullRack, StorageNetworkGameTests::dumpStopsFlagOff, StorageNetworkGameTests::dumpGoesToWarehouseWithRoom,
-          StorageNetworkGameTests::dumpStaysFlagOff, StorageNetworkGameTests::saveLoadMidDelivery, StorageNetworkGameTests::conservation, StorageNetworkGameTests::fullStoragePickupsWait, StorageNetworkGameTests::flagFlipLosesNothing);
+          StorageNetworkGameTests::dumpStaysFlagOff, StorageNetworkGameTests::saveLoadMidDelivery, StorageNetworkGameTests::conservation, StorageNetworkGameTests::fullStoragePickupsWait, StorageNetworkGameTests::flagFlipLosesNothing, StorageNetworkGameTests::itemCapStopsCollection, StorageNetworkGameTests::noCapCollects);
         for (int i = 0; i < names.length; i++)
         {
             final String name = "storage_" + names[i];
@@ -781,6 +781,70 @@ public final class StorageNetworkGameTests
         helper.assertTrue(task != null && n.f.request(token).getChildren().contains(task.getId()), "network off: the courier of A takes the delivery out of the orphaned queue of B: " + task);
         helper.assertTrue(queued(n.b) == 0, "and it left the queue");
         helper.assertTrue(n.f.ledger().reservedStock(n.b.getID(), LOGS) == 8, "the promise at B is still held: " + n.f.ledger().all());
+        helper.succeed();
+    }
+
+    /**
+     * The soft cap per good: once the colony holds as much of an item as the cap allows, couriers leave more of it with its producer. Without
+     * a cap they collect it.
+     */
+    public static void itemCapStopsCollection(final GameTestHelper helper)
+    {
+        capCase(helper, true);
+    }
+
+    /**
+     * The control of the cap test: the same pickup without a cap fills the courier.
+     */
+    public static void noCapCollects(final GameTestHelper helper)
+    {
+        capCase(helper, false);
+    }
+
+    private static void capCase(final GameTestHelper helper, final boolean capped)
+    {
+        RsFlags.overrideStorageNetwork(true);
+        final Net n = Net.found(helper, "storage-cap", 2, 2);
+        n.stockA(0, new ItemStack(Items.COBBLESTONE, 40));
+        final ICitizenData courier = n.quietCourier(n.a, new BlockPos(20, 1, 6));
+        final ItemStorage cobble = new ItemStorage(new ItemStack(Items.COBBLESTONE));
+        helper.assertTrue(!n.storage().isAtCap(cobble) && n.storage().itemCap() == 0, "no cap: not at cap");
+        RsFlags.overrideStorageItemCap(40);
+        helper.assertTrue(n.storage().isAtCap(cobble) && !n.storage().isAtCap(new ItemStorage(new ItemStack(Items.DIRT))), "a cap of 40: cobblestone is at it, dirt is not");
+        RsFlags.overrideStorageItemCap(41);
+        helper.assertTrue(!n.storage().isAtCap(cobble), "one below the cap: still collected");
+        RsFlags.overrideStorageItemCap(capped ? 40 : 0);
+
+        // The courier at the builder's hut, which holds 20 cobblestone nobody asked for.
+        final ItemStack rest = InventoryUtils.forceItemStackToItemHandler(n.f.builder.getItemHandlerCap(), new ItemStack(Items.COBBLESTONE, 20), stack -> true);
+        helper.assertTrue(rest.isEmpty(), "could not stock the hut");
+        helper.assertTrue(n.f.builder.createPickupRequest(64, true), "pickup requested");
+        final JobDeliveryman job = courier.getJob(JobDeliveryman.class);
+        final EntityAIWorkDeliveryman ai = job.generateAI();
+        final IRequest<?> task = job.getCurrentTask();
+        helper.assertTrue(task != null, "the courier took the pickup");
+        try
+        {
+            courier.getEntity().get().setPos(n.f.builder.getID().getX() + 0.5D, n.f.builder.getID().getY(), n.f.builder.getID().getZ() + 0.5D);
+            for (int i = 0; i < 40; i++)
+            {
+                invoke(ai, "pickup");
+            }
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            helper.fail("could not drive the courier: " + e + " / " + e.getCause());
+            return;
+        }
+        if (capped)
+        {
+            helper.assertTrue(count(courier, COBBLE) == 0, "at the cap the courier leaves the cobblestone in the hut: it carries " + count(courier, COBBLE));
+            helper.assertTrue(InventoryUtils.getCountFromBuilding(n.f.builder, COBBLE) == 20, "it is still there");
+        }
+        else
+        {
+            helper.assertTrue(count(courier, COBBLE) == 20, "without a cap the courier collects the cobblestone: it carries " + count(courier, COBBLE));
+        }
         helper.succeed();
     }
 }
