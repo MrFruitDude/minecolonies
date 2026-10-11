@@ -969,6 +969,30 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * Builds a tower of scaffolding that gets the worker out of a hole he cannot walk out of.
+     *
+     * @return true if a tower is on its way.
+     */
+    protected boolean tryEscapeTower()
+    {
+        return false;
+    }
+
+    /**
+     * Whether the worker is cut off from his hut by a drop he cannot climb (a pit), as far as a search of the standable spots around him tells.
+     */
+    protected final boolean isStrandedInHole()
+    {
+        final BlockPos home = StandSpots.nearest(world, building.getPosition(), 8, 4, 4, null);
+        if (home == null || Math.abs(home.getX() - worker.getBlockX()) >= WALKABLE_RADIUS - 2 || Math.abs(home.getZ() - worker.getBlockZ()) >= WALKABLE_RADIUS - 2)
+        {
+            return false;
+        }
+        // standing well below the spot by his hut, with no way up
+        return home.getY() - worker.getBlockY() >= 3 && !canWalkTo(home);
+    }
+
+    /**
      * The worker cannot work on the target block (he cannot get to a spot to work from). Counts the time he stands still and climbs one step
      * of the ladder when it is due: new path, a safe spot near the target, scaffold (a hook), teleport to the edge of the work area, defer.
      * DEFER is left to the caller, who knows which block it is.
@@ -994,9 +1018,14 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         stuckLastPos = position;
 
         WorkStuckTracker.Step step = stuck.blocked(dt, moved);
-        if (step == WorkStuckTracker.Step.NONE && stuck.stationaryTicks() >= WorkStuckTracker.REPATH_AT + 20 && fellBelowWorkArea())
+        if (step == WorkStuckTracker.Step.NONE && stuck.stationaryTicks() >= WorkStuckTracker.REPATH_AT + 20 && (fellBelowWorkArea() || isStrandedInHole()))
         {
-            // fallen into a hole below the site and no way up: no need to try the gentler steps first
+            // fallen into a hole and no way up: a tower of scaffolding up and out if there is one, else no need to try the gentler steps first
+            if (tryEscapeTower())
+            {
+                stuck.free();
+                return WorkStuckTracker.Step.NONE;
+            }
             step = stuck.escalateTo(WorkStuckTracker.Step.TELEPORT);
         }
 
@@ -1193,6 +1222,47 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     protected IStructureHandler scaffoldHandler()
     {
         return structurePlacer == null ? null : structurePlacer.getB();
+    }
+
+    /**
+     * Whether the stage that runs now or later removes the block at the position (the clear stage mines what stands in the volume of the
+     * structure): ground like that is no base for a tower.
+     */
+    protected final boolean willBeRemoved(final BlockPos pos)
+    {
+        final IStructureHandler handler = scaffoldHandler();
+        if (handler == null || structurePlacer == null)
+        {
+            return false;
+        }
+        final BuildingProgressStage stage = structurePlacer.getB().getStage();
+        if (stage != CLEAR && stage != CLEAR_NON_SOLIDS && stage != REMOVE)
+        {
+            return false;
+        }
+        final BlockPos local = handler.getStructurePosFromWorld(pos);
+        final var blueprint = handler.getBluePrint();
+        if (blueprint == null || local.getX() < 0 || local.getY() < 0 || local.getZ() < 0
+              || local.getX() >= blueprint.getSizeX() || local.getY() >= blueprint.getSizeY() || local.getZ() >= blueprint.getSizeZ())
+        {
+            return false;
+        }
+        final BlockState world = this.world.getBlockState(pos);
+        if (world.isAir() || world.getBlock() instanceof IBuilderUndestroyable || world.getBlock() == Blocks.BEDROCK)
+        {
+            return false;
+        }
+        final BlockState wanted = blueprint.getBlockState(local);
+        if (stage == REMOVE)
+        {
+            return wanted != null && !wanted.isAir();
+        }
+        if (stage == CLEAR_NON_SOLIDS)
+        {
+            return wanted != null && wanted.isAir();
+        }
+        // the clear stage mines everything in the volume that is not what the blueprint wants there (with fast clear)
+        return wanted == null || wanted != world;
     }
 
     /**

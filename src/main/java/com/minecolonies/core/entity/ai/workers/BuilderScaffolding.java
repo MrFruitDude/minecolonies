@@ -47,7 +47,7 @@ public final class BuilderScaffolding
 {
     private enum Phase
     {
-        IDLE, WAIT_STOCK, GATHER, BUILD, DISMANTLE
+        IDLE, WAIT_STOCK, GATHER, BUILD, EXIT, DISMANTLE
     }
 
     /** Ticks a builder waits for scaffolding items that were requested, before he goes on without a tower. */
@@ -71,6 +71,9 @@ public final class BuilderScaffolding
     private long   phaseSince = 0L;
     private long   deniedUntil = 0L;
     private long   stockDeniedUntil = 0L;
+    private long   escapeDeniedUntil = 0L;
+    private BlockPos exitTo = null;
+    private BlockPos standAfter = null;
     private long   nextMaintain = 0L;
     private long   stepSince = 0L;
 
@@ -85,6 +88,7 @@ public final class BuilderScaffolding
     public static volatile int towersBuilt = 0;
     public static volatile int towersTakenDown = 0;
     public static volatile int cellsPlaced = 0;
+    public static volatile int escapes = 0;
     public static final java.util.concurrent.ConcurrentHashMap<BlockPos, Integer> placedBy = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
@@ -95,6 +99,7 @@ public final class BuilderScaffolding
         towersBuilt = 0;
         towersTakenDown = 0;
         cellsPlaced = 0;
+        escapes = 0;
         placedBy.clear();
     }
 
@@ -201,7 +206,7 @@ public final class BuilderScaffolding
                 return false;
             }
             final BlockState state = ai.world.getBlockState(pos);
-            return !state.is(Blocks.SCAFFOLDING) && state.isFaceSturdy(ai.world, pos, Direction.UP);
+            return !state.is(Blocks.SCAFFOLDING) && state.isFaceSturdy(ai.world, pos, Direction.UP) && !ai.willBeRemoved(pos);
         }
 
         @Override
@@ -307,10 +312,18 @@ public final class BuilderScaffolding
         final int stock = WorkerSettings.scaffoldStock();
         final List<BlockPos> blocks = ai.workAhead(target);
         ScaffoldPlanner.Plan found = ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, stock, ai.servesAnyOrder());
-        if (found == null && !order.getScaffolds().isEmpty())
+        if (found == null && !order.getScaffolds().isEmpty()
+              && ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, 128, ai.servesAnyOrder()) != null)
         {
-            // no room in the stock: towers that are of no use come down first (their items go back to the hut), then another try
-            ScaffoldSweeper.sweep(ai.worker.getCitizenColonyHandler().getColonyOrRegister(), order.getScaffolds(), cell -> true, 64);
+            // the stock is what is short: towers that nobody stands on or climbs come down first (their items go back to the hut), then another try
+            final java.util.Set<BlockPos> occupied = new java.util.HashSet<>();
+            for (final com.minecolonies.api.entity.citizen.AbstractEntityCitizen citizen : ai.world.getEntitiesOfClass(com.minecolonies.api.entity.citizen.AbstractEntityCitizen.class,
+              new net.minecraft.world.phys.AABB(ai.worker.blockPosition()).inflate(40.0D)))
+            {
+                occupied.add(citizen.blockPosition().below());
+                occupied.add(citizen.blockPosition());
+            }
+            ScaffoldSweeper.sweep(ai.worker.getCitizenColonyHandler().getColonyOrRegister(), order.getScaffolds(), cell -> !occupied.contains(cell.pos()) && !occupied.contains(cell.pos().above()), 64);
             found = ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, stock, ai.servesAnyOrder());
         }
         if (found == null)
@@ -357,6 +370,80 @@ public final class BuilderScaffolding
         return true;
     }
 
+    /**
+     * The builder is in a hole he cannot walk out of: puts up a column at the wall of the hole that reaches the level of the rim, next to a
+     * spot on the rim, and climbs it. Nothing is done (and the unstuck ladder goes on to the teleport) without items or a place for the column.
+     *
+     * @return true if a tower is on its way.
+     */
+    public boolean startEscape()
+    {
+        if (!enabled())
+        {
+            return false;
+        }
+        if (phase != Phase.IDLE)
+        {
+            return true;
+        }
+        final long now = ai.world.getGameTime();
+        if (now < escapeDeniedUntil)
+        {
+            return false;
+        }
+        final IBuilderWorkOrder order = ai.scaffoldOrder();
+        if (order == null)
+        {
+            return false;
+        }
+        final net.minecraft.world.level.Level level = ai.world;
+        final BlockPos home = com.minecolonies.core.entity.ai.workers.util.StandSpots.nearest(level, ai.building.getPosition(), 8, 4, 4, null);
+        if (home == null)
+        {
+            return false;
+        }
+        final java.util.Set<BlockPos> connected = com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, home, 40, 40000);
+        final BlockPos here = ai.worker.blockPosition();
+        final List<BlockPos> rims = new ArrayList<>();
+        for (final BlockPos spot : connected)
+        {
+            if (spot.getY() > here.getY() + 1 && spot.getY() <= here.getY() + 12 && Math.abs(spot.getX() - here.getX()) <= 8 && Math.abs(spot.getZ() - here.getZ()) <= 8
+                  && com.minecolonies.core.entity.ai.workers.util.StandSpots.canStandAt(level, spot))
+            {
+                rims.add(spot);
+            }
+        }
+        final ScaffoldPlanner.Plan found = rims.isEmpty() ? null : ScaffoldPlanner.planEscape(new WorldGrid(order.getScaffolds()), rims, WorkerSettings.scaffoldStock());
+        if (found == null)
+        {
+            log("no way out of the hole at " + here + " with scaffolding (rims=" + rims.size() + ")");
+            escapeDeniedUntil = now + 1000;
+            return false;
+        }
+        plan = found;
+        next = 0;
+        escapes++;
+        phaseSince = now;
+        stepSince = now;
+        ai.resetScaffoldWalk();
+        log("escape from " + here + ": cells=" + plan.cells() + " stand=" + plan.stand());
+        if (inInventory() >= plan.cells().size())
+        {
+            phase = Phase.BUILD;
+        }
+        else if (inInventory() + inHut() >= plan.cells().size())
+        {
+            phase = Phase.GATHER;
+        }
+        else
+        {
+            escapeDeniedUntil = now + 1000;
+            plan = null;
+            return false;
+        }
+        return true;
+    }
+
     // ------------------------------------------------------------------ the AI step
 
     /**
@@ -382,6 +469,8 @@ public final class BuilderScaffolding
                 return gather(now);
             case BUILD:
                 return build(order, ledger, now);
+            case EXIT:
+                return exit(now);
             case DISMANTLE:
                 return takeDown(order, ledger, now);
             default:
@@ -489,7 +578,8 @@ public final class BuilderScaffolding
                 abort();
                 return false;
             }
-            if (!ai.walkIntoReachFor(cell, () -> List.of(cell), true, null))
+            // not inside a cell that is to come (he would be shut in the column): only on top of what is there already
+            if (!ai.walkIntoReachFor(cell, () -> List.of(cell), true, p -> !plan.cells().contains(p) || ledger.contains(p.below())))
             {
                 return true;
             }
@@ -508,10 +598,39 @@ public final class BuilderScaffolding
         final BlockPos stand = plan.stand();
         log("tower is up, stand " + stand + ", builder at " + ai.worker.blockPosition());
         plan = null;
-        phase = Phase.IDLE;
         ai.resetReachWalk();
         ai.workFromScaffold(stand);
+        // a builder who stands in a cell of the column steps out of it first, the climb starts from outside
+        final BlockPos here = ai.worker.blockPosition();
+        if (ai.world.getBlockState(here).is(Blocks.SCAFFOLDING) || ledger.contains(here))
+        {
+            for (final Direction dir : Direction.Plane.HORIZONTAL)
+            {
+                final BlockPos out = here.relative(dir);
+                if (!ledger.contains(out) && com.minecolonies.core.entity.ai.workers.util.StandSpots.canStandAt(ai.world, out))
+                {
+                    exitTo = out;
+                    standAfter = stand;
+                    phase = Phase.EXIT;
+                    phaseSince = now;
+                    return true;
+                }
+            }
+        }
+        phase = Phase.IDLE;
         return false;
+    }
+
+    private boolean exit(final long now)
+    {
+        if (exitTo == null || now - phaseSince > 80 || com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils.walkToBlock(ai.worker, exitTo) != 0)
+        {
+            exitTo = null;
+            phase = Phase.IDLE;
+            ai.workFromScaffold(standAfter);
+            return false;
+        }
+        return true;
     }
 
     /**

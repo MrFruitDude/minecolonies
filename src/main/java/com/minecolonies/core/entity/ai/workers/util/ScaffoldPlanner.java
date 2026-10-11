@@ -163,6 +163,44 @@ public final class ScaffoldPlanner
         return best;
     }
 
+    /**
+     * Plans a tower for a builder who cannot walk out of a hole: a column with its top at the level of a spot on the rim, right next to that
+     * spot, so the builder climbs it and steps off. The rim spots are those he cannot reach by walking but that connect to the rest of the world.
+     *
+     * @param grid     the world.
+     * @param rims     the spots on the rim (feet positions).
+     * @param maxCells the most scaffolding blocks the plan may need.
+     * @return the plan (the stand is the spot on top of the tower, next to a rim spot), or null.
+     */
+    @Nullable
+    public static Plan planEscape(final Grid grid, final List<BlockPos> rims, final int maxCells)
+    {
+        Plan best = null;
+        final Set<BlockPos> none = new HashSet<>();
+        for (final BlockPos rim : rims)
+        {
+            for (final Direction dir : Direction.Plane.HORIZONTAL)
+            {
+                final BlockPos feet = rim.relative(dir);
+                if (!grid.free(feet) || !grid.free(feet.above()) || grid.scaffold(feet) || grid.scaffold(feet.above()))
+                {
+                    continue;
+                }
+                final Support support = support(grid, feet.below(), none, maxCells);
+                if (support == null || support.cells.isEmpty())
+                {
+                    continue;
+                }
+                final double cost = support.cells.size() * CELL_COST + support.penalty;
+                if (best == null || cost < best.cost)
+                {
+                    best = new Plan(support.cells, feet, 0, cost);
+                }
+            }
+        }
+        return best;
+    }
+
     private static int penaltyOf(final Grid grid, final BlockPos pos)
     {
         return grid.penalty(pos);

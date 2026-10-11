@@ -504,8 +504,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             workFrom = walk.spot;
         }
         // walk to the very spot (the usual walk stops a block and a half short, and that is a block below the top of a tower)
-        if (EntityNavigationUtils.walkToBlock(worker, walk.spot) != 0)
+        final int walked = EntityNavigationUtils.walkToBlock(worker, walk.spot);
+        if (walked != 0)
         {
+            scaffold.note("walk to " + walk.spot + " ended (" + walked + ") at " + worker.blockPosition() + " for " + target + " nav stuck=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n && n.isStuck())
+                            + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() : "-"));
             // the walk is over, and the block is still out of reach: this spot does not work
             walk.bad.add(walk.spot);
             walk.spot = null;
@@ -544,6 +547,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     {
         scaffold.clearDenial();
         mainWalk.reset();
+    }
+
+    @Override
+    protected boolean tryEscapeTower()
+    {
+        return usesPhysicalReach() && scaffold.startEscape();
     }
 
     @Override
