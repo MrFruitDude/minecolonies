@@ -26,7 +26,17 @@ public final class RsStats
      */
     public static long playerFallbacks;
 
-    private static final java.util.Set<com.minecolonies.api.colony.requestsystem.token.IToken<?>> FELL_BACK = new java.util.HashSet<>();
+    /**
+     * Items couriers put into a destination (deliveries that arrived in full).
+     */
+    public static long itemsDelivered;
+
+    /**
+     * Deliveries that arrived in full.
+     */
+    public static long deliveriesArrived;
+
+    private static final java.util.Set<com.minecolonies.api.colony.requestsystem.token.IToken<?>> FELL_BACK = new java.util.LinkedHashSet<>();
 
     private RsStats()
     {
@@ -45,8 +55,18 @@ public final class RsStats
         }
     }
 
+    /**
+     * @return the tokens of the requests that fell back to the player so far, oldest first.
+     */
+    public static java.util.List<com.minecolonies.api.colony.requestsystem.token.IToken<?>> fellBack()
+    {
+        return new java.util.ArrayList<>(FELL_BACK);
+    }
+
     public static void reset()
     {
+        itemsDelivered = 0;
+        deliveriesArrived = 0;
         requestsCreated = 0;
         deliveriesCreated = 0;
         courierTasksFinished = 0;

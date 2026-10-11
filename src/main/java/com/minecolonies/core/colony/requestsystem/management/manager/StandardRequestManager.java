@@ -27,6 +27,7 @@ import com.minecolonies.core.colony.requestsystem.management.IStandardRequestMan
 import com.minecolonies.core.colony.requestsystem.management.handlers.*;
 import com.minecolonies.core.colony.requestsystem.management.manager.wrapped.WrappedStaticStateRequestManager;
 import com.minecolonies.core.colony.requestsystem.RsFlags;
+import com.minecolonies.core.colony.requestsystem.RsProbe;
 import com.minecolonies.core.colony.requestsystem.RsStats;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
@@ -244,7 +245,23 @@ public class StandardRequestManager implements IStandardRequestManager
     @Override
     public <T extends IRequestable> IToken<?> createRequest(@NotNull final IRequester requester, @NotNull final T object)
     {
-        final IRequest<T> request = getRequestHandler().createRequest(requester, object);
+        final boolean probe = RsProbe.enabled;
+        if (probe)
+        {
+            RsProbe.begin(RsProbe.CREATE);
+        }
+        final IRequest<T> request;
+        try
+        {
+            request = getRequestHandler().createRequest(requester, object);
+        }
+        finally
+        {
+            if (probe)
+            {
+                RsProbe.end(RsProbe.CREATE);
+            }
+        }
         RsStats.requestsCreated++;
         if (object instanceof com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery)
         {
@@ -368,6 +385,26 @@ public class StandardRequestManager implements IStandardRequestManager
     @Override
     public void updateRequestState(@NotNull final IToken<?> token, @NotNull final RequestState state)
     {
+        final boolean probe = RsProbe.enabled;
+        if (probe)
+        {
+            RsProbe.begin(RsProbe.STATE);
+        }
+        try
+        {
+            updateRequestState0(token, state);
+        }
+        finally
+        {
+            if (probe)
+            {
+                RsProbe.end(RsProbe.STATE);
+            }
+        }
+    }
+
+    private void updateRequestState0(@NotNull final IToken<?> token, @NotNull final RequestState state)
+    {
         final IRequest<?> request = getRequestHandler().getRequestOrNull(token);
         if (request == null)
         {
@@ -458,19 +495,49 @@ public class StandardRequestManager implements IStandardRequestManager
     @Override
     public void onColonyUpdate(@NotNull final Predicate<IRequest<?>> shouldTriggerReassign)
     {
-        getResolverHandler().onColonyUpdate(shouldTriggerReassign);
+        final boolean probe = RsProbe.enabled;
+        if (probe)
+        {
+            RsProbe.begin(RsProbe.COLONY_UPDATE);
+        }
+        try
+        {
+            getResolverHandler().onColonyUpdate(shouldTriggerReassign);
+        }
+        finally
+        {
+            if (probe)
+            {
+                RsProbe.end(RsProbe.COLONY_UPDATE);
+            }
+        }
     }
 
     @Override
     public void onStockAvailable(@NotNull final ItemStack stack)
     {
-        if (RsFlags.smartRetry())
+        final boolean probe = RsProbe.enabled;
+        if (probe)
         {
-            // RS2: the waiting requests that could use it are indexed by item; they are retried on the next tick, not inside the rack insert.
-            waitTracker.itemsAvailable(java.util.List.of(stack));
-            return;
+            RsProbe.begin(RsProbe.STOCK_EVENT);
         }
-        IStandardRequestManager.super.onStockAvailable(stack);
+        try
+        {
+            if (RsFlags.smartRetry())
+            {
+                // RS2: the waiting requests that could use it are indexed by item; they are retried on the next tick, not inside the rack insert.
+                waitTracker.itemsAvailable(java.util.List.of(stack));
+                return;
+            }
+            IStandardRequestManager.super.onStockAvailable(stack);
+        }
+        finally
+        {
+            if (probe)
+            {
+                RsProbe.end(RsProbe.STOCK_EVENT);
+            }
+        }
     }
 
     /**
@@ -521,6 +588,26 @@ public class StandardRequestManager implements IStandardRequestManager
     @Override
     public CompoundTag serializeNBT(@NotNull final HolderLookup.Provider provider)
     {
+        final boolean probe = RsProbe.enabled;
+        if (probe)
+        {
+            RsProbe.begin(RsProbe.SAVE);
+        }
+        try
+        {
+            return serializeNBT0(provider);
+        }
+        finally
+        {
+            if (probe)
+            {
+                RsProbe.end(RsProbe.SAVE);
+            }
+        }
+    }
+
+    private CompoundTag serializeNBT0(@NotNull final HolderLookup.Provider provider)
+    {
         final CompoundTag systemCompound = new CompoundTag();
         systemCompound.putInt(NBT_VERSION, version);
 
@@ -549,6 +636,26 @@ public class StandardRequestManager implements IStandardRequestManager
      */
     @Override
     public void deserializeNBT(@NotNull final HolderLookup.Provider provider, final CompoundTag nbt)
+    {
+        final boolean probe = RsProbe.enabled;
+        if (probe)
+        {
+            RsProbe.begin(RsProbe.LOAD);
+        }
+        try
+        {
+            deserializeNBT0(provider, nbt);
+        }
+        finally
+        {
+            if (probe)
+            {
+                RsProbe.end(RsProbe.LOAD);
+            }
+        }
+    }
+
+    private void deserializeNBT0(@NotNull final HolderLookup.Provider provider, final CompoundTag nbt)
     {
         executeDeserializationStepOrMarkForUpdate(nbt,
           NBT_VERSION,
@@ -728,25 +835,60 @@ public class StandardRequestManager implements IStandardRequestManager
     @Override
     public void tick()
     {
-        this.getRetryingRequestResolver().updateManager(this);
-        if (!freedStock.isEmpty())
+        final boolean probe = RsProbe.enabled;
+        if (probe)
         {
-            final java.util.List<ItemStack> freed = new java.util.ArrayList<>(freedStock.values());
-            freedStock.clear();
+            RsProbe.begin(RsProbe.MGR_TICK);
+        }
+        try
+        {
+            tick0();
+        }
+        finally
+        {
+            if (probe)
+            {
+                RsProbe.end(RsProbe.MGR_TICK);
+            }
+        }
+    }
+
+    private void tick0()
+    {
+        this.getRetryingRequestResolver().updateManager(this);
+        final boolean probe = RsProbe.enabled;
+        if (probe)
+        {
+            RsProbe.begin(RsProbe.REEVAL);
+        }
+        try
+        {
+            if (!freedStock.isEmpty())
+            {
+                final java.util.List<ItemStack> freed = new java.util.ArrayList<>(freedStock.values());
+                freedStock.clear();
+                if (RsFlags.smartRetry())
+                {
+                    waitTracker.itemsAvailable(freed);
+                }
+                else if (RsFlags.reservations())
+                {
+                    freed.forEach(IStandardRequestManager.super::onStockAvailable);
+                }
+            }
             if (RsFlags.smartRetry())
             {
-                waitTracker.itemsAvailable(freed);
+                waitTracker.tick();
             }
-            else if (RsFlags.reservations())
-            {
-                freed.forEach(IStandardRequestManager.super::onStockAvailable);
-            }
+            this.getRetryingRequestResolver().tick();
         }
-        if (RsFlags.smartRetry())
+        finally
         {
-            waitTracker.tick();
+            if (probe)
+            {
+                RsProbe.end(RsProbe.REEVAL);
+            }
         }
-        this.getRetryingRequestResolver().tick();
 
         if (!reservationLedger.isEmpty() && ++sweepCounter >= SWEEP_INTERVAL)
         {

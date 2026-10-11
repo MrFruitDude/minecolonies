@@ -47,6 +47,8 @@ public final class RsCourierHooks
      */
     public static void arrived(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends Delivery> delivery)
     {
+        RsStats.itemsDelivered += delivery.getRequest().getStack().getCount();
+        RsStats.deliveriesArrived++;
         final ReservationLedger ledger = RsAccess.ledger(manager);
         if (ledger == null)
         {
