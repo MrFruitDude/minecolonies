@@ -28,6 +28,11 @@ public class StaticLocation implements ILocation
 
     private final ResourceKey<Level> dimension;
 
+    /**
+     * The dimension's id as a string, made on first use (serializing and hashing asked for it again and again).
+     */
+    private String dimensionId;
+
     public StaticLocation(@NotNull final BlockPos pos, final ResourceKey<Level> dimension)
     {
         this.pos = pos;
@@ -95,8 +100,19 @@ public class StaticLocation implements ILocation
     public int hashCode()
     {
         int result = pos.hashCode();
-        result = 31 * result + getDimension().identifier().toString().hashCode();
+        result = 31 * result + dimensionId().hashCode();
         return result;
+    }
+
+    private String dimensionId()
+    {
+        String id = dimensionId;
+        if (id == null)
+        {
+            id = dimension.identifier().toString();
+            dimensionId = id;
+        }
+        return id;
     }
 
     @Override
@@ -155,7 +171,7 @@ public class StaticLocation implements ILocation
         {
             final CompoundTag compound = new CompoundTag();
             compound.putLong(NBT_POS, request.getInDimensionLocation().asLong());
-            compound.putString(NBT_DIM, request.getDimension().identifier().toString());
+            compound.putString(NBT_DIM, request.dimensionId());
             return compound;
         }
 
@@ -233,7 +249,7 @@ public class StaticLocation implements ILocation
     public static void serialize(RegistryFriendlyByteBuf buffer, StaticLocation location)
     {
         buffer.writeBlockPos(location.pos);
-        buffer.writeUtf(location.dimension.identifier().toString());
+        buffer.writeUtf(location.dimensionId());
     }
 
     /**
