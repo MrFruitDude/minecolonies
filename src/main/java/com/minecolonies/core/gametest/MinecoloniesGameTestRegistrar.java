@@ -74,6 +74,13 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           true,
           Rotation.NONE);
 
+        // A run of one group in one GameTest JVM: -Dminecolonies.gametest.only=leisure registers only the leisure hook tests.
+        if ("leisure".equals(System.getProperty("minecolonies.gametest.only")))
+        {
+            registerLeisure(event);
+            return;
+        }
+
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_lifecycle"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::colonyLifecycle),
@@ -536,6 +543,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               info -> new MinecoloniesGameTestInstance(info, test),
               isolatedColonyData(event, name));
         }
+        registerLeisure(event);
         // P5b-MC: NPC faction owner for AI neighbour colonies (one glob: minecolonies:faction_*).
         for (final String name : new String[] {"faction_create_and_permissions", "faction_persistence", "faction_index_and_limits", "faction_driver_state",
           "faction_actions_without_player", "faction_raids_off"})
@@ -853,6 +861,26 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_old_save"),
           info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::oldSaveLoadsWithDefaults),
           isolatedColonyData(event, "rs_prio_old_save"));
+    }
+
+    /**
+     * LOGISTICS-AND-WORKERS B3: the citizen leisure hook (one glob: minecolonies:leisure_*).
+     */
+    private void registerLeisure(final RegisterGameTestsEvent event)
+    {
+        for (final String name : new String[] {"leisure_default_provider_keeps_the_site", "leisure_provider_replaces_vetoes_and_cannot_break_it", "leisure_wander_asks_the_provider"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "leisure_default_provider_keeps_the_site" -> LeisureGameTests::default_provider_keeps_the_site;
+                case "leisure_provider_replaces_vetoes_and_cannot_break_it" -> LeisureGameTests::provider_replaces_vetoes_and_cannot_break_it;
+                default -> LeisureGameTests::wander_asks_the_provider;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
     }
 
     /**

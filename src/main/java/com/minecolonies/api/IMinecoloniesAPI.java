@@ -5,6 +5,7 @@ import com.ldtteam.common.config.Configurations;
 import com.minecolonies.api.client.render.modeltype.registry.IModelTypeRegistry;
 import com.minecolonies.api.colony.ICitizenDataManager;
 import com.minecolonies.api.colony.IColonyManager;
+import com.minecolonies.api.colony.ICitizenLeisureProvider;
 import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildingextensions.registry.BuildingExtensionRegistries.BuildingExtensionEntry;
 import com.minecolonies.api.colony.buildings.registry.BuildingEntry;
@@ -120,4 +121,18 @@ public interface IMinecoloniesAPI
      * @param provider the provider, or null for the default.
      */
     void setColonyPaceProvider(IColonyPaceProvider provider);
+
+    /**
+     * The citizen leisure provider in use ({@link ICitizenLeisureProvider#DEFAULT} unless a mod set one).
+     *
+     * @return the provider, never null.
+     */
+    ICitizenLeisureProvider getCitizenLeisureProvider();
+
+    /**
+     * Sets the citizen leisure provider. Null puts the default (MineColonies' own pick) back.
+     *
+     * @param provider the provider, or null for the default.
+     */
+    void setCitizenLeisureProvider(ICitizenLeisureProvider provider);
 }

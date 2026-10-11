@@ -1,6 +1,8 @@
 package com.minecolonies.core.entity.ai.minimal;
 
 import com.ldtteam.structurize.blockentities.interfaces.IBlueprintDataProviderBE;
+import com.minecolonies.api.IMinecoloniesAPI;
+import com.minecolonies.api.colony.ICitizenLeisureProvider;
 import com.minecolonies.api.entity.ai.IStateAI;
 import com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState;
 import com.minecolonies.api.entity.ai.statemachine.states.IState;
@@ -266,28 +268,45 @@ public class EntityAICitizenWander implements IStateAI
         final int randomBit = citizen.getRandom().nextInt(100);
         if (randomBit < LEISURE_CHANCE)
         {
-            leisureSite = citizen.getCitizenColonyHandler().getColonyOrRegister().getServerBuildingManager().getRandomLeisureSite();
-            if (leisureSite == null)
+            final Optional<BlockPos> site = chooseLeisureSite();
+            if (site.isPresent())
             {
-                if (citizen.getCitizenData().getHomeBuilding() != null)
-                {
-                    leisureSite = citizen.getCitizenData().getHomeBuilding().getPosition();
-                }
-                else
-                {
-                    leisureSite = citizen.getCitizenColonyHandler().getColonyOrRegister().getCenter();
-                }
-            }
-
-            if (leisureSite != null)
-            {
+                leisureSite = site.get();
                 citizen.getCitizenAI().setCurrentDelay(60 * 20);
                 return GO_TO_LEISURE_SITE;
             }
+            leisureSite = null;
         }
 
         EntityNavigationUtils.walkToRandomPos(citizen, 10, this.speed);
         return CitizenAIState.IDLE;
+    }
+
+    /**
+     * Where an idle citizen that wants to spend free time goes: MineColonies' pick (a leisure site, else its home, else the colony's centre), then the
+     * {@link ICitizenLeisureProvider} the mod API holds may keep it, change it or say "no visit now".
+     *
+     * @return the hut or site to walk to, empty for no visit this time.
+     */
+    public Optional<BlockPos> chooseLeisureSite()
+    {
+        BlockPos proposed = citizen.getCitizenColonyHandler().getColonyOrRegister().getServerBuildingManager().getRandomLeisureSite();
+        if (proposed == null)
+        {
+            if (citizen.getCitizenData().getHomeBuilding() != null)
+            {
+                proposed = citizen.getCitizenData().getHomeBuilding().getPosition();
+            }
+            else
+            {
+                proposed = citizen.getCitizenColonyHandler().getColonyOrRegister().getCenter();
+            }
+        }
+        if (proposed == null)
+        {
+            return Optional.empty();
+        }
+        return ICitizenLeisureProvider.resolve(IMinecoloniesAPI.getInstance().getCitizenLeisureProvider(), citizen.getCitizenData(), proposed);
     }
 
     public boolean canUse()
