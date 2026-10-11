@@ -39,7 +39,28 @@ public final class BenchRegistrar
         {
             final String name = "rsb_fresh_r" + rep;
             final int r = rep;
-            add(event, name, 70_000, helper -> new MacroRun(helper, name, "fresh", r, r == 0, Scenarios.fresh(quick)).start());
+            add(event, name, Scenarios.fresh(quick).budget() + 12_000, helper -> new MacroRun(helper, name, "fresh", r, r == 0, Scenarios.fresh(quick)).start());
+        }
+        for (int rep = 0; rep <= reps; rep++)
+        {
+            final String name = "rsb_busy_r" + rep;
+            final int r = rep;
+            add(event, name, Scenarios.busy(quick).budget() + 12_000, helper -> new MacroRun(helper, name, "busy", r, r == 0, Scenarios.busy(quick)).start());
+        }
+        for (int rep = 0; rep <= reps; rep++)
+        {
+            final String name = "rsb_storm_r" + rep;
+            final int r = rep;
+            add(event, name, Scenarios.storm(quick).budget() + 12_000, helper -> new MacroRun(helper, name, "storm", r, r == 0, Scenarios.storm(quick)).start());
+        }
+        if (!quick)
+        {
+            for (int rep = 0; rep <= reps; rep++)
+            {
+                final String name = "rsb_unload_r" + rep;
+                final int r = rep;
+                add(event, name, Scenarios.unload(false).budget() + 12_000, helper -> new MacroRun(helper, name, "unload", r, r == 0, Scenarios.unload(false)).start());
+            }
         }
     }
 

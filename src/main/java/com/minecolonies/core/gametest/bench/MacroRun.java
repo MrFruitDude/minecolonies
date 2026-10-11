@@ -149,6 +149,9 @@ public final class MacroRun
     private int                   nextRack;
 
     /** Items scripted suppliers added and scripted sinks removed, in item units (see {@link ItemUnits}). */
+    /** True while the scenario has the colony's chunks unloaded: nothing may touch the world then. */
+    public boolean away;
+    public int     cycles;
     public long injectedUnits;
     public long consumedUnits;
     /** Blocks the scenario expects in the world as the result of builds: position -> block. */
@@ -399,7 +402,7 @@ public final class MacroRun
 
     private void supply(final long tick)
     {
-        if (draining)
+        if (draining || away)
         {
             return;
         }
@@ -512,11 +515,17 @@ public final class MacroRun
         {
             scanRequests(tick);
         }
-        if (tick % 300 == 0)
+        if (tick % 2000 == 0)
+        {
+            com.minecolonies.api.util.Log.getLogger().info("RSB {} t={} open={} pending={} created={} deliveries={} tasks={} delivered={} fallbacks={} dist={}", testName, tick,
+              openRequestCount(), pendingRequests(), RsStats.requestsCreated, RsStats.deliveriesCreated, RsStats.courierTasksFinished, RsStats.itemsDelivered, RsStats.playerFallbacks,
+              (long) courierDistance);
+        }
+        if (tick % 300 == 0 && !away)
         {
             checkConservation(tick, false);
         }
-        if (!saveLoadDone && !draining)
+        if (!saveLoadDone && !draining && !away)
         {
             final int at = scenario.saveLoadCheckAt();
             if (at > 0 ? tick >= at : tick >= 600 && openRequestCount() >= 3 && tick % 100 == 0)
@@ -651,8 +660,9 @@ public final class MacroRun
         conservationMax = Math.max(conservationMax, Math.abs(drift));
         if (drift != 0)
         {
+            final String where = errors.isEmpty() ? " [" + ItemUnits.breakdown(this) + " ]" : "";
             errors.add("item conservation violated at tick " + tick + (last ? " (final)" : "") + ": world holds " + found + " units, suppliers - sinks = " + expected + " (drift " + drift
-                         + (drift > 0 ? ": items appeared" : ": items vanished") + ")");
+                         + (drift > 0 ? ": items appeared" : ": items vanished") + ")" + where);
         }
     }
 
@@ -718,6 +728,48 @@ public final class MacroRun
         return n;
     }
 
+    /**
+     * @return a short description of the open requests (state, wait reason, item, requester), for failure messages.
+     */
+    public String describeOpen(final int max)
+    {
+        final StringBuilder out = new StringBuilder();
+        int n = 0;
+        for (final IRequest<?> request : rm.getRequestIdentitiesDataStore().getIdentities().values())
+        {
+            if (n++ >= max)
+            {
+                out.append(" ...");
+                break;
+            }
+            String what = request.getRequest().getClass().getSimpleName();
+            if (request.getRequest() instanceof Stack stack)
+            {
+                what += ":" + BuiltInRegistries.ITEM.getKey(stack.getStack().getItem()).getPath() + "x" + stack.getCount();
+            }
+            else if (request.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery delivery)
+            {
+                what += ":" + BuiltInRegistries.ITEM.getKey(delivery.getStack().getItem()).getPath() + "x" + delivery.getStack().getCount();
+            }
+            IToken<?> resolver = rm.getRequestResolverRequestAssignmentDataStore().getAssignmentForValue(request.getId());
+            String holder = "none";
+            if (resolver != null)
+            {
+                try
+                {
+                    holder = rm.getResolverHandler().getResolver(resolver).getClass().getSimpleName();
+                }
+                catch (final RuntimeException e)
+                {
+                    holder = "?";
+                }
+            }
+            out.append("\n  [").append(what).append(' ').append(request.getState()).append('/').append(request.getWaitReason()).append(" at ").append(holder)
+              .append(" parent=").append(request.hasParent()).append(" children=").append(request.getChildren().size()).append(']');
+        }
+        return out.toString();
+    }
+
     private boolean progress(final long tick)
     {
         if (!draining)
@@ -736,7 +788,7 @@ public final class MacroRun
             }
             else if (tick > scenario.budget())
             {
-                errors.add("the scenario did not finish within its budget of " + scenario.budget() + " ticks; " + pendingRequests() + " requests are still open");
+                errors.add("the scenario did not finish within its budget of " + scenario.budget() + " ticks; " + pendingRequests() + " requests are still open:" + describeOpen(14));
                 doneTick = -1;
                 finish(tick);
                 return false;
@@ -752,7 +804,7 @@ public final class MacroRun
         {
             if (quiesceTick < 0)
             {
-                errors.add("requests did not drain within 4000 ticks after the scenario finished: " + pendingRequests() + " still open");
+                errors.add("requests did not drain within 4000 ticks after the scenario finished: " + pendingRequests() + " still open:" + describeOpen(14));
             }
             finish(tick);
             return false;
@@ -879,6 +931,7 @@ public final class MacroRun
         work.addProperty("itemsDelivered", RsStats.itemsDelivered);
         work.addProperty("courierDistance", courierDistance);
         work.addProperty("courierTeleports", courierTeleports);
+        work.addProperty("unloadCycles", cycles);
         work.addProperty("requestsCreatedAtDone", requestsAtDone);
         work.addProperty("deliveriesCreatedAtDone", deliveriesAtDone);
         work.addProperty("courierTasksAtDone", tasksAtDone);
@@ -920,8 +973,23 @@ public final class MacroRun
 
     // ------------------------------------------------------------------ world building helpers (used by scenarios)
 
+    /**
+     * @return the box of the test plot, in world coordinates.
+     */
+    public AABB plotBox()
+    {
+        final BlockPos a = helper.absolutePos(new BlockPos(Scenarios.X0, -4, Scenarios.Z0));
+        final BlockPos b = helper.absolutePos(new BlockPos(Scenarios.X1, 40, Scenarios.Z1));
+        return new AABB(a.getX(), a.getY(), a.getZ(), b.getX() + 1, b.getY(), b.getZ() + 1);
+    }
+
     public void found(final String name, final BlockPos townHallRel, final int minX, final int maxX, final int minZ, final int maxZ)
     {
+        // items a previous test left lying around in this plot must not be counted as ours
+        for (final ItemEntity stray : level.getEntitiesOfClass(ItemEntity.class, plotBox()))
+        {
+            stray.discard();
+        }
         colony = BenchBridge.foundColony(helper, name, townHallRel, minX, maxX, minZ, maxZ);
         player = BenchBridge.connectedPlayer(helper);
         final BlockPos anchor = colony.getCenter();

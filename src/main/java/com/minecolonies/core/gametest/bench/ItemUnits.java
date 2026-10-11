@@ -63,6 +63,21 @@ public final class ItemUnits
      */
     public static long unitsInWorld(final MacroRun run)
     {
+        return scan(run, null);
+    }
+
+    /**
+     * Same as {@link #unitsInWorld} with a breakdown per place, for failure messages.
+     */
+    public static String breakdown(final MacroRun run)
+    {
+        final StringBuilder out = new StringBuilder();
+        scan(run, out);
+        return out.toString();
+    }
+
+    private static long scan(final MacroRun run, final StringBuilder detail)
+    {
         long total = 0;
         final Set<BlockPos> seen = new HashSet<>();
         for (final IBuilding building : run.colony.getServerBuildingManager().getBuildings().values())
@@ -78,7 +93,12 @@ public final class ItemUnits
                 {
                     for (int slot = 0; slot < rack.getInventory().getSlots(); slot++)
                     {
-                        total += units(rack.getInventory().getStackInSlot(slot));
+                        final long u = units(rack.getInventory().getStackInSlot(slot));
+                        total += u;
+                        if (detail != null && u > 0)
+                        {
+                            detail.append(" rack@").append(building.getSchematicName()).append(pos.toShortString()).append('=').append(rack.getInventory().getStackInSlot(slot)).append(';');
+                        }
                     }
                 }
             }
@@ -88,20 +108,31 @@ public final class ItemUnits
             final var inventory = citizen.getInventory();
             for (int slot = 0; slot < inventory.getSlots(); slot++)
             {
-                total += units(inventory.getStackInSlot(slot));
+                final long u = units(inventory.getStackInSlot(slot));
+                total += u;
+                if (detail != null && u > 0)
+                {
+                    detail.append(" citizen").append(citizen.getId()).append('=').append(inventory.getStackInSlot(slot)).append(';');
+                }
             }
         }
-        final BlockPos c = run.colony.getCenter();
-        final AABB box = new AABB(c.getX() - 160, c.getY() - 8, c.getZ() - 160, c.getX() + 160, c.getY() + 40, c.getZ() + 160);
-        for (final ItemEntity entity : run.level.getEntitiesOfClass(ItemEntity.class, box))
+        for (final ItemEntity entity : run.level.getEntitiesOfClass(ItemEntity.class, run.plotBox()))
         {
             total += units(entity.getItem());
+            if (detail != null && units(entity.getItem()) > 0)
+            {
+                detail.append(" entity@").append(entity.blockPosition().toShortString()).append('=').append(entity.getItem()).append(';');
+            }
         }
         for (final Map.Entry<BlockPos, Block> site : run.sites.entrySet())
         {
             if (run.level.getBlockState(site.getKey()).is(site.getValue()))
             {
                 total += perItem(new ItemStack(site.getValue().asItem()));
+                if (detail != null)
+                {
+                    detail.append(" site@").append(site.getKey().toShortString()).append('=').append(site.getValue()).append(';');
+                }
             }
         }
         return total;
