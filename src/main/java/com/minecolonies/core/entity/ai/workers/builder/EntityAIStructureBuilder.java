@@ -308,6 +308,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         long badSince = 0L;
         long noSpotUntil = 0L;
         long noSpotSince = 0L;
+        net.minecraft.world.phys.Vec3 lastPosition = null;
+        long lastMoved = 0L;
 
         void reset()
         {
@@ -316,6 +318,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             badSince = 0L;
             noSpotUntil = 0L;
             noSpotSince = 0L;
+            lastPosition = null;
         }
     }
 
@@ -468,7 +471,13 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         if (walk.spot != null)
         {
             final double distance = ReachSpots.walkCost(worker.blockPosition(), walk.spot);
-            final boolean timedOut = now - walk.since > 100 + 12L * (long) Math.ceil(distance);
+            // a walk that does not get anywhere (a path along scaffolding that the builder cannot follow) is given up after a while
+            if (walk.lastPosition == null || worker.position().distanceTo(walk.lastPosition) >= 0.4D)
+            {
+                walk.lastPosition = worker.position();
+                walk.lastMoved = now;
+            }
+            final boolean timedOut = now - walk.since > 100 + 12L * (long) Math.ceil(distance) || now - walk.lastMoved > 60L;
             final BlockPos effective = world.getBlockState(walk.spot.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? walk.spot.below() : walk.spot;
             if (!timedOut && StandSpots.canStandAt(world, walk.spot) && !BuildReach.inReachFromFeet(effective, worker.getEyeHeight(), target, margin)
                   && !(worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate nav0 && nav0.isStuck()))
@@ -531,6 +540,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             }
             walk.spot = spots.get(0).feet();
             walk.since = now;
+            walk.lastPosition = null;
             walk.noSpotSince = 0L;
             scaffold.note((walk == mainWalk ? "spot " : "scaffold spot ") + walk.spot + " for " + target + " covers " + spots.get(0).covered() + " walk " + String.format("%.1f", spots.get(0).walk()) + " builder at " + worker.blockPosition());
         }
