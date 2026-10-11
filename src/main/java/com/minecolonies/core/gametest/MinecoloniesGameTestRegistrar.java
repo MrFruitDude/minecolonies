@@ -537,6 +537,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multicolony_force_active_state"),
           info -> new MinecoloniesGameTestInstance(info, MultiColonyGameTests::force_active_state),
           isolatedColonyData(event, "multicolony_force_active_state"));
+        // MP-D: a building's claim never takes another owner's chunks.
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "claims_other_owner_chunks_are_skipped"),
+          info -> new MinecoloniesGameTestInstance(info, ClaimOwnerGameTests::building_claim_skips_other_owners_chunks),
+          isolatedColonyData(event, "claims_other_owner_chunks_are_skipped"));
         // MULTIPLAYER (MP-A): two messages that let one player write to another's colony (one glob: minecolonies:mpsec_*).
         for (final String name : new String[] {"mpsec_trigger_connection_needs_both_colonies", "mpsec_create_colony_changes_the_hut_only_after_the_checks",
           "mpsec_create_colony_too_close_names_nobody", "mpsec_decoders_refuse_junk"})
