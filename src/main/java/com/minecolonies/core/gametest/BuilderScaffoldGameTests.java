@@ -322,6 +322,12 @@ final class BuilderScaffoldGameTests
      */
     static void tallStructure(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final boolean physical, final int maxTicks, final boolean expectScaffold)
     {
+        tallStructure(helper, name, blueprintOf, physical, maxTicks, expectScaffold, null);
+    }
+
+    static void tallStructure(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final boolean physical, final int maxTicks, final boolean expectScaffold,
+      final java.util.function.BiConsumer<WorkerEfficiencyGameTests.Live, BlockPos> beforeOrder)
+    {
         WorkerSettings.overrideReachForTests(null, physical, null, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
@@ -331,6 +337,10 @@ final class BuilderScaffoldGameTests
             final Blueprint blueprint = blueprintOf.get();
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
             live.stock(Items.SCAFFOLDING, 32);
+            if (beforeOrder != null)
+            {
+                beforeOrder.accept(live, helper.absolutePos(SITE));
+            }
             final WorkOrderDecoration order = live.orderFor(name, SITE, blueprint);
             final BlockPos origin = order.getLocation();
             final Watch watch = new Watch();
@@ -391,7 +401,22 @@ final class BuilderScaffoldGameTests
 
     public static void sealedRoof(final GameTestHelper helper)
     {
-        tallStructure(helper, "sealed", () -> sealedBox("sealed"), true, 30_000, true);
+        // the walls stand already (the builder is outside), the roof is left: its middle is out of reach from the ground
+        tallStructure(helper, "sealed", () -> sealedBox("sealed"), true, 30_000, true, (live, origin) -> {
+            for (int y = 0; y < 4; y++)
+            {
+                for (int x = 0; x < 11; x++)
+                {
+                    for (int z = 0; z < 11; z++)
+                    {
+                        if (x == 0 || z == 0 || x == 10 || z == 10)
+                        {
+                            live.level.setBlock(origin.offset(x, y, z), WorkerEfficiencyGameTests.BUILD_BLOCK.defaultBlockState(), 3);
+                        }
+                    }
+                }
+            }
+        });
     }
 
     public static void overhangSlab(final GameTestHelper helper)
@@ -756,6 +781,13 @@ final class BuilderScaffoldGameTests
             final var entity = live.citizen.getEntity().get();
             entity.setPos(site.getX() + 0.5D, site.getY(), site.getZ() + 0.5D);
             final int[] first = {-1};
+            {
+                final BlockPos start = site;
+                final var reach = com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(live.level, start, 28, 30000);
+                Log.getLogger().info("PROBE {} bfs: {} nodes, contains top={} contains cell={} climbable cell={} standable top={} floorState={}", name, reach.size(), reach.contains(site.offset(3, height, 0)),
+                  reach.contains(site.offset(3, height - 1, 0)), live.level.getBlockState(site.offset(3, height - 1, 0)).is(net.minecraft.tags.BlockTags.CLIMBABLE),
+                  com.minecolonies.core.entity.ai.workers.util.StandSpots.canStandAt(live.level, site.offset(3, height, 0)), live.level.getBlockState(site.offset(3, height - 1, 0)));
+            }
             WorkerEfficiencyGameTests.everyTick(live, 800, tick -> {
                 com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils.walkToPos(entity, goal, 1, false);
                 if (tick % 20 == 0)
@@ -773,6 +805,11 @@ final class BuilderScaffoldGameTests
                 helper.succeed();
             }, () -> "PROBE " + name + " did not reach " + goal + ": at " + entity.blockPosition());
         });
+    }
+
+    public static void climbTop1(final GameTestHelper helper)
+    {
+        climbProbe(helper, "top1", 1, true);
     }
 
     public static void climbTop3(final GameTestHelper helper)
