@@ -102,4 +102,53 @@ public class StandardRetryingRequestResolverTest
         assertTrue("the request left the retrying resolver although its parent was reassigned onto the same resolver",
           resolver.getAssignedRequests().containsKey(child.getId()));
     }
+
+    /**
+     * RS2 fallback: the back-off doubles from 20 request-system ticks and stops at 600.
+     */
+    @Test
+    public void backoffDoublesAndIsCapped()
+    {
+        assertEquals(20, StandardRetryingRequestResolver.backoff(1));
+        assertEquals(40, StandardRetryingRequestResolver.backoff(2));
+        assertEquals(80, StandardRetryingRequestResolver.backoff(3));
+        assertEquals(160, StandardRetryingRequestResolver.backoff(4));
+        assertEquals(320, StandardRetryingRequestResolver.backoff(5));
+        assertEquals(600, StandardRetryingRequestResolver.backoff(6));
+        assertEquals(600, StandardRetryingRequestResolver.backoff(1000));
+        assertEquals("a bogus attempt number does not overflow", 20, StandardRetryingRequestResolver.backoff(0));
+    }
+
+    /**
+     * RS2: an event makes the request due on the next tick, only if the resolver holds it.
+     */
+    @Test
+    public void expediteBringsTheRetryForward()
+    {
+        final IToken<?> waiting = RsTestSupport.token();
+        final IToken<?> stranger = RsTestSupport.token();
+        final IToken<?> otherResolver = RsTestSupport.token();
+        final List<IToken<?>> retried = new ArrayList<>();
+        final IRequestManager manager = RsTestSupport.manager(new ArrayList<>(), new HashMap<>(), (token, blacklist) -> {
+            retried.add(token);
+            return otherResolver;
+        });
+
+        final StandardRetryingRequestResolver resolver = new StandardRetryingRequestResolver(RsTestSupport.token(), null);
+        final Map<IToken<?>, Integer> attempts = new HashMap<>();
+        final Map<IToken<?>, Integer> delays = new HashMap<>();
+        attempts.put(waiting, 2);
+        delays.put(waiting, 500);
+        resolver.updateData(attempts, delays);
+        resolver.updateManager(manager);
+
+        resolver.expedite(stranger);
+        resolver.tick();
+        assertEquals("nothing is due yet", 0, retried.size());
+        assertEquals("a stranger is not adopted", false, resolver.isHolding(stranger));
+
+        resolver.expedite(waiting);
+        resolver.tick();
+        assertEquals("woken: retried on the next tick", List.of(waiting), retried);
+    }
 }

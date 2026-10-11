@@ -619,6 +619,59 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_reserve_building_handout"),
           info -> new MinecoloniesGameTestInstance(info, RequestReservationGameTests::buildingHandoutHeld),
           isolatedColonyData(event, "rs_reserve_building_handout"));
+        // RS2: named wait reasons, event-driven re-evaluation.
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_unproducible_player_once"),
+          info -> new MinecoloniesGameTestInstance(info, RequestWaitGameTests::unproducibleGoesToPlayerOnce),
+          isolatedColonyData(event, "rs_wait_unproducible_player_once"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_producible_quiet"),
+          info -> new MinecoloniesGameTestInstance(info, RequestWaitGameTests::producibleWaitsQuietly),
+          isolatedColonyData(event, "rs_wait_producible_quiet"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_state_events"),
+          info -> new MinecoloniesGameTestInstance(info, RequestWaitGameTests::stateChangedEvents),
+          isolatedColonyData(event, "rs_wait_state_events"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_reason_synced"),
+          info -> new MinecoloniesGameTestInstance(info, RequestWaitGameTests::waitReasonIsSynced),
+          isolatedColonyData(event, "rs_wait_reason_synced"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_ladder_on"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestWaitGameTests.unproducibleLadder(helper, true)),
+          isolatedColonyData(event, "rs_wait_ladder_on"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_ladder_off"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestWaitGameTests.unproducibleLadder(helper, false)),
+          longIsolatedColonyData(event, "rs_wait_ladder_off", 80_000));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_stock_wake_on"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestWaitGameTests.wakeOnStock(helper, true)),
+          isolatedColonyData(event, "rs_wait_stock_wake_on"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_stock_wake_off"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestWaitGameTests.wakeOnStock(helper, false)),
+          isolatedColonyData(event, "rs_wait_stock_wake_off"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_partial_on"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestWaitGameTests.partialArrival(helper, true)),
+          isolatedColonyData(event, "rs_wait_partial_on"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_partial_off"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestWaitGameTests.partialArrival(helper, false)),
+          isolatedColonyData(event, "rs_wait_partial_off"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_crafter_hired_on"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestWaitGameTests.crafterHiredLate(helper, true)),
+          isolatedColonyData(event, "rs_wait_crafter_hired_on"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_crafter_hired_off"),
+          info -> new MinecoloniesGameTestInstance(info, helper -> RequestWaitGameTests.crafterHiredLate(helper, false)),
+          isolatedColonyData(event, "rs_wait_crafter_hired_off"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_courier_stuck"),
+          info -> new MinecoloniesGameTestInstance(info, RequestWaitGameTests::stuckCourierGivesUp),
+          isolatedColonyData(event, "rs_wait_courier_stuck"));
     }
 
     /**
@@ -637,6 +690,22 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
 
     private static TestData<Holder<TestEnvironmentDefinition<?>>> plotData(final Holder<TestEnvironmentDefinition<?>> environment)
     {
-        return new TestData<>(environment, COLONY_PLOT, 40100, 0, true, Rotation.NONE);
+        return plotData(environment, 40100);
+    }
+
+    private static TestData<Holder<TestEnvironmentDefinition<?>>> plotData(final Holder<TestEnvironmentDefinition<?>> environment, final int maxTicks)
+    {
+        return new TestData<>(environment, COLONY_PLOT, maxTicks, 0, true, Rotation.NONE);
+    }
+
+    /**
+     * Like {@link #isolatedColonyData} for a test that runs for a long time (the headline acceptance test).
+     */
+    private static TestData<Holder<TestEnvironmentDefinition<?>>> longIsolatedColonyData(final RegisterGameTestsEvent event, final String name, final int maxTicks)
+    {
+        return plotData(event.registerEnvironment(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony/" + name),
+          new ColonyIsolationEnvironment(name),
+          new TestEnvironmentDefinition.Weather(TestEnvironmentDefinition.Weather.Type.CLEAR)), maxTicks);
     }
 }

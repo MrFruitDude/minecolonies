@@ -10,6 +10,7 @@ import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
 import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
+import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
 import com.minecolonies.core.tileentities.TileEntityRack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -166,6 +167,11 @@ final class RsFixture
         return standard().getReservationLedger();
     }
 
+    RequestWaitTracker tracker()
+    {
+        return standard().getWaitTracker();
+    }
+
     IRequest<?> request(final IToken<?> token)
     {
         return manager().getRequestForToken(token);
@@ -191,7 +197,7 @@ final class RsFixture
         {
             holder = "none";
         }
-        return request.getState() + " at " + holder + " children=" + request.getChildren().size();
+        return request.getState() + "/" + request.getWaitReason() + " at " + holder + " children=" + request.getChildren().size();
     }
 
     /**
