@@ -380,6 +380,7 @@ public final class WorkerEfficiencyGameTests
      */
     public static void stuckInShaft(final GameTestHelper helper)
     {
+        com.minecolonies.core.entity.ai.workers.util.ReachAudit.enable(true);
         scene(helper, "WSTUCK shaft", live -> {
             live.setSkills(40, 40);
             live.giveTools();
