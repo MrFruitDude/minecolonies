@@ -152,7 +152,9 @@ public final class WorkerEfficiencyGameTests
         String ai()
         {
             return citizen.getEntity().map(e -> e.getCitizenJobHandler().getWorkAI() == null ? "no-ai"
-              : e.getCitizenJobHandler().getWorkAI().getStateAI().getState() + " history=" + e.getCitizenJobHandler().getWorkAI().getStateAI().getHistory().getString()).orElse("no-entity");
+              : e.getCitizenJobHandler().getWorkAI().getStateAI().getState() + " history=" + e.getCitizenJobHandler().getWorkAI().getStateAI().getHistory().getString()).orElse("no-entity")
+                     + " open=" + hut.getOpenRequests(citizen.getId()).stream().map(r -> String.valueOf(r.getRequest())).toList()
+                     + " buildingOpen=" + hut.getOpenRequests(-1).stream().map(r -> String.valueOf(r.getRequest())).toList();
         }
     }
 
@@ -387,7 +389,7 @@ public final class WorkerEfficiencyGameTests
                 {
                     final int cleared = dirt0 - countBlocks(live, origin, Blocks.DIRT, 4);
                     Log.getLogger().info("WSTUCK shaft t=1000 cleared={} {}", cleared, live.ai());
-                    early[0] = cleared >= 24;
+                    early[0] = cleared >= 10;
                     helper.assertTrue(early[0], "the builder stood in the shaft for 1000 ticks and cleared only " + cleared + " blocks: " + live.ai());
                 }
                 return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();

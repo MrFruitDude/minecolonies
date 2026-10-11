@@ -776,6 +776,75 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     private long toolWaitTick  = -1L;
 
     /**
+     * Until this game time blocks that need a tool the worker does not have are deferred at once and the open tool request does not hold the AI
+     * in NEEDS_ITEM: the worker does the work he can do first (the request stays open and the tool is used when it arrives).
+     */
+    private long toolDeferUntil = -1L;
+
+    /**
+     * How long that lasts after a tool request has held the worker for {@link #TOOL_TIMEOUT_TICKS}.
+     */
+    protected static final int TOOL_DEFER_WINDOW_TICKS = 6000;
+
+    /**
+     * Whether everything the worker waits for is a tool (and nothing waits to be picked up).
+     */
+    private boolean onlyToolRequestsOpen()
+    {
+        final ICitizenData citizen = worker.getCitizenData();
+        boolean any = false;
+        for (final IRequest<?> request : building.getOpenRequests(citizen.getId()))
+        {
+            if (citizen.isRequestAsync(request.getId()))
+            {
+                continue;
+            }
+            if (!(request.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.Tool))
+            {
+                return false;
+            }
+            any = true;
+        }
+        return any && !building.hasCitizenCompletedRequestsToPickup(citizen);
+    }
+
+    @Override
+    protected boolean checkIfNeedsItem()
+    {
+        if (toolDeferUntil > world.getGameTime() && blockToMine != null && onlyToolRequestsOpen())
+        {
+            return false;
+        }
+        return super.checkIfNeedsItem();
+    }
+
+    @NotNull
+    @Override
+    protected IAIState waitForRequests()
+    {
+        if (structurePlacer != null && blockToMine != null && !retryBlocks.contains(blockToMine) && onlyToolRequestsOpen())
+        {
+            // held by a tool request while a block waits for it: after a while the worker does the rest first
+            final long now = world.getGameTime();
+            toolWaitTicks += toolWaitTick < 0 ? 0 : (int) Math.min(now - toolWaitTick, 200L);
+            toolWaitTick = now;
+            if (toolWaitTicks >= TOOL_TIMEOUT_TICKS)
+            {
+                toolWaitTicks = 0;
+                toolWaitTick = -1L;
+                toolDeferUntil = now + TOOL_DEFER_WINDOW_TICKS;
+                deferBlock(blockToMine);
+                return BUILDING_STEP;
+            }
+        }
+        else
+        {
+            toolWaitTick = -1L;
+        }
+        return super.waitForRequests();
+    }
+
+    /**
      * After this many ticks without a tool the block is deferred (the request for the tool stays open).
      */
     protected static final int TOOL_TIMEOUT_TICKS = 1200;
@@ -972,6 +1041,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         retryRounds = 0;
         toolWaitTicks = 0;
         toolWaitTick = -1L;
+        toolDeferUntil = -1L;
         stuck.progress();
         stuckLastTick = -1L;
         stuckLastPos = null;
@@ -1307,6 +1377,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
                 case TOOL:
                     // no tool for this block (it is requested): do the rest first, the block comes again at the end of the stage
                     final long now = world.getGameTime();
+                    if (now < toolDeferUntil && !retryBlocks.contains(blockToMine))
+                    {
+                        deferBlock(blockToMine);
+                        return BUILDING_STEP;
+                    }
                     toolWaitTicks += toolWaitTick < 0 ? 0 : (int) Math.min(now - toolWaitTick, 200L);
                     toolWaitTick = now;
                     if (toolWaitTicks >= TOOL_TIMEOUT_TICKS)
@@ -1315,6 +1390,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
                         toolWaitTick = -1L;
                         if (!retryBlocks.contains(blockToMine))
                         {
+                            toolDeferUntil = now + TOOL_DEFER_WINDOW_TICKS;
                             deferBlock(blockToMine);
                             return BUILDING_STEP;
                         }
@@ -1337,6 +1413,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         }
         toolWaitTicks = 0;
         toolWaitTick = -1L;
+        toolDeferUntil = -1L;
         worker.decreaseSaturationForContinuousAction();
         stuck.progress();
         onBlockProcessed();
