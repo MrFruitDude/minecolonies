@@ -12,7 +12,10 @@ import com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder;
 import com.minecolonies.core.colony.workorders.collab.AssistReservations;
 import com.minecolonies.core.colony.workorders.collab.BuilderCollab;
 import com.minecolonies.core.colony.workorders.collab.WorkOrderCollab;
+import com.minecolonies.core.entity.ai.workers.util.BuildReach;
 import com.minecolonies.core.entity.ai.workers.util.BuilderStageRules;
+import com.minecolonies.core.entity.ai.workers.util.ReachSpots;
+import com.minecolonies.core.entity.ai.workers.util.StandSpots;
 import com.minecolonies.core.entity.ai.workers.util.AbstractWalking;
 import com.minecolonies.core.entity.ai.workers.util.WorkStuckTracker;
 import com.minecolonies.core.entity.ai.workers.util.WorkTiming;
@@ -31,6 +34,8 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.component.SwingAnimation;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -274,9 +279,148 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         return PICK_UP;
     }
 
+    // ------------------------------------------------------------------ physical reach
+
+    /**
+     * The spot the builder walks to so that he reaches the block he works on; the spots that did not get him there (with the time they
+     * were chosen), so he picks another one.
+     */
+    private BlockPos      reachSpot      = null;
+    private long          reachSpotSince = 0L;
+    private final Set<BlockPos> badSpots = new HashSet<>();
+    private long          noSpotUntil    = 0L;
+
+    @Override
+    protected boolean usesPhysicalReach()
+    {
+        return WorkerSettings.physicalReach();
+    }
+
+    @Override
+    protected boolean canReachNow(final BlockPos pos)
+    {
+        return !usesPhysicalReach() || BuildReach.inReach(worker.getX(), worker.getEyeY(), worker.getZ(), pos, WorkerSettings.reach());
+    }
+
+    @Override
+    protected List<BlockPos> workAhead(final BlockPos target)
+    {
+        if (assistOrder != null && !building.hasWorkOrder() && !batch.isEmpty())
+        {
+            // a helper works through his leased positions in the order of his batch
+            final List<BlockPos> list = new ArrayList<>(batch.size());
+            list.add(target);
+            for (final LeaseAllocator.Planned planned : batch)
+            {
+                if (!planned.world().equals(target))
+                {
+                    list.add(planned.world());
+                }
+            }
+            return list;
+        }
+        return super.workAhead(target);
+    }
+
+    @Override
+    protected void resetWalkTarget()
+    {
+        reachSpot = null;
+        badSpots.clear();
+        noSpotUntil = 0L;
+        if (gotoPath != null)
+        {
+            gotoPath.cancel();
+            gotoPath = null;
+        }
+        super.resetWalkTarget();
+    }
+
+    /**
+     * Gets the builder to a place where he reaches the block: stays where he stands if the block is in reach from there, else walks to the
+     * best spot (the one that serves most of the blocks he works on next).
+     *
+     * @param target the block.
+     * @return true once the builder reaches it.
+     */
+    private boolean walkIntoReach(final BlockPos target)
+    {
+        final double reach = WorkerSettings.reach();
+        if (BuildReach.inReach(worker.getX(), worker.getEyeY(), worker.getZ(), target, reach))
+        {
+            if (reachSpot != null)
+            {
+                worker.getNavigation().stop();
+                reachSpot = null;
+            }
+            workFrom = worker.blockPosition();
+            prevBlockPosition = target;
+            return true;
+        }
+
+        // A long way to the block: abstract walking (a timed relocation) instead of a long path, if the settings allow it
+        final Boolean relocated = AbstractWalking.tryRelocate(worker, target, 4);
+        if (relocated != null && !relocated)
+        {
+            return false;
+        }
+
+        final long now = world.getGameTime();
+        if (reachSpot != null)
+        {
+            final double walk = ReachSpots.walkCost(worker.blockPosition(), reachSpot);
+            final boolean timedOut = now - reachSpotSince > 100 + 12L * (long) Math.ceil(walk);
+            if (timedOut || !StandSpots.canStandAt(world, reachSpot) || !BuildReach.inReachFromFeet(reachSpot, worker.getEyeHeight(), target, reach - ReachSpots.MARGIN)
+                  || (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate nav && nav.isStuck()))
+            {
+                badSpots.add(reachSpot);
+                reachSpot = null;
+                worker.getNavigation().stop();
+            }
+        }
+        if (reachSpot == null && workFrom != null && !workFrom.equals(worker.blockPosition()) && !badSpots.contains(workFrom)
+              && StandSpots.canStandAt(world, workFrom) && BuildReach.inReachFromFeet(workFrom, worker.getEyeHeight(), target, reach - ReachSpots.MARGIN))
+        {
+            // a spot the unstuck ladder picked
+            reachSpot = workFrom;
+            reachSpotSince = now;
+        }
+        if (reachSpot == null)
+        {
+            if (now < noSpotUntil)
+            {
+                return false;
+            }
+            final List<ReachSpots.Spot> spots = ReachSpots.best(world, workAhead(target), reach, worker.getEyeHeight(), worker.blockPosition(), p -> !badSpots.contains(p), 1);
+            if (spots.isEmpty())
+            {
+                // nothing to stand on within reach of the block: this is a job for scaffolding
+                noSpotUntil = now + 20;
+                tryScaffold(target);
+                return false;
+            }
+            reachSpot = spots.get(0).feet();
+            reachSpotSince = now;
+        }
+
+        workFrom = reachSpot;
+        if (EntityNavigationUtils.walkToPos(worker, reachSpot, 1, false))
+        {
+            // he is there, and the block is still out of reach: this spot does not work
+            badSpots.add(reachSpot);
+            reachSpot = null;
+        }
+        return false;
+    }
+
     @Override
     public boolean walkToConstructionSite(final BlockPos currentBlock)
     {
+        if (usesPhysicalReach() && currentBlock.equals(reachTarget))
+        {
+            return walkIntoReach(currentBlock);
+        }
+
         // A builder that is already within the normal working radius does not
         // need an asynchronous path calculation.  This is also important for
         // freshly-created worlds where the path executor can briefly lag the
@@ -403,17 +547,6 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     protected double getPlacementSpeed()
     {
         return WorkerSettings.builderSpeed();
-    }
-
-    @Override
-    protected void resetWalkTarget()
-    {
-        if (gotoPath != null)
-        {
-            gotoPath.cancel();
-            gotoPath = null;
-        }
-        super.resetWalkTarget();
     }
 
     /**
@@ -984,6 +1117,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             return getState();
         }
 
+        reachTarget = usesPhysicalReach() ? planned.world() : null;
         if (!walkToConstructionSite(planned.world()))
         {
             if (escalateStuck(planned.world()) == WorkStuckTracker.Step.DEFER)
@@ -1035,6 +1169,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             return ASSIST_WORK;
         }
         assistOrder.getCollab().renew(building.getID(), world.getGameTime() + BuilderCollab.leaseTicks());
+        reachTarget = usesPhysicalReach() ? assistMine : null;
         if (!walkToConstructionSite(assistMine) || workFrom == null)
         {
             if (escalateStuck(assistMine) == WorkStuckTracker.Step.DEFER)

@@ -36,6 +36,7 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideSmartRetry(null);
         com.minecolonies.core.colony.requestsystem.RsStats.reset();
         com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
+        com.minecolonies.core.entity.ai.workers.util.ReachAudit.enable(false);
         com.minecolonies.core.colony.ColonyLimits.overrideMaxPerPlayer(null);
         com.minecolonies.core.colony.FactionConfig.overrideDefaultPlayerRank(null);
         com.minecolonies.core.colony.FactionConfig.overrideCanBeRaided(null);
@@ -51,6 +52,7 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
     public void teardown(final ServerLevel level, final Unit saveData)
     {
         com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
+        com.minecolonies.core.entity.ai.workers.util.ReachAudit.enable(false);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideSmartRetry(null);
         com.minecolonies.core.colony.ColonyLimits.overrideMaxPerPlayer(null);

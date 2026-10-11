@@ -64,9 +64,17 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     @Override
     public void accept(final RegisterGameTestsEvent event)
     {
-        if ("worker_eff".equals(System.getProperty("minecolonies.gametest.only")))
+        final String only = System.getProperty("minecolonies.gametest.only", "");
+        if (!only.isEmpty() && (only.contains("worker_eff") || only.contains("scaffold")))
         {
-            registerWorkerEfficiency(event);
+            if (only.contains("worker_eff"))
+            {
+                registerWorkerEfficiency(event);
+            }
+            if (only.contains("scaffold"))
+            {
+                registerBuilderScaffolding(event);
+            }
             return;
         }
         final Holder<TestEnvironmentDefinition<?>> environment = event.registerEnvironment(
@@ -896,6 +904,28 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "worker_eff_set_bench_place_l40_max" -> WorkerSettingsGameTests::benchPlaceL40Max;
                 case "worker_eff_set_abstract_walking" -> WorkerSettingsGameTests::abstractWalkingRelocates;
                 default -> WorkerSettingsGameTests::walkSpeedCalibration;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
+    }
+
+    /**
+     * L4 builder reach and scaffolding tests. Run on their own with {@code JAVA_TOOL_OPTIONS=-Dminecolonies.gametest.only=scaffold}.
+     */
+    private void registerBuilderScaffolding(final RegisterGameTestsEvent event)
+    {
+        for (final String name : new String[] {"scaffold_reach_box_l40", "scaffold_reach_box_l1", "scaffold_reach_clear_l40", "scaffold_legacy_box_l40", "scaffold_legacy_box_l1"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "scaffold_reach_box_l40" -> BuilderScaffoldGameTests::reachBoxL40;
+                case "scaffold_reach_box_l1" -> BuilderScaffoldGameTests::reachBoxL1;
+                case "scaffold_reach_clear_l40" -> BuilderScaffoldGameTests::reachClearL40;
+                case "scaffold_legacy_box_l40" -> BuilderScaffoldGameTests::legacyBoxL40;
+                default -> BuilderScaffoldGameTests::legacyBoxL1;
             };
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),

@@ -212,6 +212,7 @@ public class BuildingStructureHandler<J extends AbstractJobStructure<?, J>, B ex
 
         if (placement)
         {
+            ReachAudit.record(structureAI.getWorker(), worldPos);
             com.minecolonies.core.colony.workorders.collab.BuilderCollab.placed(worldPos, structureAI.getWorker().getCitizenData().getWorkBuilding().getID());
             structureAI.getWorker().getCitizenExperienceHandler().addExperience(XP_EACH_BLOCK);
 

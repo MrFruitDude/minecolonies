@@ -6,6 +6,8 @@ import com.ldtteam.structurize.api.util.Tuple;
 import com.ldtteam.structurize.placement.BlockPlacementResult;
 import com.ldtteam.structurize.placement.StructurePhasePlacementResult;
 import com.ldtteam.structurize.placement.StructurePlacer;
+import com.ldtteam.structurize.placement.handlers.placement.IPlacementHandler;
+import com.ldtteam.structurize.util.BlockInfo;
 import com.ldtteam.structurize.placement.structure.IStructureHandler;
 import com.ldtteam.structurize.util.BlockUtils;
 import com.ldtteam.structurize.util.BlueprintPositionInfo;
@@ -33,7 +35,9 @@ import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource;
 import com.minecolonies.core.colony.jobs.AbstractJobStructure;
 import com.minecolonies.core.entity.ai.workers.util.BuilderStageRules;
 import com.minecolonies.core.entity.ai.workers.util.AbstractWalking;
+import com.minecolonies.core.entity.ai.workers.util.ReachSpots;
 import com.minecolonies.core.entity.ai.workers.util.StandSpots;
+import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
 import com.minecolonies.core.entity.ai.workers.util.WorkStuckTracker;
 import com.minecolonies.core.entity.ai.workers.util.WorkTiming;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
@@ -528,13 +532,25 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         //Fill workFrom with the position from where the builder should build.
         //also ensure we are at that position.
         final BlockPos progress = getProgressPos() == null ? NULL_POS : getProgressPos().getA();
-        final BlockPos worldPos = getPosToWorkAt();
+        BlockPos worldPos = getPosToWorkAt();
+        boolean reachGate = false;
+        if (usesPhysicalReach() && blockToMine == null && !limitReached)
+        {
+            // the worker works on what he reaches: the next block that has something to do is the one he has to be able to reach
+            final List<BlockPos> next = peekWork(1);
+            if (!next.isEmpty())
+            {
+                worldPos = next.get(0);
+                reachGate = true;
+            }
+        }
 
         if (getProgressPos() != null)
         {
             structurePlacer.getB().setStage(getProgressPos().getB());
         }
 
+        reachTarget = usesPhysicalReach() ? (blockToMine != null ? blockToMine : (reachGate ? worldPos : null)) : null;
         final boolean mustWalk = (worldPos != null || blockToMine != null) && !limitReached
                                    && (blockToMine == null ? !walkToConstructionSite(worldPos) : !walkToConstructionSite(blockToMine));
         if (mustWalk)
@@ -543,7 +559,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             final BlockPos target = blockToMine != null ? blockToMine : worldPos;
             if (escalateStuck(target) == WorkStuckTracker.Step.DEFER)
             {
-                deferBlock(blockToMine != null ? blockToMine : peekNextBlock());
+                deferBlock(blockToMine != null ? blockToMine : (reachGate ? worldPos : peekNextBlock()));
             }
             return getState();
         }
@@ -1050,6 +1066,122 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * Whether this worker places and breaks only what he reaches (3D, from the eye). Builders do, with the setting on.
+     *
+     * @return false by default.
+     */
+    protected boolean usesPhysicalReach()
+    {
+        return false;
+    }
+
+    /**
+     * The block the worker has to reach for the walk he is asked for now (the walk to any other position is the usual one), set by the code
+     * that asks for the walk.
+     */
+    protected BlockPos reachTarget = null;
+
+    /**
+     * Whether the worker reaches a block from where he stands. Always true for workers without the physical reach.
+     *
+     * @param pos the block.
+     * @return true if he can place or break it right now.
+     */
+    protected boolean canReachNow(final BlockPos pos)
+    {
+        return true;
+    }
+
+    /**
+     * How many of the next blocks are looked at when a worker picks the spot to work from.
+     */
+    protected static final int REACH_LOOKAHEAD = 16;
+
+    /**
+     * The blocks the worker works on next and where something has to be done (not those that are what the blueprint wants already), in the
+     * order he works on them, without moving on.
+     *
+     * @param n how many at most.
+     * @return their world positions, empty if the stage does not iterate over blocks (water, entities) or nothing is left.
+     */
+    protected final List<BlockPos> peekWork(final int n)
+    {
+        if (structurePlacer == null || structurePlacer.getB().getStage() == null)
+        {
+            return List.of();
+        }
+        final StructurePlacer placer = structurePlacer.getA();
+        final BuildingStructureHandler<J, B> handler = structurePlacer.getB();
+        final BuildingProgressStage stage = handler.getStage();
+        final Supplier<AbstractBlueprintIterator.Result> iterate = stageIterator(stage, placer);
+        final Tuple<BlockPos, BuildingProgressStage> progress = getProgressPos();
+        if (iterate == null || progress == null)
+        {
+            return List.of();
+        }
+        final List<BlockPos> work = new ArrayList<>();
+        final BlockPos before = placer.getIterator().getProgressPos();
+        try
+        {
+            placer.getIterator().setProgressPos(progress.getA());
+            int guard = 0;
+            while (work.size() < n && guard++ < 8 * n + 256 && iterate.get() == AbstractBlueprintIterator.Result.NEW_BLOCK)
+            {
+                final BlockPos local = placer.getIterator().getProgressPos();
+                final BlockPos worldPos = handler.getProgressPosInWorld(local);
+                if (hasWorkAt(stage, handler, local, worldPos))
+                {
+                    work.add(worldPos);
+                }
+            }
+        }
+        finally
+        {
+            placer.getIterator().setProgressPos(before);
+        }
+        return work;
+    }
+
+    private boolean hasWorkAt(final BuildingProgressStage stage, final BuildingStructureHandler<J, B> handler, final BlockPos local, final BlockPos worldPos)
+    {
+        if (stage == CLEAR || stage == REMOVE)
+        {
+            return !world.getBlockState(worldPos).isAir();
+        }
+        final BlockState wanted = handler.getBluePrint().getBlockState(local);
+        if (wanted == null)
+        {
+            return false;
+        }
+        return !IPlacementHandler.doesWorldStateMatchBlueprintState(new BlockInfo(local, wanted, handler.getBluePrint().getTileEntityData(worldPos, local)), worldPos, handler);
+    }
+
+    /**
+     * The blocks that count when the worker picks the spot to work from: the target first, then what he works on after it.
+     *
+     * @param target the block he has to reach.
+     * @return the blocks, the target is the first.
+     */
+    protected List<BlockPos> workAhead(final BlockPos target)
+    {
+        final List<BlockPos> ahead = peekWork(REACH_LOOKAHEAD);
+        if (ahead.isEmpty() || !ahead.get(0).equals(target))
+        {
+            final List<BlockPos> list = new ArrayList<>(ahead.size() + 1);
+            list.add(target);
+            for (final BlockPos pos : ahead)
+            {
+                if (!pos.equals(target))
+                {
+                    list.add(pos);
+                }
+            }
+            return list;
+        }
+        return ahead;
+    }
+
+    /**
      * The block the stage would visit next, without moving on (for deferring a block the worker is walking to).
      *
      * @return its world position, or null if there is none or the stage does not iterate.
@@ -1130,7 +1262,16 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     {
         final BlockPos[] area = workArea();
         BlockPos spot = null;
-        if (area != null)
+        if (usesPhysicalReach() && target.equals(reachTarget))
+        {
+            // the spot from which the block is in reach (and the blocks after it)
+            final List<ReachSpots.Spot> spots = ReachSpots.best(world, workAhead(target), WorkerSettings.reach(), worker.getEyeHeight(), worker.blockPosition(), null, 1);
+            if (!spots.isEmpty())
+            {
+                spot = spots.get(0).feet();
+            }
+        }
+        if (spot == null && area != null)
         {
             final int base = area[0].getY();
             spot = StandSpots.nearest(world, target, 16, 12, 12,
@@ -1168,7 +1309,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     private boolean tryMineInline()
     {
-        if (blockToMine == null || workFrom == null)
+        if (blockToMine == null || workFrom == null || !canReachNow(blockToMine))
         {
             return false;
         }
@@ -1348,6 +1489,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return BUILDING_STEP;
         }
 
+        reachTarget = usesPhysicalReach() ? blockToMine : null;
         if (!walkToConstructionSite(blockToMine))
         {
             if (escalateStuck(blockToMine) == WorkStuckTracker.Step.DEFER)
