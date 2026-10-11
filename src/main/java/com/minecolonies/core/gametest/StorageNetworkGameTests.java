@@ -60,12 +60,12 @@ public final class StorageNetworkGameTests
     {
         final String[] names = {"index_tracks_racks", "available_reserve_aware", "capacity_and_full", "any_courier_serves_any_warehouse", "courier_locked_flag_off",
           "completion_time_beats_nearest", "request_splits_across_warehouses", "no_routing_to_unserved_warehouse", "dump_continues_past_full_rack", "dump_stops_flag_off",
-          "dump_goes_to_warehouse_with_room", "dump_stays_flag_off", "save_load_mid_delivery", "conservation"};
+          "dump_goes_to_warehouse_with_room", "dump_stays_flag_off", "save_load_mid_delivery", "conservation", "full_storage_pickups_wait"};
         final java.util.List<java.util.function.Consumer<GameTestHelper>> bodies = List.of(StorageNetworkGameTests::indexTracksRacks, StorageNetworkGameTests::availableIsReserveAware,
           StorageNetworkGameTests::capacityAndFull, StorageNetworkGameTests::anyCourierServesAnyWarehouse, StorageNetworkGameTests::courierLockedFlagOff,
           StorageNetworkGameTests::completionTimeBeatsNearest, StorageNetworkGameTests::requestSplitsAcrossWarehouses, StorageNetworkGameTests::noRoutingToUnservedWarehouse,
           StorageNetworkGameTests::dumpContinuesPastFullRack, StorageNetworkGameTests::dumpStopsFlagOff, StorageNetworkGameTests::dumpGoesToWarehouseWithRoom,
-          StorageNetworkGameTests::dumpStaysFlagOff, StorageNetworkGameTests::saveLoadMidDelivery, StorageNetworkGameTests::conservation);
+          StorageNetworkGameTests::dumpStaysFlagOff, StorageNetworkGameTests::saveLoadMidDelivery, StorageNetworkGameTests::conservation, StorageNetworkGameTests::fullStoragePickupsWait);
         for (int i = 0; i < names.length; i++)
         {
             final String name = "storage_" + names[i];
@@ -724,5 +724,36 @@ public final class StorageNetworkGameTests
                 }
             });
         });
+    }
+
+    // ------------------------------------------------------------------ a full colony
+
+    /**
+     * When no warehouse has a free slot, a pickup is not queued (a courier would carry a load nobody can take): the producer keeps its
+     * output. Once room is made the next pickup is queued.
+     */
+    public static void fullStoragePickupsWait(final GameTestHelper helper)
+    {
+        RsFlags.overrideStorageNetwork(true);
+        final Net n = Net.found(helper, "storage-full-pickup", 1, 1);
+        n.quietCourier(n.a, new BlockPos(34, 1, 8));
+        fillWarehouse(n, n.a, new ItemStack(Items.STONE));
+        fillWarehouse(n, n.b, new ItemStack(Items.COBBLESTONE));
+        helper.assertTrue(n.storage().isFull(), "fixture: the colony is full");
+
+        helper.assertTrue(n.f.builder.createPickupRequest(64, true), "the pickup was requested");
+        helper.assertTrue(queued(n.a) + queued(n.b) == 0, "full: no courier task is queued (" + (queued(n.a) + queued(n.b)) + ")");
+
+        // Room in warehouse B.
+        for (final TileEntityRack rack : containersOf(n, n.b))
+        {
+            for (int slot = 0; slot < rack.getInventory().getSlots(); slot++)
+            {
+                rack.getInventory().extractItem(slot, 64, false);
+            }
+        }
+        helper.assertTrue(!n.storage().isFull(), "fixture: room again");
+        n.f.manager().onColonyUpdate(request -> request.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Pickup);
+        helper.succeedWhen(() -> helper.assertTrue(queued(n.a) + queued(n.b) == 1, "with room the pickup is queued for a courier: " + (queued(n.a) + queued(n.b))));
     }
 }

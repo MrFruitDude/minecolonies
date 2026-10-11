@@ -10,6 +10,7 @@ import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
 
 import static com.minecolonies.api.util.constant.TranslationConstants.COM_MINECOLONIES_COREMOD_WAREHOUSE_NETWORK_FULL;
+import static com.minecolonies.api.util.constant.TranslationConstants.COM_MINECOLONIES_COREMOD_WAREHOUSE_NETWORK_FULL_ANY;
 
 /**
  * Messages of the storage network.
@@ -46,6 +47,11 @@ public final class StorageNotices
         if (target != null)
         {
             target.accept(colony, stack);
+            return;
+        }
+        if (stack.isEmpty())
+        {
+            MessageUtils.format(COM_MINECOLONIES_COREMOD_WAREHOUSE_NETWORK_FULL_ANY).sendTo(colony).forAllPlayers();
             return;
         }
         MessageUtils.format(COM_MINECOLONIES_COREMOD_WAREHOUSE_NETWORK_FULL, stack.getHoverName()).sendTo(colony).forAllPlayers();

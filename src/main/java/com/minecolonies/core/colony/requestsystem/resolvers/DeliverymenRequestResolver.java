@@ -77,6 +77,17 @@ public abstract class DeliverymenRequestResolver<R extends IRequestable> extends
             return false;
         }
         final IWareHouse requesterWarehouse = colony.getServerBuildingManager().getBuilding(requestToCheck.getRequester().getLocation().getInDimensionLocation(), IWareHouse.class);
+        if (requestToCheck.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Pickup && requesterWarehouse == null)
+        {
+            // The colony storage is full: a courier would collect a load nobody can take. The producer keeps its output (and the managers are told once).
+            final ColonyStorage storage = ColonyStorage.of(colony);
+            if (storage.isFull())
+            {
+                storage.noticeFull(net.minecraft.world.item.ItemStack.EMPTY);
+                return false;
+            }
+            return true;
+        }
         if (requesterWarehouse == null)
         {
             return true;
