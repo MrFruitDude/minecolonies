@@ -151,9 +151,21 @@ public final class StandSpots
                 {
                     visit(level, near.above(), start, radius, seen, queue, true);
                 }
-                else if (canStandAt(level, near.below()) && isFree(level, near))
+                else if (swimmable(level, near))
                 {
-                    visit(level, near.below(), start, radius, seen, queue, true);
+                    visit(level, near, start, radius, seen, queue, true);
+                }
+                else if (isFree(level, near))
+                {
+                    // a step down (or a short drop, the paths of citizens allow up to three blocks)
+                    for (int drop = 1; drop <= 3 && isFree(level, near.below(drop - 1)); drop++)
+                    {
+                        if (canStandAt(level, near.below(drop)))
+                        {
+                            visit(level, near.below(drop), start, radius, seen, queue, true);
+                            break;
+                        }
+                    }
                 }
             }
             // a climbable block under the feet or above them is a way up
@@ -163,6 +175,15 @@ public final class StandSpots
             }
         }
         return seen;
+    }
+
+    /**
+     * Water the citizen swims in: water at the feet and room for the head.
+     */
+    private static boolean swimmable(final Level level, final BlockPos feet)
+    {
+        return WorldUtil.isBlockLoaded(level, feet) && level.getFluidState(feet).is(net.minecraft.tags.FluidTags.WATER)
+                 && level.getBlockState(feet.above()).getCollisionShape(level, feet.above(), CollisionContext.empty()).isEmpty();
     }
 
     private static void visit(final Level level, final BlockPos pos, final BlockPos start, final int radius, final Set<BlockPos> seen, final ArrayDeque<BlockPos> queue, final boolean allowed)

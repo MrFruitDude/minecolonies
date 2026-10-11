@@ -874,4 +874,26 @@ final class BuilderScaffoldGameTests
             }, () -> "requested=" + requested[0] + " missing=" + missing(live, blueprint, origin) + " " + live.ai());
         });
     }
+
+    /**
+     * A block hangs in the air over the middle of a deep, wide trench (no ground to build a tower from within reach of it): the builder puts a
+     * column on the edge and an arm of scaffolding out over the trench (at most 6 blocks, vanilla stability), stands on its end, places the
+     * block, and takes everything down again. Vanilla would let the arm fall if its stability distance were wrong, so the block stays only if the
+     * arm was built right.
+     */
+    public static void bridgeOverTrench(final GameTestHelper helper)
+    {
+        tallStructure(helper, "bridge", () -> shape("bridge", 15, 3, 1, (x, y, z) -> x == 7 && y == 2), true, 20_000, true, (live, origin) -> {
+            for (int x = 0; x < 15; x++)
+            {
+                for (int z = -8; z <= 8; z++)
+                {
+                    for (int y = -1; y >= -26; y--)
+                    {
+                        live.level.setBlock(origin.offset(x, y, z), Blocks.AIR.defaultBlockState(), 2);
+                    }
+                }
+            }
+        });
+    }
 }
