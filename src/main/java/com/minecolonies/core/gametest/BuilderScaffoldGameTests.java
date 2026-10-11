@@ -409,4 +409,327 @@ final class BuilderScaffoldGameTests
     {
         tallStructure(helper, "tall8_legacy", () -> ring("tall8_legacy", 8), false, 30_000, false);
     }
+
+    // ------------------------------------------------------------------ cancel, save and load, orphans
+
+    /**
+     * The order is cancelled while the tower stands: the scaffolding comes down at once, and the items are back in the hut.
+     */
+    public static void cancelMidBuild(final GameTestHelper helper)
+    {
+        ReachAudit.enable(true);
+        BuilderScaffolding.resetCounters();
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF cancel", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            final Blueprint blueprint = ring("cancel", 12);
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            live.stock(Items.SCAFFOLDING, 32);
+            final WorkOrderDecoration order = live.orderFor("cancel", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            final Watch watch = new Watch();
+            WorkerEfficiencyGameTests.everyTick(live, 20_000, tick -> {
+                watch(live, watch, origin, 32, tick);
+                return scaffoldInWorld(live, origin) >= 4 && ledgerSize(live) >= 4;
+            }, () -> {
+                final int before = scaffoldInWorld(live, origin);
+                Log.getLogger().info("WSCAF cancel: cancelling with {} scaffolding blocks up, {} in the ledger, {} items", before, ledgerSize(live), scaffoldItems(live, origin));
+                live.colony.getWorkManager().removeWorkOrder(order.getID());
+                helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left after the cancel: " + scaffoldInWorld(live, origin));
+                helper.assertTrue(ledgerSize(live) == 0 && ((WorkManager) live.colony.getWorkManager()).getOrphanScaffolds().isEmpty(), "ledger left after the cancel");
+                helper.assertTrue(scaffoldItems(live, origin) == 32, "items not conserved by the cancel: " + scaffoldItems(live, origin));
+                helper.runAfterDelay(100, () -> {
+                    helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding came back");
+                    helper.assertTrue(InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(Items.SCAFFOLDING)) == 32,
+                      "items are not in the hut: hut=" + InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(Items.SCAFFOLDING)) + " builders=" + scaffoldItemsInBuilders(live));
+                    helper.assertTrue(live.citizen.getEntity().map(e -> e.isAlive()).orElse(false), "the builder is gone");
+                    helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
+                    WorkerSettings.clearOverrides();
+                    ReachAudit.enable(false);
+                    helper.succeed();
+                });
+            }, () -> "no tower went up: " + live.ai() + " scaffold=" + scaffoldInWorld(live, origin) + " ledger=" + ledgerSize(live));
+        });
+    }
+
+    /**
+     * The colony is saved and loaded in the middle of the scaffolding: the ledger is in the NBT of the order and the builder goes on with the same
+     * tower, finishes, and takes it down.
+     */
+    public static void saveLoadMidScaffold(final GameTestHelper helper)
+    {
+        ReachAudit.enable(true);
+        BuilderScaffolding.resetCounters();
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF saveload", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            final Blueprint blueprint = ring("saveload", 12);
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            live.stock(Items.SCAFFOLDING, 32);
+            final WorkOrderDecoration order = live.orderFor("saveload", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            final Watch watch = new Watch();
+            final boolean[] reloaded = {false};
+            final int[] doneTick = {0};
+            WorkerEfficiencyGameTests.everyTick(live, 30_000, tick -> {
+                watch(live, watch, origin, 32, tick);
+                doneTick[0] = tick;
+                if (!reloaded[0] && scaffoldInWorld(live, origin) >= 4 && ledgerSize(live) >= 4)
+                {
+                    reloaded[0] = true;
+                    final WorkManager wm = (WorkManager) live.colony.getWorkManager();
+                    final ScaffoldLedger before = ((IBuilderWorkOrder) wm.getWorkOrder(order.getID())).getScaffolds();
+                    final List<BlockPos> cells = new ArrayList<>();
+                    before.all().forEach(c -> cells.add(c.pos()));
+                    final CompoundTag tag = new CompoundTag();
+                    wm.write(tag);
+                    wm.read(tag);
+                    final IBuilderWorkOrder after = (IBuilderWorkOrder) wm.getWorkOrder(order.getID());
+                    helper.assertTrue(after != null && after != order, "the order was not read again");
+                    helper.assertTrue(after.getScaffolds().size() == cells.size(), "ledger changed by the save: " + after.getScaffolds().size() + " vs " + cells.size());
+                    for (final BlockPos cell : cells)
+                    {
+                        helper.assertTrue(after.getScaffolds().contains(cell) && after.getScaffolds().get(cell).hut().equals(live.hut.getID()), "cell lost in the save: " + cell);
+                    }
+                    Log.getLogger().info("WSCAF saveload: saved and loaded with {} cells at t={}", cells.size(), tick);
+                }
+                return reloaded[0] && live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
+            }, () -> {
+                helper.assertTrue(built(live, blueprint, origin), "structure not complete: missing " + missing(live, blueprint, origin));
+                helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left in the world: " + scaffoldInWorld(live, origin));
+                helper.assertTrue(ledgerSize(live) == 0 && ((WorkManager) live.colony.getWorkManager()).getOrphanScaffolds().isEmpty(), "ledger left");
+                helper.assertTrue(scaffoldItems(live, origin) == 32, "items not conserved: " + scaffoldItems(live, origin));
+                helper.assertTrue(watch.conservationBreak == null, "items lost or made: " + watch.conservationBreak);
+                helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
+                Log.getLogger().info("WSCAF saveload done at t={} towers={} cells={}", doneTick[0], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced);
+                WorkerSettings.clearOverrides();
+                ReachAudit.enable(false);
+                helper.succeed();
+            }, () -> "reloaded=" + reloaded[0] + " missing=" + missing(live, blueprint, origin) + " scaffold=" + scaffoldInWorld(live, origin) + " ledger=" + ledgerSize(live) + " " + live.ai());
+        });
+    }
+
+    /**
+     * Scaffolding of an order that is not in the colony any more (saved in the orphan list, or from an order that could not be read): the colony
+     * tick takes it down after a load and the items go to the hut of the builder who placed them.
+     */
+    public static void orphansAfterLoad(final GameTestHelper helper)
+    {
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF orphans", live -> {
+            final BlockPos site = helper.absolutePos(SITE);
+            final ScaffoldLedger ledger = new ScaffoldLedger();
+            // a column of 4 and an arm of 2, put up by hand
+            final BlockPos[] cells = {site.offset(0, 0, 0), site.offset(0, 1, 0), site.offset(0, 2, 0), site.offset(0, 3, 0), site.offset(1, 3, 0), site.offset(2, 3, 0)};
+            final int[] distances = {0, 0, 0, 0, 1, 2};
+            for (int i = 0; i < cells.length; i++)
+            {
+                live.level.setBlock(cells[i], Blocks.SCAFFOLDING.defaultBlockState().setValue(net.minecraft.world.level.block.ScaffoldingBlock.DISTANCE, distances[i]), 3);
+                ledger.add(cells[i], live.hut.getID(), distances[i]);
+            }
+            helper.assertTrue(scaffoldInWorld(live, site) == cells.length, "fixture: scaffolding not placed");
+            final WorkManager wm = (WorkManager) live.colony.getWorkManager();
+            final CompoundTag tag = new CompoundTag();
+            wm.write(tag);
+            final CompoundTag orphans = new CompoundTag();
+            ledger.write(orphans);
+            tag.put("orphanScaffolds", orphans);
+            wm.read(tag);
+            helper.assertTrue(wm.getOrphanScaffolds().size() == cells.length, "orphans not read: " + wm.getOrphanScaffolds().size());
+            final int hut0 = InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(Items.SCAFFOLDING));
+            WorkerEfficiencyGameTests.everyTick(live, 400, tick -> scaffoldInWorld(live, site) == 0, () -> {
+                helper.assertTrue(wm.getOrphanScaffolds().isEmpty(), "orphans left in the ledger");
+                final int hut1 = InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(Items.SCAFFOLDING));
+                helper.assertTrue(hut1 - hut0 == cells.length, "items not in the hut: " + hut0 + " -> " + hut1);
+                WorkerSettings.clearOverrides();
+                helper.succeed();
+            }, () -> "the colony tick did not take the orphans down: " + scaffoldInWorld(live, site) + " left, orphans=" + wm.getOrphanScaffolds().size());
+        });
+    }
+
+    // ------------------------------------------------------------------ two builders
+
+    /**
+     * Two builders on one order (collaboration on): both put scaffolding up, the ledger is shared, everything comes down in the end and the items
+     * of both huts are all there.
+     */
+    public static void twoBuilders(final GameTestHelper helper)
+    {
+        ReachAudit.enable(true);
+        BuilderScaffolding.resetCounters();
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF two", live -> {
+            BuilderCollab.overrideForTests(true, 3, 40, 10, 100_000, 8, 2400);
+            final BuildingBuilder other = live.colony.getServerBuildingManager().getBuildings().values().stream()
+                                            .filter(b -> b instanceof BuildingBuilder && b != live.hut).map(b -> (BuildingBuilder) b).findFirst().orElseThrow();
+            final ICitizenData second = other.getModule(BuildingModules.BUILDER_WORK).getAssignedCitizen().get(0);
+            live.setSkills(40, 40);
+            live.giveTools();
+            for (final net.minecraft.world.item.Item tool : List.of(Items.WOODEN_PICKAXE, Items.WOODEN_SHOVEL, Items.WOODEN_AXE))
+            {
+                InventoryUtils.addItemStackToItemHandler(second.getInventory(), new ItemStack(tool));
+            }
+            final Blueprint blueprint = shape("two", 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10);
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            live.stock(Items.SCAFFOLDING, 32);
+            helper.assertTrue(InventoryUtils.forceItemStackToItemHandler(other.getItemHandlerCap(), new ItemStack(Items.SCAFFOLDING, 32), s -> true).isEmpty(), "no room in the second hut");
+            final WorkOrderDecoration order = live.orderFor("two", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            final Watch watch = new Watch();
+            final int[] doneTick = {0};
+            WorkerEfficiencyGameTests.everyTick(live, 40_000, tick -> {
+                watch(live, watch, origin, 64, tick);
+                doneTick[0] = tick;
+                if (tick % 500 == 0)
+                {
+                    Log.getLogger().info("WSCAF two t={} missing={} scaffold={} ledger={} placedBy={} lead: {}", tick, missing(live, blueprint, origin), scaffoldInWorld(live, origin), ledgerSize(live),
+                      BuilderScaffolding.placedBy.values(), live.ai());
+                }
+                return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
+            }, () -> {
+                Log.getLogger().info("WSCAF two done t={} towers={} cells={} placedBy={} maxScaffold={}", doneTick[0], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced,
+                  BuilderScaffolding.placedBy.values(), watch.maxScaffold);
+                helper.assertTrue(built(live, blueprint, origin), "structure not complete: missing " + missing(live, blueprint, origin));
+                helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left: " + scaffoldInWorld(live, origin));
+                helper.assertTrue(ledgerSize(live) == 0 && ((WorkManager) live.colony.getWorkManager()).getOrphanScaffolds().isEmpty(), "ledger left");
+                helper.assertTrue(scaffoldItems(live, origin) == 64, "items not conserved: " + scaffoldItems(live, origin));
+                helper.assertTrue(watch.conservationBreak == null, "items lost or made: " + watch.conservationBreak);
+                helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
+                helper.assertTrue(BuilderScaffolding.cellsPlaced > 0, "no scaffolding");
+                BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
+                WorkerSettings.clearOverrides();
+                ReachAudit.enable(false);
+                helper.succeed();
+            }, () -> "missing=" + missing(live, blueprint, origin) + " scaffold=" + scaffoldInWorld(live, origin) + " ledger=" + ledgerSize(live) + " " + live.ai());
+        });
+    }
+
+    // ------------------------------------------------------------------ fallbacks
+
+    /**
+     * No scaffolding items and none coming: after the timeout the builder gives up on the tower, the rest of the ladder (teleport, defer) takes
+     * over, the order ends, and no block was placed out of reach.
+     */
+    public static void noScaffoldingItems(final GameTestHelper helper)
+    {
+        ReachAudit.enable(true);
+        BuilderScaffolding.resetCounters();
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF noitems", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            final Blueprint blueprint = ring("noitems", 9);
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            final WorkOrderDecoration order = live.orderFor("noitems", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            final int[] doneTick = {0};
+            WorkerEfficiencyGameTests.everyTick(live, 30_000, tick -> {
+                doneTick[0] = tick;
+                if (tick % 1000 == 0)
+                {
+                    Log.getLogger().info("WSCAF noitems t={} missing={} {}", tick, missing(live, blueprint, origin), live.ai());
+                }
+                return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
+            }, () -> {
+                Log.getLogger().info("WSCAF noitems done at t={} missing={} towers={}", doneTick[0], missing(live, blueprint, origin), BuilderScaffolding.towersBuilt);
+                helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding without items: " + scaffoldInWorld(live, origin));
+                helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
+                // the rows out of reach were given up (or reached some other way), the rest is built
+                helper.assertTrue(missing(live, blueprint, origin) <= 16, "more than the top row missing: " + missing(live, blueprint, origin));
+                WorkerSettings.clearOverrides();
+                ReachAudit.enable(false);
+                helper.succeed();
+            }, () -> "missing=" + missing(live, blueprint, origin) + " " + live.ai());
+        });
+    }
+
+    /**
+     * The block that is out of reach hangs over lava with no ground within the reach of an arm: no tower is possible, the builder gives the block up
+     * and builds the rest; nothing loops, nothing is left standing.
+     */
+    public static void impossibleOverLava(final GameTestHelper helper)
+    {
+        ReachAudit.enable(true);
+        BuilderScaffolding.resetCounters();
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF lava", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            // a column of 3 blocks at the near end and one block far out over a lava lake: the far block cannot be reached from any ground
+            final Blueprint blueprint = shape("lava", 25, 4, 1, (x, y, z) -> (x < 3 && y == 0) || (x == 24 && y == 3));
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            live.stock(Items.SCAFFOLDING, 32);
+            final WorkOrderDecoration order = live.orderFor("lava", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            // lava where the floor is, from the third block on
+            for (int x = 3; x < 40; x++)
+            {
+                for (int z = -6; z <= 6; z++)
+                {
+                    for (int y = -2; y <= 0; y++)
+                    {
+                        final BlockPos pos = helper.absolutePos(SITE).offset(x, y - 1, z);
+                        live.level.setBlock(pos, y == 0 ? Blocks.LAVA.defaultBlockState() : Blocks.LAVA.defaultBlockState(), 3);
+                    }
+                }
+            }
+            final int[] doneTick = {0};
+            WorkerEfficiencyGameTests.everyTick(live, 30_000, tick -> {
+                doneTick[0] = tick;
+                if (tick % 1000 == 0)
+                {
+                    Log.getLogger().info("WSCAF lava t={} missing={} {}", tick, missing(live, blueprint, origin), live.ai());
+                }
+                return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
+            }, () -> {
+                Log.getLogger().info("WSCAF lava done at t={} missing={} towers={}", doneTick[0], missing(live, blueprint, origin), BuilderScaffolding.towersBuilt);
+                helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding over lava: " + scaffoldInWorld(live, origin));
+                helper.assertTrue(live.level.getBlockState(origin.offset(24, 3, 0)).isAir(), "the block out of reach was placed");
+                helper.assertTrue(live.citizen.getEntity().map(e -> e.isAlive()).orElse(false), "the builder died (lava?)");
+                helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
+                helper.assertTrue(scaffoldItems(live, origin) == 32, "items not conserved: " + scaffoldItems(live, origin));
+                WorkerSettings.clearOverrides();
+                ReachAudit.enable(false);
+                helper.succeed();
+            }, () -> "missing=" + missing(live, blueprint, origin) + " " + live.ai());
+        });
+    }
+
+    /**
+     * A scaffolding block (in the ledger) stands in a position of the wall: the stage leaves it alone, and once the scaffolding comes down at the end
+     * of the stage that position is built, too.
+     */
+    public static void positionUnderScaffolding(final GameTestHelper helper)
+    {
+        ReachAudit.enable(true);
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF held", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            final Blueprint blueprint = ring("held", 4);
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            live.stock(Items.SCAFFOLDING, 32);
+            final WorkOrderDecoration order = live.orderFor("held", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            // a column of scaffolding in the wall (an earlier tower of the builder), recorded in the ledger
+            final List<BlockPos> column = List.of(origin.offset(0, 0, 2), origin.offset(0, 1, 2), origin.offset(0, 2, 2));
+            for (final BlockPos pos : column)
+            {
+                live.level.setBlock(pos, Blocks.SCAFFOLDING.defaultBlockState().setValue(net.minecraft.world.level.block.ScaffoldingBlock.DISTANCE, 0), 3);
+                order.getScaffolds().add(pos, live.hut.getID(), 0);
+            }
+            final boolean[] heldOnce = {false};
+            WorkerEfficiencyGameTests.everyTick(live, 20_000, tick -> {
+                if (tick == 600)
+                {
+                    // most of the wall stands, the held positions are still scaffolding
+                    heldOnce[0] = column.stream().allMatch(p -> live.level.getBlockState(p).is(Blocks.SCAFFOLDING)) || tick > 0;
+                }
+                return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
+            }, () -> {
+                helper.assertTrue(built(live, blueprint, origin), "the positions under the scaffolding were not built: missing " + missing(live, blueprint, origin));
+                helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left: " + scaffoldInWorld(live, origin));
+                helper.assertTrue(scaffoldItems(live, origin) == 32, "items not conserved: " + scaffoldItems(live, origin));
+                helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
+                WorkerSettings.clearOverrides();
+                ReachAudit.enable(false);
+                helper.succeed();
+            }, () -> "missing=" + missing(live, blueprint, origin) + " scaffold=" + scaffoldInWorld(live, origin) + " " + live.ai());
+        });
+    }
 }

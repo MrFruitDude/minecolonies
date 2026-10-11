@@ -918,7 +918,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     private void registerBuilderScaffolding(final RegisterGameTestsEvent event)
     {
         for (final String name : new String[] {"scaffold_reach_box_l40", "scaffold_reach_box_l1", "scaffold_reach_clear_l40", "scaffold_legacy_box_l40", "scaffold_legacy_box_l1",
-          "scaffold_tall_wall8", "scaffold_tall_tower14", "scaffold_sealed_roof", "scaffold_overhang", "scaffold_tall_tower14_legacy", "scaffold_tall_wall8_legacy"})
+          "scaffold_tall_wall8", "scaffold_tall_tower14", "scaffold_sealed_roof", "scaffold_overhang", "scaffold_tall_tower14_legacy", "scaffold_tall_wall8_legacy",
+          "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -932,7 +933,14 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_sealed_roof" -> BuilderScaffoldGameTests::sealedRoof;
                 case "scaffold_overhang" -> BuilderScaffoldGameTests::overhangSlab;
                 case "scaffold_tall_tower14_legacy" -> BuilderScaffoldGameTests::tallTower14Legacy;
-                default -> BuilderScaffoldGameTests::tallWall8Legacy;
+                case "scaffold_tall_wall8_legacy" -> BuilderScaffoldGameTests::tallWall8Legacy;
+                case "scaffold_cancel" -> BuilderScaffoldGameTests::cancelMidBuild;
+                case "scaffold_save_load" -> BuilderScaffoldGameTests::saveLoadMidScaffold;
+                case "scaffold_orphans" -> BuilderScaffoldGameTests::orphansAfterLoad;
+                case "scaffold_two_builders" -> BuilderScaffoldGameTests::twoBuilders;
+                case "scaffold_no_items" -> BuilderScaffoldGameTests::noScaffoldingItems;
+                case "scaffold_lava" -> BuilderScaffoldGameTests::impossibleOverLava;
+                default -> BuilderScaffoldGameTests::positionUnderScaffolding;
             };
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
