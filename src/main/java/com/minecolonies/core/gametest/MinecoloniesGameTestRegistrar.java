@@ -780,6 +780,47 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_courier_stuck"),
           info -> new MinecoloniesGameTestInstance(info, RequestWaitGameTests::stuckCourierGivesUp),
           isolatedColonyData(event, "rs_wait_courier_stuck"));
+        // RS3: priority classes.
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_far_nine"),
+          info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::farNineBeforeNearFive),
+          isolatedColonyData(event, "rs_prio_far_nine"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_equal"),
+          info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::equalClassesOldestFirst),
+          isolatedColonyData(event, "rs_prio_equal"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_alarm"),
+          info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::alarmBeatsNine),
+          isolatedColonyData(event, "rs_prio_alarm"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_alarm_expired"),
+          info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::expiredAlarmIsIgnored),
+          isolatedColonyData(event, "rs_prio_alarm_expired"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_urgent_background"),
+          info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::urgentBeforeBackground),
+          isolatedColonyData(event, "rs_prio_urgent_background"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_derivation"),
+          info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::importanceDerivation),
+          isolatedColonyData(event, "rs_prio_derivation"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_flag_off"),
+          info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::flagOffKeepsNearerFirst),
+          isolatedColonyData(event, "rs_prio_flag_off"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_flag_off_importance"),
+          info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::flagOffIgnoresImportance),
+          isolatedColonyData(event, "rs_prio_flag_off_importance"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_save_load"),
+          info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::saveLoadKeepsPriorities),
+          isolatedColonyData(event, "rs_prio_save_load"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_old_save"),
+          info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::oldSaveLoadsWithDefaults),
+          isolatedColonyData(event, "rs_prio_old_save"));
     }
 
     /**
