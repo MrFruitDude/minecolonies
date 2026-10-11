@@ -10,7 +10,10 @@ import com.minecolonies.api.colony.requestsystem.requestable.IRequestable;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.util.BlockPosUtil;
 import com.minecolonies.api.util.constant.TranslationConstants;
+import com.minecolonies.api.colony.requestsystem.request.WaitReason;
 import com.minecolonies.core.colony.Colony;
+import com.minecolonies.core.colony.requestsystem.RsFlags;
+import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
 import com.minecolonies.core.colony.buildings.modules.WarehouseRequestQueueModule;
 import com.minecolonies.core.colony.jobs.JobDeliveryman;
@@ -110,6 +113,16 @@ public abstract class DeliverymenRequestResolver<R extends IRequestable> extends
 
         final WarehouseRequestQueueModule module = wareHouse.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE);
         module.addRequest(request.getId());
+
+        if (RsFlags.smartRetry())
+        {
+            // RS2: promised and queued; a courier takes it from here.
+            final RequestWaitTracker tracker = RequestWaitTracker.of(manager);
+            if (tracker != null)
+            {
+                tracker.setReason(request, WaitReason.AWAITING_DELIVERY);
+            }
+        }
     }
 
     @Nullable

@@ -9,6 +9,7 @@ import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
+import com.minecolonies.api.colony.requestsystem.request.WaitReason;
 import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
 import com.minecolonies.api.colony.requestsystem.requestable.IRequestable;
 import com.minecolonies.api.colony.requestsystem.requester.IRequester;
@@ -49,6 +50,8 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     private final IRequester      requester;
     @NotNull
     private       RequestState    state      = RequestState.CREATED;
+    @NotNull
+    private       WaitReason      waitReason = WaitReason.NONE;
     @Nullable
     private       R               result;
     @Nullable
@@ -125,6 +128,24 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     public RequestState getState()
     {
         return state;
+    }
+
+    @NotNull
+    @Override
+    public WaitReason getWaitReason()
+    {
+        return waitReason;
+    }
+
+    @Override
+    public boolean setWaitReason(@NotNull final WaitReason reason)
+    {
+        if (this.waitReason == reason)
+        {
+            return false;
+        }
+        this.waitReason = reason;
+        return true;
     }
 
     /**

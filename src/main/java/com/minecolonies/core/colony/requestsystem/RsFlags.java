@@ -12,6 +12,9 @@ public final class RsFlags
     @Nullable
     private static volatile Boolean reservationsOverride;
 
+    @Nullable
+    private static volatile Boolean smartRetryOverride;
+
     private RsFlags()
     {
     }
@@ -44,6 +47,33 @@ public final class RsFlags
     }
 
     /**
+     * RS2: named wait reasons and event-driven re-evaluation.
+     *
+     * @return true when waiting requests are woken by events and described by a wait reason.
+     */
+    public static boolean smartRetry()
+    {
+        final Boolean override = smartRetryOverride;
+        if (override != null)
+        {
+            return override;
+        }
+        final Boolean env = fromEnvironment("MINECOLONIES_RS_SMARTRETRY");
+        if (env != null)
+        {
+            return env;
+        }
+        try
+        {
+            return MinecoloniesAPIProxy.getInstance().getConfig().getServer().smartRetry.get();
+        }
+        catch (final RuntimeException | LinkageError e)
+        {
+            return false;
+        }
+    }
+
+    /**
      * A switch forced from the environment (benchmark and regression runs of the whole test suite with a phase off).
      */
     @Nullable
@@ -61,5 +91,15 @@ public final class RsFlags
     public static void overrideReservations(@Nullable final Boolean value)
     {
         reservationsOverride = value;
+    }
+
+    /**
+     * Forces the smart-retry switch, for tests. Null returns to the config value.
+     *
+     * @param value the forced value.
+     */
+    public static void overrideSmartRetry(@Nullable final Boolean value)
+    {
+        smartRetryOverride = value;
     }
 }

@@ -27,6 +27,8 @@ import com.minecolonies.core.colony.requestsystem.RsAccess;
 import com.minecolonies.core.colony.requestsystem.reservation.DestinationRoom;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationReason;
+import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
+import com.minecolonies.api.colony.requestsystem.request.WaitReason;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
 import com.minecolonies.core.tileentities.TileEntityWareHouse;
 import com.minecolonies.core.tileentities.WarehouseRackIndex;
@@ -254,6 +256,11 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         if (ledger != null && totalAvailable > 0 && !destinationHasRoom(manager, request, inv, totalAvailable))
         {
             // RS1: the destination has no room for it once what is already on its way is counted.
+            final RequestWaitTracker tracker = RequestWaitTracker.of(manager);
+            if (tracker != null)
+            {
+                tracker.hint(request.getId(), WaitReason.TARGET_FULL);
+            }
             return null;
         }
 

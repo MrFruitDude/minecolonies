@@ -13,6 +13,9 @@ import com.minecolonies.api.colony.requestsystem.resolver.IRequestResolver;
 import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
 import com.minecolonies.api.entity.citizen.Skill;
 import com.minecolonies.api.util.constant.TypeConstants;
+import com.minecolonies.api.colony.requestsystem.request.WaitReason;
+import com.minecolonies.core.colony.requestsystem.RsFlags;
+import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
 import com.minecolonies.core.colony.requestsystem.resolvers.BuildingRequestResolver;
 import com.minecolonies.core.colony.requestsystem.resolvers.PrivateWorkerCraftingProductionResolver;
 import com.minecolonies.core.colony.requestsystem.resolvers.PrivateWorkerCraftingRequestResolver;
@@ -212,6 +215,16 @@ public class WorkerBuildingModule extends AbstractAssignedCitizenModule
             module.updateWorkerAvailableForRecipes();
         }
         citizen.getJob().onLevelUp();
+
+        if (RsFlags.smartRetry())
+        {
+            // RS2: a new worker may be the crafter that a waiting request lacked.
+            final RequestWaitTracker tracker = RequestWaitTracker.of(building.getColony().getRequestManager());
+            if (tracker != null)
+            {
+                tracker.wakeByReason(java.util.Set.of(WaitReason.NO_CRAFTER, WaitReason.AWAITING_CRAFT));
+            }
+        }
     }
 
     @Override

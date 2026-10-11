@@ -27,7 +27,10 @@ import com.minecolonies.core.colony.requestsystem.management.IStandardRequestMan
 import com.minecolonies.core.colony.requestsystem.management.handlers.*;
 import com.minecolonies.core.colony.requestsystem.management.manager.wrapped.WrappedStaticStateRequestManager;
 import com.minecolonies.core.colony.requestsystem.RsFlags;
+import com.minecolonies.core.colony.requestsystem.RsStats;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
+import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
+import com.minecolonies.api.colony.requestsystem.request.WaitReason;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -119,6 +122,12 @@ public class StandardRequestManager implements IStandardRequestManager
     private final ReservationLedger reservationLedger = new ReservationLedger();
 
     /**
+     * RS2: waiting requests and why.
+     */
+    @NotNull
+    private final RequestWaitTracker waitTracker = new RequestWaitTracker(this);
+
+    /**
      * Stock that came free (a promise on it ended), to be announced on the next tick.
      */
     private final java.util.Map<com.minecolonies.api.crafting.ItemStorage, ItemStack> freedStock = new java.util.LinkedHashMap<>();
@@ -156,12 +165,17 @@ public class StandardRequestManager implements IStandardRequestManager
             {
                 freedStock.putIfAbsent(reservation.key(), reservation.key().getItemStack());
             }
+            else
+            {
+                waitTracker.wakeByReason(java.util.Set.of(WaitReason.TARGET_FULL));
+            }
         });
         reset();
     }
 
     private void setup()
     {
+        waitTracker.clear();
         reservationLedger.clear();
         freedStock.clear();
         dataStoreManager = StandardFactoryController.getInstance().getNewInstance(TypeConstants.DATA_STORE_MANAGER);
@@ -226,6 +240,11 @@ public class StandardRequestManager implements IStandardRequestManager
     public <T extends IRequestable> IToken<?> createRequest(@NotNull final IRequester requester, @NotNull final T object)
     {
         final IRequest<T> request = getRequestHandler().createRequest(requester, object);
+        RsStats.requestsCreated++;
+        if (object instanceof com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery)
+        {
+            RsStats.deliveriesCreated++;
+        }
         markDirty();
         return request.getId();
     }
@@ -435,6 +454,18 @@ public class StandardRequestManager implements IStandardRequestManager
     public void onColonyUpdate(@NotNull final Predicate<IRequest<?>> shouldTriggerReassign)
     {
         getResolverHandler().onColonyUpdate(shouldTriggerReassign);
+    }
+
+    @Override
+    public void onStockAvailable(@NotNull final ItemStack stack)
+    {
+        if (RsFlags.smartRetry())
+        {
+            // RS2: the waiting requests that could use it are indexed by item; they are retried on the next tick, not inside the rack insert.
+            waitTracker.itemsAvailable(java.util.List.of(stack));
+            return;
+        }
+        IStandardRequestManager.super.onStockAvailable(stack);
     }
 
     /**
@@ -697,10 +728,18 @@ public class StandardRequestManager implements IStandardRequestManager
         {
             final java.util.List<ItemStack> freed = new java.util.ArrayList<>(freedStock.values());
             freedStock.clear();
-            if (RsFlags.reservations())
+            if (RsFlags.smartRetry())
+            {
+                waitTracker.itemsAvailable(freed);
+            }
+            else if (RsFlags.reservations())
             {
                 freed.forEach(IStandardRequestManager.super::onStockAvailable);
             }
+        }
+        if (RsFlags.smartRetry())
+        {
+            waitTracker.tick();
         }
         this.getRetryingRequestResolver().tick();
 
@@ -738,6 +777,12 @@ public class StandardRequestManager implements IStandardRequestManager
         return reservationLedger;
     }
 
+    @NotNull
+    @Override
+    public RequestWaitTracker getWaitTracker()
+    {
+        return waitTracker;
+    }
 
     @NotNull
     @Override

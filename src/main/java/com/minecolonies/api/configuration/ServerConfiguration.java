@@ -122,6 +122,11 @@ public class ServerConfiguration extends AbstractConfiguration
     public final BooleanValue reservations;
 
     /**
+     * RS2: named wait reasons, event-driven re-evaluation of waiting requests, exponential back-off, courier deadlines.
+     */
+    public final BooleanValue smartRetry;
+
+    /**
      * Builds server configuration.
      *
      * @param builder config builder
@@ -212,6 +217,7 @@ public class ServerConfiguration extends AbstractConfiguration
 
         creativeResolve = defineBoolean("creativeresolve", false);
         reservations = defineBoolean("reservations", false);
+        smartRetry = defineBoolean("smartRetry", false);
 
         finishCategory();
     }

@@ -26,7 +26,12 @@ import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.constant.NbtTagConstants;
 import com.minecolonies.api.util.constant.TypeConstants;
 import com.minecolonies.core.colony.buildings.modules.CourierAssignmentModule;
+import com.minecolonies.api.colony.requestsystem.request.WaitReason;
+import com.minecolonies.core.colony.requestsystem.RsFlags;
+import com.minecolonies.core.colony.requestsystem.RsStats;
 import com.minecolonies.core.colony.requestsystem.requests.StandardRequests;
+import com.minecolonies.core.colony.requestsystem.wait.CourierWatchdog;
+import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
 import com.minecolonies.core.entity.ai.workers.service.EntityAIWorkDeliveryman;
 import com.minecolonies.core.util.AttributeModifierUtils;
 import net.minecraft.nbt.CompoundTag;
@@ -36,6 +41,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -64,6 +70,11 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
      * Old field for backwards compatibility.
      */
     private int ongoingDeliveries;
+
+    /**
+     * RS2: deadline and stuck detection of the current task.
+     */
+    private final CourierWatchdog watchdog = new CourierWatchdog();
 
     /**
      * Instantiates the job for the deliveryman.
@@ -190,6 +201,75 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         }
     }
 
+    /**
+     * RS2: a task has a deadline, and a courier that does not move is stuck. Either way the task goes back to the request system.
+     *
+     * @param current the task at the head of the queue.
+     * @return true when the task was given up.
+     */
+    private boolean watchTask(final IToken<?> current)
+    {
+        final var entity = getCitizen().getEntity();
+        if (entity.isEmpty())
+        {
+            return false;
+        }
+        final CourierWatchdog.Verdict verdict = watchdog.check(current, entity.get().blockPosition(), getColony().getWorld().getGameTime());
+        if (verdict == CourierWatchdog.Verdict.OK)
+        {
+            return false;
+        }
+        final IRequest<?> request = getColony().getRequestManager().getRequestForToken(current);
+        if (request != null)
+        {
+            Log.getLogger().warn("Courier {} gave up {} ({}): {}", getCitizen().getName(), current, verdict, request.getRequest());
+            final RequestWaitTracker tracker = RequestWaitTracker.of(getColony().getRequestManager());
+            if (tracker != null)
+            {
+                tracker.setReason(request, WaitReason.COURIER_STUCK);
+                tracker.notifier().report(getColony(), request, WaitReason.COURIER_STUCK, getColony().getWorld().getGameTime());
+            }
+        }
+        watchdog.reset();
+        giveUp(current, request);
+        return true;
+    }
+
+    /**
+     * Fails the task at the head of the queue and the deliveries batched with it, and takes them off the queue. Unlike
+     * {@link #finishRequest}, which only finishes the deliveries the courier already started to gather, this also ends a task
+     * the courier never got to.
+     */
+    private void giveUp(final IToken<?> current, @Nullable final IRequest<?> request)
+    {
+        final List<IToken<?>> batch = new ArrayList<>();
+        batch.add(current);
+        if (request != null && request.getRequest() instanceof Delivery)
+        {
+            for (final IRequest<? extends Delivery> sibling : getTaskListWithSameDestination((IRequest<? extends Delivery>) request))
+            {
+                if (!batch.contains(sibling.getId()))
+                {
+                    batch.add(sibling.getId());
+                }
+            }
+        }
+        for (final IToken<?> token : batch)
+        {
+            getTaskQueueFromDataStore().remove(token);
+            getDataStore().getOngoingDeliveries().remove(token);
+        }
+        for (final IToken<?> token : batch)
+        {
+            final IRequest<?> failed = getColony().getRequestManager().getRequestForToken(token);
+            if (failed != null && failed.getState() == RequestState.IN_PROGRESS)
+            {
+                getColony().getRequestManager().updateRequestState(token, RequestState.FAILED);
+            }
+        }
+        getCitizen().getWorkBuilding().markDirty();
+    }
+
     private int getRequestPriority(final IRequest<?> req, final int queueIndex, final int queueSize)
     {
         int priority = 1;
@@ -223,8 +303,14 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         final IToken<?> currentRequest = getTaskQueueFromDataStore().peekFirst();
         if (currentRequest != null)
         {
+            if (RsFlags.smartRetry() && watchTask(currentRequest))
+            {
+                // Given up: the queue moved on.
+                return getCurrentTask();
+            }
             return (IRequest<IDeliverymanRequestable>) getColony().getRequestManager().getRequestForToken(currentRequest);
         }
+        watchdog.reset();
 
         IBuilding wareHouse = findWareHouse();
         if (wareHouse == null)
@@ -347,6 +433,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         {
             return;
         }
+        RsStats.courierTasksFinished++;
 
         final IToken<?> current = getTaskQueueFromDataStore().getFirst();
 
@@ -406,6 +493,17 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         }
 
         getCitizen().getWorkBuilding().markDirty();
+
+        if (RsFlags.smartRetry())
+        {
+            // RS2: a courier is free again: deliveries that waited for one are looked at.
+            watchdog.reset();
+            final RequestWaitTracker tracker = RequestWaitTracker.of(getColony().getRequestManager());
+            if (tracker != null)
+            {
+                tracker.wakeByReason(Set.of(WaitReason.NO_COURIER, WaitReason.COURIER_BUSY));
+            }
+        }
     }
 
     /**

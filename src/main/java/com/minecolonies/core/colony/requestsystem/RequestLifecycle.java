@@ -6,10 +6,12 @@ import com.minecolonies.api.colony.requestsystem.request.RequestState;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
+import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * What the redesigned request system does when any request changes state: end the promises it held. One entry point, called from {@code AbstractRequest#setState}, so no transition is missed.
+ * What the redesigned request system does when any request changes state: end the promises it held, name what it waits
+ * for, raise the event. One entry point, called from {@code AbstractRequest#setState}, so no transition is missed.
  * Nothing here may break a state change: failures are logged and swallowed.
  */
 public final class RequestLifecycle
@@ -45,6 +47,11 @@ public final class RequestLifecycle
                     {
                     }
                 }
+            }
+            if (RsFlags.smartRetry())
+            {
+                final RequestWaitTracker tracker = standard.getWaitTracker();
+                tracker.onStateChanged(request, previous);
             }
         }
         catch (final RuntimeException e)
