@@ -890,6 +890,9 @@ public final class StorageNetworkGameTests
         final int[] ticks = {0};
         final Runnable[] step = new Runnable[1];
         step[0] = () -> {
+            // Stock changes every tick, as in a busy colony: the first question of the tick finds racks to look at again.
+            n.f.rack(ticks[0] % 12).getInventory().insertItem(1, new ItemStack(Items.DIRT, 1), false);
+            n.rackB(ticks[0] % 12).getInventory().insertItem(1, new ItemStack(Items.DIRT, 1), false);
             final long b = allocated();
             call.get();
             total[0] += allocated() - b;
@@ -899,6 +902,7 @@ public final class StorageNetworkGameTests
                 return;
             }
             final long perTick = total[0] / ticks[0];
+            org.slf4j.LoggerFactory.getLogger("storage").info("STORAGE_CHEAP first call per tick with churn: {} bytes, same tick: {} bytes", perTick, perCall);
             helper.assertTrue(perTick < 24 * 1024, "first call of a tick: " + perTick + " bytes");
             helper.succeed();
         };
