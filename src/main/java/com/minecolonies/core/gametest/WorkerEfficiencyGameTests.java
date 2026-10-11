@@ -137,7 +137,9 @@ public final class WorkerEfficiencyGameTests
 
         void giveTools()
         {
-            for (final net.minecraft.world.item.Item tool : List.of(Items.WOODEN_PICKAXE, Items.WOODEN_SHOVEL, Items.WOODEN_AXE))
+            // wooden tools wear out (59 uses): enough shovels for the dirt of the clear tests, the hut is too low for better tools
+            for (final net.minecraft.world.item.Item tool : List.of(Items.WOODEN_PICKAXE, Items.WOODEN_PICKAXE, Items.WOODEN_AXE, Items.WOODEN_SHOVEL, Items.WOODEN_SHOVEL,
+              Items.WOODEN_SHOVEL, Items.WOODEN_SHOVEL, Items.WOODEN_SHOVEL, Items.WOODEN_SHOVEL, Items.WOODEN_SHOVEL))
             {
                 InventoryUtils.addItemStackToItemHandler(citizen.getInventory(), new ItemStack(tool));
             }

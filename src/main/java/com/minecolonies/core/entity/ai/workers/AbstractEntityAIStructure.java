@@ -811,7 +811,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     @Override
     protected boolean checkIfNeedsItem()
     {
-        if (toolDeferUntil > world.getGameTime() && blockToMine != null && onlyToolRequestsOpen())
+        if (toolDeferUntil > world.getGameTime() && onlyToolRequestsOpen())
         {
             return false;
         }
