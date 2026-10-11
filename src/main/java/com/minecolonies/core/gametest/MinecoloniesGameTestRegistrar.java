@@ -64,6 +64,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     @Override
     public void accept(final RegisterGameTestsEvent event)
     {
+        if ("worker_eff".equals(System.getProperty("minecolonies.gametest.only")))
+        {
+            registerWorkerEfficiency(event);
+            return;
+        }
         final Holder<TestEnvironmentDefinition<?>> environment = event.registerEnvironment(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "default"));
         final TestData<Holder<TestEnvironmentDefinition<?>>> data = new TestData<>(
@@ -647,6 +652,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               info -> new MinecoloniesGameTestInstance(info, test),
               isolatedColonyData(event, name));
         }
+        registerWorkerEfficiency(event);
         // C2 builder collaboration observability and controls (one glob: minecolonies:collab_obs_*).
         for (final String name : new String[] {"collab_obs_view", "collab_obs_cap", "collab_obs_pin", "collab_obs_pin_new", "collab_obs_refusals"})
         {
@@ -853,6 +859,27 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_old_save"),
           info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::oldSaveLoadsWithDefaults),
           isolatedColonyData(event, "rs_prio_old_save"));
+    }
+
+    /**
+     * L3 worker efficiency tests. Run on their own with {@code JAVA_TOOL_OPTIONS=-Dminecolonies.gametest.only=worker_eff}.
+     */
+    private void registerWorkerEfficiency(final RegisterGameTestsEvent event)
+    {
+        for (final String name : new String[] {"worker_eff_bench_place_l1", "worker_eff_bench_place_l40", "worker_eff_bench_clear_l1", "worker_eff_bench_clear_l40"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "worker_eff_bench_place_l1" -> WorkerEfficiencyGameTests::benchPlaceL1;
+                case "worker_eff_bench_place_l40" -> WorkerEfficiencyGameTests::benchPlaceL40;
+                case "worker_eff_bench_clear_l1" -> WorkerEfficiencyGameTests::benchClearL1;
+                default -> WorkerEfficiencyGameTests::benchClearL40;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
     }
 
     /**
