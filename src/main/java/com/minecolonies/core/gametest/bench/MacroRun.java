@@ -883,7 +883,17 @@ public final class MacroRun
                         final BlockPos target = delivery.getTarget().getInDimensionLocation();
                         out.append(" task=").append(BuiltInRegistries.ITEM.getKey(delivery.getStack().getItem()).getPath()).append('x').append(delivery.getStack().getCount())
                           .append(" ").append(task.getState()).append(" to ").append(target.toShortString());
-                        citizen.getEntity().ifPresent(e -> out.append(" dist=").append((int) Math.sqrt(e.blockPosition().distSqr(target))).append(" navDone=").append(e.getNavigation().isDone()));
+                        citizen.getEntity().ifPresent(e -> {
+                            out.append(" dist=").append((int) Math.sqrt(e.blockPosition().distSqr(target))).append(" navDone=").append(e.getNavigation().isDone());
+                            final BlockPos start = delivery.getStart().getInDimensionLocation();
+                            out.append(" start=").append(start.toShortString()).append(" distToStart=").append((int) Math.sqrt(e.blockPosition().distSqr(start)));
+                            if (e.getNavigation() instanceof com.minecolonies.core.entity.pathfinding.navigation.AbstractAdvancedPathNavigate nav && nav.getPathResult() != null)
+                            {
+                                final var pr = nav.getPathResult();
+                                out.append(" pathStatus=").append(pr.getStatus()).append(" pathLen=").append(pr.getPathLength()).append(" reaches=").append(pr.isPathReachingDestination())
+                                  .append(" job=").append(pr.getJob() == null ? "-" : pr.getJob().getClass().getSimpleName());
+                            }
+                        });
                     }
                     else
                     {
