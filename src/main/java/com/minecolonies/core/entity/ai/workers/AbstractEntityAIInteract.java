@@ -3,6 +3,7 @@ package com.minecolonies.core.entity.ai.workers;
 import com.ldtteam.domumornamentum.item.interfaces.IDoItem;
 import com.minecolonies.api.entity.ai.workers.util.IBuilderUndestroyable;
 import com.minecolonies.api.util.*;
+import com.minecolonies.core.entity.ai.workers.util.WorkTiming;
 import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.colony.buildings.AbstractBuilding;
 import com.minecolonies.core.colony.jobs.AbstractJob;
@@ -291,17 +292,48 @@ public abstract class AbstractEntityAIInteract<J extends AbstractJob<?, J>, B ex
         if (!holdEfficientTool(curBlock, blockToMine))
         {
             //We are missing a tool to harvest this block...
+            miningWait = MiningWait.TOOL;
             return true;
         }
 
         if (safeStand != null && walkWithProxy(safeStand) && MathUtils.twoDimDistance(worker.blockPosition(), safeStand) > MIN_WORKING_RANGE)
         {
+            miningWait = MiningWait.WALK;
             return true;
         }
         currentWorkingLocation = blockToMine;
+        miningWait = MiningWait.TIME;
+
+        if (miningTimePaidByBank)
+        {
+            // the caller pays the mining time from its own time bank (cheap blocks of a builder in a burst): no wait here
+            return false;
+        }
 
         return hasNotDelayed(getBlockMiningTime(curBlock, blockToMine));
     }
+
+    /**
+     * Why the last try to mine a block had to wait.
+     */
+    protected enum MiningWait
+    {
+        /** nothing to wait for */
+        NONE,
+        /** no tool for the block (a request for it is open) */
+        TOOL,
+        /** the worker is not close enough to the spot he mines from */
+        WALK,
+        /** the time the block takes */
+        TIME
+    }
+
+    protected MiningWait miningWait = MiningWait.NONE;
+
+    /**
+     * Set while a caller mines a block and pays the time itself (see {@link #checkMiningLocation}): no mining delay is set.
+     */
+    protected boolean miningTimePaidByBank = false;
 
     /**
      * Calculate how long it takes to mine this block.
@@ -331,13 +363,11 @@ public abstract class AbstractEntityAIInteract<J extends AbstractJob<?, J>, B ex
      */
     private int calculateWorkerMiningDelay(@NotNull final BlockState state, @NotNull final BlockPos pos)
     {
-        final double reduction = 1 - worker.getCitizenColonyHandler().getColonyOrRegister().getResearchManager().getResearchEffects().getEffectStrength(BLOCK_BREAK_SPEED);
+        final double research = worker.getCitizenColonyHandler().getColonyOrRegister().getResearchManager().getResearchEffects().getEffectStrength(BLOCK_BREAK_SPEED);
+        final double toolSpeed = worker.getMainHandItem().getItem().getDestroySpeed(worker.getMainHandItem(), state);
 
-        return (int) (((BLOCK_MINING_DELAY * Math.pow(LEVEL_MODIFIER, getBreakSpeedLevel() / 2.0))
-                         * (double) world.getBlockState(pos).getDestroySpeed(world, pos) / (double) (worker.getMainHandItem()
-                                                                                                       .getItem()
-                                                                                                       .getDestroySpeed(worker.getMainHandItem(), state)))
-                        * reduction);
+        // WorkTiming: the same formula as ever, but the research bonus can no longer make the delay zero or negative, and a block takes 2 ticks at least
+        return (int) Math.ceil(WorkTiming.breakTicks(getBreakSpeedLevel(), world.getBlockState(pos).getDestroySpeed(world, pos), toolSpeed > 0.0F ? toolSpeed : 1.0D, 1.0D, research, 1.0D));
     }
 
     /**

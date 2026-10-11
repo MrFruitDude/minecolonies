@@ -132,6 +132,30 @@ public class ServerConfiguration extends AbstractConfiguration
 
     public final BooleanValue creativeResolve;
 
+    /*  ------------------------------------------------------------------------- *
+     *  ------------------- ######## Worker settings ######## ------------------- *
+     *  ------------------------------------------------------------------------- */
+
+    /**
+     * How fast every worker does its work (waits count down this many times faster), on top of the colony pace of another mod.
+     */
+    public final DoubleValue workerSpeedMultiplier;
+
+    /**
+     * Length of the workers' shift in hours of the 24 hour day (1000 ticks each): they work from sunrise until this hour.
+     */
+    public final DoubleValue workerHoursPerDay;
+
+    /**
+     * Whether long walks of workers are replaced by a timed relocation.
+     */
+    public final EnumValue<com.minecolonies.api.colony.WorkerWalking> workerAbstractWalking;
+
+    /**
+     * Walks longer than this many blocks are abstracted in the LONG_ONLY mode.
+     */
+    public final IntValue workerAbstractWalkingMinBlocks;
+
     /*  --------------------------------------------------------------------------- *
      *  ------------------- ######## Builder settings ######## --------------------- *
      *  --------------------------------------------------------------------------- */
@@ -144,6 +168,11 @@ public class ServerConfiguration extends AbstractConfiguration
     public final IntValue     builderCollaborationLeaseSize;
     public final IntValue     builderCollaborationLeaseSeconds;
     public final BooleanValue builderFastClear;
+
+    /**
+     * How much faster builders place and break blocks (on top of the level scaling and the worker speed).
+     */
+    public final DoubleValue builderSpeedMultiplier;
 
     /**
      * RS1: stock and space are reserved in a per-colony ledger when a delivery is planned, and released when it ends.
@@ -282,6 +311,14 @@ public class ServerConfiguration extends AbstractConfiguration
         storageServiceRange = defineInteger("storageServiceRange", 0, 0, 100000);
         storageItemCap = defineInteger("storageItemCap", 0, 0, 100000000);
 
+        swapToCategory("workers");
+
+        // The worker efficiency settings (per world). Worker speed is multiplied with the colony pace of another mod (Colony Command).
+        workerSpeedMultiplier = defineDouble("speedMultiplier", 1.5, 0.5, 4.0);
+        workerHoursPerDay = defineDouble("hoursPerDay", 12.6, 6.0, 22.0);
+        workerAbstractWalking = defineEnum("abstractWalking", com.minecolonies.api.colony.WorkerWalking.LONG_ONLY);
+        workerAbstractWalkingMinBlocks = defineInteger("abstractWalkingMinBlocks", 48, 8, 400);
+
         swapToCategory("builders");
 
         // Idle builders help the builder who leads an order, and take a new order when one arrives.
@@ -293,7 +330,8 @@ public class ServerConfiguration extends AbstractConfiguration
         builderCollaborationLeaseSize = defineInteger("collaborationLeaseSize", 12, 1, 64);
         builderCollaborationLeaseSeconds = defineInteger("collaborationLeaseSeconds", 120, 10, 3600);
         // The clear stage leaves blocks alone that already are what the blueprint wants there (instead of mining and placing them again).
-        builderFastClear = defineBoolean("fastClear", false);
+        builderFastClear = defineBoolean("fastClear", true);
+        builderSpeedMultiplier = defineDouble("speedMultiplier", 1.5, 0.5, 4.0);
 
         finishCategory();
     }

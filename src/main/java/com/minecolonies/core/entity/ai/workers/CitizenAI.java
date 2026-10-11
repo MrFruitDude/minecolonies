@@ -16,6 +16,7 @@ import com.minecolonies.api.util.CompatibilityUtils;
 import com.minecolonies.api.util.MathUtils;
 import com.minecolonies.api.util.WorldUtil;
 import com.minecolonies.api.util.constant.CitizenConstants;
+import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
 import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
@@ -167,7 +168,7 @@ public class CitizenAI implements IStateAI
         }
 
         // Sleeping
-        if (!WorldUtil.isPastTime(CompatibilityUtils.getWorldFromCitizen(citizen), NIGHT - 2000))
+        if (!WorldUtil.isPastTime(CompatibilityUtils.getWorldFromCitizen(citizen), WorkerSettings.nightStartFor(citizen.getCitizenData().getJob() != null) - 2000))
         {
             if (lastState == CitizenAIState.SLEEP)
             {

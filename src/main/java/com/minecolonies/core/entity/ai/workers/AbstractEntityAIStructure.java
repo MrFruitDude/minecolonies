@@ -32,10 +32,17 @@ import com.minecolonies.core.colony.buildings.utils.BuilderBucket;
 import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource;
 import com.minecolonies.core.colony.jobs.AbstractJobStructure;
 import com.minecolonies.core.entity.ai.workers.util.BuilderStageRules;
+import com.minecolonies.core.entity.ai.workers.util.AbstractWalking;
+import com.minecolonies.core.entity.ai.workers.util.StandSpots;
+import com.minecolonies.core.entity.ai.workers.util.WorkStuckTracker;
+import com.minecolonies.core.entity.ai.workers.util.WorkTiming;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
 import com.minecolonies.core.entity.ai.workers.util.BuildingStructureHandler;
 import com.minecolonies.core.tileentities.TileEntityDecorationController;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.InteractionHand;
@@ -46,16 +53,21 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import com.ldtteam.structurize.api.util.TriPredicate;
+import com.ldtteam.structurize.placement.AbstractBlueprintIterator;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import static com.ldtteam.structurize.placement.AbstractBlueprintIterator.NULL_POS;
 import static com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState.*;
@@ -136,7 +148,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     private TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> reserved(
       final TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> rule)
     {
-        return (info, pos, handler) -> rule.test(info, pos, handler) || isPositionReserved(pos);
+        return (info, pos, handler) -> rule.test(info, pos, handler) || isPositionReserved(pos) || isStuckSkipped(pos);
     }
 
     /**
@@ -384,11 +396,115 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * How many blocks the worker may place in one AI step when his time allows it (see {@link #structureStep()}). One means a delay after
+     * every block, as ever.
+     *
+     * @return the most blocks per step.
+     */
+    protected int getMaxPlacementsPerStep()
+    {
+        return 1;
+    }
+
+    /**
+     * Multiplier of this worker's placing and breaking speed from the settings, 1.0 for none.
+     *
+     * @return the multiplier.
+     */
+    protected double getPlacementSpeed()
+    {
+        return 1.0D;
+    }
+
+    /**
+     * Time bank of the burst placing, in ticks of work at the worker's pace: it earns the real time that passes (times the pace), every block
+     * placed or mined in a burst spends the time the block takes. The worker acts while the bank is positive and waits while it is negative,
+     * so the blocks per tick follow the delay of the worker's level exactly, however short the delay is (a delay is no longer rounded up to
+     * the next AI step), and a worker that walked for a while does not make up for it with a flood of blocks (the bank is capped).
+     */
+    private double  workBank     = 0.0D;
+    private long    lastBankTick = -1L;
+    private boolean burstActive  = false;
+    private int     burstIndex   = 0;
+    private boolean stepPlaced   = false;
+
+    /**
+     * Ticks of work the next block placed costs, at the worker's pace of 1.0.
+     */
+    protected final double placementTicks()
+    {
+        final double research = worker.getCitizenColonyHandler().getColonyOrRegister().getResearchManager().getResearchEffects().getEffectStrength(BLOCK_PLACE_SPEED);
+        return WorkTiming.placeTicks(getPlaceSpeedLevel(), research, getPlacementSpeed());
+    }
+
+    /**
      * The Structure step to execute the actual placement actions etc.
+     * <p>
+     * A builder places as many blocks as his time allows in one step ({@link #getMaxPlacementsPerStep()}), without walking in between: blocks
+     * in reach of the spot he stands on are placed one after the other, and the step ends when the next block needs a walk, a tool, materials or
+     * more time than the bank holds.
      *
      * @return the next step to go to.
      */
     protected IAIState structureStep()
+    {
+        final int maxPlacements = getMaxPlacementsPerStep();
+        if (maxPlacements <= 1)
+        {
+            return structureStepOnce();
+        }
+
+        final long now = world.getGameTime();
+        final double pace = getWorkPace();
+        final double stepTicks = getTickRate() * pace;
+        workBank = lastBankTick < 0 ? stepTicks : Math.min(workBank + (now - lastBankTick) * pace, 3.0D * stepTicks);
+        lastBankTick = now;
+        if (workBank <= 0.0D)
+        {
+            // still paying for the blocks of the steps before
+            return getState();
+        }
+
+        IAIState next;
+        int placed = 0;
+        burstActive = true;
+        try
+        {
+            do
+            {
+                burstIndex = placed;
+                stepPlaced = false;
+                next = structureStepOnce();
+                if (stepPlaced)
+                {
+                    placed++;
+                }
+            }
+            while (stepPlaced && next == BUILDING_STEP && workBank > 0.0D && placed < maxPlacements && isThereAStructureToBuild());
+        }
+        finally
+        {
+            burstActive = false;
+        }
+
+        if (workBank < 0.0D)
+        {
+            // the debt, less what the wait of the next step earns anyway
+            final int wait = (int) Math.ceil(-workBank - stepTicks);
+            if (wait > 0)
+            {
+                setDelay(wait);
+            }
+        }
+        return next;
+    }
+
+    /**
+     * One block of the structure: walk into reach, place or break it, pay for it.
+     *
+     * @return the next step to go to.
+     */
+    private IAIState structureStepOnce()
     {
         if (!isThereAStructureToBuild())
         {
@@ -419,12 +535,19 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             structurePlacer.getB().setStage(getProgressPos().getB());
         }
 
-        if ((worldPos != null || blockToMine != null) && !limitReached && (blockToMine == null
-                                                                             ? !walkToConstructionSite(worldPos)
-                                                                             : !walkToConstructionSite(blockToMine)))
+        final boolean mustWalk = (worldPos != null || blockToMine != null) && !limitReached
+                                   && (blockToMine == null ? !walkToConstructionSite(worldPos) : !walkToConstructionSite(blockToMine));
+        if (mustWalk)
         {
+            // the worker cannot get to the block: wait for the walk, and climb the ladder out when it takes too long
+            final BlockPos target = blockToMine != null ? blockToMine : worldPos;
+            if (escalateStuck(target) == WorkStuckTracker.Step.DEFER)
+            {
+                deferBlock(blockToMine != null ? blockToMine : peekNextBlock());
+            }
             return getState();
         }
+        stuck.free();
 
         limitReached = false;
 
@@ -434,37 +557,15 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         switch (currentStage)
         {
             case BUILD_SOLID:
-                //structure
-                result = placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_PLACEMENT,
-                  () -> placer.getIterator().increment(reserved(this::skipBuilding)), false);
-                break;
             case WEAK_SOLID:
-
-                // not solid
-                result = placer.executeStructureStep(world,
-                  null,
-                  progress,
-                  StructurePlacer.Operation.BLOCK_PLACEMENT,
-                  () -> placer.getIterator()
-                          .increment(reserved((info, pos, handler) -> !BlockUtils.isWeakSolidBlock(info.getBlockInfo().getState()) || DONT_TOUCH_PREDICATE.test(info, pos, handler))),
-                  false);
+            case CLEAR_NON_SOLIDS:
+            case DECORATE:
+                // structure, not solid, clear air, decoration
+                result = placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_PLACEMENT, stageIterator(currentStage, placer), false);
                 break;
             case CLEAR_WATER:
                 //water
                 result = placer.clearWaterStep(world, progress);
-                break;
-            case CLEAR_NON_SOLIDS:
-                // clear air
-                result = placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_PLACEMENT,
-                  () -> placer.getIterator().decrement((info, pos, handler) ->
-                                                         !(info.getBlockInfo().getState().getBlock() instanceof AirBlock)
-                                                           || (handler.getWorld().isEmptyBlock(pos))
-                                                           || DONT_TOUCH_PREDICATE.test(info, pos, handler)), false);
-                break;
-            case DECORATE:
-                // not solid
-                result = placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_PLACEMENT,
-                  () -> placer.getIterator().increment(reserved(this::skipDecorate)), false);
                 break;
             case SPAWN:
                 if (placer.getHandler().getBluePrint().getEntities().length == 0)
@@ -486,13 +587,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
                 break;
             case REMOVE:
                 placer.getIterator().setRemoving();
-                result = placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_REMOVAL,
-                  () -> placer.getIterator().decrement(this::skipRemoval), true);
+                result = placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_REMOVAL, stageIterator(currentStage, placer), true);
                 break;
             case CLEAR:
             default:
-                result =
-                  placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_REMOVAL, () -> placer.getIterator().decrement(reserved(this::skipClearing)), false);
+                result = placer.executeStructureStep(world, null, progress, StructurePlacer.Operation.BLOCK_REMOVAL, stageIterator(CLEAR, placer), false);
                 break;
         }
 
@@ -508,6 +607,12 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             {
                 // builders helping with this stage have positions left; wait for them (or for their lease to run out)
                 setDelay(TICKS_SECOND);
+                return getState();
+            }
+
+            if (retryDeferredBlocks(currentStage))
+            {
+                // blocks the worker gave up on come again once, now that the rest of the stage is done
                 return getState();
             }
 
@@ -550,6 +655,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
 
         if (result.getBlockResult().getResult() == BlockPlacementResult.Result.SUCCESS)
         {
+            stuck.progress();
             onBlockProcessed();
         }
 
@@ -565,14 +671,23 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return NEEDS_ITEM;
         }
 
-        worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
-        worker.queueSound(SoundEvents.BAMBOO_HIT, worker.blockPosition(), 10, 0, 0.5f, 0.1f);
+        if (!burstActive || burstIndex == 0)
+        {
+            worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
+            worker.queueSound(SoundEvents.BAMBOO_HIT, worker.blockPosition(), 10, 0, 0.5f, 0.1f);
+        }
 
         if (result.getBlockResult().getResult() == BlockPlacementResult.Result.BREAK_BLOCK)
         {
             blockToMine = result.getBlockResult().getWorldPos();
             onStepBlocked(blockToMine);
             worker.getCitizenData().setStatusPosition(blockToMine);
+            if (burstActive && tryMineInline())
+            {
+                // a cheap block, mined and paid from the time bank: on with the next one in the same step
+                stepPlaced = true;
+                return getState();
+            }
             return MINE_BLOCK;
         }
         else
@@ -580,9 +695,52 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             blockToMine = null;
         }
 
-        setPlacementDelay();
+        if (burstActive)
+        {
+            // clearing a block that is gone already costs nothing but the look at it: its work was the mining, paid when it was mined
+            final boolean clearing = currentStage == CLEAR || currentStage == REMOVE;
+            workBank -= clearing ? WorkTiming.MIN_PLACE_TICKS : placementTicks();
+            stepPlaced = result.getBlockResult().getResult() == BlockPlacementResult.Result.SUCCESS;
+        }
+        else
+        {
+            setPlacementDelay();
+        }
 
         return getState();
+    }
+
+    /**
+     * The iteration of a stage: which blocks it visits next, skipping what has nothing to do for the stage and what is left alone for now.
+     *
+     * @param stage  the stage.
+     * @param placer the placer.
+     * @return the function that moves the iterator to the next block, or null for stages that do not iterate over blocks this way.
+     */
+    @Nullable
+    private Supplier<AbstractBlueprintIterator.Result> stageIterator(final BuildingProgressStage stage, final StructurePlacer placer)
+    {
+        switch (stage)
+        {
+            case BUILD_SOLID:
+                return () -> placer.getIterator().increment(reserved(this::skipBuilding));
+            case WEAK_SOLID:
+                return () -> placer.getIterator()
+                               .increment(reserved((info, pos, handler) -> !BlockUtils.isWeakSolidBlock(info.getBlockInfo().getState()) || DONT_TOUCH_PREDICATE.test(info, pos, handler)));
+            case CLEAR_NON_SOLIDS:
+                return () -> placer.getIterator().decrement(reserved((info, pos, handler) ->
+                                                                       !(info.getBlockInfo().getState().getBlock() instanceof AirBlock)
+                                                                         || (handler.getWorld().isEmptyBlock(pos))
+                                                                         || DONT_TOUCH_PREDICATE.test(info, pos, handler)));
+            case DECORATE:
+                return () -> placer.getIterator().increment(reserved(this::skipDecorate));
+            case REMOVE:
+                return () -> placer.getIterator().decrement(reserved(this::skipRemoval));
+            case CLEAR:
+                return () -> placer.getIterator().decrement(reserved(this::skipClearing));
+            default:
+                return null;
+        }
     }
 
     /**
@@ -590,8 +748,466 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     protected final void setPlacementDelay()
     {
-        final double decrease = 1 - worker.getCitizenColonyHandler().getColonyOrRegister().getResearchManager().getResearchEffects().getEffectStrength(BLOCK_PLACE_SPEED);
-        setDelay((int) ((BUILD_BLOCK_DELAY * PROGRESS_MULTIPLIER / (getPlaceSpeedLevel() / 2 + PROGRESS_MULTIPLIER)) * decrease));
+        setDelay(Math.max(1, (int) placementTicks()));
+    }
+
+    // ------------------------------------------------------------------ never stuck
+
+    /**
+     * The ladder out of a block the worker cannot get on with, see {@link WorkStuckTracker}.
+     */
+    private final WorkStuckTracker stuck = new WorkStuckTracker();
+    private long stuckLastTick = -1L;
+    private Vec3 stuckLastPos  = null;
+
+    /**
+     * Blocks (world positions) the worker gave up on for now and the stage skips; the blocks that come again once at the end of the stage;
+     * the blocks he finally left out in this stage; and the retry rounds done in this stage.
+     */
+    private final Set<BlockPos> deferredBlocks  = new HashSet<>();
+    private final Set<BlockPos> retryBlocks     = new HashSet<>();
+    private final Set<BlockPos> abandonedBlocks = new HashSet<>();
+    private int                 retryRounds     = 0;
+
+    /**
+     * Ticks the worker waited for a tool for the block he wants to mine.
+     */
+    private int  toolWaitTicks = 0;
+    private long toolWaitTick  = -1L;
+
+    /**
+     * Until this game time blocks that need a tool the worker does not have are deferred at once and the open tool request does not hold the AI
+     * in NEEDS_ITEM: the worker does the work he can do first (the request stays open and the tool is used when it arrives).
+     */
+    private long toolDeferUntil = -1L;
+
+    /**
+     * How long that lasts after a tool request has held the worker for {@link #TOOL_TIMEOUT_TICKS}.
+     */
+    protected static final int TOOL_DEFER_WINDOW_TICKS = 6000;
+
+    /**
+     * Whether everything the worker waits for is a tool (and nothing waits to be picked up).
+     */
+    private boolean onlyToolRequestsOpen()
+    {
+        final ICitizenData citizen = worker.getCitizenData();
+        boolean any = false;
+        for (final IRequest<?> request : building.getOpenRequests(citizen.getId()))
+        {
+            if (citizen.isRequestAsync(request.getId()))
+            {
+                continue;
+            }
+            if (!(request.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.Tool))
+            {
+                return false;
+            }
+            any = true;
+        }
+        return any && !building.hasCitizenCompletedRequestsToPickup(citizen);
+    }
+
+    @Override
+    protected boolean checkIfNeedsItem()
+    {
+        if (toolDeferUntil > world.getGameTime() && onlyToolRequestsOpen())
+        {
+            return false;
+        }
+        return super.checkIfNeedsItem();
+    }
+
+    @NotNull
+    @Override
+    protected IAIState waitForRequests()
+    {
+        if (structurePlacer != null && blockToMine != null && !retryBlocks.contains(blockToMine) && onlyToolRequestsOpen())
+        {
+            // held by a tool request while a block waits for it: after a while the worker does the rest first
+            final long now = world.getGameTime();
+            toolWaitTicks += toolWaitTick < 0 ? 0 : (int) Math.min(now - toolWaitTick, 200L);
+            toolWaitTick = now;
+            if (toolWaitTicks >= TOOL_TIMEOUT_TICKS)
+            {
+                toolWaitTicks = 0;
+                toolWaitTick = -1L;
+                toolDeferUntil = now + TOOL_DEFER_WINDOW_TICKS;
+                deferBlock(blockToMine);
+                return BUILDING_STEP;
+            }
+        }
+        else
+        {
+            toolWaitTick = -1L;
+        }
+        return super.waitForRequests();
+    }
+
+    /**
+     * After this many ticks without a tool the block is deferred (the request for the tool stays open).
+     */
+    protected static final int TOOL_TIMEOUT_TICKS = 1200;
+
+    /**
+     * Blocks of a stage that are left alone for now (deferred) or for good (abandoned).
+     *
+     * @param worldPos the block.
+     * @return true if the stage skips it.
+     */
+    protected final boolean isStuckSkipped(final BlockPos worldPos)
+    {
+        return (!deferredBlocks.isEmpty() && deferredBlocks.contains(worldPos)) || (!abandonedBlocks.isEmpty() && abandonedBlocks.contains(worldPos));
+    }
+
+    /**
+     * How many blocks the worker gave up on in this structure so far (for tests and the UI).
+     */
+    public final int getDeferredBlockCount()
+    {
+        return deferredBlocks.size();
+    }
+
+    public final int getAbandonedBlockCount()
+    {
+        return abandonedBlocks.size();
+    }
+
+    /**
+     * Throws away where the worker wanted to stand and the path to it, so the next step asks for a new spot.
+     */
+    protected void resetWalkTarget()
+    {
+        workFrom = null;
+        worker.getNavigation().stop();
+    }
+
+    /**
+     * Hook for the scaffolding of the 3D reach work: build a column of scaffolding next to the target so the worker can stand next to it.
+     * The unstuck ladder calls it between "a spot near the target" and "teleport".
+     *
+     * @param target the block the worker cannot get to.
+     * @return true if the worker has a new way to the target now (a tower is being built), false if nothing was done (the default).
+     */
+    protected boolean tryScaffold(final BlockPos target)
+    {
+        return false;
+    }
+
+    /**
+     * The worker cannot work on the target block (he cannot get to a spot to work from). Counts the time he stands still and climbs one step
+     * of the ladder when it is due: new path, a safe spot near the target, scaffold (a hook), teleport to the edge of the work area, defer.
+     * DEFER is left to the caller, who knows which block it is.
+     *
+     * @param target the block he works on.
+     * @return the step that was taken now, or NONE.
+     */
+    protected final WorkStuckTracker.Step escalateStuck(final BlockPos target)
+    {
+        if (AbstractWalking.isRelocating(worker))
+        {
+            // waiting out an abstract walk is not being stuck
+            stuck.free();
+            stuckLastTick = -1L;
+            return WorkStuckTracker.Step.NONE;
+        }
+
+        final long now = world.getGameTime();
+        final int dt = stuckLastTick < 0 ? 0 : (int) Math.min(now - stuckLastTick, 200L);
+        stuckLastTick = now;
+        final Vec3 position = worker.position();
+        final double moved = stuckLastPos == null ? 0.0D : position.distanceTo(stuckLastPos);
+        stuckLastPos = position;
+
+        WorkStuckTracker.Step step = stuck.blocked(dt, moved);
+        if (step == WorkStuckTracker.Step.NONE && stuck.stationaryTicks() >= WorkStuckTracker.REPATH_AT + 20 && fellBelowWorkArea())
+        {
+            // fallen into a hole below the site and no way up: no need to try the gentler steps first
+            step = stuck.escalateTo(WorkStuckTracker.Step.TELEPORT);
+        }
+
+        switch (step)
+        {
+            case REPATH:
+                resetWalkTarget();
+                break;
+            case SAFE_SPOT:
+                final BlockPos spot = findSafeSpotNear(target);
+                if (spot != null)
+                {
+                    resetWalkTarget();
+                    workFrom = spot;
+                }
+                else
+                {
+                    resetWalkTarget();
+                }
+                break;
+            case SCAFFOLD:
+                tryScaffold(target);
+                break;
+            case TELEPORT:
+                teleportOut(target);
+                break;
+            default:
+                break;
+        }
+        if (step != WorkStuckTracker.Step.NONE)
+        {
+            Log.getLogger().debug("{} is stuck at {} (standing still {} ticks): {}", worker.getName().getString(), target, stuck.stationaryTicks(), step);
+        }
+        return step;
+    }
+
+    /**
+     * Gives up on a block for now: the stage skips it, and it comes again once at the end of the stage. Blocks that were retried and fail again
+     * are left out of the stage for good, and the worker says so.
+     *
+     * @param worldPos the block, can be null.
+     */
+    protected final void deferBlock(@Nullable final BlockPos worldPos)
+    {
+        if (worldPos != null)
+        {
+            final BlockPos pos = worldPos.immutable();
+            if (retryBlocks.remove(pos))
+            {
+                abandonedBlocks.add(pos);
+                onBlockAbandoned(pos);
+            }
+            else
+            {
+                deferredBlocks.add(pos);
+            }
+            if (pos.equals(blockToMine))
+            {
+                blockToMine = null;
+            }
+        }
+        workFrom = null;
+        gotoPos = null;
+        resetWalkTarget();
+        stuck.progress();
+        toolWaitTicks = 0;
+    }
+
+    /**
+     * A block was left out of the stage for good because the worker could not get to it twice.
+     *
+     * @param worldPos the block.
+     */
+    protected void onBlockAbandoned(final BlockPos worldPos)
+    {
+        Log.getLogger().warn("{} could not reach {} and leaves it out", worker.getName().getString(), worldPos);
+        worker.getCitizenData().triggerInteraction(
+          new com.minecolonies.core.colony.interactionhandling.SimpleNotificationInteraction(Component.translatableEscape("com.minecolonies.coremod.gui.chat.builder.cantreach"),
+            com.minecolonies.api.colony.interactionhandling.ChatPriority.IMPORTANT));
+    }
+
+    /**
+     * At the end of a stage: the blocks that were deferred come once more.
+     *
+     * @param stage the stage that has ended.
+     * @return true if the stage starts again for them (the caller does not go to the next stage).
+     */
+    private boolean retryDeferredBlocks(final BuildingProgressStage stage)
+    {
+        if (!deferredBlocks.isEmpty() && retryRounds < 1)
+        {
+            retryRounds++;
+            retryBlocks.addAll(deferredBlocks);
+            deferredBlocks.clear();
+            workFrom = null;
+            gotoPos = null;
+            blockToMine = null;
+            this.storeProgressPos(NULL_POS, stage);
+            return true;
+        }
+        // the stage is over: what is left of the bookkeeping goes with it
+        retryRounds = 0;
+        retryBlocks.clear();
+        abandonedBlocks.clear();
+        return false;
+    }
+
+    /**
+     * Forgets what the worker left out: a new structure starts.
+     */
+    protected final void resetStuckState()
+    {
+        deferredBlocks.clear();
+        retryBlocks.clear();
+        abandonedBlocks.clear();
+        retryRounds = 0;
+        toolWaitTicks = 0;
+        toolWaitTick = -1L;
+        toolDeferUntil = -1L;
+        stuck.progress();
+        stuckLastTick = -1L;
+        stuckLastPos = null;
+        workBank = 0.0D;
+        lastBankTick = -1L;
+    }
+
+    /**
+     * The block the stage would visit next, without moving on (for deferring a block the worker is walking to).
+     *
+     * @return its world position, or null if there is none or the stage does not iterate.
+     */
+    @Nullable
+    private BlockPos peekNextBlock()
+    {
+        if (structurePlacer == null || structurePlacer.getB().getStage() == null)
+        {
+            return null;
+        }
+        final StructurePlacer placer = structurePlacer.getA();
+        final Supplier<AbstractBlueprintIterator.Result> iterate = stageIterator(structurePlacer.getB().getStage(), placer);
+        final Tuple<BlockPos, BuildingProgressStage> progress = getProgressPos();
+        if (iterate == null || progress == null)
+        {
+            return null;
+        }
+        final BlockPos before = placer.getIterator().getProgressPos();
+        try
+        {
+            placer.getIterator().setProgressPos(progress.getA());
+            if (iterate.get() == AbstractBlueprintIterator.Result.NEW_BLOCK)
+            {
+                return structurePlacer.getB().getProgressPosInWorld(placer.getIterator().getProgressPos());
+            }
+            return null;
+        }
+        finally
+        {
+            placer.getIterator().setProgressPos(before);
+        }
+    }
+
+    /**
+     * The corners of the work area: the blueprint's box in the world, or null without a structure.
+     */
+    @Nullable
+    private BlockPos[] workArea()
+    {
+        if (structurePlacer == null || !structurePlacer.getB().hasBluePrint())
+        {
+            return null;
+        }
+        final BuildingStructureHandler<J, B> handler = structurePlacer.getB();
+        final BlockPos a = handler.getProgressPosInWorld(BlockPos.ZERO);
+        final BlockPos b = handler.getProgressPosInWorld(new BlockPos(handler.getBluePrint().getSizeX() - 1, handler.getBluePrint().getSizeY() - 1, handler.getBluePrint().getSizeZ() - 1));
+        return new BlockPos[] {new BlockPos(Math.min(a.getX(), b.getX()), Math.min(a.getY(), b.getY()), Math.min(a.getZ(), b.getZ())),
+          new BlockPos(Math.max(a.getX(), b.getX()), Math.max(a.getY(), b.getY()), Math.max(a.getZ(), b.getZ()))};
+    }
+
+    /**
+     * Whether the worker stands well below the work area (fallen into a hole).
+     */
+    private boolean fellBelowWorkArea()
+    {
+        final BlockPos[] area = workArea();
+        return area != null && worker.getY() < area[0].getY() - 2;
+    }
+
+    /**
+     * A spot near the target to stand on, not in the column of the target and not in a hole below the work area.
+     */
+    @Nullable
+    private BlockPos findSafeSpotNear(final BlockPos target)
+    {
+        final BlockPos[] area = workArea();
+        final int floor = area == null ? target.getY() - 3 : area[0].getY() - 1;
+        return StandSpots.nearest(world, target, 5, 6, 2,
+          p -> (p.getX() != target.getX() || p.getZ() != target.getZ() || p.getY() < target.getY()) && p.getY() >= floor);
+    }
+
+    /**
+     * Puts the worker on the nearest spot to the target that lies at the edge of the work area (outside its footprint, at the level of its
+     * base), or at the entrance of his hut if there is none, and starts his walk from there.
+     */
+    private void teleportOut(final BlockPos target)
+    {
+        final BlockPos[] area = workArea();
+        BlockPos spot = null;
+        if (area != null)
+        {
+            final int base = area[0].getY();
+            spot = StandSpots.nearest(world, target, 16, 12, 12,
+              p -> (p.getX() < area[0].getX() || p.getX() > area[1].getX() || p.getZ() < area[0].getZ() || p.getZ() > area[1].getZ())
+                     && p.getY() >= base - 1 && p.getY() <= base + 3);
+        }
+        if (spot == null)
+        {
+            spot = StandSpots.nearest(world, building.getPosition(), 8, 4, 4, null);
+        }
+        if (spot == null)
+        {
+            return;
+        }
+        puffAt(worker.position());
+        worker.getNavigation().stop();
+        worker.snapTo(spot.getX() + 0.5D, spot.getY(), spot.getZ() + 0.5D);
+        puffAt(worker.position());
+        resetWalkTarget();
+        workFrom = spot;
+    }
+
+    private void puffAt(final Vec3 position)
+    {
+        if (world instanceof ServerLevel serverLevel)
+        {
+            serverLevel.sendParticles(ParticleTypes.POOF, position.x, position.y + 0.5D, position.z, 12, 0.3D, 0.4D, 0.3D, 0.02D);
+        }
+    }
+
+    /**
+     * Mines the block to mine right here if it takes no more than a few AI steps, paying from the time bank instead of waiting.
+     *
+     * @return true if the block is gone.
+     */
+    private boolean tryMineInline()
+    {
+        if (blockToMine == null || workFrom == null)
+        {
+            return false;
+        }
+        final BlockState state = world.getBlockState(blockToMine);
+        if (state.getBlock() instanceof AirBlock || state.getBlock() == Blocks.WATER)
+        {
+            blockToMine = null;
+            return true;
+        }
+        if (!holdEfficientTool(state, blockToMine))
+        {
+            return false;
+        }
+        final int time = getBlockMiningTime(state, blockToMine);
+        if (time > 3 * getTickRate() * getWorkPace())
+        {
+            // slow work keeps its animated wait in the mining state
+            return false;
+        }
+        final boolean mined;
+        miningTimePaidByBank = true;
+        try
+        {
+            mined = mineBlock(blockToMine, workFrom);
+        }
+        finally
+        {
+            miningTimePaidByBank = false;
+        }
+        if (!mined)
+        {
+            return false;
+        }
+        workBank -= time;
+        worker.decreaseSaturationForContinuousAction();
+        stuck.progress();
+        onBlockProcessed();
+        blockToMine = null;
+        return true;
     }
 
     /**
@@ -734,20 +1350,71 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
 
         if (!walkToConstructionSite(blockToMine))
         {
+            if (escalateStuck(blockToMine) == WorkStuckTracker.Step.DEFER)
+            {
+                deferBlock(blockToMine);
+                return BUILDING_STEP;
+            }
             return getState();
         }
 
         if (workFrom == null)
         {
+            // the walk says "go ahead" but no spot to mine from was found (nothing to stand on within reach): that is being stuck, too
+            if (escalateStuck(blockToMine) == WorkStuckTracker.Step.DEFER)
+            {
+                deferBlock(blockToMine);
+                return BUILDING_STEP;
+            }
             return getState();
         }
 
         if (!mineBlock(blockToMine, workFrom))
         {
             worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
+            switch (miningWait)
+            {
+                case TOOL:
+                    // no tool for this block (it is requested): do the rest first, the block comes again at the end of the stage
+                    final long now = world.getGameTime();
+                    if (now < toolDeferUntil && !retryBlocks.contains(blockToMine))
+                    {
+                        deferBlock(blockToMine);
+                        return BUILDING_STEP;
+                    }
+                    toolWaitTicks += toolWaitTick < 0 ? 0 : (int) Math.min(now - toolWaitTick, 200L);
+                    toolWaitTick = now;
+                    if (toolWaitTicks >= TOOL_TIMEOUT_TICKS)
+                    {
+                        toolWaitTicks = 0;
+                        toolWaitTick = -1L;
+                        if (!retryBlocks.contains(blockToMine))
+                        {
+                            toolDeferUntil = now + TOOL_DEFER_WINDOW_TICKS;
+                            deferBlock(blockToMine);
+                            return BUILDING_STEP;
+                        }
+                    }
+                    break;
+                case WALK:
+                    if (escalateStuck(blockToMine) == WorkStuckTracker.Step.DEFER)
+                    {
+                        deferBlock(blockToMine);
+                        return BUILDING_STEP;
+                    }
+                    break;
+                default:
+                    // the wait for the time the block takes
+                    stuck.free();
+                    toolWaitTick = -1L;
+                    break;
+            }
             return getState();
         }
+        toolWaitTicks = 0;
+        toolWaitTick = -1L;
         worker.decreaseSaturationForContinuousAction();
+        stuck.progress();
         onBlockProcessed();
         return BUILDING_STEP;
     }
@@ -761,6 +1428,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     public void loadStructure(@NotNull final IBuilderWorkOrder workOrder, final BlockPos position, final boolean removal)
     {
+        resetStuckState();
         this.loadingBlueprint = true;
         workOrder.loadBlueprint(world, (blueprint -> {
             if (blueprint == null)
@@ -1124,6 +1792,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     public void resetCurrentStructure()
     {
+        resetStuckState();
         workFrom = null;
         structurePlacer = null;
         building.setProgressPos(null, null);
