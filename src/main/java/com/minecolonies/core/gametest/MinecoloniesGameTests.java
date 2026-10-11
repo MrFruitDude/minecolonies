@@ -2090,6 +2090,29 @@ public final class MinecoloniesGameTests
         return makeConnectedSurvivalPlayer(helper, UUID.randomUUID());
     }
 
+    /**
+     * The in-memory channels of the connected players, to read back what the server sent them.
+     */
+    private static final java.util.Map<ServerPlayer, EmbeddedChannel> CHANNELS = new java.util.WeakHashMap<>();
+
+    /**
+     * The chat lines the server sent this connected player since the last call (system messages), oldest first.
+     */
+    static java.util.List<net.minecraft.network.chat.Component> drainChat(final ServerPlayer player)
+    {
+        final java.util.List<net.minecraft.network.chat.Component> out = new java.util.ArrayList<>();
+        final EmbeddedChannel channel = CHANNELS.get(player);
+        Object packet;
+        while (channel != null && (packet = channel.readOutbound()) != null)
+        {
+            if (packet instanceof final net.minecraft.network.protocol.game.ClientboundSystemChatPacket chat)
+            {
+                out.add(chat.content());
+            }
+        }
+        return out;
+    }
+
     private static ServerPlayer makeConnectedSurvivalPlayer(final GameTestHelper helper, final UUID playerUuid)
     {
         return makeConnectedPlayer(helper, playerUuid, GameType.SURVIVAL);
@@ -2117,7 +2140,7 @@ public final class MinecoloniesGameTests
         };
         gameType.updatePlayerAbilities(player.getAbilities());
         final Connection connection = new Connection(PacketFlow.SERVERBOUND);
-        new EmbeddedChannel(connection);
+        CHANNELS.put(player, new EmbeddedChannel(connection));
         // NeoForge provides a complete payload/channel setup for test
         // connections. Without it, the production PlayerLoggedInEvent sends
         // Structurize's ServerUUIDMessage before the mock has a client
