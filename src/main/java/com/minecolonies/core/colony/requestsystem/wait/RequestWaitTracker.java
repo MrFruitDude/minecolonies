@@ -66,6 +66,13 @@ public final class RequestWaitTracker
     private static final long REFRESH_INTERVAL = 200L;
 
     /**
+     * Game ticks between two looks at the requests that wait for the player. Nothing tells the colony when something that could serve such
+     * a request turns up (an item put into the requester's own hut, a worker that is hired, a recipe that is learned), so they are retried
+     * now and then, slowly: about every two minutes.
+     */
+    private static final long PLAYER_RECHECK_INTERVAL = 2400L;
+
+    /**
      * Who holds a waiting request.
      */
     public enum Holder
@@ -85,6 +92,7 @@ public final class RequestWaitTracker
         final Set<Item>     items;
         final long          since;
         long                notBefore;
+        long                lastLook;
         int                 wakes;
 
         Waiter(final IToken<?> token, final Holder holder, @Nullable final Set<Item> items, final long since)
@@ -93,6 +101,7 @@ public final class RequestWaitTracker
             this.holder = holder;
             this.items = items;
             this.since = since;
+            this.lastLook = since;
         }
 
         public IToken<?> token()
@@ -131,6 +140,7 @@ public final class RequestWaitTracker
     private final Map<IToken<?>, WaitReason> hints = new HashMap<>();
 
     private long lastRefresh;
+
 
     /**
      * Requests woken by an event, over the life of the manager. Statistic for tests.
@@ -388,6 +398,7 @@ public final class RequestWaitTracker
                 due.remove(token);
                 dispatched++;
                 waiter.notBefore = now + WAKE_COOLDOWN;
+                waiter.lastLook = now;
                 waiter.wakes++;
                 woken++;
                 dispatch(waiter);
@@ -401,6 +412,29 @@ public final class RequestWaitTracker
             // A destination frees room without any event we could hear (its worker takes items): look again now and then.
             wakeByReason(Set.of(WaitReason.TARGET_FULL));
             refreshCourierReasons();
+        }
+        recheckPlayerHeld(now);
+    }
+
+    /**
+     * Looks again at one request that waits for the player and was not looked at for a while. One per call, so that a colony with many of
+     * them does not spend a whole tick on it.
+     */
+    private void recheckPlayerHeld(final long now)
+    {
+        for (final Waiter waiter : waiters.values())
+        {
+            if (now - waiter.lastLook < PLAYER_RECHECK_INTERVAL || due.contains(waiter.token))
+            {
+                continue;
+            }
+            final IRequest<?> request = manager.getRequestForToken(waiter.token);
+            if (request != null && request.getWaitReason() == WaitReason.PLAYER_REQUIRED)
+            {
+                waiter.lastLook = now;
+                due.add(waiter.token);
+                return;
+            }
         }
     }
 
@@ -429,6 +463,7 @@ public final class RequestWaitTracker
 
     private void dispatch(final Waiter waiter)
     {
+
         final IRequest<?> request = manager.getRequestForToken(waiter.token);
         if (request == null || !holds(waiter))
         {

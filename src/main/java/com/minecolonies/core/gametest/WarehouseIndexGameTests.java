@@ -841,6 +841,18 @@ public final class WarehouseIndexGameTests
     }
 
     /**
+     * This test calls the resolver by hand, so no courier ever moves the stock the follow-ups promise (reservations, RS1): each step starts
+     * from a ledger that holds nothing, as it would after the deliveries of the step before were done.
+     */
+    private static void forgetPromises(final IRequestManager manager)
+    {
+        if (manager instanceof final com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager standard)
+        {
+            standard.getReservationLedger().clear();
+        }
+    }
+
+    /**
      * CA-14 (remainder): the follow-up only reuses the attempt's rack walk for the same request in the same tick with
      * no rack change in between; otherwise it walks the racks again and its deliveries equal the old algorithm's.
      */
@@ -866,6 +878,7 @@ public final class WarehouseIndexGameTests
             // Step 1: attempt then follow-up in the same tick, nothing changed: one walk, the old deliveries.
             put(rack(f, b), 0, new ItemStack(Items.DIRT, 5));
             put(rack(f, d), 0, new ItemStack(Items.STONE, 2));
+            forgetPromises(manager);
             WarehouseRackIndex.resetStats();
             final List<IToken<?>> attempt1 = concrete.attemptResolveRequest(manager, dirt5);
             expect(failures, "1-attempt-from-stock", attempt1 != null && attempt1.isEmpty(), true);
@@ -881,6 +894,7 @@ public final class WarehouseIndexGameTests
             }
 
             // Step 2: the stock moves from B to C between attempt and follow-up: the follow-up must see C.
+            forgetPromises(manager);
             concrete.attemptResolveRequest(manager, dirt5);
             put(rack(f, b), 0, ItemStack.EMPTY);
             put(rack(f, c), 0, new ItemStack(Items.DIRT, 5));
@@ -892,6 +906,7 @@ public final class WarehouseIndexGameTests
             }
 
             // Step 3: attempt for one request, follow-up for another: the follow-up must not reuse the first's stacks.
+            forgetPromises(manager);
             concrete.attemptResolveRequest(manager, dirt5);
             got = describeFollowups(concrete.getFollowupRequestForCompletion(manager, stone2));
             want = refDeliveries(w0, f.level(), stone2);
@@ -901,6 +916,7 @@ public final class WarehouseIndexGameTests
             }
 
             // Step 4: partial stock (5 of 8): the attempt makes a child; more stock arrives before the follow-up.
+            forgetPromises(manager);
             final List<IToken<?>> attempt4 = concrete.attemptResolveRequest(manager, dirt8);
             expect(failures, "4-attempt-partial", attempt4 != null && attempt4.size() == 1, true);
             put(rack(f, e), 0, new ItemStack(Items.DIRT, 3));
@@ -912,6 +928,7 @@ public final class WarehouseIndexGameTests
             }
 
             // Step 5: attempt in this tick, follow-up in a later tick: the follow-up walks the racks again.
+            forgetPromises(manager);
             concrete.attemptResolveRequest(manager, dirt5);
             helper.runAfterDelay(1, () -> {
                 pinClock(f.level());

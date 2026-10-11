@@ -11,6 +11,8 @@ import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.WaitReason;
 import com.minecolonies.api.colony.requestsystem.requestable.IConcreteDeliverable;
 import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
+import com.minecolonies.api.colony.requestsystem.requestable.Stack;
+import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
 import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.AbstractBuilding;
@@ -115,14 +117,41 @@ public final class WaitDiagnosis
     public static int physicalStock(@NotNull final Colony colony, @NotNull final IDeliverable wanted)
     {
         int total = 0;
+        final int upTo = Math.max(1, wanted.getCount());
         for (final IWareHouse wareHouse : colony.getServerBuildingManager().getWareHouses())
         {
             if (wareHouse instanceof BuildingWareHouse building)
             {
-                total += building.hasEnoughElseCount(wanted::matches, Math.max(1, wanted.getCount()));
+                if (wanted instanceof final IConcreteDeliverable concrete)
+                {
+                    // Named items: the rack index knows which racks hold them (none, for an item nobody has, without touching a rack).
+                    for (final ItemStack possible : concrete.getRequestedItems())
+                    {
+                        total += building.hasEnoughElseCount(storageOf(wanted, possible), upTo);
+                    }
+                }
+                else
+                {
+                    total += building.hasEnoughElseCount(wanted::matches, upTo);
+                }
             }
         }
         return total;
+    }
+
+    /**
+     * The storage the warehouse resolvers look a concrete deliverable's item up with.
+     */
+    private static ItemStorage storageOf(@NotNull final IDeliverable wanted, @NotNull final ItemStack possible)
+    {
+        boolean ignoreNBT = false;
+        boolean ignoreDamage = false;
+        if (wanted instanceof final Stack stack)
+        {
+            ignoreNBT = !stack.matchNBT();
+            ignoreDamage = !stack.matchDamage();
+        }
+        return new ItemStorage(possible, wanted.getMinimumCount(), ignoreDamage, ignoreNBT);
     }
 
     /**
@@ -131,11 +160,22 @@ public final class WaitDiagnosis
     public static int availableStock(@NotNull final Colony colony, @NotNull final IDeliverable wanted)
     {
         int total = 0;
+        final int upTo = Math.max(1, wanted.getCount());
         for (final IWareHouse wareHouse : colony.getServerBuildingManager().getWareHouses())
         {
             if (wareHouse instanceof BuildingWareHouse building)
             {
-                total += building.availableCount(wanted::matches, Math.max(1, wanted.getCount()));
+                if (wanted instanceof final IConcreteDeliverable concrete)
+                {
+                    for (final ItemStack possible : concrete.getRequestedItems())
+                    {
+                        total += building.availableCount(storageOf(wanted, possible), upTo);
+                    }
+                }
+                else
+                {
+                    total += building.availableCount(wanted::matches, upTo);
+                }
             }
         }
         return total;
