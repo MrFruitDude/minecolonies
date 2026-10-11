@@ -1316,6 +1316,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 assistGaveUp.add(planned.world().immutable());
                 collab.releaseLease(planned.world());
                 batch.remove(0);
+                stuckGaveUp();
             }
             return getState();
         }
@@ -1370,6 +1371,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             if (escalateStuck(assistMine) == WorkStuckTracker.Step.DEFER)
             {
                 assistGaveUp.add(planned.world().immutable());
+                stuckGaveUp();
                 assistOrder.getCollab().releaseLease(planned.world());
                 batch.remove(planned);
                 assistMine = null;

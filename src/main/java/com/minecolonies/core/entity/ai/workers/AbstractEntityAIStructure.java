@@ -907,6 +907,15 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * A helper gave up on a position: the unstuck ladder starts again for the next one (the worker walks from scratch).
+     */
+    protected final void stuckGaveUp()
+    {
+        stuck.progress();
+        resetWalkTarget();
+    }
+
+    /**
      * The stuck tracker, for the logs of the tests.
      */
     protected final String debugStuck()
