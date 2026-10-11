@@ -329,7 +329,7 @@ def row(name, a, b, min_pct):
     sd_a = (a["sd"] / a["mean"] * 100.0) if a and a.get("mean") else 0.0
     sd_b = (b["sd"] / b["mean"] * 100.0) if b and b.get("mean") else 0.0
     return "%-46s %9s +-%4.1f%% %9s +-%4.1f%% %8s  %-7s p=%.3f" % (
-        name[:46], fmt(a.get("mean")) if a else "-", sd_a, fmt(b.get("mean")) if b else "-", sd_b,
+        name[:46], fmt(a.get("median")) if a else "-", sd_a, fmt(b.get("median")) if b else "-", sd_b,
         ("%+.1f%%" % delta) if delta is not None else "-", label, p)
 
 
@@ -341,7 +341,7 @@ def compare(base, new, show_all, min_pct):
     if not new["gates"]["ok"]:
         lines.append("!! NEW RUN FAILED ITS CORRECTNESS GATES: " + "; ".join(f[:200] for f in new["gates"]["failures"][:5]))
     lines.append("")
-    header = "%-46s %16s %16s %8s  %-7s" % ("metric", "base", "new", "delta", "verdict")
+    header = "%-46s %16s %16s %8s  %-7s" % ("metric (median, +-cv)", "base", "new", "delta", "verdict")
     lines.append(header)
     lines.append("-" * len(header))
     # recompute score of both against the base as reference
