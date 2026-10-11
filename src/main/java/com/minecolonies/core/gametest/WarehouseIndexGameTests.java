@@ -81,6 +81,8 @@ public final class WarehouseIndexGameTests
      */
     private static Fixture fixture(final GameTestHelper helper, final String name, final int warehouses, final int racksEach)
     {
+        // These tests pin the per-warehouse algorithm and its counters; the storage network has its own tests.
+        com.minecolonies.core.colony.requestsystem.RsFlags.overrideStorageNetwork(false);
         final ServerLevel level = helper.getLevel();
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, name);
         // The whole pad stays loaded, so no rack can drop out mid-test.

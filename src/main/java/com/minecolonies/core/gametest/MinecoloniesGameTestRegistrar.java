@@ -64,6 +64,17 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     @Override
     public void accept(final RegisterGameTestsEvent event)
     {
+        final String only = System.getenv("MINECOLONIES_GAMETEST_ONLY");
+        if (only != null && !only.isBlank())
+        {
+            // A development run of one group of tests: the rest of the suite does not share the JVM.
+            if (only.contains("storage"))
+            {
+                StorageNetworkGameTests.register(event);
+            }
+            return;
+        }
+        StorageNetworkGameTests.register(event);
         final Holder<TestEnvironmentDefinition<?>> environment = event.registerEnvironment(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "default"));
         final TestData<Holder<TestEnvironmentDefinition<?>>> data = new TestData<>(
@@ -859,7 +870,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
      * Test data for a test that founds a colony: its own environment (so its own batch) that deletes every colony
      * before and after it runs and starts at sunrise with clear weather, on a plot big enough that no other test's cell overlaps its fixture.
      */
-    private static TestData<Holder<TestEnvironmentDefinition<?>>> isolatedColonyData(final RegisterGameTestsEvent event, final String name)
+    static TestData<Holder<TestEnvironmentDefinition<?>>> isolatedColonyData(final RegisterGameTestsEvent event, final String name)
     {
         return plotData(event.registerEnvironment(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony/" + name),
