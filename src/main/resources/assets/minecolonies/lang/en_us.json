@@ -864,6 +864,7 @@
   "com.minecolonies.coremod.gui.colony.denied.existing": "§l§4There is an existing colony you own, delete it before creating a new one.",
   "com.minecolonies.coremod.gui.colony.denied.existingandabandon": "§4There is an existing colony you own, delete or abandon it before creating a new one.",
   "com.minecolonies.coremod.gui.colony.denied.tooclose": "§l§4 Colony %s is too close.",
+  "com.minecolonies.coremod.gui.colony.denied.tooclose.generic": "§l§4 Another colony is too close.",
   "com.minecolonies.coremod.gui.colony.here": "You are inside %s owned by %s",
   "com.minecolonies.coremod.gui.colony.near": "Colony with ID %d is nearby.",
   "com.minecolonies.coremod.gui.colony.none": "You do not currently own a colony.",

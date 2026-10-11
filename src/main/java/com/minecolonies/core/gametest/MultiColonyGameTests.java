@@ -137,6 +137,8 @@ public final class MultiColonyGameTests
      */
     private static IColony found(final GameTestHelper helper, final ServerPlayer player, final BlockPos townHall, final String name)
     {
+        // The founding packet comes from a player standing at the hut (the server checks the reach).
+        player.teleportTo(townHall.getX() + 0.5, townHall.getY(), townHall.getZ() + 2.5);
         new FoundingMessage(townHall, name).execute(player);
         final IColony closest = IColonyManager.getInstance().getClosestColony(helper.getLevel(), townHall);
         return closest != null && closest.getName().equals(name) ? closest : null;

@@ -36,7 +36,7 @@ public class OwnedColoniesMessage extends AbstractClientPlayMessage
     protected OwnedColoniesMessage(final RegistryFriendlyByteBuf buf, final PlayMessageType<?> type)
     {
         super(buf, type);
-        final int size = Math.min(buf.readVarInt(), MAX_ENTRIES);
+        final int size = Math.max(0, Math.min(buf.readVarInt(), MAX_ENTRIES));
         final List<OwnedColonySummary> read = new ArrayList<>(size);
         for (int i = 0; i < size; i++)
         {

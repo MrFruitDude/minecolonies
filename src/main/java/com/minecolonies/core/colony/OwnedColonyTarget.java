@@ -2,6 +2,9 @@ package com.minecolonies.core.colony;
 
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyManager;
+import io.netty.handler.codec.DecoderException;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -15,6 +18,23 @@ public final class OwnedColonyTarget
 {
     private OwnedColonyTarget()
     {
+    }
+
+    /**
+     * Reads a dimension id sent by a client. A malformed one is a refused packet (a {@link io.netty.handler.codec.DecoderException}, which the connection answers by dropping
+     * the sender), not whatever exception the parser throws.
+     *
+     * @param buf the buffer to read from.
+     * @return the id.
+     */
+    public static Identifier readDimension(@NotNull final FriendlyByteBuf buf)
+    {
+        final Identifier id = Identifier.tryParse(buf.readUtf(256));
+        if (id == null)
+        {
+            throw new DecoderException("Malformed dimension id");
+        }
+        return id;
     }
 
     /**
