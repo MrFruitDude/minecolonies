@@ -998,6 +998,11 @@ public final class MacroRun
             stray.discard();
         }
         colony = BenchBridge.foundColony(helper, name, townHallRel, minX, maxX, minZ, maxZ);
+        // clearing the plot broke the racks of the previous repeat: what dropped out of them is nobody's stock
+        for (final ItemEntity stray : level.getEntitiesOfClass(ItemEntity.class, plotBox()))
+        {
+            stray.discard();
+        }
         if (player == null)
         {
             player = BenchBridge.connectedPlayer(helper);
