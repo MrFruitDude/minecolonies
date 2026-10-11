@@ -152,6 +152,7 @@ public final class MacroRun
     /** True while the scenario has the colony's chunks unloaded: nothing may touch the world then. */
     public boolean away;
     public int     cycles;
+    private int    cures;
     public long injectedUnits;
     public long consumedUnits;
     /** Blocks the scenario expects in the world as the result of builds: position -> block. */
@@ -432,11 +433,17 @@ public final class MacroRun
             weather.setThundering(false);
             weather.setClearWeatherTime(1_000_000);
         }
-        if (tick % 200 == 0)
+        if (tick % 100 == 0)
         {
             for (final ICitizenData citizen : citizens)
             {
                 citizen.setSaturation(20.0D);
+                // a sick citizen walks off to a hospital that does not exist and stops working for good
+                if (citizen.getCitizenDiseaseHandler().isSick())
+                {
+                    citizen.getCitizenDiseaseHandler().cure();
+                    cures++;
+                }
             }
         }
     }
@@ -875,7 +882,9 @@ public final class MacroRun
                         out.append(" task=").append(task == null ? "gone" : task.getRequest().getClass().getSimpleName());
                     }
                 }
-                citizen.getEntity().ifPresent(e -> out.append(" at ").append(e.blockPosition().toShortString()).append(" ai=").append(job.getWorkerAI() == null ? "-" : job.getWorkerAI().getState()));
+                citizen.getEntity().ifPresent(e -> out.append(" at ").append(e.blockPosition().toShortString()).append(" ai=").append(job.getWorkerAI() == null ? "-" : job.getWorkerAI().getState())
+                  .append(" citizenAi=").append(e instanceof com.minecolonies.core.entity.citizen.EntityCitizen ec ? ec.getCitizenAI().getState() : "-").append(" paused=").append(citizen.isPaused()).append(" sick=")
+                  .append(citizen.getCitizenDiseaseHandler().isSick()).append(" sat=").append((int) citizen.getSaturation()).append(" raining=").append(level.isRaining()));
                 out.append(']');
             }
         }
@@ -1071,6 +1080,8 @@ public final class MacroRun
         work.addProperty("courierDistance", courierDistance);
         work.addProperty("courierTeleports", courierTeleports);
         work.addProperty("unloadCycles", cycles);
+        work.addProperty("sicknessCures", cures);
+        work.addProperty("sicknessCures", cures);
         work.addProperty("requestsCreatedAtDone", requestsAtDone);
         work.addProperty("deliveriesCreatedAtDone", deliveriesAtDone);
         work.addProperty("courierTasksAtDone", tasksAtDone);
