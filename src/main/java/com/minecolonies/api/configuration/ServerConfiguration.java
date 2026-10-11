@@ -216,8 +216,8 @@ public class ServerConfiguration extends AbstractConfiguration
         swapToCategory("requestSystem");
 
         creativeResolve = defineBoolean("creativeresolve", false);
-        reservations = defineBoolean("reservations", false);
-        smartRetry = defineBoolean("smartRetry", false);
+        reservations = defineBoolean("reservations", true);
+        smartRetry = defineBoolean("smartRetry", true);
 
         finishCategory();
     }
