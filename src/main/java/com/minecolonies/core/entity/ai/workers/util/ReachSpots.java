@@ -65,7 +65,20 @@ public final class ReachSpots
       @Nullable final Predicate<BlockPos> accept,
       final int limit)
     {
-        return best(level, blocks, reach, eyeHeight, from, accept, limit, false);
+        return best(level, blocks, reach, eyeHeight, from, accept, limit, false, false);
+    }
+
+    public static List<Spot> best(
+      final Level level,
+      final List<BlockPos> blocks,
+      final double reach,
+      final double eyeHeight,
+      @Nullable final BlockPos from,
+      @Nullable final Predicate<BlockPos> accept,
+      final int limit,
+      final boolean inBlocks)
+    {
+        return best(level, blocks, reach, eyeHeight, from, accept, limit, inBlocks, false);
     }
 
     /**
@@ -83,7 +96,8 @@ public final class ReachSpots
       @Nullable final BlockPos from,
       @Nullable final Predicate<BlockPos> accept,
       final int limit,
-      final boolean inBlocks)
+      final boolean inBlocks,
+      final boolean anyOrder)
     {
         if (blocks.isEmpty())
         {
@@ -114,7 +128,7 @@ public final class ReachSpots
                     {
                         continue;
                     }
-                    spots.add(new Spot(feet, BuildReach.prefixInReach(feet, eyeHeight, blocks, usable), walkCost(from, feet)));
+                    spots.add(new Spot(feet, anyOrder ? BuildReach.countInReach(feet, eyeHeight, blocks, usable) : BuildReach.prefixInReach(feet, eyeHeight, blocks, usable), walkCost(from, feet)));
                 }
             }
         }

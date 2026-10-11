@@ -152,7 +152,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     private TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> reserved(
       final TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> rule)
     {
-        return (info, pos, handler) -> rule.test(info, pos, handler) || isPositionReserved(pos) || isStuckSkipped(pos) || isScaffoldHeld(pos);
+        return (info, pos, handler) -> rule.test(info, pos, handler) || isPositionReserved(pos) || isStuckSkipped(pos) || isScaffoldHeld(pos) || (!servedOutOfOrder.isEmpty() && servedOutOfOrder.contains(pos));
     }
 
     /**
@@ -556,8 +556,12 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             structurePlacer.getB().setStage(getProgressPos().getB());
         }
 
+        // what the worker reaches from where he stands is worked on before he moves, whatever its place in the order of the stage
+        final BlockPos nearby = reachGate && !canReachNow(worldPos) ? pollNearby(structurePlacer.getB().getStage()) : null;
+        final boolean outOfOrder = nearby != null;
+
         reachTarget = usesPhysicalReach() ? (blockToMine != null ? blockToMine : (reachGate ? worldPos : null)) : null;
-        final boolean mustWalk = (worldPos != null || blockToMine != null) && !limitReached
+        final boolean mustWalk = !outOfOrder && (worldPos != null || blockToMine != null) && !limitReached
                                    && (blockToMine == null ? !walkToConstructionSite(worldPos) : !walkToConstructionSite(blockToMine));
         if (mustWalk)
         {
@@ -583,6 +587,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         final StructurePhasePlacementResult result;
         final StructurePlacer placer = structurePlacer.getA();
         final BuildingProgressStage currentStage = structurePlacer.getB().getStage();
+        if (outOfOrder)
+        {
+            result = placeNearby(placer, nearby);
+        }
+        else
         switch (currentStage)
         {
             case BUILD_SOLID:
@@ -630,7 +639,15 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         }
 
         final boolean firstIteration = building.getProgress() == null;
-        if (result.getBlockResult().getResult() == BlockPlacementResult.Result.FINISHED)
+        if (outOfOrder)
+        {
+            // the cursor of the stage stays where it is
+            if (result.getBlockResult().getResult() == BlockPlacementResult.Result.SUCCESS)
+            {
+                servedOutOfOrder.add(nearby.immutable());
+            }
+        }
+        else if (result.getBlockResult().getResult() == BlockPlacementResult.Result.FINISHED)
         {
             if (scaffoldBeforeStageEnd())
             {
@@ -1108,6 +1125,9 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         deferredBlocks.clear();
         retryBlocks.clear();
         abandonedBlocks.clear();
+        servedOutOfOrder.clear();
+        nearbyQueue.clear();
+        nearbyStage = null;
         retryRounds = 0;
         toolWaitTicks = 0;
         toolWaitTick = -1L;
@@ -1331,7 +1351,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     /**
      * How many of the next blocks are looked at when a worker picks the spot to work from.
      */
-    protected static final int REACH_LOOKAHEAD = 16;
+    protected static final int REACH_LOOKAHEAD = 48;
 
     /**
      * The blocks the worker works on next and where something has to be done (not those that are what the blueprint wants already), in the
@@ -1435,6 +1455,109 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return list;
         }
         return ahead;
+    }
+
+    // ------------------------------------------------------------------ work out of order
+
+    /**
+     * Blocks the worker placed out of the order of the stage (they were in reach, the next block of the order was not). The stage skips them
+     * when its cursor comes to them.
+     */
+    private final Set<BlockPos> servedOutOfOrder = new HashSet<>();
+    private final java.util.ArrayDeque<BlockPos> nearbyQueue = new java.util.ArrayDeque<>();
+    private BlockPos nearbyCursor = null;
+    private BuildingProgressStage nearbyStage = null;
+    private long nearbyBuiltAt = -100L;
+
+    /**
+     * How many of the next blocks of a stage are looked at for work in reach.
+     */
+    protected static final int NEARBY_WINDOW = 96;
+
+    /**
+     * The stages in which the worker takes what he reaches before he moves on: the ones that place blocks (the order inside the stage does not
+     * matter for the result, the order of the stages does).
+     */
+    private static boolean servesNearby(@Nullable final BuildingProgressStage stage)
+    {
+        return stage == BUILD_SOLID || stage == WEAK_SOLID || stage == DECORATE;
+    }
+
+    /**
+     * Whether the worker takes what he reaches in any order in the current stage (the spot to work from is picked by how many blocks it
+     * reaches, not by how many in a row).
+     */
+    protected final boolean servesAnyOrder()
+    {
+        return usesPhysicalReach() && structurePlacer != null && servesNearby(structurePlacer.getB().getStage());
+    }
+
+    /**
+     * The next block (of those that come next in the stage) that the worker reaches from where he stands.
+     *
+     * @return the block, or null if there is none.
+     */
+    @Nullable
+    private BlockPos pollNearby(@Nullable final BuildingProgressStage stage)
+    {
+        if (!usesPhysicalReach() || !servesNearby(stage) || structurePlacer == null)
+        {
+            return null;
+        }
+        final Tuple<BlockPos, BuildingProgressStage> progress = getProgressPos();
+        final BlockPos cursor = progress == null ? NULL_POS : progress.getA();
+        final long now = world.getGameTime();
+        if (stage != nearbyStage || !cursor.equals(nearbyCursor) || (nearbyQueue.size() < NEARBY_WINDOW / 3 && now - nearbyBuiltAt > 20))
+        {
+            if (stage != nearbyStage)
+            {
+                servedOutOfOrder.clear();
+            }
+            nearbyStage = stage;
+            nearbyCursor = cursor.immutable();
+            nearbyBuiltAt = now;
+            nearbyQueue.clear();
+            nearbyQueue.addAll(peekWork(NEARBY_WINDOW));
+        }
+        BlockPos found = null;
+        final BuildingStructureHandler<J, B> handler = structurePlacer.getB();
+        for (final java.util.Iterator<BlockPos> it = nearbyQueue.iterator(); it.hasNext(); )
+        {
+            final BlockPos pos = it.next();
+            if (servedOutOfOrder.contains(pos))
+            {
+                it.remove();
+                continue;
+            }
+            if (canReachNow(pos))
+            {
+                it.remove();
+                if (hasWorkAt(stage, handler, handler.getStructurePosFromWorld(pos), pos))
+                {
+                    found = pos;
+                    break;
+                }
+            }
+        }
+        return found;
+    }
+
+    /**
+     * Places (or starts to break) one block out of the order of the stage.
+     */
+    private StructurePhasePlacementResult placeNearby(final StructurePlacer placer, final BlockPos worldPos)
+    {
+        final BlockPos local = structurePlacer.getB().getStructurePosFromWorld(worldPos);
+        final int[] calls = {0};
+        return placer.executeStructureStep(world, null, local, StructurePlacer.Operation.BLOCK_PLACEMENT, () ->
+        {
+            if (calls[0]++ == 0)
+            {
+                placer.getIterator().setProgressPos(local);
+                return AbstractBlueprintIterator.Result.NEW_BLOCK;
+            }
+            return AbstractBlueprintIterator.Result.AT_END;
+        }, false);
     }
 
     /**

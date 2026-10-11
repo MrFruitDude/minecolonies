@@ -112,7 +112,7 @@ public final class BuilderScaffolding
     {
         if (com.minecolonies.core.entity.ai.workers.util.ReachAudit.isEnabled())
         {
-            Log.getLogger().info("SCAFFOLD {} {}", ai.worker.getName().getString(), message);
+            Log.getLogger().info("SCAFFOLD t={} {} {}", ai.world.getGameTime(), ai.worker.getName().getString(), message);
         }
     }
 
@@ -306,12 +306,12 @@ public final class BuilderScaffolding
 
         final int stock = WorkerSettings.scaffoldStock();
         final List<BlockPos> blocks = ai.workAhead(target);
-        ScaffoldPlanner.Plan found = ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, stock);
+        ScaffoldPlanner.Plan found = ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, stock, ai.servesAnyOrder());
         if (found == null && !order.getScaffolds().isEmpty())
         {
             // no room in the stock: towers that are of no use come down first (their items go back to the hut), then another try
             ScaffoldSweeper.sweep(ai.worker.getCitizenColonyHandler().getColonyOrRegister(), order.getScaffolds(), cell -> true, 64);
-            found = ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, stock);
+            found = ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, stock, ai.servesAnyOrder());
         }
         if (found == null)
         {
@@ -574,7 +574,7 @@ public final class BuilderScaffolding
             idleSince.clear();
             return false;
         }
-        final List<BlockPos> ahead = ai.peekWorkAhead(4);
+        final List<BlockPos> ahead = ai.peekWorkAhead(ai.servesAnyOrder() ? 48 : 4);
         final double eye = ai.worker.getEyeHeight();
         final double usable = Math.max(1.0D, WorkerSettings.reach() - ReachSpots.MARGIN);
         final BlockPos feet = ai.worker.blockPosition();
@@ -630,10 +630,17 @@ public final class BuilderScaffolding
         for (final ScaffoldLedger.Cell cell : tower)
         {
             final BlockPos spot = cell.pos().above();
-            if (BuildReach.inReachFromFeet(spot, eye, ahead.get(0), usable) && ai.world.getBlockState(spot).isAir() && ai.world.getBlockState(spot.above()).isAir())
+            if (!ai.world.getBlockState(spot).isAir() || !ai.world.getBlockState(spot.above()).isAir())
             {
-                // a spot on it serves the next block
-                return true;
+                continue;
+            }
+            // a spot on it serves the next block (any of the next ones if the worker takes what he reaches in any order)
+            for (final BlockPos next : ai.servesAnyOrder() ? ahead : ahead.subList(0, 1))
+            {
+                if (BuildReach.inReachFromFeet(spot, eye, next, usable))
+                {
+                    return true;
+                }
             }
         }
         return false;

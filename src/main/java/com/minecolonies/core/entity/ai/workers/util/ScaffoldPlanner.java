@@ -107,6 +107,17 @@ public final class ScaffoldPlanner
     public static Plan plan(
       final Grid grid, final List<BlockPos> blocks, final double reach, final double eyeHeight, @Nullable final Set<BlockPos> avoid, final int maxCells)
     {
+        return plan(grid, blocks, reach, eyeHeight, avoid, maxCells, false);
+    }
+
+    /**
+     * @param anyOrder whether the builder takes what he reaches in any order (a spot is as good as the number of blocks it reaches), not just in a row.
+     * @see #plan(Grid, List, double, double, Set, int)
+     */
+    @Nullable
+    public static Plan plan(
+      final Grid grid, final List<BlockPos> blocks, final double reach, final double eyeHeight, @Nullable final Set<BlockPos> avoid, final int maxCells, final boolean anyOrder)
+    {
         if (blocks.isEmpty())
         {
             return null;
@@ -140,7 +151,7 @@ public final class ScaffoldPlanner
                     {
                         continue;
                     }
-                    final int covered = BuildReach.prefixInReach(feet, eyeHeight, blocks, usable);
+                    final int covered = anyOrder ? BuildReach.countInReach(feet, eyeHeight, blocks, usable) : BuildReach.prefixInReach(feet, eyeHeight, blocks, usable);
                     final double cost = support.cells.size() * CELL_COST + support.penalty + penaltyOf(grid, feet) + penaltyOf(grid, head) - covered;
                     if (best == null || cost < best.cost || (cost == best.cost && support.cells.size() < best.cells.size()))
                     {

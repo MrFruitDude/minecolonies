@@ -82,6 +82,22 @@ public final class BuildReach
     }
 
     /**
+     * How many of the blocks are within reach of a citizen standing on the feet block.
+     */
+    public static int countInReach(final BlockPos feet, final double eyeHeight, final List<BlockPos> blocks, final double reach)
+    {
+        int n = 0;
+        for (final BlockPos block : blocks)
+        {
+            if (inReachFromFeet(feet, eyeHeight, block, reach))
+            {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /**
      * The highest block (height above the feet of a citizen who stands right next to a wall, half a block from it) that is still in reach.
      */
     public static int maxHeightNextToWall(final double eyeHeight, final double reach)
