@@ -495,9 +495,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             workFrom = walk.spot;
         }
-        if (EntityNavigationUtils.walkToPos(worker, walk.spot, 1, false))
+        // walk to the very spot (the usual walk stops a block and a half short, and that is a block below the top of a tower)
+        if (EntityNavigationUtils.walkToBlock(worker, walk.spot) != 0)
         {
-            // he is there, and the block is still out of reach: this spot does not work
+            // the walk is over, and the block is still out of reach: this spot does not work
             walk.bad.add(walk.spot);
             walk.spot = null;
         }
