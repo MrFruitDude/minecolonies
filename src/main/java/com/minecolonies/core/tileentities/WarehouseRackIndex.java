@@ -3,6 +3,7 @@ package com.minecolonies.core.tileentities;
 import com.minecolonies.api.colony.buildings.IBuildingContainer;
 import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.util.WorldUtil;
+import com.minecolonies.core.colony.storage.WarehouseStock;
 import com.minecolonies.api.tileentities.AbstractTileEntityRack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Item;
@@ -91,6 +92,13 @@ public final class WarehouseRackIndex
     private boolean          anyUnloaded;
     private boolean          anyForeignRack;
 
+    /**
+     * What the racks hold, as counts: kept current from the same change events, and fed to the colony storage. Null for a
+     * one-shot index.
+     */
+    @Nullable
+    private final WarehouseStock stock;
+
     private final Map<Item, BitSet>                 itemRacks    = new HashMap<>();
     private final IdentityHashMap<TileEntityRack, BitSet> rackSlot = new IdentityHashMap<>();
     private final BitSet                            dirtyRacks   = new BitSet();
@@ -109,6 +117,27 @@ public final class WarehouseRackIndex
     {
         this.building = building;
         this.tracked = tracked;
+        this.stock = tracked ? new WarehouseStock() : null;
+    }
+
+    /**
+     * @return the stock counts of the warehouse's racks (null for a one-shot index).
+     */
+    @Nullable
+    public WarehouseStock stock()
+    {
+        return stock;
+    }
+
+    /**
+     * Brings the index (and with it the stock counts) up to date with the world: re-reads the racks if the structure changed
+     * or a container loaded or unloaded since the last time. Cheap when nothing changed.
+     *
+     * @param world the world.
+     */
+    public void sync(@NotNull final Level world)
+    {
+        ensure(world);
     }
 
     /**
@@ -197,6 +226,10 @@ public final class WarehouseRackIndex
         dirtyRacks.clear();
         structureDirty = true;
         changeCount++;
+        if (stock != null)
+        {
+            stock.clear();
+        }
     }
 
     /**
@@ -211,6 +244,10 @@ public final class WarehouseRackIndex
         if (slots != null)
         {
             dirtyRacks.or(slots);
+            if (stock != null && !structureDirty)
+            {
+                stock.rackChanged(rack);
+            }
         }
     }
 
@@ -361,6 +398,10 @@ public final class WarehouseRackIndex
         structureDirty = false;
         validatedTick = world.getGameTime();
         validatedEpoch = epoch;
+        if (stock != null)
+        {
+            stock.rebuild(racks, anyUnloaded);
+        }
     }
 
     private void reindexRack(final int i)
@@ -621,6 +662,38 @@ public final class WarehouseRackIndex
             if (rack.getFreeSlots() > 0 && rack.hasItemStack(stack, 1, true))
             {
                 return rack;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * First loaded rack with a part-filled stack of the same item that takes at least one of the stack (no free slot needed).
+     *
+     * @param world the world.
+     * @param stack the stack.
+     * @return the rack or null.
+     */
+    @Nullable
+    public AbstractTileEntityRack rackWithMergeSlot(@NotNull final Level world, @NotNull final ItemStack stack)
+    {
+        ensure(world);
+        final BitSet bits = itemRacks.get(stack.getItem());
+        if (bits == null)
+        {
+            return null;
+        }
+        for (int i = bits.nextSetBit(0); i >= 0; i = bits.nextSetBit(i + 1))
+        {
+            final TileEntityRack rack = racks[i];
+            rackProbes++;
+            for (int slot = 0; slot < rack.getInventory().getSlots(); slot++)
+            {
+                final ItemStack held = rack.getInventory().getStackInSlot(slot);
+                if (!held.isEmpty() && held.getCount() < held.getMaxStackSize() && ItemStack.isSameItemSameComponents(held, stack))
+                {
+                    return rack;
+                }
             }
         }
         return null;

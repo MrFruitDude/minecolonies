@@ -126,6 +126,11 @@ public class RegisteredStructureManager implements IRegisteredStructureManager
     private final Colony colony;
 
     /**
+     * The warehouses as one storage.
+     */
+    private final com.minecolonies.core.colony.storage.ColonyStorage colonyStorage;
+
+    /**
      * Max chunk pos where a building is placed into a certain direction.
      */
     private int minChunkX;
@@ -141,6 +146,7 @@ public class RegisteredStructureManager implements IRegisteredStructureManager
     public RegisteredStructureManager(final Colony colony)
     {
         this.colony = colony;
+        this.colonyStorage = new com.minecolonies.core.colony.storage.ColonyStorage(colony);
     }
 
     @Override
@@ -810,6 +816,12 @@ public class RegisteredStructureManager implements IRegisteredStructureManager
     public List<IWareHouse> getWareHouses()
     {
         return wareHouses;
+    }
+
+    @Override
+    public com.minecolonies.core.colony.storage.ColonyStorage getColonyStorage()
+    {
+        return colonyStorage;
     }
 
     @Override
