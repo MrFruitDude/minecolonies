@@ -157,8 +157,8 @@ public final class StandSpots
                 }
                 else if (isFree(level, near))
                 {
-                    // a step down (or a short drop, the paths of citizens allow up to three blocks)
-                    for (int drop = 1; drop <= 3 && isFree(level, near.below(drop - 1)); drop++)
+                    // a step down (or a short drop, the paths of citizens allow drops, six are taken here)
+                    for (int drop = 1; drop <= 6 && isFree(level, near.below(drop - 1)); drop++)
                     {
                         if (canStandAt(level, near.below(drop)))
                         {
