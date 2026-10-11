@@ -297,7 +297,11 @@ public final class BuilderScaffolding
         if (found.cells().isEmpty())
         {
             // the spot is there already, the builder just cannot get to it: a tower is no help
-            log("a spot " + found.stand() + " is there but cannot be reached");
+            final BlockPos st = found.stand();
+            log("a spot " + st + " is there but cannot be reached: builder at " + ai.worker.blockPosition() + " canStand=" + com.minecolonies.core.entity.ai.workers.util.StandSpots.canStandAt(ai.world, st)
+                  + " walk(stand)=" + ai.canWalkTo(st) + " walk(floor)=" + ai.canWalkTo(st.below()) + " floor=" + ai.world.getBlockState(st.below()) + " head=" + ai.world.getBlockState(st.above())
+                  + " feet=" + ai.world.getBlockState(st) + " around=" + ai.world.getBlockState(st.north()).getBlock() + "," + ai.world.getBlockState(st.south()).getBlock() + ","
+                  + ai.world.getBlockState(st.east()).getBlock() + "," + ai.world.getBlockState(st.west()).getBlock());
             deniedUntil = now + 200;
             return false;
         }
