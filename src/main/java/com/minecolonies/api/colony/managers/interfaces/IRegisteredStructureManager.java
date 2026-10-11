@@ -203,6 +203,13 @@ public interface IRegisteredStructureManager extends ICommonRegisteredStructureM
     List<IWareHouse> getWareHouses();
 
     /**
+     * The colony's warehouses seen as one storage: one stock index and one capacity.
+     *
+     * @return the storage.
+     */
+    com.minecolonies.api.colony.storage.IColonyStorage getColonyStorage();
+
+    /**
      * Removes a warehouse from the BuildingManager
      *
      * @param mysticalSite the warehouse to remove.

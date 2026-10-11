@@ -203,6 +203,23 @@ public class ServerConfiguration extends AbstractConfiguration
     public final BooleanValue priorityClasses;
 
     /**
+     * Global storage network: the colony's warehouses are one storage (one stock index, one courier pool, source and
+     * drop-off chosen by estimated completion time).
+     */
+    public final BooleanValue storageNetwork;
+
+    /**
+     * Storage network: how far from its own warehouse a courier serves other warehouses, in blocks. 0 = the whole colony.
+     */
+    public final IntValue storageServiceRange;
+
+    /**
+     * Storage network: soft cap per item type over the whole colony (0 = off). Couriers do not collect more of an item
+     * from buildings once the colony holds this many.
+     */
+    public final IntValue storageItemCap;
+
+    /**
      * Builds server configuration.
      *
      * @param builder config builder
@@ -303,6 +320,9 @@ public class ServerConfiguration extends AbstractConfiguration
         reservations = defineBoolean("reservations", true);
         smartRetry = defineBoolean("smartRetry", true);
         priorityClasses = defineBoolean("priorityClasses", true);
+        storageNetwork = defineBoolean("storageNetwork", true);
+        storageServiceRange = defineInteger("storageServiceRange", 0, 0, 100000);
+        storageItemCap = defineInteger("storageItemCap", 0, 0, 100000000);
 
         swapToCategory("workers");
 

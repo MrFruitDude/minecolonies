@@ -1940,6 +1940,8 @@
   "com.minecolonies.coremod.university.researchconcluded.2": "Your researchers made a breakthrough! They now understand '%s'.",
   "com.minecolonies.coremod.university.researchfrominv": "You can fund research costs from the university inventory.",
   "com.minecolonies.coremod.warehouse.full": "The Warehouse is full, please upgrade it!",
+  "com.minecolonies.coremod.warehouse.network.full": "The colony storage is full: no warehouse has room for %s. Upgrade a warehouse or build another one.",
+  "com.minecolonies.coremod.warehouse.network.full.any": "The colony storage is full: no warehouse has a free slot, so couriers stop collecting. Upgrade a warehouse or build another one.",
   "com.minecolonies.coremod.request.wait.none": "Not waiting",
   "com.minecolonies.coremod.request.importance.urgent": "Urgent: a worker is waiting for it",
   "com.minecolonies.coremod.request.importance.normal": "Normal",

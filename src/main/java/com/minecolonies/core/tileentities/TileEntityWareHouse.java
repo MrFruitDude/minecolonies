@@ -9,6 +9,8 @@ import com.minecolonies.api.util.*;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
+import com.minecolonies.core.colony.storage.ColonyStorage;
+import com.minecolonies.core.colony.storage.StorageNetwork;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.core.BlockPos;
@@ -100,6 +102,7 @@ public class TileEntityWareHouse extends AbstractTileEntityWareHouse
     @Override
     public void dumpInventoryIntoWareHouse(@NotNull final InventoryCitizen inventoryCitizen)
     {
+        final boolean network = StorageNetwork.on(getColony());
         for (int i = 0; i < inventoryCitizen.getSlots(); i++)
         {
             final ItemStack stack = inventoryCitizen.getStackInSlot(i);
@@ -111,6 +114,15 @@ public class TileEntityWareHouse extends AbstractTileEntityWareHouse
             @Nullable final AbstractTileEntityRack chest = getRackForStack(stack);
             if (chest == null)
             {
+                if (network)
+                {
+                    // The colony is one storage: say so only when no warehouse has room, and go on with the next stack.
+                    if (!ColonyStorage.of(getColony()).hasRoomFor(stack))
+                    {
+                        ColonyStorage.of(getColony()).noticeFull(stack);
+                    }
+                    continue;
+                }
                 if(level.getGameTime() - lastNotification > TICKS_FIVE_MIN)
                 {
                     lastNotification = level.getGameTime();
@@ -153,6 +165,11 @@ public class TileEntityWareHouse extends AbstractTileEntityWareHouse
             if (rack == null)
             {
                 rack = index.hasUnloadedContainers(level) ? searchMostEmptyRack() : index.mostEmptyLoadedRack(level);
+                if (rack == null && StorageNetwork.on(getColony()))
+                {
+                    // Storage network: no free slot anywhere in this warehouse, but a part-filled stack of the item takes more.
+                    rack = index.rackWithMergeSlot(level, stack);
+                }
             }
         }
         return rack;

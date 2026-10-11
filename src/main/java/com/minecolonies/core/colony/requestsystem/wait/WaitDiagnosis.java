@@ -118,6 +118,10 @@ public final class WaitDiagnosis
     {
         int total = 0;
         final int upTo = Math.max(1, wanted.getCount());
+        if (com.minecolonies.core.colony.storage.StorageNetwork.on(colony))
+        {
+            return com.minecolonies.core.colony.storage.ColonyStorage.of(colony).physical(wanted::matches, upTo);
+        }
         for (final IWareHouse wareHouse : colony.getServerBuildingManager().getWareHouses())
         {
             if (wareHouse instanceof BuildingWareHouse building)
@@ -161,6 +165,10 @@ public final class WaitDiagnosis
     {
         int total = 0;
         final int upTo = Math.max(1, wanted.getCount());
+        if (com.minecolonies.core.colony.storage.StorageNetwork.on(colony))
+        {
+            return com.minecolonies.core.colony.storage.ColonyStorage.of(colony).available(wanted::matches, upTo);
+        }
         for (final IWareHouse wareHouse : colony.getServerBuildingManager().getWareHouses())
         {
             if (wareHouse instanceof BuildingWareHouse building)
