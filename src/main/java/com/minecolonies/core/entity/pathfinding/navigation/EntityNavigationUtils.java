@@ -4,6 +4,7 @@ import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.entity.ai.combat.threat.IThreatTableEntity;
 import com.minecolonies.api.entity.other.AbstractFastMinecoloniesEntity;
 import com.minecolonies.api.util.BlockPosUtil;
+import com.minecolonies.core.entity.ai.workers.util.AbstractWalking;
 import com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveAwayFromLocation;
 import com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveCloseToXNearY;
 import com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveToLocation;
@@ -56,6 +57,13 @@ public class EntityNavigationUtils
         final BlockPos nearbyPosition,
         final int distToDesired, final boolean safeDestination, final double speedFactor)
     {
+        // Worker settings: a long walk of a worker can be replaced by a timed relocation
+        final Boolean relocated = AbstractWalking.tryRelocate(entity, desiredPosition, distToDesired);
+        if (relocated != null)
+        {
+            return relocated;
+        }
+
         final MinecoloniesAdvancedPathNavigate nav = ((MinecoloniesAdvancedPathNavigate) entity.getNavigation());
 
         // Three cases
@@ -155,6 +163,13 @@ public class EntityNavigationUtils
         final T entity, final BlockPos desiredPosition,
         final int distToDesired, final boolean safeDestination, final double speedFactor)
     {
+        // Worker settings: a long walk of a worker can be replaced by a timed relocation
+        final Boolean relocated = AbstractWalking.tryRelocate(entity, desiredPosition, distToDesired);
+        if (relocated != null)
+        {
+            return relocated;
+        }
+
         final MinecoloniesAdvancedPathNavigate nav = ((MinecoloniesAdvancedPathNavigate) entity.getNavigation());
 
         boolean isOnRightTask = (nav.getPathResult() != null

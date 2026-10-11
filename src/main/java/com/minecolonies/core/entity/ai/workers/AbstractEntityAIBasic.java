@@ -38,6 +38,10 @@ import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.interactionhandling.PosBasedInteraction;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.AbstractJob;
+import com.minecolonies.core.entity.ai.workers.util.AbstractWalking;
+import com.minecolonies.core.entity.ai.workers.util.StandSpots;
+import com.minecolonies.core.entity.ai.workers.util.WorkStuckTracker;
+import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
 import com.minecolonies.core.colony.jobs.JobDeliveryman;
 import com.minecolonies.core.colony.requestsystem.resolvers.StationRequestResolver;
 import com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils;
@@ -47,6 +51,7 @@ import com.minecolonies.core.util.WorkerUtil;
 import com.minecolonies.core.util.citizenutils.CitizenItemUtils;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -597,27 +602,28 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     }
 
     /**
-     * The colony's work pace for this worker ({@link IColonyPaceProvider#work}, sanitized; exactly 1.0 without a
-     * colony or provider).
+     * The pace of this worker's waits: the colony pace of another mod ({@link IColonyPaceProvider#work}, sanitized) times the worker speed
+     * of the settings ({@link WorkerSettings#speedMultiplier()}). Exactly 1.0 with the speed setting at 1.0, without a colony or provider.
+     * <p>
+     * This is the one place where both are combined: there is only one {@code IColonyPaceProvider}, so the setting is folded in here instead
+     * of being a second provider, and Colony Command's pace and the setting multiply (pace 2 and setting 1.5 make 3).
      */
-    private double getWorkPace()
+    protected double getWorkPace()
     {
         final IColony colony = job.getColony();
-        return colony == null ? 1.0D : IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().work(colony, job));
+        final double provider = colony == null ? 1.0D : IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().work(colony, job));
+        return WorkerSettings.composePace(provider, WorkerSettings.speedMultiplier());
     }
 
     /**
-     * How much of the delay one wait step counts down: the tick rate times the colony's work pace
-     * ({@link IColonyPaceProvider#work}), with the fraction carried to the next step. At pace 1.0 this is exactly the
-     * tick rate.
+     * How much of the delay one wait step counts down: the tick rate times the work pace ({@link #getWorkPace()}), with the fraction carried
+     * to the next step. At pace 1.0 this is exactly the tick rate.
      *
      * @return the ticks to subtract from the delay.
      */
     private int getPacedTickRate()
     {
-        final IColony colony = job.getColony();
-        final double pace = colony == null ? 1.0D
-          : IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().work(colony, job));
+        final double pace = getWorkPace();
         if (pace == 1.0D)
         {
             paceCarry = 0.0D;
@@ -876,8 +882,62 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             return true;
         }
 
-        return EntityNavigationUtils.walkToBuilding(worker, ownBuilding);
+        return checkedWalkToBuilding(ownBuilding);
     }
+
+    /**
+     * The walk to a building with a way out for a worker who cannot get there (fallen into a hole, shut in): when he stands still for too
+     * long on his way to the building he asks for a new path, and then is put on a standable spot at the building's entrance. A worker who
+     * keeps moving is not touched, so long walks stay what they are.
+     */
+    private boolean checkedWalkToBuilding(final IBuilding target)
+    {
+        final boolean arrived = EntityNavigationUtils.walkToBuilding(worker, target);
+        if (arrived)
+        {
+            walkStuck.progress();
+            walkStuckTick = -1L;
+            return true;
+        }
+        if (AbstractWalking.isRelocating(worker))
+        {
+            walkStuck.free();
+            walkStuckTick = -1L;
+            return false;
+        }
+
+        final long now = world.getGameTime();
+        final int dt = walkStuckTick < 0 ? 0 : (int) Math.min(now - walkStuckTick, 200L);
+        walkStuckTick = now;
+        final Vec3 position = worker.position();
+        final double moved = walkStuckPos == null ? 0.0D : position.distanceTo(walkStuckPos);
+        walkStuckPos = position;
+        switch (walkStuck.blocked(dt, moved))
+        {
+            case REPATH:
+                worker.getNavigation().stop();
+                break;
+            case TELEPORT:
+            case DEFER:
+                final BlockPos spot = StandSpots.nearest(world, target.getPosition(), 6, 6, 4, null);
+                if (spot != null)
+                {
+                    worker.getNavigation().stop();
+                    worker.snapTo(spot.getX() + 0.5D, spot.getY(), spot.getZ() + 0.5D);
+                    walkStuck.progress();
+                    walkStuckTick = -1L;
+                    Log.getLogger().debug("{} could not get to {} and was put at {}", worker.getName().getString(), target.getPosition(), spot);
+                }
+                break;
+            default:
+                break;
+        }
+        return false;
+    }
+
+    private final WorkStuckTracker walkStuck = new WorkStuckTracker();
+    private long walkStuckTick = -1L;
+    private Vec3 walkStuckPos  = null;
 
     /**
      * Walk the worker to a tagged workpos in building, or the building pos if non existent.
@@ -933,7 +993,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             return true;
         }
 
-        return EntityNavigationUtils.walkToBuilding(worker, building);
+        return checkedWalkToBuilding(building);
     }
 
     /**
