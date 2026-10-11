@@ -3,6 +3,7 @@ package com.minecolonies.core.colony;
 import com.google.common.collect.Maps;
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.blocks.AbstractBlockHut;
+import com.minecolonies.api.blocks.ModBlocks;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyManager;
@@ -20,6 +21,7 @@ import com.minecolonies.api.compatibility.ICompatibilityManager;
 import com.minecolonies.api.crafting.IRecipeManager;
 import com.minecolonies.api.eventbus.events.ColonyManagerLoadedModEvent;
 import com.minecolonies.api.eventbus.events.ColonyManagerUnloadedModEvent;
+import com.minecolonies.api.eventbus.events.colony.ColonyCreatedModEvent;
 import com.minecolonies.api.eventbus.events.colony.ColonyDeletedModEvent;
 import com.minecolonies.api.eventbus.events.colony.ColonyFoundingEvent;
 import com.minecolonies.api.eventbus.events.colony.ColonyViewUpdatedModEvent;
@@ -30,13 +32,17 @@ import com.minecolonies.api.util.DamageSourceKeys;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.client.gui.WindowReactivateBuilding;
+import com.minecolonies.core.blocks.huts.BlockHutTownHall;
+import com.minecolonies.core.colony.permissions.Permissions;
 import com.minecolonies.core.colony.requestsystem.management.manager.StandardRecipeManager;
+import com.minecolonies.core.tileentities.TileEntityColonyBuilding;
 import com.minecolonies.core.network.messages.client.colony.ColonyViewRemoveMessage;
 import com.minecolonies.core.network.messages.client.colony.OwnedColoniesMessage;
 import com.minecolonies.core.util.BackUpHelper;
 import com.minecolonies.core.util.ChunkDataHelper;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -52,6 +58,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BannerPatternLayers;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -175,6 +182,123 @@ public final class ColonyManager implements IColonyManager
         ownerIndex.add(colony);
         markOwnerDirty(colony.getPermissions().getOwner());
         return colony;
+    }
+
+    /**
+     * The blueprint of the town hall of a faction colony, the first level of the standard town hall of every style pack.
+     */
+    public static final String FACTION_TOWN_HALL_BLUEPRINT = "fundamentals/townhall1.blueprint";
+
+    @Override
+    @Nullable
+    public IColony createFactionColony(
+      @NotNull final ServerLevel w,
+      @NotNull final BlockPos townHallPos,
+      @NotNull final String factionId,
+      @NotNull final Component name,
+      @NotNull final String stylePack,
+      final int teamColour,
+      @Nullable final BannerPatternLayers banner)
+    {
+        if (factionId.isBlank())
+        {
+            throw new IllegalArgumentException("A faction colony needs a faction id");
+        }
+        final IServerColonySaveData cap = IServerColonySaveData.getOrComputeSaveData(w);
+        if (cap == null)
+        {
+            Log.getLogger().warn(MISSING_WORLD_CAP_MESSAGE);
+            return null;
+        }
+
+        if (!isFarEnoughFromColonies(w, townHallPos))
+        {
+            Log.getLogger().info("Faction colony of {} not created at {}: too close to a colony or the claim does not fit.", factionId, townHallPos);
+            return null;
+        }
+
+        if (!(w.getBlockState(townHallPos).getBlock() instanceof BlockHutTownHall))
+        {
+            w.setBlock(townHallPos, ModBlocks.blockHutTownHall.defaultBlockState(), 3);
+        }
+        if (!(w.getBlockEntity(townHallPos) instanceof final TileEntityColonyBuilding hut))
+        {
+            Log.getLogger().warn("Faction colony of {} not created at {}: the town hall has no block entity.", factionId, townHallPos);
+            return null;
+        }
+        hut.setPackName(stylePack);
+        hut.setBlueprintPath(FACTION_TOWN_HALL_BLUEPRINT);
+
+        final IColony colony = cap.createColony(w, name.getString(), townHallPos);
+        colony.setStructurePack(stylePack);
+        colony.setName(name.getString());
+        ((Permissions) colony.getPermissions()).setFactionOwner(factionId);
+        colony.setColonyColor(nearestChatColour(teamColour));
+        if (banner != null)
+        {
+            colony.setColonyFlag(banner);
+        }
+
+        Log.getLogger().info(String.format("New faction colony Id: %d of %s", colony.getID(), factionId));
+
+        if (colony.getWorld() == null)
+        {
+            Log.getLogger().error("Unable to claim chunks because of the missing world in the colony, please report this to the mod authors!", new Exception());
+            return null;
+        }
+
+        ChunkDataHelper.claimColonyChunks(w, true, (Colony) colony, colony.getCenter());
+        colony.getServerBuildingManager().addNewBuilding(hut, w);
+        IMinecoloniesAPI.getInstance().getEventBus().post(new ColonyCreatedModEvent(colony));
+        return colony;
+    }
+
+    /**
+     * The chat colour closest to an RGB colour.
+     */
+    private static ChatFormatting nearestChatColour(final int rgb)
+    {
+        ChatFormatting best = ChatFormatting.WHITE;
+        long bestDistance = Long.MAX_VALUE;
+        for (final ChatFormatting format : ChatFormatting.values())
+        {
+            final TextColor textColor = Style.EMPTY.applyFormat(format).getColor();
+            if (textColor == null)
+            {
+                continue;
+            }
+            final int c = textColor.getValue();
+            final long dr = ((rgb >> 16) & 0xFF) - ((c >> 16) & 0xFF);
+            final long dg = ((rgb >> 8) & 0xFF) - ((c >> 8) & 0xFF);
+            final long db = (rgb & 0xFF) - (c & 0xFF);
+            final long distance = dr * dr + dg * dg + db * db;
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = format;
+            }
+        }
+        return best;
+    }
+
+    @Override
+    @NotNull
+    public List<IColony> getFactionColonies(@NotNull final String factionId)
+    {
+        final List<IColony> result = new ArrayList<>();
+        if (ServerLifecycleHooks.getCurrentServer() == null)
+        {
+            return result;
+        }
+        for (final IColony colony : getAllColonies())
+        {
+            if (factionId.equals(colony.getPermissions().getFactionId()))
+            {
+                result.add(colony);
+            }
+        }
+        result.sort(Comparator.comparingLong(IColony::getFoundedTime).thenComparingInt(IColony::getID));
+        return result;
     }
 
     @Override

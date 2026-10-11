@@ -2,6 +2,7 @@ package com.minecolonies.api.configuration;
 
 import com.ldtteam.common.config.AbstractConfiguration;
 import com.minecolonies.api.colony.permissions.Explosions;
+import com.minecolonies.api.colony.permissions.FactionPlayerRank;
 import com.minecolonies.api.util.constant.CitizenConstants;
 import net.neoforged.neoforge.common.ModConfigSpec.*;
 
@@ -27,6 +28,16 @@ public class ServerConfiguration extends AbstractConfiguration
      * How many colonies one player may own at once (all dimensions). 1 is the classic MineColonies rule.
      */
     public final IntValue maxColoniesPerPlayer;
+
+    /**
+     * The rank players have in a faction-owned colony (an AI neighbour) unless given another one. Never owner or officer.
+     */
+    public final EnumValue<FactionPlayerRank> factionColonyDefaultPlayerRank;
+
+    /**
+     * Whether faction-owned colonies (AI neighbours) can be raided. Off by default.
+     */
+    public final BooleanValue factionColoniesCanBeRaided;
     public final BooleanValue allowOtherDimColonies;
     public final IntValue     maxCitizenPerColony;
     public final BooleanValue enableInDevelopmentFeatures;
@@ -178,6 +189,10 @@ public class ServerConfiguration extends AbstractConfiguration
         swapToCategory("colonies");
         // Founding more than one colony stays refused by the founding rules of a mod that raises this; the config alone only lifts the cap.
         maxColoniesPerPlayer = defineInteger("maxPerPlayer", 1, 1, 64);
+
+        swapToCategory("factions");
+        factionColonyDefaultPlayerRank = defineEnum("defaultPlayerRank", FactionPlayerRank.NEUTRAL);
+        factionColoniesCanBeRaided = defineBoolean("canBeRaided", false);
 
         swapToCategory("research");
         researchCreativeCompletion = defineBoolean("researchcreativecompletion", true);

@@ -19,7 +19,8 @@ import java.util.UUID;
  * Server side index from a player to the colonies they own, oldest colony first. It is built per level the first time
  * it is asked about that level and kept current through the colony manager's hooks (colony created, deleted, owner
  * changed, level unloaded), so finding the colonies of an owner costs the size of the answer, not a scan of all colonies.
- * Entries are only keys; the manager resolves them and drops the ones that no longer match.
+ * Entries are only keys; the manager resolves them and drops the ones that no longer match. Faction-owned colonies are
+ * not indexed: they are found through {@code IColonyManager#getFactionColonies}.
  */
 final class OwnerIndex
 {
@@ -135,6 +136,11 @@ final class OwnerIndex
 
     private void insert(final IColony colony)
     {
+        if (colony.getPermissions().isFactionOwned())
+        {
+            // Faction colonies belong to no player: the index is the players' colonies (limits, selection, owned sync).
+            return;
+        }
         final UUID ownerId = colony.getPermissions().getOwner();
         final Entry entry = new Entry(colony.getDimension(), colony.getID(), colony.getFoundedTime());
         final List<Entry> list = byOwner.computeIfAbsent(ownerId, k -> new ArrayList<>());

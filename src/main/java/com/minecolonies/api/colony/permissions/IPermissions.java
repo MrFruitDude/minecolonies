@@ -163,6 +163,39 @@ public interface IPermissions
     void restoreOwnerIfNull();
 
     /**
+     * The owner id of the faction with the given id: the same id on every server and in every run, so a faction keeps
+     * its colonies across restarts, and never equal to a player's id.
+     *
+     * @param factionId the faction id.
+     * @return the owner UUID of the faction.
+     */
+    @NotNull
+    static UUID factionOwnerId(@NotNull final String factionId)
+    {
+        return UUID.nameUUIDFromBytes(("minecolonies:faction:" + factionId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /**
+     * A faction-owned colony belongs to an NPC faction (an AI neighbour) and not to a player. Its owner is
+     * {@link #factionOwnerId(String)}, players are neutral in it by default and can never be its owner or an officer.
+     *
+     * @return true for a faction-owned colony.
+     */
+    default boolean isFactionOwned()
+    {
+        return false;
+    }
+
+    /**
+     * @return the id of the owning faction, null if the colony is not faction-owned.
+     */
+    @Nullable
+    default String getFactionId()
+    {
+        return null;
+    }
+
+    /**
      * Sets a permission to a rank, does not include allowance checks
      *
      * @param rank   Rank to modify

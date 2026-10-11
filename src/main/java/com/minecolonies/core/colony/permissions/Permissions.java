@@ -7,6 +7,7 @@ import com.minecolonies.api.util.ColonyUtils;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.Utils;
 import com.minecolonies.core.colony.Colony;
+import com.minecolonies.core.colony.FactionConfig;
 import net.minecraft.server.players.NameAndId;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -48,6 +49,7 @@ public class Permissions implements IPermissions
     private static final String TAG_INITIAL         = "is_initial";
     private static final String TAG_COLONY_MANAGER  = "is_colony_manager";
     private static final String TAG_HOSTILE         = "is_hostile";
+    private static final String TAG_FACTION_ID      = "faction_id";
 
     /**
      * NBTTarget for the permission version, used for updating.
@@ -112,6 +114,12 @@ public class Permissions implements IPermissions
      * True if this character has no owner or officer left and thus can be mined by anyone.
      */
     private boolean fullyAbandoned = false;
+
+    /**
+     * The id of the NPC faction that owns the colony, null for a colony of a player (or an abandoned one).
+     */
+    @Nullable
+    private String factionId = null;
 
     /**
      * The current version of the permissions, increase upon changes to the preset permissions
@@ -435,6 +443,12 @@ public class Permissions implements IPermissions
             }
         }
 
+        factionId = compound.contains(TAG_FACTION_ID) ? compound.getStringOr(TAG_FACTION_ID, "") : null;
+        if (factionId != null && factionId.isEmpty())
+        {
+            factionId = null;
+        }
+
         if (compound.contains(TAG_FULLY_ABANDONED))
         {
             fullyAbandoned = compound.getBooleanOr(TAG_FULLY_ABANDONED, false);
@@ -453,7 +467,14 @@ public class Permissions implements IPermissions
     public void restoreOwnerIfNull()
     {
         final Map.Entry<UUID, ColonyPlayer> owner = getOwnerEntry();
-        if (owner == null && ownerUUID != null)
+        if (owner == null && factionId != null)
+        {
+            // The faction is no player: it has no name to look up, and is never "abandoned".
+            ownerUUID = IPermissions.factionOwnerId(factionId);
+            ownerName = "[" + factionId + "]";
+            players.put(ownerUUID, new ColonyPlayer(ownerUUID, ownerName, ranks.get(OWNER_RANK_ID)));
+        }
+        else if (owner == null && ownerUUID != null)
         {
             final NameAndId player = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer().services().nameToIdCache().get(ownerUUID).orElse(null);
 
@@ -501,6 +522,7 @@ public class Permissions implements IPermissions
         final UUID previousOwner = ownerUUID;
         players.remove(getOwner());
 
+        factionId = null;
         ownerName = player.getName().getString();
         ownerUUID = player.getUUID();
 
@@ -511,6 +533,65 @@ public class Permissions implements IPermissions
         markDirty();
         notifyOwnerChanged(previousOwner);
         return true;
+    }
+
+    /**
+     * Makes an NPC faction the owner of the colony: the owner becomes {@link IPermissions#factionOwnerId(String)}, no
+     * player is owner or officer any more, and every other player keeps at most a non-manager rank. Server side, called
+     * when a faction colony is created; a faction colony stays faction-owned until a player or "abandoned" becomes its
+     * owner through {@link #setOwner(Player)} or {@link #setOwnerAbandoned()}.
+     *
+     * @param newFactionId the faction id.
+     */
+    public void setFactionOwner(@NotNull final String newFactionId)
+    {
+        final UUID previousOwner = ownerUUID;
+        if (previousOwner != null)
+        {
+            players.remove(previousOwner);
+        }
+        // Nobody else manages a faction colony.
+        players.values().removeIf(p -> isManagerRank(p.getRank()));
+
+        factionId = newFactionId;
+        ownerName = "[" + newFactionId + "]";
+        ownerUUID = IPermissions.factionOwnerId(newFactionId);
+        players.put(ownerUUID, new ColonyPlayer(ownerUUID, ownerName, ranks.get(OWNER_RANK_ID)));
+
+        fullyAbandoned = false;
+        markDirty();
+        notifyOwnerChanged(previousOwner);
+    }
+
+    @Override
+    public boolean isFactionOwned()
+    {
+        return factionId != null;
+    }
+
+    @Override
+    @Nullable
+    public String getFactionId()
+    {
+        return factionId;
+    }
+
+    /**
+     * @return true for the ranks only the owner can give: owner, officer, and any rank that manages the colony.
+     */
+    private boolean isManagerRank(final Rank rank)
+    {
+        return rank != null && (rank.getId() == OWNER_RANK_ID || rank.getId() == OFFICER_RANK_ID || rank.isColonyManager());
+    }
+
+    /**
+     * A faction colony never gives a player a manager rank; the faction itself is the only one with the owner rank.
+     *
+     * @return true if a player may not get the rank in this colony.
+     */
+    private boolean refusesRank(final UUID id, final Rank rank)
+    {
+        return factionId != null && isManagerRank(rank) && !id.equals(ownerUUID);
     }
 
     /**
@@ -536,6 +617,7 @@ public class Permissions implements IPermissions
         final UUID previousOwner = ownerUUID;
         players.remove(ownerUUID);
 
+        factionId = null;
         ownerName = "[abandoned]";
         ownerUUID = UUID.randomUUID();
 
@@ -634,6 +716,10 @@ public class Permissions implements IPermissions
             compound.putString(TAG_OWNER_ID, ownerUUID.toString());
         }
 
+        if (factionId != null)
+        {
+            compound.putString(TAG_FACTION_ID, factionId);
+        }
         compound.putBoolean(TAG_FULLY_ABANDONED, fullyAbandoned);
 
         compound.putInt(TAG_VERSION, permissionsVersion);
@@ -759,6 +845,10 @@ public class Permissions implements IPermissions
     public boolean setPlayerRank(final UUID id, final Rank rank, final Level world)
     {
 
+        if (refusesRank(id, rank))
+        {
+            return false;
+        }
         final ColonyPlayer player = getPlayers().get(id);
 
         if (player != null)
@@ -800,6 +890,10 @@ public class Permissions implements IPermissions
     @Override
     public boolean addPlayer(@NotNull final UUID id, final String name, final Rank rank)
     {
+        if (refusesRank(id, rank))
+        {
+            return false;
+        }
         @NotNull final ColonyPlayer p = new ColonyPlayer(id, name, rank);
 
         players.remove(p.getID());
@@ -825,7 +919,25 @@ public class Permissions implements IPermissions
     public Rank getRank(final UUID id)
     {
         final ColonyPlayer player = players.get(id);
-        return player != null ? player.getRank() : ranks.get(NEUTRAL_RANK_ID);
+        if (player != null)
+        {
+            return player.getRank();
+        }
+        return factionId != null ? ranks.get(factionDefaultRankId()) : ranks.get(NEUTRAL_RANK_ID);
+    }
+
+    /**
+     * @return the id of the rank a player without an entry has in a faction colony: the configured one, neutral unless
+     * that is friend or hostile.
+     */
+    private int factionDefaultRankId()
+    {
+        return switch (FactionConfig.defaultPlayerRank())
+                 {
+                     case FRIEND -> FRIEND_RANK_ID;
+                     case HOSTILE -> HOSTILE_RANK_ID;
+                     default -> NEUTRAL_RANK_ID;
+                 };
     }
 
     /**
@@ -839,7 +951,7 @@ public class Permissions implements IPermissions
     @Override
     public boolean addPlayer(@NotNull final String player, final Rank rank, final Level world)
     {
-        if (player.isEmpty())
+        if (player.isEmpty() || (factionId != null && isManagerRank(rank)))
         {
             return false;
         }
@@ -889,6 +1001,10 @@ public class Permissions implements IPermissions
     @Override
     public boolean addPlayer(@NotNull final NameAndId gameprofile, final Rank rank)
     {
+        if (refusesRank(gameprofile.id(), rank))
+        {
+            return false;
+        }
         @NotNull final ColonyPlayer p = new ColonyPlayer(gameprofile.id(), gameprofile.name(), rank);
 
         players.remove(p.getID());

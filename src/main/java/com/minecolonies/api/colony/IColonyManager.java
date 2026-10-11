@@ -5,6 +5,7 @@ import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.claim.ChunkClaimData;
 import com.minecolonies.api.colony.claim.IChunkClaimData;
+import com.minecolonies.api.colony.permissions.IPermissions;
 import com.minecolonies.api.compatibility.ICompatibilityManager;
 import com.minecolonies.api.crafting.IRecipeManager;
 import com.minecolonies.core.colony.Colony;
@@ -20,6 +21,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BannerPatternLayers;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -51,6 +53,47 @@ public interface IColonyManager
      */
     @Nullable
     IColony createColony(@NotNull ServerLevel w, BlockPos pos, @NotNull Player player, @NotNull String colonyName, @NotNull String pack);
+
+    /**
+     * Creates a colony that belongs to an NPC faction instead of a player (an AI neighbour). Server side, called by a
+     * mod that runs the faction; there is no packet or command for it.
+     * <p>
+     * The colony is owned by {@link IPermissions#factionOwnerId(String)} ({@code UUID.nameUUIDFromBytes("minecolonies:faction:" + factionId)}),
+     * {@link IPermissions#isFactionOwned()} is true and {@link IPermissions#getFactionId()} is {@code factionId}. Players are
+     * neutral in it unless the {@code factions.defaultPlayerRank} config says otherwise and can never be owner or officer
+     * of it. It is not in the owner index ({@link #getIColoniesByOwner}), does not count towards
+     * {@link #getMaxColoniesPerPlayer()} and is not a candidate for {@link #getIColonyByOwner}. The claim and distance
+     * rules of a normal colony apply: nothing is created if the town hall is closer than {@code minColonyDistance} to
+     * another colony or its claim does not fit (the world spawn distance limits of player founding do not apply). The
+     * colony is saved, loaded and deleted like any other, and no player has to be online to create it.
+     * <p>
+     * Sets the town hall block at {@code townHallPos} (an existing town hall block with its block entity is reused) and
+     * registers it as the colony's town hall at building level 0, with the blueprint {@code fundamentals/townhall1.blueprint}
+     * of the style pack; the faction builds it up through {@link com.minecolonies.api.colony.faction.IFactionColonyActions}.
+     * Without a simulation driver ({@link IColony#setSimulationDriver}) the colony only ticks like any colony, while a
+     * player is close.
+     *
+     * @param w            the level; its chunks around the town hall are loaded.
+     * @param townHallPos  where the town hall is, the center of the colony.
+     * @param factionId    the faction id, not blank.
+     * @param name         the colony name.
+     * @param stylePack    the structure pack of the colony, e.g. "Minecolonies Original".
+     * @param teamColour   the colony colour as RGB; the nearest of the 16 chat colours is used (the colony colour is a chat colour).
+     * @param banner       the colony flag, null for the default.
+     * @return the colony, null if it could not be created (too close to another colony, claim does not fit, no town hall block entity).
+     */
+    @Nullable
+    IColony createFactionColony(@NotNull ServerLevel w, @NotNull BlockPos townHallPos, @NotNull String factionId, @NotNull Component name, @NotNull String stylePack,
+      int teamColour, @Nullable BannerPatternLayers banner);
+
+    /**
+     * The colonies of a faction, in all dimensions, oldest first.
+     *
+     * @param factionId the faction id.
+     * @return the colonies owned by the faction, empty if none.
+     */
+    @NotNull
+    List<IColony> getFactionColonies(@NotNull String factionId);
 
     /**
      * Delete the colony in a world.
