@@ -85,7 +85,7 @@ public final class MicroBench
     private final JsonObject gates = new JsonObject();
     private final JsonObject info  = new JsonObject();
     private final JsonArray  errors = new JsonArray();
-    private double           probePairNs;
+    private double[]         probePairNs;
     private double           idleTickCpu;
 
     private final Deque<Runnable> steps = new ArrayDeque<>();
@@ -211,7 +211,8 @@ public final class MicroBench
         }
         info.addProperty("itemKinds", kinds.size());
         info.addProperty("requesters", requesters.size());
-        info.addProperty("probePairNs", probePairNs);
+        info.addProperty("probePairCoarseNs", probePairNs[0]);
+        info.addProperty("probePairFineNs", probePairNs[1]);
 
         RsProbe.start();
     }
@@ -331,7 +332,7 @@ public final class MicroBench
     {
         final int events = 12;
         final int drain = 25;
-        final int before = openCount();
+        final long deliveriesBefore = RsStats.deliveriesCreated;
         final RsProbe.Snap a = RsProbe.snap();
         final ThreadCost.Mark mark = ThreadCost.mark();
         final long before1 = RsProbe.totalCpuNs();
@@ -351,10 +352,11 @@ public final class MicroBench
         gross.addProperty("cpuNs", (double) window / events);
         gross.addProperty("netOfIdleTicksCpuNs", Math.max(0, (double) window / events - drain * idleTickCpu));
         gross.addProperty("allocB", (double) mark.allocBytes() / events);
+        gross.addProperty("probeOverheadNs", (double) (b.overhead - a.overhead) / events);
         ops.add("stockEvent", gross);
         ops.add("stockEventInline", stats(a, b, RsProbe.STOCK_EVENT, 0));
         ops.add("reevalInTick", stats(a, b, RsProbe.REEVAL, 0));
-        info.addProperty("resolvedByStock", Math.max(0, before - openCount()));
+        info.addProperty("deliveriesByStock", RsStats.deliveriesCreated - deliveriesBefore);
         // The resolved requests' deliveries now wait for a courier in the warehouse queue.
         info.addProperty("queueAfterStock", queue.getMutableRequestList().size());
     }
@@ -367,9 +369,8 @@ public final class MicroBench
         while (queue.getMutableRequestList().size() < target && guard++ < target)
         {
             final IBuilding to = requesters.get(rng.nextInt(requesters.size()));
-            final IToken<?> token = manager.createRequest(fx.warehouse.getRequester(),
-              new Delivery(fx.warehouse.getLocation(), to.getLocation(), new ItemStack(Items.DIRT, 1), 13));
-            queue.addRequest(token);
+            // The deliveries resolver adds an assigned delivery to the warehouse queue itself, as it does for real ones.
+            manager.createAndAssignRequest(fx.warehouse.getRequester(), new Delivery(fx.warehouse.getLocation(), to.getLocation(), new ItemStack(Items.DIRT, 1), 13));
         }
         info.addProperty("courierQueue", queue.getMutableRequestList().size());
         final int picks = 40;

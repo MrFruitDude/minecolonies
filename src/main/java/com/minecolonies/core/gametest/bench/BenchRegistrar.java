@@ -34,6 +34,13 @@ public final class BenchRegistrar
                 add(event, name, 3000, helper -> MicroBench.run(helper, name, scale, r, r == 0));
             }
         }
+
+        for (int rep = 0; rep <= reps; rep++)
+        {
+            final String name = "rsb_fresh_r" + rep;
+            final int r = rep;
+            add(event, name, 70_000, helper -> new MacroRun(helper, name, "fresh", r, r == 0, Scenarios.fresh(quick)).start());
+        }
     }
 
     private static void add(final RegisterGameTestsEvent event, final String name, final int maxTicks, final Consumer<GameTestHelper> body)

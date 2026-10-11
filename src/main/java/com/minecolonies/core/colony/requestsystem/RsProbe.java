@@ -73,6 +73,24 @@ public final class RsProbe
       "ledgerWrite", "ledgerRead", "viewSync", "snapshot", "save", "load", "colonyUpdate", "courierDone", "external"
     };
 
+    /**
+     * Scopes that are entered thousands of times per tick and take microseconds: timed with the cheap wall clock
+     * ({@link System#nanoTime}) instead of the thread CPU clock, which costs more than they do. On a busy single thread the
+     * two agree; the benchmark runs on an otherwise idle server thread.
+     */
+    private static final boolean[] FINE = new boolean[SCOPES];
+
+    static
+    {
+        FINE[CAN_RESOLVE] = true;
+        FINE[ATTEMPT] = true;
+        FINE[LEDGER] = true;
+        FINE[LEDGER_READ] = true;
+    }
+
+    private static double pairCoarse = 1400;
+    private static double pairFine   = 60;
+
     private static final int  MAX_DEPTH = 96;
     private static final int  BUCKETS   = 64 * 4;
     private static final ThreadMXBean THREADS = ManagementFactory.getThreadMXBean();
@@ -166,7 +184,7 @@ public final class RsProbe
         childCpu[d] = 0;
         childAlloc[d] = 0;
         startAlloc[d] = ALLOC == null ? 0 : ALLOC.getCurrentThreadAllocatedBytes();
-        startCpu[d] = THREADS.getCurrentThreadCpuTime();
+        startCpu[d] = FINE[scope] ? System.nanoTime() : THREADS.getCurrentThreadCpuTime();
     }
 
     public static void end(final int scope)
@@ -183,7 +201,7 @@ public final class RsProbe
         {
             return;
         }
-        final long cpuNow = THREADS.getCurrentThreadCpuTime();
+        final long cpuNow = FINE[scope] ? System.nanoTime() : THREADS.getCurrentThreadCpuTime();
         final long allocNow = ALLOC == null ? 0 : ALLOC.getCurrentThreadAllocatedBytes();
         final int d = --depth;
         if (frameScope[d] != scope)
@@ -363,6 +381,7 @@ public final class RsProbe
         public final long     totalCpu   = RsProbe.totalCpu;
         public final long     totalAlloc = RsProbe.totalAlloc;
         public final long     topCount   = RsProbe.topCount;
+        public final long     overhead   = overheadNs();
         public final long     sentBytes  = extraBytes;
         public final long     sentMsgs   = extraMessages;
 
@@ -416,37 +435,56 @@ public final class RsProbe
     // ------------------------------------------------------------------ calibration
 
     /**
-     * Measures what one empty scope costs on the calling thread, counted by the probe itself and by the wall clock.
-     * Call with the probe bound ({@link #start}) before the real run, then {@link #reset}.
+     * Measures what one empty scope costs on the calling thread (a coarse one with the thread CPU clock, a fine one with the
+     * wall clock) and stores it for {@link #overheadNs()}. Call before the real run.
      *
-     * @return CPU nanoseconds a begin/end pair adds to the time measured around it.
+     * @return {coarse, fine} nanoseconds a begin/end pair adds to the time measured around it.
      */
-    public static double calibrate(final int pairs)
+    public static double[] calibrate(final int pairs)
     {
         final Thread previous = owner;
         final boolean wasEnabled = enabled;
         owner = Thread.currentThread();
         enabled = true;
-        reset();
-        for (int i = 0; i < pairs / 10; i++)
+        final double[] result = new double[2];
+        for (int kind = 0; kind < 2; kind++)
         {
-            begin(EXTERNAL);
-            end(EXTERNAL);
+            final int scope = kind == 0 ? EXTERNAL : CAN_RESOLVE;
+            reset();
+            for (int i = 0; i < pairs / 10; i++)
+            {
+                begin(scope);
+                end(scope);
+            }
+            final long t0 = System.nanoTime();
+            for (int i = 0; i < pairs; i++)
+            {
+                begin(scope);
+                end(scope);
+            }
+            final long t1 = System.nanoTime();
+            result[kind] = (double) (t1 - t0) / pairs;
         }
-        final long t0 = THREADS.getCurrentThreadCpuTime();
-        for (int i = 0; i < pairs; i++)
-        {
-            begin(EXTERNAL);
-            begin(EXTERNAL);
-            end(EXTERNAL);
-            end(EXTERNAL);
-        }
-        final long t1 = THREADS.getCurrentThreadCpuTime();
         reset();
         owner = previous;
         enabled = wasEnabled;
-        // 2 pairs per iteration; the outer one contains the inner one, so the pair cost is what each pair adds to the outside.
-        return (double) (t1 - t0) / (2.0 * pairs);
+        pairCoarse = result[0];
+        pairFine = result[1];
+        return result;
+    }
+
+    /**
+     * @return the part of {@link #totalCpuNs()} that is the probe itself: every nested scope's pair lands inside its
+     * parent's interval, a top-level scope keeps about half of its own pair.
+     */
+    public static long overheadNs()
+    {
+        double nested = 0;
+        for (int i = 0; i < SCOPES; i++)
+        {
+            nested += count[i] * (FINE[i] ? pairFine : pairCoarse);
+        }
+        return (long) Math.max(0, nested - topCount * 0.5 * pairCoarse);
     }
 
     // ------------------------------------------------------------------ histogram
