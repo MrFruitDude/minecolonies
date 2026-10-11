@@ -512,7 +512,23 @@ public final class Scenarios
                     r.racks(b, 4);
                     consumers.add(b);
                 }
-                // plain items by registry order: stable across runs
+            }
+
+            @Override
+            public void staff(final MacroRun r)
+            {
+                for (final IBuilding b : builders)
+                {
+                    r.hire(b, () -> b.getModule(BuildingModules.BUILDER_WORK));
+                }
+                r.hire(sawmill, () -> sawmill.getModule(BuildingModules.SAWMILL_WORK));
+                r.hire(mason, () -> mason.getModule(BuildingModules.STONEMASON_WORK));
+                couriers(r, huts, wh);
+            }
+
+            /** The goods the storm asks for: plain items by registry order, chosen once the crafters know their recipes. */
+            private void pickKinds(final MacroRun r)
+            {
                 final List<Item> candidates = new ArrayList<>();
                 for (final Item item : net.minecraft.core.registries.BuiltInRegistries.ITEM)
                 {
@@ -535,20 +551,9 @@ public final class Scenarios
             }
 
             @Override
-            public void staff(final MacroRun r)
-            {
-                for (final IBuilding b : builders)
-                {
-                    r.hire(b, () -> b.getModule(BuildingModules.BUILDER_WORK));
-                }
-                r.hire(sawmill, () -> sawmill.getModule(BuildingModules.SAWMILL_WORK));
-                r.hire(mason, () -> mason.getModule(BuildingModules.STONEMASON_WORK));
-                couriers(r, huts, wh);
-            }
-
-            @Override
             public void begin(final MacroRun r)
             {
+                pickKinds(r);
                 r.supplies.add(new MacroRun.Supply("logs", new ItemStack(Items.OAK_LOG, 12), 250, 100, 0));
                 r.supplies.add(new MacroRun.Supply("cobble", new ItemStack(Items.COBBLESTONE, 16), 250, 180, 0));
                 final java.util.Random rng = new java.util.Random(r.seed * 7919L);
