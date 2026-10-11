@@ -64,6 +64,12 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     @Override
     public void accept(final RegisterGameTestsEvent event)
     {
+        if (com.minecolonies.core.gametest.bench.BenchEnv.only())
+        {
+            // The request-system benchmark run: its tests only, so the rest of the suite does not share the JVM.
+            com.minecolonies.core.gametest.bench.BenchRegistrar.register(event);
+            return;
+        }
         final Holder<TestEnvironmentDefinition<?>> environment = event.registerEnvironment(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "default"));
         final TestData<Holder<TestEnvironmentDefinition<?>>> data = new TestData<>(
@@ -786,7 +792,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
      * Test data for a test that founds a colony: its own environment (so its own batch) that deletes every colony
      * before and after it runs and starts at sunrise with clear weather, on a plot big enough that no other test's cell overlaps its fixture.
      */
-    private static TestData<Holder<TestEnvironmentDefinition<?>>> isolatedColonyData(final RegisterGameTestsEvent event, final String name)
+    public static TestData<Holder<TestEnvironmentDefinition<?>>> isolatedColonyData(final RegisterGameTestsEvent event, final String name)
     {
         return plotData(event.registerEnvironment(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony/" + name),
@@ -809,7 +815,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     /**
      * Like {@link #isolatedColonyData} for a test that runs for a long time (the headline acceptance test).
      */
-    private static TestData<Holder<TestEnvironmentDefinition<?>>> longIsolatedColonyData(final RegisterGameTestsEvent event, final String name, final int maxTicks)
+    public static TestData<Holder<TestEnvironmentDefinition<?>>> longIsolatedColonyData(final RegisterGameTestsEvent event, final String name, final int maxTicks)
     {
         return plotData(event.registerEnvironment(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony/" + name),

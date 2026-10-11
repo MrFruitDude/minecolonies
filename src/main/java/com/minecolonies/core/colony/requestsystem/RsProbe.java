@@ -346,6 +346,73 @@ public final class RsProbe
         return rows;
     }
 
+
+    // ------------------------------------------------------------------ snapshots
+
+    /**
+     * A copy of all counters, to measure a phase as the difference of two.
+     */
+    public static final class Snap
+    {
+        public final long[]   count      = RsProbe.count.clone();
+        public final long[]   inclCpu    = RsProbe.inclCpu.clone();
+        public final long[]   selfCpu    = RsProbe.selfCpu.clone();
+        public final long[]   inclAlloc  = RsProbe.inclAlloc.clone();
+        public final long[]   selfAlloc  = RsProbe.selfAlloc.clone();
+        public final long[][] hist;
+        public final long     totalCpu   = RsProbe.totalCpu;
+        public final long     totalAlloc = RsProbe.totalAlloc;
+        public final long     topCount   = RsProbe.topCount;
+        public final long     sentBytes  = extraBytes;
+        public final long     sentMsgs   = extraMessages;
+
+        private Snap()
+        {
+            hist = new long[SCOPES][];
+            for (int i = 0; i < SCOPES; i++)
+            {
+                hist[i] = RsProbe.hist[i].clone();
+            }
+        }
+
+        /**
+         * @param scope a scope.
+         * @param q     quantile 0..1.
+         * @param base  the snapshot to subtract (earlier), or null.
+         * @return the per-call inclusive CPU time at that quantile in the interval, nanoseconds.
+         */
+        public long quantileNs(final int scope, final double q, final Snap base)
+        {
+            final long[] h = hist[scope];
+            final long[] b = base == null ? null : base.hist[scope];
+            long total = 0;
+            for (int i = 0; i < h.length; i++)
+            {
+                total += h[i] - (b == null ? 0 : b[i]);
+            }
+            if (total <= 0)
+            {
+                return 0;
+            }
+            final long target = Math.max(1, (long) Math.ceil(q * total));
+            long seen = 0;
+            for (int i = 0; i < h.length; i++)
+            {
+                seen += h[i] - (b == null ? 0 : b[i]);
+                if (seen >= target)
+                {
+                    return bucketUpper(i);
+                }
+            }
+            return bucketUpper(h.length - 1);
+        }
+    }
+
+    public static Snap snap()
+    {
+        return new Snap();
+    }
+
     // ------------------------------------------------------------------ calibration
 
     /**

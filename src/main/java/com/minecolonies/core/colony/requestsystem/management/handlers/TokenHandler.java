@@ -33,6 +33,6 @@ public class TokenHandler implements ITokenHandler
     public IToken<?> generateNewToken()
     {
         //Force generic type to be correct.
-        return manager.getFactoryController().getNewInstance(TypeConstants.ITOKEN, UUID.randomUUID());
+        return manager.getFactoryController().getNewInstance(TypeConstants.ITOKEN, com.minecolonies.api.colony.requestsystem.token.StandardToken.newId());
     }
 }
