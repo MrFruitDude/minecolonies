@@ -16,6 +16,7 @@ import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.constant.Constants;
+import com.minecolonies.core.colony.requestsystem.RequestLifecycle;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.resources.Identifier;
 import net.minecraft.network.chat.MutableComponent;
@@ -137,8 +138,10 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     @Override
     public void setState(@NotNull final IRequestManager manager, @NotNull final RequestState state)
     {
+        final RequestState previous = this.state;
         this.state = state;
         manager.log("Updated state from: " + getId() + " to: " + state);
+        RequestLifecycle.onStateSet(manager, this, previous);
 
         if (this.hasParent() && this.getParent() != null)
         {

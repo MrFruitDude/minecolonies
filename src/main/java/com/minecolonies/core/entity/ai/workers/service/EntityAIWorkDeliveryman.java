@@ -24,6 +24,7 @@ import com.minecolonies.core.colony.buildings.workerbuildings.BuildingDeliveryma
 import com.minecolonies.core.colony.interactionhandling.PosBasedInteraction;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.JobDeliveryman;
+import com.minecolonies.core.colony.requestsystem.RsCourierHooks;
 import com.minecolonies.core.colony.requestsystem.requests.StandardRequests.DeliveryRequest;
 import com.minecolonies.core.colony.requestsystem.requests.StandardRequests.PickupRequest;
 import com.minecolonies.core.entity.ai.workers.AbstractEntityAIInteract;
@@ -476,6 +477,13 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
         // Only the deliveries that arrived in full are resolved; the others fail and go back to the request system, the
         // items that did not fit stay with the courier and are dumped into the warehouse.
         final Set<IToken<?>> undelivered = undeliveredRequests(deliveries, notDelivered);
+        for (final IRequest<? extends Delivery> arrived : deliveries)
+        {
+            if (!undelivered.contains(arrived.getId()))
+            {
+                RsCourierHooks.arrived(job.getColony().getRequestManager(), arrived);
+            }
+        }
         job.finishRequest(request -> !undelivered.contains(request.getId()));
         return success && notDelivered.isEmpty() ? START_WORKING : DUMPING;
     }
@@ -578,6 +586,7 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
         job.addConcurrentDelivery(nextPickUp.getId());
         if (gatherIfInTileEntity(tileEntity, nextPickUp.getRequest().getStack()))
         {
+            RsCourierHooks.stockTaken(job.getColony().getRequestManager(), nextPickUp);
             return PREPARE_DELIVERY;
         }
 

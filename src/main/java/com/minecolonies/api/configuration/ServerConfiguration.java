@@ -117,6 +117,11 @@ public class ServerConfiguration extends AbstractConfiguration
     public final BooleanValue creativeResolve;
 
     /**
+     * RS1: stock and space are reserved in a per-colony ledger when a delivery is planned, and released when it ends.
+     */
+    public final BooleanValue reservations;
+
+    /**
      * Builds server configuration.
      *
      * @param builder config builder
@@ -206,6 +211,7 @@ public class ServerConfiguration extends AbstractConfiguration
         swapToCategory("requestSystem");
 
         creativeResolve = defineBoolean("creativeresolve", false);
+        reservations = defineBoolean("reservations", false);
 
         finishCategory();
     }

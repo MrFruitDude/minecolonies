@@ -23,6 +23,10 @@ import com.minecolonies.api.util.constant.TranslationConstants;
 import com.minecolonies.api.util.constant.TypeConstants;
 import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
+import com.minecolonies.core.colony.requestsystem.RsAccess;
+import com.minecolonies.core.colony.requestsystem.reservation.DestinationRoom;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationReason;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
 import com.minecolonies.core.tileentities.TileEntityWareHouse;
 import com.minecolonies.core.tileentities.WarehouseRackIndex;
@@ -34,6 +38,7 @@ import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -211,7 +216,10 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             ? ((INonExhaustiveDeliverable) request.getRequest()).getLeftOver()
             : 0;
 
-        final List<Tuple<ItemStack, BlockPos>> inv = wareHouse.getMatchingItemStacksInWarehouse(itemStack -> request.getRequest().matches(itemStack));
+        final ReservationLedger ledger = RsAccess.ledger(manager);
+        final List<Tuple<ItemStack, BlockPos>> raw = wareHouse.getMatchingItemStacksInWarehouse(itemStack -> request.getRequest().matches(itemStack));
+        // RS1: what is promised to other requests is not there.
+        final List<Tuple<ItemStack, BlockPos>> inv = unreserved(ledger, raw);
         for (final Tuple<ItemStack, BlockPos> stack : inv)
         {
             final ItemStack s = stack.getA();
@@ -243,11 +251,23 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             totalAvailable += s.getCount();
         }
 
+        if (ledger != null && totalAvailable > 0 && !destinationHasRoom(manager, request, inv, totalAvailable))
+        {
+            // RS1: the destination has no room for it once what is already on its way is counted.
+            return null;
+        }
+
         if (totalAvailable >= totalRequested || totalAvailable >= request.getRequest().getMinimumCount())
         {
             // Resolved from stock: the request manager asks for the follow-up next, before anything else runs.
-            lastMatched = matched(wareHouse, request, inv);
+            lastMatched = matched(wareHouse, request, raw);
             return Lists.newArrayList();
+        }
+
+        if (ledger != null)
+        {
+            // Short of stock: the request manager asks for the rest elsewhere; what is here is held for it meanwhile (onRequestAssigned).
+            lastMatched = matched(wareHouse, request, raw);
         }
 
         if (totalAvailable < 0)
@@ -290,7 +310,14 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
 
         final int keep = completedRequest.getRequest() instanceof INonExhaustiveDeliverable ? ((INonExhaustiveDeliverable) completedRequest.getRequest()).getLeftOver() : 0;
 
-        final List<Tuple<ItemStack, BlockPos>> targetStacks = matchingStacksForFollowup(wareHouse, completedRequest);
+        final ReservationLedger ledger = RsAccess.ledger(manager);
+        if (ledger != null)
+        {
+            // The hold the attempt put on this request turns into one hold per delivery below.
+            ledger.releaseQuiet(completedRequest.getId(), RsAccess.now(manager));
+        }
+        final List<Tuple<ItemStack, BlockPos>> targetStacks = unreserved(ledger, matchingStacksForFollowup(wareHouse, completedRequest));
+        final String requesterName = ledger == null ? "" : describe(manager, completedRequest);
         for (final Tuple<ItemStack, BlockPos> tuple : targetStacks)
         {
             if (ItemStackUtils.isEmpty(tuple.getA()))
@@ -329,6 +356,14 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
 
             final IToken<?> requestToken = manager.createRequest(this, delivery);
             deliveries.add(manager.getRequestForToken(requestToken));
+            if (ledger != null)
+            {
+                // RS1: reserve-then-commit. The stock is promised at its source, the room at the destination, until the courier moves it.
+                final long now = RsAccess.now(manager);
+                final ItemStorage key = new ItemStorage(matchingStack);
+                ledger.reserveStock(wareHouse.getBuilding().getID(), tuple.getB(), key, count, requestToken, requesterName, ReservationReason.WAREHOUSE_DELIVERY, now);
+                ledger.reserveSpace(completedRequest.getRequester().getLocation().getInDimensionLocation(), key, count, requestToken, requesterName, ReservationReason.WAREHOUSE_DELIVERY, now);
+            }
             remainingCount -= count;
             if (remainingCount <= 0)
             {
@@ -337,6 +372,132 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         }
 
         return deliveries.isEmpty() ? null : deliveries;
+    }
+
+    /**
+     * RS1: the request was given to this resolver. What the attempt counted is held for it, so that nothing else is promised
+     * the same stock while its children (the rest, from elsewhere) are still being served.
+     */
+    @Override
+    public void onRequestAssigned(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends IDeliverable> request, final boolean simulation)
+    {
+        super.onRequestAssigned(manager, request, simulation);
+        final ReservationLedger ledger = RsAccess.ledger(manager);
+        final MatchedStacks matched = lastMatched;
+        if (simulation || ledger == null || matched == null || !matched.request().equals(request.getId()) || !(manager.getColony() instanceof final Colony colony))
+        {
+            return;
+        }
+        final IBuilding wareHouse = colony.getServerBuildingManager().getBuilding(getLocation().getInDimensionLocation());
+        if (wareHouse == null)
+        {
+            return;
+        }
+        final int keep = request.getRequest() instanceof INonExhaustiveDeliverable ne ? ne.getLeftOver() : 0;
+        int remaining = request.getRequest().getCount();
+        final Map<ItemStorage, Integer> kept = new HashMap<>();
+        final String name = describe(manager, request);
+        for (final Tuple<ItemStack, BlockPos> tuple : unreserved(ledger, matched.stacks()))
+        {
+            if (remaining <= 0)
+            {
+                break;
+            }
+            int available = tuple.getA().getCount();
+            if (keep > 0)
+            {
+                final ItemStorage storage = new ItemStorage(tuple.getA());
+                final int alreadyKept = kept.getOrDefault(storage, 0);
+                final int toKeep = Math.min(Math.max(0, keep - alreadyKept), available);
+                kept.put(storage, alreadyKept + toKeep);
+                available -= toKeep;
+            }
+            final int count = Math.min(remaining, available);
+            if (count > 0)
+            {
+                ledger.reserveStock(wareHouse.getID(), tuple.getB(), new ItemStorage(tuple.getA()), count, request.getId(), name, ReservationReason.WAREHOUSE_DELIVERY, RsAccess.now(manager));
+                remaining -= count;
+            }
+        }
+    }
+
+    /**
+     * RS1: the stacks of a warehouse minus what the ledger holds for other requests, rack by rack.
+     *
+     * @param ledger the ledger, null when reservations are off.
+     * @param raw    the stacks as the racks hold them.
+     * @return the stacks that are not promised, possibly shortened.
+     */
+    @NotNull
+    private static List<Tuple<ItemStack, BlockPos>> unreserved(@Nullable final ReservationLedger ledger, @NotNull final List<Tuple<ItemStack, BlockPos>> raw)
+    {
+        if (ledger == null || ledger.isEmpty())
+        {
+            return raw;
+        }
+        record RackItem(BlockPos rack, ItemStorage item)
+        {
+        }
+        final Map<RackItem, Integer> held = new HashMap<>();
+        final List<Tuple<ItemStack, BlockPos>> result = new ArrayList<>(raw.size());
+        for (final Tuple<ItemStack, BlockPos> tuple : raw)
+        {
+            final ItemStack stack = tuple.getA();
+            if (stack.isEmpty())
+            {
+                result.add(tuple);
+                continue;
+            }
+            final ItemStorage item = new ItemStorage(stack);
+            final RackItem key = new RackItem(tuple.getB(), item);
+            final int heldHere = held.computeIfAbsent(key, k -> ledger.reservedInContainer(k.rack(), k.item()));
+            final int skipped = Math.min(heldHere, stack.getCount());
+            held.put(key, heldHere - skipped);
+            if (skipped >= stack.getCount())
+            {
+                continue;
+            }
+            result.add(skipped == 0 ? tuple : new Tuple<>(stack.copyWithCount(stack.getCount() - skipped), tuple.getB()));
+        }
+        return result;
+    }
+
+    /**
+     * RS1: whether the destination of the request can take what the warehouse would send, counting what is already on its
+     * way there. Only judged for ordinary buildings; a warehouse (a transfer between warehouses) always has room.
+     */
+    private boolean destinationHasRoom(
+      @NotNull final IRequestManager manager,
+      @NotNull final IRequest<? extends IDeliverable> request,
+      @NotNull final List<Tuple<ItemStack, BlockPos>> stacks,
+      final int totalAvailable)
+    {
+        if (!(manager.getColony() instanceof final Colony colony) || stacks.isEmpty() || request.getRequest() instanceof MinimumStack)
+        {
+            return true;
+        }
+        final BlockPos destinationPos = request.getRequester().getLocation().getInDimensionLocation();
+        final IBuilding destination = colony.getServerBuildingManager().getBuilding(destinationPos);
+        final ReservationLedger ledger = RsAccess.ledger(manager);
+        if (destination == null || ledger == null || destination.getBuildingType() == ModBuildings.wareHouse.get())
+        {
+            return true;
+        }
+        final ItemStack sample = stacks.get(0).getA();
+        final int room = DestinationRoom.roomFor(destination, sample) - ledger.reservedSpace(destinationPos, request.getRequest()::matches);
+        return room >= Math.max(1, Math.min(request.getRequest().getMinimumCount(), totalAvailable));
+    }
+
+    private static String describe(@NotNull final IRequestManager manager, @NotNull final IRequest<?> request)
+    {
+        try
+        {
+            return request.getRequester().getRequesterDisplayName(manager, request).getString();
+        }
+        catch (final RuntimeException e)
+        {
+            return "?";
+        }
     }
 
     /**

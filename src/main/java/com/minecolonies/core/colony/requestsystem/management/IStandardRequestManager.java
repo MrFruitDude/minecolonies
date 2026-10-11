@@ -4,6 +4,7 @@ import com.minecolonies.api.colony.requestsystem.data.*;
 import com.minecolonies.api.colony.requestsystem.management.*;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import com.minecolonies.core.colony.requestsystem.management.manager.StandardRequestManager;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -26,6 +27,14 @@ public interface IStandardRequestManager extends IRequestManager
 
     @NotNull
     IRequestableTypeRequestResolverAssignmentDataStore getRequestableTypeRequestResolverAssignmentDataStore();
+
+    /**
+     * RS1: the colony's reservation ledger. Always present; whether it is used is decided by the {@code reservations} flag.
+     *
+     * @return the ledger.
+     */
+    @NotNull
+    ReservationLedger getReservationLedger();
 
     IProviderHandler getProviderHandler();
 

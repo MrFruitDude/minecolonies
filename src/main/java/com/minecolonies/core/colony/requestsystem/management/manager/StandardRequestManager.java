@@ -26,6 +26,8 @@ import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
 import com.minecolonies.core.colony.requestsystem.management.handlers.*;
 import com.minecolonies.core.colony.requestsystem.management.manager.wrapped.WrappedStaticStateRequestManager;
+import com.minecolonies.core.colony.requestsystem.RsFlags;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -62,6 +64,7 @@ public class StandardRequestManager implements IStandardRequestManager
     private static final String NBT_ID_PLAYER                       = "PlayerRequestResolverId";
     private static final String NBT_ID_RETRYING                     = "RetryingRequestResolverId";
     private static final String NBT_VERSION                         = "Version";
+    private static final String NBT_RESERVATIONS                    = "ReservationLedger";
     ////---------------------------NBTTags-------------------------\\\\
 
     private IToken<?> requestIdentitiesDataStoreId;
@@ -109,6 +112,32 @@ public class StandardRequestManager implements IStandardRequestManager
     @NotNull
     private final IProviderHandler providerHandler = new ProviderHandler(this);
 
+    /**
+     * RS1: promises on stock and room, persisted with the request system.
+     */
+    @NotNull
+    private final ReservationLedger reservationLedger = new ReservationLedger();
+
+    /**
+     * Stock that came free (a promise on it ended), to be announced on the next tick.
+     */
+    private final java.util.Map<com.minecolonies.api.crafting.ItemStorage, ItemStack> freedStock = new java.util.LinkedHashMap<>();
+
+    /**
+     * Request-system ticks since the manager was created; paces the ledger sweep.
+     */
+    private int sweepCounter;
+
+    /**
+     * Game ticks after which items handed out to a requester that never took them are no longer held for it: 20 minutes.
+     */
+    private static final long HANDOUT_MAX_AGE = 24_000L;
+
+    /**
+     * Request-system ticks (11 game ticks each) between two sweeps of the ledger.
+     */
+    private static final int SWEEP_INTERVAL = 100;
+
     private int version = -1;
 
     /**
@@ -120,11 +149,21 @@ public class StandardRequestManager implements IStandardRequestManager
     {
         this.colony = colony;
         this.logger = LogManager.getLogger(String.format("%s.requestsystem.%s", Constants.MOD_ID, colony.getID()));
+        reservationLedger.setOnFreed(reservation -> {
+            // A promise ended without the items moving: whoever waited for them may now be served. Told on the next tick, not
+            // in the middle of whatever cancelled or finished the request.
+            if (reservation.kind() == com.minecolonies.core.colony.requestsystem.reservation.ReservationKind.STOCK)
+            {
+                freedStock.putIfAbsent(reservation.key(), reservation.key().getItemStack());
+            }
+        });
         reset();
     }
 
     private void setup()
     {
+        reservationLedger.clear();
+        freedStock.clear();
         dataStoreManager = StandardFactoryController.getInstance().getNewInstance(TypeConstants.DATA_STORE_MANAGER);
         enableLogging = IMinecoloniesAPI.getInstance().getConfig().getCommon().rsEnableDebugLogging.get();
 
@@ -459,6 +498,11 @@ public class StandardRequestManager implements IStandardRequestManager
         systemCompound.put(NBT_ID_PLAYER, getFactoryController().serializeTag(provider, playerRequestResolverId));
         systemCompound.put(NBT_ID_RETRYING, getFactoryController().serializeTag(provider, retryingRequestResolverId));
 
+        if (!reservationLedger.isEmpty())
+        {
+            systemCompound.put(NBT_RESERVATIONS, reservationLedger.write(provider, getFactoryController()));
+        }
+
         return systemCompound;
     }
 
@@ -530,6 +574,17 @@ public class StandardRequestManager implements IStandardRequestManager
         if (wrongRequest > 0)
         {
             Log.getLogger().warn("Removed " + wrongRequest + " requests without resolver assignments");
+        }
+
+        if (nbt.contains(NBT_RESERVATIONS))
+        {
+            reservationLedger.read(provider, getFactoryController(), nbt.getCompoundOrEmpty(NBT_RESERVATIONS));
+            // Heal at once: a promise whose request did not survive the load must not hold stock back.
+            final int dropped = reservationLedger.sweep(token -> getRequestIdentitiesDataStore().getIdentities().containsKey(token), 0L);
+            if (dropped > 0)
+            {
+                Log.getLogger().warn("Dropped " + dropped + " reservations without a request");
+            }
         }
 
         updateIfRequired();
@@ -638,8 +693,51 @@ public class StandardRequestManager implements IStandardRequestManager
     public void tick()
     {
         this.getRetryingRequestResolver().updateManager(this);
+        if (!freedStock.isEmpty())
+        {
+            final java.util.List<ItemStack> freed = new java.util.ArrayList<>(freedStock.values());
+            freedStock.clear();
+            if (RsFlags.reservations())
+            {
+                freed.forEach(IStandardRequestManager.super::onStockAvailable);
+            }
+        }
         this.getRetryingRequestResolver().tick();
+
+        if (!reservationLedger.isEmpty() && ++sweepCounter >= SWEEP_INTERVAL)
+        {
+            sweepCounter = 0;
+            sweepReservations();
+        }
     }
+
+    /**
+     * RS1 self-healing: drops promises whose request is gone or finished, and handouts nobody collected.
+     *
+     * @return the number of promises dropped.
+     */
+    public int sweepReservations()
+    {
+        final long now = colony.getWorld().getGameTime();
+        int dropped = reservationLedger.sweep(token -> {
+            final IRequest<?> request = getRequestIdentitiesDataStore().getIdentities().get(token);
+            return request != null && request.getState() != RequestState.CANCELLED && request.getState() != RequestState.FAILED;
+        }, now);
+        dropped += reservationLedger.sweepStaleHandouts(now, HANDOUT_MAX_AGE);
+        if (dropped > 0)
+        {
+            log("Dropped " + dropped + " orphaned reservations");
+        }
+        return dropped;
+    }
+
+    @NotNull
+    @Override
+    public ReservationLedger getReservationLedger()
+    {
+        return reservationLedger;
+    }
+
 
     @NotNull
     @Override
