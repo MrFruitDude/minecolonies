@@ -1413,7 +1413,6 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         }
         toolWaitTicks = 0;
         toolWaitTick = -1L;
-        toolDeferUntil = -1L;
         worker.decreaseSaturationForContinuousAction();
         stuck.progress();
         onBlockProcessed();
