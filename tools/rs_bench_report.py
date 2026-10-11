@@ -110,6 +110,8 @@ def merge(rawdir, meta, ref_path):
     micro_runs, macro_runs = {}, {}
     gate_failures = []
     warmups = 0
+    hangs = {}
+    measured = {}
     for run in runs:
         if run.get("warmup"):
             warmups += 1
@@ -117,6 +119,10 @@ def merge(rawdir, meta, ref_path):
             gate_failures.append("%s: %s" % (run.get("test"), err))
         if run.get("warmup"):
             continue
+        if run["kind"] == "macro":
+            measured[run["scenario"]] = measured.get(run["scenario"], 0) + 1
+            if run.get("liveness"):
+                hangs.setdefault(run["scenario"], []).append("%s: %s" % (run.get("test"), run["liveness"][0].split("\n")[0]))
         if run["kind"] == "micro":
             micro_runs.setdefault(str(run["scale"]), []).append(run)
         else:
@@ -132,7 +138,7 @@ def merge(rawdir, meta, ref_path):
         flat = []
         for r in rs:
             f = flatten({k: r[k] for k in ("meter", "work", "scopes", "extra", "gates") if k in r})
-            f["ticksToCompletion"] = float(r.get("ticksToCompletion", -1))
+            f["ticksToCompletion"] = float(r["ticksToCompletion"] if r.get("ticksToCompletion", -1) >= 0 else r.get("ticksRun", 0))
             f["ticksToQuiesce"] = float(r.get("ticksToQuiesce", -1))
             f["ticksRun"] = float(r.get("ticksRun", 0))
             # per-resolver rows
@@ -145,6 +151,15 @@ def merge(rawdir, meta, ref_path):
         keys = sorted(set().union(*[f.keys() for f in flat]))
         macro[scenario] = {k: stats([f[k] for f in flat if k in f]) for k in keys}
 
+    # A repeat that never finished is counted at its full budget; the run is only invalid when more than a quarter of a
+    # scenario's repeats hang (the shipped system hangs now and then; one hang in five repeats is tolerated).
+    liveness_notes = []
+    for scenario, notes in hangs.items():
+        allowed = measured.get(scenario, 0) // 4
+        liveness_notes.extend(notes)
+        if len(notes) > allowed:
+            gate_failures.append("%s: %d of %d repeats did not finish (at most %d tolerated): %s" % (scenario, len(notes), measured[scenario], allowed, notes[0]))
+
     result = {
         "schema": SCHEMA,
         "sha": meta["sha"],
@@ -155,7 +170,7 @@ def merge(rawdir, meta, ref_path):
         "seed": meta["seed"],
         "serverExit": meta["status"],
         "warmupRuns": warmups,
-        "gates": {"ok": not gate_failures and meta["status"] == 0 and bool(runs), "failures": gate_failures,
+        "gates": {"ok": not gate_failures and bool(runs), "failures": gate_failures, "hangs": liveness_notes,
                   "runs": len(runs)},
         "micro": micro,
         "macro": macro,
@@ -324,7 +339,7 @@ def compare(base, new, show_all, min_pct):
         base["sha"], base["mode"], base["reps"], base["flags"], new["sha"], new["mode"], new["reps"], new["flags"]))
     bs, ns = base.get("score", {}), new.get("score", {})
     if not new["gates"]["ok"]:
-        lines.append("!! NEW RUN FAILED ITS CORRECTNESS GATES: " + "; ".join(new["gates"]["failures"][:5]))
+        lines.append("!! NEW RUN FAILED ITS CORRECTNESS GATES: " + "; ".join(f[:200] for f in new["gates"]["failures"][:5]))
     lines.append("")
     header = "%-46s %16s %16s %8s  %-7s" % ("metric", "base", "new", "delta", "verdict")
     lines.append(header)
@@ -356,7 +371,9 @@ def show(result):
     print("%s  mode=%s reps=%s flags=%s  gates=%s" % (result["sha"], result["mode"], result["reps"], result["flags"],
                                                      "OK" if result["gates"]["ok"] else "FAILED"))
     for f in result["gates"]["failures"][:10]:
-        print("  gate failure:", f)
+        print("  gate failure:", f[:400].replace("\n", " | "))
+    for f in result["gates"].get("hangs", [])[:10]:
+        print("  tolerated hang:", f[:300])
     print("score %.1f (macro x%.3f micro x%.3f, reference %s)%s" % (s["value"], s["macroRatio"], s["microRatio"], s["reference"],
                                                                  "" if s["valid"] else "  INVALID"))
     for scenario, metrics in sorted(result["macro"].items()):

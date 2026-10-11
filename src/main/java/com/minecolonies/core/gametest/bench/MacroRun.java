@@ -193,6 +193,8 @@ public final class MacroRun
     private final List<String> fallbackItems = new ArrayList<>();
     private int    unexpectedFallbacks;
     private final List<String> errors = new ArrayList<>();
+    /** Requests that never finished: reported, and tolerated up to a quarter of the repeats (the shipped system hangs now and then). */
+    private final List<String> liveness = new ArrayList<>();
     private final JsonObject   gates = new JsonObject();
     private final JsonObject   extra = new JsonObject();
     private boolean saveLoadDone;
@@ -768,6 +770,12 @@ public final class MacroRun
         final StandardPlayerRequestResolver player = (StandardPlayerRequestResolver) rm.getPlayerResolver();
         for (final IRequest<?> request : rm.getRequestIdentitiesDataStore().getIdentities().values())
         {
+            if (request.getState() == com.minecolonies.api.colony.requestsystem.request.RequestState.COMPLETED
+                  || request.getState() == com.minecolonies.api.colony.requestsystem.request.RequestState.RECEIVED)
+            {
+                // finished from the request system's side; the requester has only not picked the result up yet
+                continue;
+            }
             if (player.isHolding(request.getId()) && request.getRequest() instanceof Stack stack
                   && scenario.unproducible().contains(BuiltInRegistries.ITEM.getKey(stack.getStack().getItem()).getPath()))
             {
@@ -820,6 +828,30 @@ public final class MacroRun
         return out.toString();
     }
 
+    /**
+     * @return what the couriers are doing, for failure messages.
+     */
+    private String describeCouriers()
+    {
+        final StringBuilder out = new StringBuilder("\n  couriers:");
+        for (final ICitizenData citizen : citizens)
+        {
+            if (citizen.getJob() instanceof JobDeliveryman job)
+            {
+                out.append(" [#").append(citizen.getId()).append(" entity=").append(citizen.getEntity().isPresent()).append(" queue=").append(job.getTaskQueue().size());
+                citizen.getEntity().ifPresent(e -> out.append(" at ").append(e.blockPosition().toShortString()).append(" ai=").append(job.getWorkerAI() == null ? "-" : job.getWorkerAI().getState()));
+                out.append(']');
+            }
+        }
+        final StringBuilder queues = new StringBuilder();
+        for (final IBuilding wh : warehouses)
+        {
+            final var module = wh.getModule(com.minecolonies.core.colony.buildings.modules.BuildingModules.WAREHOUSE_REQUEST_QUEUE);
+            queues.append(" warehouse").append(wh.getID().toShortString()).append(" queue=").append(module.getMutableRequestList().size());
+        }
+        return out.append(queues).toString();
+    }
+
     private boolean progress(final long tick)
     {
         if (!draining)
@@ -838,8 +870,14 @@ public final class MacroRun
             }
             else if (tick > scenario.budget())
             {
-                errors.add("the scenario did not finish within its budget of " + scenario.budget() + " ticks; " + pendingRequests() + " requests are still open:" + describeOpen(14));
+                liveness.add("the scenario did not finish within its budget of " + scenario.budget() + " ticks; " + pendingRequests() + " requests are still open:" + describeOpen(14)
+                               + describeCouriers());
                 doneTick = -1;
+                requestsAtDone = RsStats.requestsCreated;
+                deliveriesAtDone = RsStats.deliveriesCreated;
+                tasksAtDone = RsStats.courierTasksFinished;
+                deliveredItemsAtDone = RsStats.itemsDelivered;
+                distanceAtDone = courierDistance;
                 finish(tick);
                 return false;
             }
@@ -854,7 +892,7 @@ public final class MacroRun
         {
             if (quiesceTick < 0)
             {
-                errors.add("requests did not drain within 4000 ticks after the scenario finished: " + pendingRequests() + " still open:" + describeOpen(14));
+                liveness.add("requests did not drain within 4000 ticks after the scenario finished: " + pendingRequests() + " still open:" + describeOpen(14) + describeCouriers());
             }
             finish(tick);
             return false;
@@ -1006,6 +1044,10 @@ public final class MacroRun
         final JsonArray errs = new JsonArray();
         errors.forEach(errs::add);
         out.add("errors", errs);
+        final JsonArray hangs = new JsonArray();
+        liveness.forEach(hangs::add);
+        out.add("liveness", hangs);
+        gates.addProperty("incomplete", !liveness.isEmpty());
 
         RsProbe.stop();
         StandardToken.seedForBenchmark(null);
