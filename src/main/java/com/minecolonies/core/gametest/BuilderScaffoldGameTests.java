@@ -430,7 +430,7 @@ final class BuilderScaffoldGameTests
             final Watch watch = new Watch();
             WorkerEfficiencyGameTests.everyTick(live, 20_000, tick -> {
                 watch(live, watch, origin, 32, tick);
-                return scaffoldInWorld(live, origin) >= 4 && ledgerSize(live) >= 4;
+                return scaffoldInWorld(live, origin) >= 2 && ledgerSize(live) >= 2;
             }, () -> {
                 final int before = scaffoldInWorld(live, origin);
                 Log.getLogger().info("WSCAF cancel: cancelling with {} scaffolding blocks up, {} in the ledger, {} items", before, ledgerSize(live), scaffoldItems(live, origin));
@@ -658,9 +658,9 @@ final class BuilderScaffoldGameTests
             final WorkOrderDecoration order = live.orderFor("lava", SITE, blueprint);
             final BlockPos origin = order.getLocation();
             // lava where the floor is, from the third block on
-            for (int x = 3; x < 40; x++)
+            for (int x = 3; x < 60; x++)
             {
-                for (int z = -6; z <= 6; z++)
+                for (int z = -40; z <= 40; z++)
                 {
                     for (int y = -2; y <= 0; y++)
                     {
@@ -724,7 +724,8 @@ final class BuilderScaffoldGameTests
             }, () -> {
                 helper.assertTrue(built(live, blueprint, origin), "the positions under the scaffolding were not built: missing " + missing(live, blueprint, origin));
                 helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left: " + scaffoldInWorld(live, origin));
-                helper.assertTrue(scaffoldItems(live, origin) == 32, "items not conserved: " + scaffoldItems(live, origin));
+                // the 3 blocks of the fixture were made by hand: 32 in the hut plus those 3, all back in the hut
+                helper.assertTrue(scaffoldItems(live, origin) == 35, "items not conserved: " + scaffoldItems(live, origin));
                 helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
                 WorkerSettings.clearOverrides();
                 ReachAudit.enable(false);

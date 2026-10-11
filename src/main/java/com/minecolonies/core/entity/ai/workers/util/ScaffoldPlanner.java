@@ -60,6 +60,14 @@ public final class ScaffoldPlanner
         int penalty(BlockPos pos);
 
         /**
+         * @return true if the builder can walk to the position (standing there, or climbing there): a tower has to start where he can get to.
+         */
+        default boolean reachable(final BlockPos feet)
+        {
+            return true;
+        }
+
+        /**
          * @return the lowest and highest height a block can be at.
          */
         int minY();
@@ -149,6 +157,15 @@ public final class ScaffoldPlanner
         return grid.penalty(pos);
     }
 
+    /**
+     * The support if the builder can walk to where it starts.
+     */
+    @Nullable
+    private static Support usable(final Grid grid, @Nullable final Support support)
+    {
+        return support != null && (support.cells.isEmpty() || grid.reachable(support.cells.get(0))) ? support : null;
+    }
+
     private record Support(List<BlockPos> cells, int penalty)
     {
         double weight()
@@ -173,13 +190,13 @@ public final class ScaffoldPlanner
         {
             return null;
         }
-        Support best = column(grid, floor, blocked, maxCells);
+        Support best = usable(grid, column(grid, floor, blocked, maxCells));
         for (int k = 1; k <= MAX_ARM; k++)
         {
             for (final Direction dir : Direction.Plane.HORIZONTAL)
             {
                 // the arm: k cells from the top of the column at "base" to the floor cell
-                final Support arm = armFrom(grid, floor.relative(dir, k), dir.getOpposite(), k, blocked, maxCells);
+                final Support arm = usable(grid, armFrom(grid, floor.relative(dir, k), dir.getOpposite(), k, blocked, maxCells));
                 if (arm != null && (best == null || arm.weight() < best.weight()))
                 {
                     best = arm;

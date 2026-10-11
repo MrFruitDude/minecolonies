@@ -473,7 +473,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 return false;
             }
             final List<ReachSpots.Spot> spots = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(),
-              p -> !walk.bad.contains(p) && (accept == null || accept.test(p)), 1, inBlocks);
+              p -> !walk.bad.contains(p) && canWalkTo(p) && (accept == null || accept.test(p)), 1, inBlocks);
             if (spots.isEmpty())
             {
                 // nothing to stand on within reach of the block: this is a job for scaffolding

@@ -28,6 +28,13 @@ public class ScaffoldPlannerTest
         final Set<BlockPos> solid = new HashSet<>();
         final Map<BlockPos, Integer> scaffold = new HashMap<>();
         final Set<BlockPos> costly = new HashSet<>();
+        Predicate<BlockPos> walkable = p -> true;
+
+        @Override
+        public boolean reachable(final BlockPos feet)
+        {
+            return walkable.test(feet);
+        }
 
         /** Solid ground: a floor at y = 0 for every x in the range, or only where the predicate says so. */
         World ground(final Predicate<BlockPos> where)
@@ -278,5 +285,19 @@ public class ScaffoldPlannerTest
                 assertTrue("a target " + x + " blocks out is beyond arm and reach", x > ScaffoldPlanner.MAX_ARM + 3);
             }
         }
+    }
+
+    @Test
+    public void aTowerStartsWhereTheBuilderCanGetTo()
+    {
+        // the east side of the wall is shut off (a courtyard behind a wall): the tower goes up on the west side
+        final World world = new World().ground(EVERYWHERE).wall(0, 0, 1, 9);
+        world.walkable = p -> p.getX() <= 0;
+        final ScaffoldPlanner.Plan plan = ScaffoldPlanner.plan(world, List.of(new BlockPos(0, 10, 0)), REACH, EYE, null, 32);
+        assertNotNull(plan);
+        assertTrue("starts on the open side: " + plan.cells(), world.walkable.test(plan.cells().get(0)));
+        // nothing is reachable at all: no plan
+        world.walkable = p -> false;
+        assertNull(ScaffoldPlanner.plan(world, List.of(new BlockPos(0, 10, 0)), REACH, EYE, null, 32));
     }
 }

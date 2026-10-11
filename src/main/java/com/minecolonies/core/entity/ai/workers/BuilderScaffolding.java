@@ -143,8 +143,9 @@ public final class BuilderScaffolding
             {
                 return false;
             }
-            if (state.getFluidState().is(FluidTags.LAVA))
+            if (state.getFluidState().is(FluidTags.LAVA) || ai.world.getFluidState(pos.below()).is(FluidTags.LAVA))
             {
+                // never in lava, and never a bridge right over it
                 return false;
             }
             return state.isAir() || (state.canBeReplaced() && state.getCollisionShape(ai.world, pos).isEmpty());
@@ -170,6 +171,12 @@ public final class BuilderScaffolding
             }
             final BlockState state = ai.world.getBlockState(pos);
             return state.is(Blocks.SCAFFOLDING) && state.getValue(ScaffoldingBlock.DISTANCE) == 0;
+        }
+
+        @Override
+        public boolean reachable(final BlockPos feet)
+        {
+            return ai.canWalkTo(feet);
         }
 
         @Override
@@ -479,6 +486,7 @@ public final class BuilderScaffolding
         ai.world.setBlock(cell, state, 3);
         ledger.add(cell, ai.building.getPosition(), distance);
         cellsPlaced++;
+        ai.forgetWalkable();
         placedBy.merge(ai.building.getPosition(), 1, Integer::sum);
         ai.worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
         ai.worker.queueSound(state.getSoundType().getPlaceSound(), cell, 10, 0);
@@ -664,6 +672,7 @@ public final class BuilderScaffolding
         // down it comes: no drop, the item goes into his inventory
         com.minecolonies.core.entity.ai.workers.util.ReachAudit.record(ai.worker, cell);
         ai.world.removeBlock(cell, false);
+        ai.forgetWalkable();
         ledger.remove(cell);
         cellsToTakeDown.remove(0);
         noteRescan(List.of(cell));

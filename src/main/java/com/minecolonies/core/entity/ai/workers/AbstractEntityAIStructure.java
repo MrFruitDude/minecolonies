@@ -1092,6 +1092,40 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
 
     // ------------------------------------------------------------------ hooks of the scaffolding work (builders)
 
+    private java.util.Set<BlockPos> walkable = null;
+    private BlockPos walkableFrom = null;
+    private long walkableAt = -100L;
+    private static final int WALKABLE_RADIUS = 28;
+
+    /**
+     * The world changed around the worker (scaffolding went up or came down): the search has to be done again.
+     */
+    protected final void forgetWalkable()
+    {
+        walkable = null;
+    }
+
+    /**
+     * Whether the worker can walk (or climb) from where he is to a position, as far as a search of the standable spots around him can tell.
+     * Positions further away than the search goes count as reachable.
+     *
+     * @param feet the position.
+     * @return false if the position is cut off: inside a closed wall, on top of one, behind a drop.
+     */
+    protected final boolean canWalkTo(final BlockPos feet)
+    {
+        final long now = world.getGameTime();
+        final BlockPos here = worker.blockPosition();
+        if (walkable == null || !here.equals(walkableFrom) && now - walkableAt > 5 || now - walkableAt > 40)
+        {
+            walkable = StandSpots.reachableFrom(world, here, WALKABLE_RADIUS, 30000);
+            walkableFrom = here;
+            walkableAt = now;
+        }
+        return walkable.contains(feet) || Math.abs(feet.getX() - walkableFrom.getX()) >= WALKABLE_RADIUS || Math.abs(feet.getZ() - walkableFrom.getZ()) >= WALKABLE_RADIUS
+                 || walkable.size() >= 30000;
+    }
+
     /**
      * The work order the worker's scaffolding belongs to.
      *
