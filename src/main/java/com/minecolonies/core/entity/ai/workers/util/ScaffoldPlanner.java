@@ -240,7 +240,7 @@ public final class ScaffoldPlanner
      * What a block of an arm costs on top of its price as a block: the way along an arm is a slow one for a builder, and a tower is the better
      * deal where there is ground for it.
      */
-    public static final double ARM_COST = 2.0D;
+    public static final double ARM_COST = 0.0D;
 
     /**
      * The cheapest way to put a scaffolding block into the floor cell so that it stands: a column to the ground right under it, or a column
