@@ -130,6 +130,16 @@ public class ServerConfiguration extends AbstractConfiguration
     public final BooleanValue builderFastClear;
 
     /**
+     * RS1: stock and space are reserved in a per-colony ledger when a delivery is planned, and released when it ends.
+     */
+    public final BooleanValue reservations;
+
+    /**
+     * RS2: named wait reasons, event-driven re-evaluation of waiting requests, exponential back-off, courier deadlines.
+     */
+    public final BooleanValue smartRetry;
+
+    /**
      * Builds server configuration.
      *
      * @param builder config builder
@@ -219,6 +229,8 @@ public class ServerConfiguration extends AbstractConfiguration
         swapToCategory("requestSystem");
 
         creativeResolve = defineBoolean("creativeresolve", false);
+        reservations = defineBoolean("reservations", true);
+        smartRetry = defineBoolean("smartRetry", true);
 
         swapToCategory("builders");
 

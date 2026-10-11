@@ -7,6 +7,9 @@ import com.minecolonies.api.colony.requestsystem.StandardFactoryController;
 import com.minecolonies.api.colony.requestsystem.data.IRequestSystemCrafterJobDataStore;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
+import com.minecolonies.api.colony.requestsystem.request.WaitReason;
+import com.minecolonies.core.colony.requestsystem.RsFlags;
+import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
 import com.minecolonies.api.colony.requestsystem.requestable.crafting.PublicCrafting;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.crafting.ItemStorage;
@@ -32,6 +35,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static com.minecolonies.api.util.constant.Suppression.UNCHECKED;
 
@@ -260,6 +264,16 @@ public abstract class AbstractJobCrafter<AI extends AbstractEntityAIBasic<J, ? e
         final IToken<?> current = getTaskQueueFromDataStore().getFirst();
 
         getColony().getRequestManager().updateRequestState(current, successful ? RequestState.RESOLVED : RequestState.FAILED);
+
+        if (RsFlags.smartRetry())
+        {
+            // RS2: a crafter finished: requests that waited for a craft are looked at again.
+            final RequestWaitTracker tracker = RequestWaitTracker.of(getColony().getRequestManager());
+            if (tracker != null)
+            {
+                tracker.wakeByReason(Set.of(WaitReason.AWAITING_CRAFT, WaitReason.NO_CRAFTER));
+            }
+        }
     }
 
     /**

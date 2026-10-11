@@ -7,6 +7,7 @@ import com.minecolonies.api.colony.requestsystem.factory.IFactoryController;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.IRequestFactory;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
+import com.minecolonies.api.colony.requestsystem.request.WaitReason;
 import com.minecolonies.api.colony.requestsystem.requestable.*;
 import com.minecolonies.api.colony.requestsystem.requestable.crafting.AbstractCrafting;
 import com.minecolonies.api.colony.requestsystem.requestable.crafting.PrivateCrafting;
@@ -45,6 +46,7 @@ public final class StandardRequestFactories
     private static final String NBT_REQUESTER  = "Requester";
     private static final String NBT_TOKEN      = "Token";
     private static final String NBT_STATE      = "State";
+    private static final String NBT_WAIT_REASON = "WaitReason";
     private static final String NBT_REQUESTED  = "Requested";
     private static final String NBT_RESULT     = "Result";
     private static final String NBT_PARENT     = "Parent";
@@ -1101,6 +1103,10 @@ public final class StandardRequestFactories
         compound.put(NBT_REQUESTER, requesterCompound);
         compound.put(NBT_TOKEN, tokenCompound);
         compound.put(NBT_STATE, stateCompound);
+        if (request.getWaitReason() != WaitReason.NONE)
+        {
+            compound.putByte(NBT_WAIT_REASON, (byte) request.getWaitReason().ordinal());
+        }
         compound.put(NBT_REQUESTED, requestedCompound);
 
         if (request.hasResult())
@@ -1133,6 +1139,7 @@ public final class StandardRequestFactories
         controller.serialize(packetBuffer, request.getRequester());
         controller.serialize(packetBuffer, request.getId());
         request.getState().serialize(packetBuffer);
+        request.getWaitReason().serialize(packetBuffer);
         typeSerialization.apply(controller, packetBuffer, request.getRequest());
 
         packetBuffer.writeInt(request.getChildren().size());
@@ -1167,6 +1174,7 @@ public final class StandardRequestFactories
         final IRequester requester = controller.deserializeTag(provider, compound.getCompoundOrEmpty(NBT_REQUESTER));
         final IToken<?> token = controller.deserializeTag(provider, compound.getCompoundOrEmpty(NBT_TOKEN));
         final RequestState state = RequestState.deserialize((IntTag) compound.get(NBT_STATE));
+        final WaitReason waitReason = WaitReason.fromOrdinal(compound.getByteOr(NBT_WAIT_REASON, (byte) 0));
         final T requested = typeDeserialization.apply(provider, controller, compound.getCompoundOrEmpty(NBT_REQUESTED));
 
         final List<IToken<?>> childTokens = new ArrayList<>();
@@ -1177,6 +1185,7 @@ public final class StandardRequestFactories
         }
 
         @SuppressWarnings(Suppression.LEFT_CURLY_BRACE) final R request = objectConstructor.construct(requested, token, requester, state);
+        request.setWaitReason(waitReason);
 
         request.addChildren(childTokens);
 
@@ -1211,6 +1220,7 @@ public final class StandardRequestFactories
         final IRequester requester = controller.deserialize(buffer);
         final IToken<?> token = controller.deserialize(buffer);
         final RequestState state = RequestState.deserialize(buffer);
+        final WaitReason waitReason = WaitReason.deserialize(buffer);
         final T requested = typeDeserialization.apply(controller, buffer);
 
         final List<IToken<?>> childTokens = new ArrayList<>();
@@ -1221,6 +1231,7 @@ public final class StandardRequestFactories
         }
 
         @SuppressWarnings(Suppression.LEFT_CURLY_BRACE) final R request = objectConstructor.construct(requested, token, requester, state);
+        request.setWaitReason(waitReason);
         request.addChildren(childTokens);
 
         if (buffer.readBoolean())

@@ -21,6 +21,8 @@ import com.minecolonies.core.colony.requestsystem.resolvers.DeliveryRequestResol
 import com.minecolonies.core.colony.requestsystem.resolvers.PickupRequestResolver;
 import com.minecolonies.core.colony.requestsystem.resolvers.WarehouseConcreteRequestResolver;
 import com.minecolonies.core.colony.requestsystem.resolvers.WarehouseRequestResolver;
+import com.minecolonies.core.colony.requestsystem.RsAccess;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.tileentities.TileEntityColonyBuilding;
 import com.minecolonies.core.tileentities.TileEntityRack;
 import com.minecolonies.core.tileentities.TileEntityWareHouse;
@@ -138,6 +140,44 @@ public class BuildingWareHouse extends AbstractBuilding implements IWareHouse
     public int hasEnoughElseCount(@NotNull final Predicate<ItemStack> predicate, final int count)
     {
         return rackIndex.countUpTo(getColony().getWorld(), predicate, count);
+    }
+
+    /**
+     * RS1: like {@link #hasEnoughElseCount(ItemStorage, int)}, but not counting what the reservation ledger has promised to
+     * other requests: {@code available = physical - reserved}. Without the ledger (flag off) it is the plain count.
+     *
+     * @param storage the storage.
+     * @param count   the count wanted.
+     * @return the available count, stopping once it reaches {@code count}.
+     */
+    public int availableCount(@NotNull final ItemStorage storage, final int count)
+    {
+        final ReservationLedger ledger = RsAccess.ledger(getColony().getRequestManager());
+        final int reserved = ledger == null ? 0 : ledger.reservedStock(getID(), stack -> storage.equals(new ItemStorage(stack)));
+        if (reserved <= 0)
+        {
+            return hasEnoughElseCount(storage, count);
+        }
+        return Math.max(0, hasEnoughElseCount(storage, count + reserved) - reserved);
+    }
+
+    /**
+     * RS1: like {@link #hasEnoughElseCount(Predicate, int)}, but not counting what the reservation ledger has promised to
+     * other requests.
+     *
+     * @param predicate the predicate.
+     * @param count     the count wanted.
+     * @return the available count, stopping once it reaches {@code count}.
+     */
+    public int availableCount(@NotNull final Predicate<ItemStack> predicate, final int count)
+    {
+        final ReservationLedger ledger = RsAccess.ledger(getColony().getRequestManager());
+        final int reserved = ledger == null ? 0 : ledger.reservedStock(getID(), predicate);
+        if (reserved <= 0)
+        {
+            return hasEnoughElseCount(predicate, count);
+        }
+        return Math.max(0, hasEnoughElseCount(predicate, count + reserved) - reserved);
     }
 
     @Override

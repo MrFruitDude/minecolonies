@@ -176,6 +176,16 @@ public interface IRequestManager extends INBTSerializable<CompoundTag>, ITickabl
     void onColonyUpdate(@NotNull final Predicate<IRequest<?>> shouldTriggerReassign);
 
     /**
+     * Items matching the stack were added to a warehouse. Requests that wait for such items are looked at again.
+     *
+     * @param stack the stack that was added.
+     */
+    default void onStockAvailable(@NotNull final ItemStack stack)
+    {
+        onColonyUpdate(request -> request.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.IDeliverable deliverable && deliverable.matches(stack));
+    }
+
+    /**
      * Get the player resolve.
      *
      * @return the player resolver object.

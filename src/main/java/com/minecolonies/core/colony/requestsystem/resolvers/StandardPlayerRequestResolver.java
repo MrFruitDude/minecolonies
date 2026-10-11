@@ -20,7 +20,13 @@ import com.minecolonies.api.util.ItemStackUtils;
 import com.minecolonies.api.util.constant.TypeConstants;
 import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.AbstractBuilding;
+import com.minecolonies.api.colony.requestsystem.request.WaitReason;
+import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
+import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Pickup;
+import com.minecolonies.core.colony.requestsystem.RsFlags;
+import com.minecolonies.core.colony.requestsystem.RsStats;
 import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
+import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
 import com.minecolonies.core.colony.requestsystem.requesters.BuildingBasedRequester;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
@@ -133,6 +139,29 @@ public class StandardPlayerRequestResolver implements IPlayerRequestResolver
             }
         }
         assignedRequests.add(request.getId());
+        if (!(request.getRequest() instanceof Delivery || request.getRequest() instanceof Pickup))
+        {
+            RsStats.playerFallback(request.getId());
+        }
+        if (RsFlags.smartRetry())
+        {
+            final RequestWaitTracker tracker = RequestWaitTracker.of(manager);
+            if (tracker != null)
+            {
+                // A delivery nobody can carry is waiting for a courier, not for the player.
+                final boolean courierTask = request.getRequest() instanceof Delivery || request.getRequest() instanceof Pickup;
+                tracker.register(request, RequestWaitTracker.Holder.PLAYER, courierTask ? WaitReason.NO_COURIER : WaitReason.PLAYER_REQUIRED);
+            }
+        }
+    }
+
+    /**
+     * @param token a request token.
+     * @return true when this resolver currently holds the request.
+     */
+    public boolean isHolding(@NotNull final IToken<?> token)
+    {
+        return assignedRequests.contains(token);
     }
 
     @Override
@@ -189,7 +218,8 @@ public class StandardPlayerRequestResolver implements IPlayerRequestResolver
               {
                   if (shouldTriggerReassign.test(request))
                   {
-                      final IToken<?> newResolverToken = manager.reassignRequest(request.getId(), ImmutableList.of(token));
+                      // RS2: a request nothing else can serve stays with the player instead of being left without a resolver.
+                      final IToken<?> newResolverToken = manager.reassignRequest(request.getId(), RsFlags.smartRetry() ? ImmutableList.of() : ImmutableList.of(token));
                       if (newResolverToken != null && !newResolverToken.equals(token))
                       {
                           assignedRequests.remove(request.getId());

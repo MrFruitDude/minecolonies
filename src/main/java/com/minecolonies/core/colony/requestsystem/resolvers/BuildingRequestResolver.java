@@ -16,6 +16,9 @@ import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.ItemStackUtils;
 import com.minecolonies.api.util.constant.TypeConstants;
 import com.minecolonies.core.colony.buildings.AbstractBuilding;
+import com.minecolonies.core.colony.requestsystem.RsAccess;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationReason;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
 import com.minecolonies.core.colony.requestsystem.resolvers.core.AbstractBuildingDependentRequestResolver;
 import net.minecraft.world.item.ItemStack;
@@ -100,16 +103,24 @@ public class BuildingRequestResolver extends AbstractBuildingDependentRequestRes
      * @param building the building.
      * @return the reserved amount.
      */
-    private static int reservedAmount(@NotNull final IRequest<? extends IDeliverable> request, @NotNull final AbstractBuilding building)
+    private static int reservedAmount(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends IDeliverable> request, @NotNull final AbstractBuilding building)
     {
-        for (final Map.Entry<ItemStorage, Integer> reserved : building.reservedStacksExcluding(request).entrySet())
+        int reserved = 0;
+        for (final Map.Entry<ItemStorage, Integer> entry : building.reservedStacksExcluding(request).entrySet())
         {
-            if (request.getRequest().matches(reserved.getKey().getItemStack()))
+            if (request.getRequest().matches(entry.getKey().getItemStack()))
             {
-                return reserved.getValue();
+                reserved = entry.getValue();
+                break;
             }
         }
-        return 0;
+        // RS1: what the ledger holds in this building for other requests (items fetched for them, not yet taken) is theirs too.
+        final ReservationLedger ledger = RsAccess.ledger(manager);
+        if (ledger != null)
+        {
+            reserved += ledger.reservedStockExcluding(building.getID(), request.getRequest()::matches, request.getId());
+        }
+        return reserved;
     }
 
     @Nullable
@@ -120,7 +131,7 @@ public class BuildingRequestResolver extends AbstractBuildingDependentRequestRes
       @NotNull final AbstractBuilding building)
     {
         final int totalRequested = request.getRequest().getCount();
-        int totalAvailable = Math.max(0, InventoryUtils.getCountFromBuilding(building, itemStack -> request.getRequest().matches(itemStack)) - reservedAmount(request, building));
+        int totalAvailable = Math.max(0, InventoryUtils.getCountFromBuilding(building, itemStack -> request.getRequest().matches(itemStack)) - reservedAmount(manager, request, building));
 
         if (totalAvailable <= 0)
         {
@@ -151,7 +162,7 @@ public class BuildingRequestResolver extends AbstractBuildingDependentRequestRes
         final int total = request.getRequest().getCount();
         int current = 0;
         // The attempt only counted what is not reserved for other work in the building: do not hand out the reserved items either.
-        int reserved = reservedAmount(request, building);
+        int reserved = reservedAmount(manager, request, building);
         final List<ItemStack> deliveries = new ArrayList<>();
 
         for (final IItemHandlerCapProvider tile : tileEntities)
@@ -176,6 +187,26 @@ public class BuildingRequestResolver extends AbstractBuildingDependentRequestRes
         }
 
         request.addDelivery(deliveries);
+
+        final ReservationLedger ledger = RsAccess.ledger(manager);
+        if (ledger != null)
+        {
+            // RS1: the items are in the requester's hands in all but name: they stay promised to this request until it is received.
+            String name;
+            try
+            {
+                name = request.getRequester().getRequesterDisplayName(manager, request).getString();
+            }
+            catch (final RuntimeException e)
+            {
+                name = "?";
+            }
+            for (final ItemStack handedOut : deliveries)
+            {
+                ledger.reserveStock(building.getID(), null, new ItemStorage(handedOut), handedOut.getCount(), request.getId(), name, ReservationReason.BUILDING_HANDOUT,
+                  RsAccess.now(manager));
+            }
+        }
 
         manager.updateRequestState(request.getId(), RequestState.RESOLVED);
     }

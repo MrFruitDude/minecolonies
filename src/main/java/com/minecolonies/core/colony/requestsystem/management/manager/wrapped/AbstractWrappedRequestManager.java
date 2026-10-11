@@ -38,6 +38,15 @@ public abstract class AbstractWrappedRequestManager implements IRequestManager
     }
 
     /**
+     * @return the manager this one wraps.
+     */
+    @NotNull
+    public IStandardRequestManager getWrappedManager()
+    {
+        return wrappedManager;
+    }
+
+    /**
      * The colony this manager manages the requests for.
      *
      * @return The colony this manager manages the requests for.

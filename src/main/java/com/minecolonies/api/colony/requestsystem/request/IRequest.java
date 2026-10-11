@@ -64,6 +64,28 @@ public interface IRequest<R extends IRequestable>
     RequestState getState();
 
     /**
+     * RS2: why this request is not moving right now.
+     *
+     * @return the reason, {@link WaitReason#NONE} when it is not waiting.
+     */
+    @NotNull
+    default WaitReason getWaitReason()
+    {
+        return WaitReason.NONE;
+    }
+
+    /**
+     * RS2: sets why this request is not moving. Requests that do not track it ignore this.
+     *
+     * @param reason the reason.
+     * @return true when the reason changed.
+     */
+    default boolean setWaitReason(@NotNull final WaitReason reason)
+    {
+        return false;
+    }
+
+    /**
      * Setter for the current state of this request. It is not recommended to call this method from outside of the request management system.
      *
      * @param manager the request manager.

@@ -12,7 +12,10 @@ import com.minecolonies.api.colony.requestsystem.requestable.IRetryable;
 import com.minecolonies.api.colony.requestsystem.resolver.retrying.IRetryingRequestResolver;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.util.constant.TypeConstants;
+import com.minecolonies.core.colony.requestsystem.RsFlags;
 import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
+import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
+import com.minecolonies.core.colony.requestsystem.wait.WaitDiagnosis;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import org.jetbrains.annotations.NotNull;
@@ -30,6 +33,13 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     private static final Integer CONST_RETRYING_ID_SCALE = -20000;
     private static final int MAX_RETRIES = 3;
     private static final int RETRY_DELAY = 1200;
+
+    /**
+     * RS2 fallback back-off, in request-system ticks (11 game ticks each): the first retry after 20 (220 game ticks), then
+     * twice as long each time, at most 600 (6600 game ticks). Events retry sooner.
+     */
+    private static final int BACKOFF_FIRST = 20;
+    private static final int BACKOFF_MAX   = 600;
 
     private       IRequestManager             manager;
     private final ILocation                   location;
@@ -92,6 +102,11 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     @Override
     public boolean canResolveRequest(@NotNull final IRequestManager manager, final IRequest<? extends IRetryable> requestToCheck)
     {
+        if (RsFlags.smartRetry())
+        {
+            // Wait for anything that something in the colony can still make or gather; only the rest goes to the player.
+            return !WaitDiagnosis.neverProducible(manager, requestToCheck);
+        }
         return getCurrentlyBeingReassignedRequest() == null || requestToCheck.getId() != getCurrentlyBeingReassignedRequest()
                  || getCurrentReassignmentAttempt() < getMaximalTries();
     }
@@ -106,8 +121,50 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     @Override
     public void resolveRequest(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends IRetryable> request) throws RuntimeException
     {
+        final int attempt = assignedRequests.containsKey(request.getId()) ? assignedRequests.get(request.getId()) + 1 : 1;
+        assignedRequests.put(request.getId(), attempt);
+        if (RsFlags.smartRetry())
+        {
+            delays.put(request.getId(), backoff(attempt));
+            final RequestWaitTracker tracker = RequestWaitTracker.of(manager);
+            if (tracker != null)
+            {
+                tracker.register(request, RequestWaitTracker.Holder.RETRYING, WaitDiagnosis.forStarvedRequest(manager, request));
+            }
+            return;
+        }
         delays.put(request.getId(), getMaximalDelayBetweenRetriesInTicks());
-        assignedRequests.put(request.getId(), assignedRequests.containsKey(request.getId()) ? assignedRequests.get(request.getId()) + 1 : 1);
+    }
+
+    /**
+     * @param attempt the number of the attempt that just failed (1 for the first).
+     * @return the request-system ticks to wait before the next one.
+     */
+    static int backoff(final int attempt)
+    {
+        return (int) Math.min(BACKOFF_MAX, (long) BACKOFF_FIRST << Math.min(Math.max(attempt - 1, 0), 10));
+    }
+
+    /**
+     * RS2: an event could have unblocked this request: retry it on the next tick instead of when its delay runs out.
+     *
+     * @param token the request token.
+     */
+    public void expedite(@NotNull final IToken<?> token)
+    {
+        if (assignedRequests.containsKey(token))
+        {
+            delays.put(token, 1);
+        }
+    }
+
+    /**
+     * @param token a request token.
+     * @return true when this resolver currently holds the request.
+     */
+    public boolean isHolding(@NotNull final IToken<?> token)
+    {
+        return assignedRequests.containsKey(token);
     }
 
     @Nullable
@@ -156,7 +213,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
         //Lets get all keys with 0 residual delay:
         final Set<IToken<?>> retryables = delays.keySet().stream().filter(t -> delays.get(t) == 0).collect(Collectors.toSet());
         final Set<IToken<?>> successfully = retryables.stream().filter(t -> {
-            final Set<IToken<?>> blackList = assignedRequests.get(t) < getMaximalTries() ? ImmutableSet.of() : ImmutableSet.of(id);
+            final Set<IToken<?>> blackList = RsFlags.smartRetry() || assignedRequests.get(t) < getMaximalTries() ? ImmutableSet.of() : ImmutableSet.of(id);
 
             Integer currentAttempt = assignedRequests.get(t);
 
@@ -182,6 +239,11 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
             {
                 assignedRequests.remove(t);
                 delays.remove(t);
+            }
+            else if (resultingResolver != null && RsFlags.smartRetry())
+            {
+                // Back here: wait twice as long before the next fallback retry (events still wake it sooner).
+                delays.put(t, backoff(currentAttempt));
             }
 
             return resultingResolver != null;
@@ -274,7 +336,8 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
               {
                   if (shouldTriggerReassign.test(request))
                   {
-                      final IToken<?> newResolverToken = manager.reassignRequest(request.getId(), ImmutableList.of(getId()));
+                      // RS2: a request that still cannot be served stays here, instead of being handed to the player.
+                      final IToken<?> newResolverToken = manager.reassignRequest(request.getId(), RsFlags.smartRetry() ? ImmutableList.of() : ImmutableList.of(getId()));
                       if (newResolverToken != null && !newResolverToken.equals(getId()))
                       {
                           assignedRequests.remove(request.getId());

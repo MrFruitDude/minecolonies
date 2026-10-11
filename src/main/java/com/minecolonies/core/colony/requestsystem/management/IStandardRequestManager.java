@@ -4,6 +4,8 @@ import com.minecolonies.api.colony.requestsystem.data.*;
 import com.minecolonies.api.colony.requestsystem.management.*;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import com.minecolonies.core.colony.requestsystem.management.manager.StandardRequestManager;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
+import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -26,6 +28,22 @@ public interface IStandardRequestManager extends IRequestManager
 
     @NotNull
     IRequestableTypeRequestResolverAssignmentDataStore getRequestableTypeRequestResolverAssignmentDataStore();
+
+    /**
+     * RS1: the colony's reservation ledger. Always present; whether it is used is decided by the {@code reservations} flag.
+     *
+     * @return the ledger.
+     */
+    @NotNull
+    ReservationLedger getReservationLedger();
+
+    /**
+     * RS2: the colony's waiting requests and their reasons. Always present; used when the {@code smartRetry} flag is on.
+     *
+     * @return the tracker.
+     */
+    @NotNull
+    RequestWaitTracker getWaitTracker();
 
     IProviderHandler getProviderHandler();
 
