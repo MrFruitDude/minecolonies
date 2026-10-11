@@ -539,7 +539,7 @@ public final class MacroRun
               openRequestCount(), pendingRequests(), RsStats.requestsCreated, RsStats.deliveriesCreated, RsStats.courierTasksFinished, RsStats.itemsDelivered, RsStats.playerFallbacks,
               (long) courierDistance);
         }
-        if (tick % 300 == 0 && !away)
+        if (tick % 20 == 0 && !away)
         {
             checkConservation(tick, false);
         }
