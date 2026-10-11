@@ -71,6 +71,12 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             return;
         }
         final String onlyProperty = System.getProperty("minecolonies.gametest.only", "");
+        if (onlyProperty.contains("scaffoldbench"))
+        {
+            // the tall-structure benchmarks, three times each (the ticks vary a little from run to run)
+            registerScaffoldBench(event);
+            return;
+        }
         if (!onlyProperty.isEmpty() && (onlyProperty.contains("worker_eff") || onlyProperty.contains("scaffold")))
         {
             if (onlyProperty.contains("worker_eff"))
@@ -935,6 +941,32 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),
               isolatedColonyData(event, name));
+        }
+    }
+
+    private void registerScaffoldBench(final RegisterGameTestsEvent event)
+    {
+        for (int i = 1; i <= 3; i++)
+        {
+            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy"})
+            {
+                final String name = "scaffoldbench_" + base + "_" + i;
+                final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (base)
+                {
+                    case "tall8" -> BuilderScaffoldGameTests::tallWall8;
+                    case "tall14" -> BuilderScaffoldGameTests::tallTower14;
+                    case "overhang" -> BuilderScaffoldGameTests::overhangSlab;
+                    case "sealed" -> BuilderScaffoldGameTests::sealedRoof;
+                    case "tall8_legacy" -> BuilderScaffoldGameTests::tallWall8Legacy;
+                    case "tall14_legacy" -> BuilderScaffoldGameTests::tallTower14Legacy;
+                    case "overhang_legacy" -> BuilderScaffoldGameTests::overhangLegacy;
+                    default -> BuilderScaffoldGameTests::sealedRoofLegacy;
+                };
+                event.registerTest(
+                  Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, test),
+                  isolatedColonyData(event, name));
+            }
         }
     }
 
