@@ -51,7 +51,7 @@ public final class BuilderScaffolding
     }
 
     /** Ticks a builder waits for scaffolding items that were requested, before he goes on without a tower. */
-    static final int STOCK_TIMEOUT = 1200;
+    static final int STOCK_TIMEOUT = 600;
 
     /** After that long without a tower being possible, the next try. */
     static final int DENY_TICKS = 3000;
@@ -70,6 +70,7 @@ public final class BuilderScaffolding
     private Phase  phase = Phase.IDLE;
     private long   phaseSince = 0L;
     private long   deniedUntil = 0L;
+    private long   stockDeniedUntil = 0L;
     private long   nextMaintain = 0L;
     private long   stepSince = 0L;
 
@@ -126,14 +127,18 @@ public final class BuilderScaffolding
     /**
      * Another try at a tower is possible again (the items may have come).
      */
+    /**
+     * Whether the builder gave up waiting for scaffolding items a short while ago (and so builds nothing that needs a tower for now).
+     */
     public boolean denied()
     {
-        return ai.world.getGameTime() < deniedUntil;
+        return ai.world.getGameTime() < stockDeniedUntil;
     }
 
     public void clearDenial()
     {
         deniedUntil = 0L;
+        stockDeniedUntil = 0L;
     }
 
     public boolean busy()
@@ -391,6 +396,7 @@ public final class BuilderScaffolding
         {
             log("no scaffolding items after " + STOCK_TIMEOUT + " ticks, going on without a tower");
             deniedUntil = now + DENY_TICKS;
+            stockDeniedUntil = now + 2 * DENY_TICKS;
             abort();
             return false;
         }
@@ -808,6 +814,7 @@ public final class BuilderScaffolding
         needsRescan = false;
         idleSince.clear();
         deniedUntil = 0L;
+        stockDeniedUntil = 0L;
         nextMaintain = 0L;
     }
 
