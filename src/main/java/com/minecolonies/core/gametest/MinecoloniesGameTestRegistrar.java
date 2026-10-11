@@ -526,6 +526,22 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multicolony_force_active_state"),
           info -> new MinecoloniesGameTestInstance(info, MultiColonyGameTests::force_active_state),
           isolatedColonyData(event, "multicolony_force_active_state"));
+        // MULTIPLAYER (MP-A): two messages that let one player write to another's colony (one glob: minecolonies:mpsec_*).
+        for (final String name : new String[] {"mpsec_trigger_connection_needs_both_colonies", "mpsec_create_colony_changes_the_hut_only_after_the_checks",
+          "mpsec_create_colony_too_close_names_nobody", "mpsec_decoders_refuse_junk"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "mpsec_trigger_connection_needs_both_colonies" -> MpSecurityGameTests::trigger_connection_needs_both_colonies;
+                case "mpsec_create_colony_changes_the_hut_only_after_the_checks" -> MpSecurityGameTests::create_colony_changes_the_hut_only_after_the_checks;
+                case "mpsec_create_colony_too_close_names_nobody" -> MpSecurityGameTests::create_colony_too_close_names_nobody;
+                default -> MpSecurityGameTests::decoders_refuse_junk;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
         // P5b-MC: NPC faction owner for AI neighbour colonies (one glob: minecolonies:faction_*).
         for (final String name : new String[] {"faction_create_and_permissions", "faction_persistence", "faction_index_and_limits", "faction_driver_state",
           "faction_actions_without_player", "faction_raids_off"})

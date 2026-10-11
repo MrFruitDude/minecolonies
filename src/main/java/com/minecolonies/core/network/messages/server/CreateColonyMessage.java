@@ -3,6 +3,7 @@ package com.minecolonies.core.network.messages.server;
 import com.ldtteam.common.network.AbstractServerPlayMessage;
 import com.ldtteam.common.network.PlayMessageType;
 import com.ldtteam.structurize.storage.StructurePacks;
+import com.ldtteam.structurize.storage.StructurePackMeta;
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyManager;
@@ -91,14 +92,15 @@ public class CreateColonyMessage extends AbstractServerPlayMessage
         pathName = buf.readUtf(32767);
     }
 
+    /**
+     * How far from the town hall a player may send a founding: block interaction range plus a margin for latency.
+     */
+    private static final double REACH_MARGIN = 4.0;
+
     @Override
     protected void onExecute(final IPayloadContext ctxIn, final ServerPlayer sender)
     {
         final ServerLevel world = sender.level();
-
-        final IColony colony = IColonyManager.getInstance().getClosestColony(world, townHall);
-
-        String pack = packName;
         final BlockEntity tileEntity = world.getBlockEntity(townHall);
 
         if (!(tileEntity instanceof final TileEntityColonyBuilding hut))
@@ -109,45 +111,41 @@ public class CreateColonyMessage extends AbstractServerPlayMessage
             return;
         }
 
-        if (hut.getStructurePack() != null && claim)
+        // Nothing about the hut is changed until the founding is allowed: the sender has to be at the hut, the hut must not be a building of a colony already, and the
+        // limits, the distance to the world spawn and to other colonies, and the founding listeners must all agree.
+        if (!sender.isWithinBlockInteractionRange(townHall, REACH_MARGIN))
         {
-            pack = hut.getStructurePack().getName();
+            MessageUtils.format(WARNING_COLONY_FOUNDING_FAILED)
+              .withPriority(MessagePriority.DANGER)
+              .sendTo(sender);
+            return;
         }
 
-        final boolean reactivate = hut.getPositionedTags().getOrDefault(BlockPos.ZERO, new ArrayList<>()).contains(DEACTIVATED);
-        if (reactivate)
+        final IColony owning = hut.getColony();
+        if (owning != null && owning.getServerBuildingManager().getBuilding(townHall) != null)
         {
-            hut.reactivate();
-            if (hut.getStructurePack() != null)
-            {
-                pack = hut.getStructurePack().getName();
-            }
+            MessageUtils.format(WARNING_COLONY_FOUNDING_FAILED)
+              .withPriority(MessagePriority.DANGER)
+              .sendTo(sender);
+            return;
         }
-
-        hut.setStructurePack(StructurePacks.getStructurePack(pack));
-        hut.setBlueprintPath(pathName);
 
         final double spawnDistance = Math.sqrt(BlockPosUtil.getDistanceSquared2D(townHall, world.getRespawnData().pos()));
         if (spawnDistance < MineColonies.getConfig().getServer().minDistanceFromWorldSpawn.get())
         {
-            if (!world.isClientSide())
-            {
-                MessageUtils.format(CANT_PLACE_COLONY_TOO_CLOSE_TO_SPAWN, MineColonies.getConfig().getServer().minDistanceFromWorldSpawn.get() - spawnDistance).sendTo(sender);
-            }
+            MessageUtils.format(CANT_PLACE_COLONY_TOO_CLOSE_TO_SPAWN, MineColonies.getConfig().getServer().minDistanceFromWorldSpawn.get() - spawnDistance).sendTo(sender);
             return;
         }
         else if (spawnDistance > MineColonies.getConfig().getServer().maxDistanceFromWorldSpawn.get())
         {
-            if (!world.isClientSide())
-            {
-                MessageUtils.format(CANT_PLACE_COLONY_TOO_FAR_FROM_SPAWN, spawnDistance - MineColonies.getConfig().getServer().maxDistanceFromWorldSpawn.get()).sendTo(sender);
-            }
+            MessageUtils.format(CANT_PLACE_COLONY_TOO_FAR_FROM_SPAWN, spawnDistance - MineColonies.getConfig().getServer().maxDistanceFromWorldSpawn.get()).sendTo(sender);
             return;
         }
 
-        if (colony != null && !IColonyManager.getInstance().isFarEnoughFromColonies(world, townHall))
+        // The refusal does not name the colony in the way: the sender may not be a member of it.
+        if (IColonyManager.getInstance().getClosestColony(world, townHall) != null && !IColonyManager.getInstance().isFarEnoughFromColonies(world, townHall))
         {
-            MessageUtils.format(MESSAGE_COLONY_CREATE_DENIED_TOO_CLOSE, colony.getName()).sendTo(sender);
+            MessageUtils.format(MESSAGE_COLONY_CREATE_DENIED_TOO_CLOSE_GENERIC).sendTo(sender);
             return;
         }
 
@@ -159,8 +157,35 @@ public class CreateColonyMessage extends AbstractServerPlayMessage
 
         if (refusal.isEmpty())
         {
+            String pack = packName;
+            if (hut.getStructurePack() != null && claim)
+            {
+                pack = hut.getStructurePack().getName();
+            }
+
+            final boolean reactivate = hut.getPositionedTags().getOrDefault(BlockPos.ZERO, new ArrayList<>()).contains(DEACTIVATED);
+            if (reactivate)
+            {
+                hut.reactivate();
+                if (hut.getStructurePack() != null)
+                {
+                    pack = hut.getStructurePack().getName();
+                }
+            }
+
+            final StructurePackMeta structurePack = StructurePacks.getStructurePack(pack);
+            if (structurePack == null)
+            {
+                MessageUtils.format(WARNING_COLONY_FOUNDING_FAILED)
+                  .withPriority(MessagePriority.DANGER)
+                  .sendTo(sender);
+                return;
+            }
+            hut.setStructurePack(structurePack);
+            hut.setBlueprintPath(pathName);
+
             final IColony createdColony = IColonyManager.getInstance().createColony(world, townHall, sender, colonyName, pack);
-            final IBuilding building = createdColony.getServerBuildingManager().addNewBuilding((TileEntityColonyBuilding) tileEntity, world);
+            final IBuilding building = createdColony.getServerBuildingManager().addNewBuilding(hut, world);
 
             if (reactivate)
             {
@@ -176,7 +201,7 @@ public class CreateColonyMessage extends AbstractServerPlayMessage
             }
 
             IMinecoloniesAPI.getInstance().getEventBus().post(new ColonyCreatedModEvent(createdColony));
-            new OpenBuildingUIMessage(building).sendToPlayer(sender);;
+            new OpenBuildingUIMessage(building).sendToPlayer(sender);
 
             return;
         }

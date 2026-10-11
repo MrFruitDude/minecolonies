@@ -33,7 +33,7 @@ public class SelectColonyMessage extends AbstractServerPlayMessage
     protected SelectColonyMessage(final RegistryFriendlyByteBuf buf, final PlayMessageType<?> type)
     {
         super(buf, type);
-        this.dimension = ResourceKey.create(Registries.DIMENSION, Identifier.parse(buf.readUtf(256)));
+        this.dimension = ResourceKey.create(Registries.DIMENSION, com.minecolonies.core.colony.OwnedColonyTarget.readDimension(buf));
         this.id = buf.readInt();
     }
 
