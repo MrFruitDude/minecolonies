@@ -582,7 +582,7 @@ public final class Scenarios
                 final int n = quick ? 2 : 4;
                 for (int k = 0; k < n; k++)
                 {
-                    orders.add(order(r, "storm" + k, 10, 62 + 3 * k, hutBlocks(10 + 2 * k, 6, 2 + k % 2, 2), 0));
+                    orders.add(order(r, "storm" + k, 10, 62 + 3 * k, hutBlocks(10 + 2 * k, 6, 2 + k % 2, 0), 0));
                 }
             }
 
