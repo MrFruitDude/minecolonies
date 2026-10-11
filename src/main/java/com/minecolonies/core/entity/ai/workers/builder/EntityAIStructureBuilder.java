@@ -236,6 +236,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
         if (checkForWorkOrder())
         {
+            if (usesPhysicalReach() && building.getWorkOrder() != null && building.getWorkOrder().getBlueprint() != null
+                  && building.getWorkOrder().getBlueprint().getSizeY() >= BuildReach.maxHeightNextToWall(BuildReach.EYE_HEIGHT, WorkerSettings.reach()) + 2)
+            {
+                scaffold.prefetch();
+            }
             final IAIState state = super.startWorkingAtOwnBuilding();
             if (state == IDLE)
             {

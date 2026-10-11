@@ -280,6 +280,24 @@ public final class BuilderScaffolding
         hut.createRequest(new Stack(new ItemStack(Items.SCAFFOLDING), Math.max(1, missing), 1), true);
     }
 
+    /**
+     * The builder is at his hut and the structure is tall: he takes the scaffolding stock with him, so the first tower does not cost a walk
+     * back to the hut.
+     */
+    public void prefetch()
+    {
+        if (!enabled())
+        {
+            return;
+        }
+        final AbstractBuildingStructureBuilder hut = ai.building;
+        final int want = WorkerSettings.scaffoldStock() - inInventory();
+        if (want > 0 && hut.getItemHandlerCap() != null)
+        {
+            ItemMover.move(hut.getItemHandlerCap(), ai.worker.getInventoryCitizen(), stack -> stack.is(Items.SCAFFOLDING), want);
+        }
+    }
+
     // ------------------------------------------------------------------ starting a tower
 
     /**
@@ -602,7 +620,23 @@ public final class BuilderScaffolding
             }
             stepSince = now;
             next++;
-            ai.setDelay(Math.max(1, (int) ai.placementTicks()));
+            // the next cells too, as long as they are in reach from here: one wait for all of them
+            int placed = 1;
+            while (placed < 5 && next < plan.cells().size() && inInventory() > 0)
+            {
+                final BlockPos more = plan.cells().get(next);
+                if (!new WorldGrid(ledger).free(more) || !ai.canReachNow(more) || ai.world.getBlockState(more).is(Blocks.SCAFFOLDING))
+                {
+                    break;
+                }
+                if (!place(more, ledger))
+                {
+                    break;
+                }
+                next++;
+                placed++;
+            }
+            ai.setDelay(Math.max(1, (int) (ai.placementTicks() * placed)));
             return true;
         }
         // standing: from here the normal work goes on from the top of the tower
