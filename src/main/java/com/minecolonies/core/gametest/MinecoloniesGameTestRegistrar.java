@@ -64,6 +64,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     @Override
     public void accept(final RegisterGameTestsEvent event)
     {
+        if ("worker_eff".equals(System.getProperty("minecolonies.gametest.only")))
+        {
+            registerWorkerEfficiency(event);
+            return;
+        }
         final Holder<TestEnvironmentDefinition<?>> environment = event.registerEnvironment(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "default"));
         final TestData<Holder<TestEnvironmentDefinition<?>>> data = new TestData<>(
@@ -488,6 +493,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderScalesActionCycle),
           isolatedColonyData(event, "pace_provider_scales_action_cycle"));
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_provider_composes_with_worker_speed"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderComposesWithWorkerSpeed),
+          isolatedColonyData(event, "pace_provider_composes_with_worker_speed"));
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_default_provider_unchanged"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceDefaultProviderUnchanged),
           isolatedColonyData(event, "pace_default_provider_unchanged"));
@@ -652,6 +661,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               info -> new MinecoloniesGameTestInstance(info, test),
               isolatedColonyData(event, name));
         }
+        registerWorkerEfficiency(event);
         // C2 builder collaboration observability and controls (one glob: minecolonies:collab_obs_*).
         for (final String name : new String[] {"collab_obs_view", "collab_obs_cap", "collab_obs_pin", "collab_obs_pin_new", "collab_obs_refusals"})
         {
@@ -858,6 +868,40 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_old_save"),
           info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::oldSaveLoadsWithDefaults),
           isolatedColonyData(event, "rs_prio_old_save"));
+    }
+
+    /**
+     * L3 worker efficiency tests. Run on their own with {@code JAVA_TOOL_OPTIONS=-Dminecolonies.gametest.only=worker_eff}.
+     */
+    private void registerWorkerEfficiency(final RegisterGameTestsEvent event)
+    {
+        for (final String name : new String[] {"worker_eff_bench_place_l1", "worker_eff_bench_place_l40", "worker_eff_bench_clear_l1", "worker_eff_bench_clear_l40",
+          "worker_eff_stuck_shaft", "worker_eff_stuck_no_tool", "worker_eff_stuck_unloaded", "worker_eff_stuck_floating",
+          "worker_eff_set_bench_place_l40_plain", "worker_eff_set_bench_place_l1_plain", "worker_eff_set_bench_clear_l40_plain", "worker_eff_set_bench_place_l40_max",
+          "worker_eff_set_abstract_walking", "worker_eff_set_walk_speed"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "worker_eff_bench_place_l1" -> WorkerEfficiencyGameTests::benchPlaceL1;
+                case "worker_eff_bench_place_l40" -> WorkerEfficiencyGameTests::benchPlaceL40;
+                case "worker_eff_bench_clear_l1" -> WorkerEfficiencyGameTests::benchClearL1;
+                case "worker_eff_bench_clear_l40" -> WorkerEfficiencyGameTests::benchClearL40;
+                case "worker_eff_stuck_shaft" -> WorkerEfficiencyGameTests::stuckInShaft;
+                case "worker_eff_stuck_no_tool" -> WorkerEfficiencyGameTests::noToolForStone;
+                case "worker_eff_stuck_unloaded" -> WorkerEfficiencyGameTests::unloadedTargetKeepsCitizen;
+                case "worker_eff_stuck_floating" -> WorkerEfficiencyGameTests::floatingBlockDoesNotHang;
+                case "worker_eff_set_bench_place_l40_plain" -> WorkerSettingsGameTests::benchPlaceL40Plain;
+                case "worker_eff_set_bench_place_l1_plain" -> WorkerSettingsGameTests::benchPlaceL1Plain;
+                case "worker_eff_set_bench_clear_l40_plain" -> WorkerSettingsGameTests::benchClearL40Plain;
+                case "worker_eff_set_bench_place_l40_max" -> WorkerSettingsGameTests::benchPlaceL40Max;
+                case "worker_eff_set_abstract_walking" -> WorkerSettingsGameTests::abstractWalkingRelocates;
+                default -> WorkerSettingsGameTests::walkSpeedCalibration;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
     }
 
     /**

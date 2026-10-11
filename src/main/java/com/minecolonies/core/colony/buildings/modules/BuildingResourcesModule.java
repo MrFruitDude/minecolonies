@@ -39,6 +39,12 @@ import static com.minecolonies.api.util.constant.NbtTagConstants.TAG_TOTAL_STAGE
 public class BuildingResourcesModule extends AbstractBuildingModule implements IPersistentModule
 {
     /**
+     * Inventory slots of the builder a bucket of materials leaves free: the five tools and a spare. (It used to be 9, so a bucket held 18 stacks of
+     * a 27 slot inventory; now 21: fewer trips to the hut per structure.)
+     */
+    public static final int BUCKET_RESERVED_SLOTS = 6;
+
+    /**
      * Contains all resources needed for a certain build.
      */
     private Map<String, BuildingBuilderResource> neededResources = new LinkedHashMap<>();
@@ -222,7 +228,7 @@ public class BuildingResourcesModule extends AbstractBuildingModule implements I
         final int stacks = (int) Math.ceil((double) amount / res.getMaxStackSize());
         // Nobody may be assigned yet (a new builder hut, or the builder was fired): size the bucket for a default inventory.
         final Iterator<ICitizenData> builders = building.getAllAssignedCitizen().iterator();
-        final int max = (builders.hasNext() ? builders.next().getInventory().getSlots() : InventoryCitizen.DEFAULT_INV_SIZE) - 9;
+        final int max = (builders.hasNext() ? builders.next().getInventory().getSlots() : InventoryCitizen.DEFAULT_INV_SIZE) - BUCKET_RESERVED_SLOTS;
 
         if (last == null || last.getTotalStacks() >= max || last.getTotalStacks() + stacks >= max)
         {

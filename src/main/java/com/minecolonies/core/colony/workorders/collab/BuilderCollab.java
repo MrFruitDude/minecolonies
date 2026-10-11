@@ -84,14 +84,7 @@ public final class BuilderCollab
         {
             return override;
         }
-        try
-        {
-            return MinecoloniesAPIProxy.getInstance().getConfig().getServer().builderFastClear.get();
-        }
-        catch (final RuntimeException e)
-        {
-            return false;
-        }
+        return com.minecolonies.core.entity.ai.workers.util.WorkerSettings.fastClear();
     }
 
     public static boolean enabled()
