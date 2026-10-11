@@ -510,7 +510,19 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 {
                     walk.noSpotSince = now;
                 }
-                scaffold.note("no spot for " + target + (mayScaffold ? "" : " (scaffold work)") + " builder at " + worker.blockPosition());
+                if (!mayScaffold)
+                {
+                    final List<ReachSpots.Spot> all = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(), null, 200, inBlocks, false);
+                    final long walkable = all.stream().filter(sp -> canWalkTo(sp.feet())).count();
+                    final long accepted = all.stream().filter(sp -> canWalkTo(sp.feet()) && (accept == null || accept.test(sp.feet()))).count();
+                    final long notBad = all.stream().filter(sp -> canWalkTo(sp.feet()) && (accept == null || accept.test(sp.feet())) && !walk.bad.contains(sp.feet())).count();
+                    scaffold.note("no spot for " + target + " (scaffold work) builder at " + worker.blockPosition() + " candidates=" + all.size() + " walkable=" + walkable + " accepted=" + accepted + " notBad=" + notBad
+                                    + " bad=" + walk.bad + " first=" + (all.isEmpty() ? "-" : all.get(0).feet().toShortString()));
+                }
+                else
+                {
+                    scaffold.note("no spot for " + target + " builder at " + worker.blockPosition());
+                }
                 if (mayScaffold)
                 {
                     tryScaffold(target);
