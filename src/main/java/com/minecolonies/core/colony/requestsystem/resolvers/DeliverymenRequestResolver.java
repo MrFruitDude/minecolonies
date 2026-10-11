@@ -24,6 +24,7 @@ import com.minecolonies.core.colony.storage.StorageNetwork;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -109,15 +110,8 @@ public abstract class DeliverymenRequestResolver<R extends IRequestable> extends
     @Nullable
     private static IWareHouse sourceWarehouse(@NotNull final Colony colony, @NotNull final Delivery delivery)
     {
-        final var start = delivery.getStart().getInDimensionLocation();
-        for (final IWareHouse candidate : colony.getServerBuildingManager().getWareHouses())
-        {
-            if (candidate.hasContainerPosition(start))
-            {
-                return candidate;
-            }
-        }
-        return null;
+        final BlockPos owner = ColonyStorage.of(colony).owningWarehouse(delivery.getStart().getInDimensionLocation());
+        return owner == null ? null : colony.getServerBuildingManager().getBuilding(owner, IWareHouse.class);
     }
 
     /**

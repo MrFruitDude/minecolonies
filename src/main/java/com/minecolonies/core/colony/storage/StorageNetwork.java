@@ -63,7 +63,7 @@ public final class StorageNetwork
     {
         for (final IWareHouse home : colony.getServerBuildingManager().getWareHouses())
         {
-            if (!home.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen().isEmpty() && inRange(home.getID(), warehouse.getID()))
+            if (home.getModule(BuildingModules.WAREHOUSE_COURIERS).getFirstCitizen() != null && inRange(home.getID(), warehouse.getID()))
             {
                 return true;
             }
@@ -79,7 +79,7 @@ public final class StorageNetwork
     {
         for (final IWareHouse home : colony.getServerBuildingManager().getWareHouses())
         {
-            if (!home.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen().isEmpty())
+            if (home.getModule(BuildingModules.WAREHOUSE_COURIERS).getFirstCitizen() != null)
             {
                 return true;
             }

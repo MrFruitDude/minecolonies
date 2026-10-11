@@ -464,9 +464,11 @@ public final class ColonyStorage implements IColonyStorage, StockSink
     @Nullable
     public BlockPos owningWarehouse(@NotNull final BlockPos position)
     {
+        final Level world = colony.getWorld();
         for (final IWareHouse wareHouse : colony.getServerBuildingManager().getWareHouses())
         {
-            if (wareHouse.hasContainerPosition(position))
+            if (wareHouse.getID().equals(position) || (wareHouse instanceof final BuildingWareHouse building && world != null ? building.getRackIndex().holds(world, position)
+                                                          : wareHouse.hasContainerPosition(position)))
             {
                 return wareHouse.getID();
             }

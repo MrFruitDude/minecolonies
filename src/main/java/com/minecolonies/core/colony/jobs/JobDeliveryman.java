@@ -296,12 +296,20 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
     }
 
     /**
+     * The courier's position and home while a task is chosen (read once, not per task); null otherwise.
+     */
+    @Nullable
+    private BlockPos scoringHere;
+    @Nullable
+    private IWareHouse scoringHome;
+
+    /**
      * Storage network: how long the task takes this courier from where it stands, in seconds: the walk to the pickup, the
      * wait at the source warehouse's ramps, the handling, the walk to the destination.
      */
     private int estimateSeconds(final IRequest<?> req)
     {
-        final BlockPos here = courierPosition();
+        final BlockPos here = scoringHere != null ? scoringHere : courierPosition();
         final ColonyStorage storage = ColonyStorage.of(getColony());
         final BlockPos target = getTarget(req);
         if (req.getRequest() instanceof final Delivery delivery)
@@ -314,7 +322,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             return (DispatchCost.travelTicks(here, start) + DispatchCost.queueTicks(building == null ? 1 : building.getBuildingLevel(), queued) + DispatchCost.handlingTicks(items)
                       + DispatchCost.travelTicks(start, target) + DispatchCost.handlingTicks(items)) / 20;
         }
-        final IWareHouse home = findWareHouse();
+        final IWareHouse home = scoringHome != null ? scoringHome : findWareHouse();
         return (DispatchCost.travelTicks(here, target) + DispatchCost.handlingTicks(64) + (home == null ? 0 : DispatchCost.travelTicks(target, home.getID()))) / 20;
     }
 
@@ -419,6 +427,25 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             adoptOrphanQueues(queues);
         }
 
+        if (network)
+        {
+            scoringHere = courierPosition();
+            scoringHome = (IWareHouse) wareHouse;
+        }
+        try
+        {
+            return chooseTask(queues);
+        }
+        finally
+        {
+            scoringHere = null;
+            scoringHome = null;
+        }
+    }
+
+    @SuppressWarnings(UNCHECKED)
+    private IRequest<IDeliverymanRequestable> chooseTask(final List<WarehouseRequestQueueModule> queues)
+    {
         int totalTasks = 0;
         for (final WarehouseRequestQueueModule queue : queues)
         {

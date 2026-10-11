@@ -85,6 +85,7 @@ public final class WarehouseRackIndex
     private int     validatedEpoch;
 
     private BlockPos[]       positions = new BlockPos[0];
+    private final Set<BlockPos> positionSet = new HashSet<>();
     private boolean[]        loaded    = new boolean[0];
     private BlockEntity[]    entities  = new BlockEntity[0];
     private TileEntityRack[] racks     = new TileEntityRack[0];
@@ -127,6 +128,17 @@ public final class WarehouseRackIndex
     public WarehouseStock stock()
     {
         return stock;
+    }
+
+    /**
+     * @param world the world.
+     * @param pos   a position.
+     * @return true when the position is one of the building's containers (as of the last snapshot, brought up to date first).
+     */
+    public boolean holds(@NotNull final Level world, @NotNull final BlockPos pos)
+    {
+        ensure(world);
+        return positionSet.contains(pos);
     }
 
     /**
@@ -219,6 +231,7 @@ public final class WarehouseRackIndex
         racks = new TileEntityRack[0];
         entities = new BlockEntity[0];
         positions = new BlockPos[0];
+        positionSet.clear();
         loaded = new boolean[0];
         rackItems = newItemSets(0);
         itemRacks.clear();
@@ -342,6 +355,8 @@ public final class WarehouseRackIndex
 
         final TileEntityRack[] oldRacks = racks;
         positions = containers.toArray(new BlockPos[0]);
+        positionSet.clear();
+        positionSet.addAll(containers);
         loaded = new boolean[size];
         entities = new BlockEntity[size];
         racks = new TileEntityRack[size];
