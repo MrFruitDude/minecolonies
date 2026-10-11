@@ -143,6 +143,11 @@ public class StandardRequestManager implements IStandardRequestManager
     private static final long HANDOUT_MAX_AGE = 24_000L;
 
     /**
+     * Ticks after which a claim of a helping builder that nobody renewed or ended is dropped (a helper gathers for 1800 ticks at most).
+     */
+    private static final long ASSIST_MAX_AGE = 6_000L;
+
+    /**
      * Request-system ticks (11 game ticks each) between two sweeps of the ledger.
      */
     private static final int SWEEP_INTERVAL = 100;
@@ -763,6 +768,7 @@ public class StandardRequestManager implements IStandardRequestManager
             return request != null && request.getState() != RequestState.CANCELLED && request.getState() != RequestState.FAILED;
         }, now);
         dropped += reservationLedger.sweepStaleHandouts(now, HANDOUT_MAX_AGE);
+        dropped += reservationLedger.sweepStaleAssists(now, ASSIST_MAX_AGE);
         if (dropped > 0)
         {
             log("Dropped " + dropped + " orphaned reservations");

@@ -9,6 +9,7 @@ import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.ItemStackUtils;
 import com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder;
+import com.minecolonies.core.colony.workorders.collab.AssistReservations;
 import com.minecolonies.core.colony.workorders.collab.BuilderCollab;
 import com.minecolonies.core.colony.workorders.collab.WorkOrderCollab;
 import com.minecolonies.core.entity.ai.workers.util.BuilderStageRules;
@@ -614,6 +615,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         }
         batch.clear();
         assistMine = null;
+        // the stock claimed for the positions is no one's again
+        AssistReservations.releaseAll(building, false);
     }
 
     private void ensureHandler(final IBuilderWorkOrder order, final AbstractBuildingStructureBuilder lead, final BuildingProgressStage stage)
@@ -706,7 +709,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             final Map<ItemStorage, Integer> stockMemo = new HashMap<>();
             final int room = (int) Math.max(1, InventoryUtils.openSlotCount(worker.getInventoryCitizen()) - MIN_OPEN_SLOTS);
             final List<LeaseAllocator.Planned> plan = LeaseAllocator.plan(world, order, stage, assistHandler, assistPlacer, BuilderCollab.leaseSize(), LEAD_BUFFER,
-              key -> stockMemo.computeIfAbsent(key, k -> InventoryUtils.getItemCountInItemHandler(lead.getItemHandlerCap(), sameAs(k.getItemStack()))
+              key -> stockMemo.computeIfAbsent(key, k -> Math.max(0, InventoryUtils.getItemCountInItemHandler(lead.getItemHandlerCap(), sameAs(k.getItemStack()))
+                                                                    - AssistReservations.heldByOthers(lead, building, k.getItemStack()))
                                                       + leadCarried(lead, k.getItemStack())
                                                       + InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), sameAs(k.getItemStack()))), room);
             if (plan.isEmpty())
@@ -728,10 +732,27 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             if (!planned.required().isEmpty())
             {
+                reserveBatchStock(lead);
                 return ASSIST_GATHER;
             }
         }
         return ASSIST_WORK;
+    }
+
+    /**
+     * Claims in the ledger the stock of the lead's hut that the batch needs and the helper does not have yet, as far as nobody else
+     * claimed it: from now on the lead's other requests and the other helpers see it as taken. (A no-op without reservations.)
+     */
+    private void reserveBatchStock(final AbstractBuildingStructureBuilder lead)
+    {
+        AssistReservations.releaseAll(building, true);
+        final long now = world.getGameTime();
+        for (final Map.Entry<ItemStorage, Integer> missing : missingForBatch().entrySet())
+        {
+            final ItemStack kind = missing.getKey().getItemStack();
+            final int inHut = InventoryUtils.getItemCountInItemHandler(lead.getItemHandlerCap(), sameAs(kind)) - AssistReservations.heldByOthers(lead, building, kind);
+            AssistReservations.reserve(building, lead, kind, Math.min(missing.getValue(), inHut), now);
+        }
     }
 
     /**
@@ -781,7 +802,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         return missing;
     }
 
-    private void takeFrom(final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler source, final AbstractBuildingStructureBuilder lead, final Map<ItemStorage, Integer> missing)
+    private void takeFrom(final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler source, final AbstractBuildingStructureBuilder lead, final Map<ItemStorage, Integer> missing,
+      final boolean fromHut)
     {
         if (source == null)
         {
@@ -790,8 +812,18 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         for (final Map.Entry<ItemStorage, Integer> need : missing.entrySet())
         {
             final ItemStack kind = need.getKey().getItemStack();
-            final int taken = ItemMover.move(source, worker.getInventoryCitizen(), sameAs(kind), need.getValue());
+            int wanted = need.getValue();
+            if (fromHut)
+            {
+                // what the ledger holds in the hut for others (requests that were handed items, other helpers) is not for this helper
+                wanted = Math.min(wanted, Math.max(0, InventoryUtils.getItemCountInItemHandler(source, sameAs(kind)) - AssistReservations.heldByOthers(lead, building, kind)));
+            }
+            final int taken = wanted <= 0 ? 0 : ItemMover.move(source, worker.getInventoryCitizen(), sameAs(kind), wanted);
             building.addCarry(lead.getID(), kind, taken);
+            if (fromHut)
+            {
+                AssistReservations.commit(building, lead, kind, taken, world.getGameTime());
+            }
         }
     }
 
@@ -814,7 +846,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             {
                 return getState();
             }
-            takeFrom(lead.getItemHandlerCap(), lead, missingForBatch());
+            takeFrom(lead.getItemHandlerCap(), lead, missingForBatch(), true);
             if (!missingForBatch().isEmpty())
             {
                 gatherFromLead = true;
@@ -831,11 +863,13 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 {
                     return getState();
                 }
-                takeFrom(leadCitizen.getInventory(), lead, missingForBatch());
+                takeFrom(leadCitizen.getInventory(), lead, missingForBatch(), false);
             }
         }
         gatherFromLead = false;
         gatherSteps = 0;
+        // what is taken is taken: what was claimed and not taken is free again
+        AssistReservations.releaseAll(building, false);
 
         // positions the stock did not cover go back to the lead
         final Map<ItemStorage, Integer> available = new HashMap<>();

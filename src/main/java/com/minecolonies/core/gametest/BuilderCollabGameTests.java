@@ -24,6 +24,19 @@ import com.minecolonies.core.colony.workorders.WorkOrderDecoration;
 import com.minecolonies.core.colony.workorders.collab.BuilderCollab;
 import com.minecolonies.core.colony.workorders.collab.WorkOrderCollab;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
+import com.minecolonies.api.colony.buildings.IBuilding;
+import com.minecolonies.api.colony.requestsystem.request.IRequest;
+import com.minecolonies.api.colony.requestsystem.request.RequestState;
+import com.minecolonies.api.colony.requestsystem.requestable.Stack;
+import com.minecolonies.api.colony.requestsystem.token.IToken;
+import com.minecolonies.core.colony.requestsystem.RsFlags;
+import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
+import com.minecolonies.core.colony.requestsystem.management.manager.StandardRequestManager;
+import com.minecolonies.core.colony.requestsystem.reservation.LedgerEvent;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationReason;
+import com.minecolonies.core.colony.workorders.collab.AssistReservations;
+import com.minecolonies.core.util.ItemMover;
 import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -42,6 +55,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import static com.ldtteam.structurize.placement.AbstractBlueprintIterator.NULL_POS;
@@ -828,5 +842,214 @@ public final class BuilderCollabGameTests
         {
             BuilderCollab.overrideFastClearForTests(null);
         }
+    }
+
+    // ------------------------------------------------------------------ builder collaboration on the reservation ledger (RS1)
+
+    private static final Predicate<ItemStack> BRICKS = stack -> stack.is(BUILD_ITEM);
+
+    private static int inHut(final IBuilding hut)
+    {
+        return InventoryUtils.getItemCountInItemHandler(hut.getItemHandlerCap(), BRICKS);
+    }
+
+    /**
+     * Every brick in the colony: the warehouse racks, every hut and every citizen's inventory.
+     */
+    private static int bricksEverywhere(final IColony colony, final RsFixture f)
+    {
+        int n = f == null ? 0 : f.physical(BRICKS);
+        for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
+        {
+            if (building != (f == null ? null : f.warehouse) && building.getItemHandlerCap() != null)
+            {
+                n += inHut(building);
+            }
+        }
+        for (final ICitizenData citizen : colony.getCitizenManager().getCitizens())
+        {
+            n += InventoryUtils.getItemCountInItemHandler(citizen.getInventory(), BRICKS);
+        }
+        return n;
+    }
+
+    /**
+     * The ledger and the helpers, without any AI: the claims of two helpers and of a request on one hut's stock add up exactly, a helper
+     * never gets what is held for someone else, a claim ends with the take (partly) or the release, a claim without a request behind it
+     * is not swept as an orphan but ages out, the new lead of an order does not take over what is held in the old hut, and with
+     * reservations off none of it does anything.
+     */
+    public static void assistClaimsOnTheLedger(final GameTestHelper helper)
+    {
+        RsFlags.overrideReservations(true);
+        try
+        {
+            final BuilderWorkOrderGameTests.Fx f = BuilderWorkOrderGameTests.fixture(helper, "C1 assist ledger", true);
+            final BuildingBuilder lead = f.a();
+            final BuildingBuilder h1 = f.b();
+            final BuildingBuilder h2 = (BuildingBuilder) MinecoloniesGameTests.placeProductionBuilding(helper, f.colony(), ModBlocks.blockHutBuilder, new BlockPos(24, 1, 2),
+              "fundamentals/builder1.blueprint");
+            final IStandardRequestManager manager = (IStandardRequestManager) f.colony().getRequestManager();
+            final ReservationLedger ledger = manager.getReservationLedger();
+            final ItemStack kind = new ItemStack(BUILD_ITEM);
+            final ItemStorage key = new ItemStorage(kind);
+            final long now = f.level().getGameTime();
+
+            // the lead's own request is handed 24 bricks from the hut (the order's materials); then 40 more arrive
+            helper.assertTrue(InventoryUtils.forceItemStackToItemHandler(lead.getItemHandlerCap(), new ItemStack(BUILD_ITEM, 24), s -> true).isEmpty(), "no room in the lead's hut");
+            final IToken<?> own = lead.createRequest(f.ca(), new Stack(new ItemStack(BUILD_ITEM, 24), 24, 24), false);
+            helper.assertTrue(ledger.reservedStock(lead.getID(), key) == 24, "the request is handed 24 bricks and holds them: " + ledger.all());
+            helper.assertTrue(InventoryUtils.forceItemStackToItemHandler(lead.getItemHandlerCap(), new ItemStack(BUILD_ITEM, 40), s -> true).isEmpty(), "no room in the lead's hut");
+            helper.assertTrue(AssistReservations.heldByOthers(lead, h1, kind) == 0, "the lead's own request holds stock the helper may use: " + AssistReservations.heldByOthers(lead, h1, kind));
+
+            // another hut has a request that the lead's hut promised 16 bricks to
+            final IToken<?> rival = h2.createRequest(new Stack(new ItemStack(BUILD_ITEM, 16), 16, 16), false);
+            helper.assertTrue(f.colony().getRequestManager().getRequestForToken(rival) != null, "fixture: no rival request");
+            ledger.reserveStock(lead.getID(), null, key, 16, rival, "rival", ReservationReason.BUILDING_HANDOUT, now);
+
+            // helper 1 sees 48 free, claims them; helper 2 sees none
+            helper.assertTrue(AssistReservations.heldByOthers(lead, h1, kind) == 16, "helper 1 sees what the rival holds: " + AssistReservations.heldByOthers(lead, h1, kind));
+            final int free1 = Math.max(0, inHut(lead) - AssistReservations.heldByOthers(lead, h1, kind));
+            helper.assertTrue(free1 == 48, "helper 1 may take 48, not " + free1);
+            helper.assertTrue(AssistReservations.reserve(h1, lead, kind, free1, now) == 48, "helper 1 could not claim 48");
+            final int free2 = Math.max(0, inHut(lead) - AssistReservations.heldByOthers(lead, h2, kind));
+            helper.assertTrue(free2 == 0, "helper 2 may take " + free2 + " although everything is held");
+            helper.assertTrue(ledger.reservedStock(lead.getID(), key) == 88, "own 24 + rival 16 + helper 48 = 88 held: " + ledger.all());
+            helper.assertTrue(ledger.available(lead.getID(), key, inHut(lead)) == 0, "nothing is available");
+
+            // the lead's next request finds nothing to be handed: the helper's and the rival's bricks are not its own
+            final IToken<?> second = lead.createRequest(f.ca(), new Stack(new ItemStack(BUILD_ITEM, 10), 10, 10), false);
+            final IRequest<?> secondRequest = f.colony().getRequestManager().getRequestForToken(second);
+            helper.assertTrue(secondRequest != null && secondRequest.getDeliveries().stream().mapToInt(ItemStack::getCount).sum() == 0,
+              "the lead's hut handed out bricks that are held: " + (secondRequest == null ? null : secondRequest.getDeliveries()));
+
+            // helper 1 takes his 40: the claim becomes a physical change
+            helper.assertTrue(ItemMover.move(lead.getItemHandlerCap(), h1.getItemHandlerCap(), BRICKS, 48) == 48, "helper 1 could not move 48");
+            AssistReservations.commit(h1, lead, kind, 48, now);
+            helper.assertTrue(ledger.reservedStock(lead.getID(), key) == 40, "after the take only the requests hold bricks: " + ledger.all());
+            helper.assertTrue(ledger.history(BRICKS).stream().anyMatch(e -> e.op() == LedgerEvent.Op.COMMIT && e.reason() == ReservationReason.BUILD_ASSIST && e.amount() == 48),
+              "the history does not show the helper's take");
+            helper.assertTrue(inHut(lead) == 16 && inHut(h1) == 48, "bricks lost in the take: " + inHut(lead) + " + " + inHut(h1));
+
+            // a claim without a request is not an orphan of the request sweep, but a forgotten one ages out
+            AssistReservations.reserve(h1, lead, kind, 8, now);
+            ((StandardRequestManager) manager).sweepReservations();
+            helper.assertTrue(ledger.reservedStock(lead.getID(), key) == 48, "the sweep of orphaned requests dropped a helper's claim: " + ledger.all());
+            helper.assertTrue(ledger.sweepStaleAssists(now + 100, 6000) == 0, "a fresh claim aged out");
+            helper.assertTrue(ledger.sweepStaleAssists(now + 7000, 6000) == 1, "a forgotten claim did not age out");
+            helper.assertTrue(ledger.reservedStock(lead.getID(), key) == 40, "only the requests hold bricks after the claim aged out: " + ledger.all());
+
+            // claim and give back: free again
+            AssistReservations.reserve(h2, lead, kind, 5, now);
+            AssistReservations.releaseAll(h2, false);
+            helper.assertTrue(ledger.reservedStock(lead.getID(), key) == 40, "released claim still held: " + ledger.all());
+
+            // the lead's order changes: the new lead takes the old hut's spare bricks, but not those held for others
+            final WorkOrderDecoration order = BuilderWorkOrderGameTests.order(f, "assist-takeover", new BlockPos(30, 1, 10), 0);
+            BuilderWorkOrderGameTests.claim(h1, order);
+            order.getCollab().setPreviousLead(lead.getID());
+            final int before = inHut(lead) + inHut(h1);
+            helper.assertTrue(inHut(lead) == 16, "fixture: the old hut holds " + inHut(lead));
+            helper.assertTrue(h1.takeOverMaterials(kind, 100) == 0, "the new lead took bricks that are promised to the rival request");
+            helper.assertTrue(inHut(lead) == 16 && inHut(lead) + inHut(h1) == before, "bricks moved or lost: " + inHut(lead) + " + " + inHut(h1));
+
+            // the rival request is gone: its bricks are no one's, but a helper of the old order holds 10 of them
+            f.colony().getRequestManager().updateRequestState(rival, RequestState.CANCELLED);
+            helper.assertTrue(ledger.reservedStock(lead.getID(), key) == 24, "cancelled: only the lead's own request holds bricks: " + ledger.all());
+            AssistReservations.reserve(h2, lead, kind, 10, now);
+            final int moved = h1.takeOverMaterials(kind, 100);
+            helper.assertTrue(moved == 6, "the new lead should take the 6 bricks nobody holds, took " + moved);
+            helper.assertTrue(inHut(lead) == 10 && inHut(lead) + inHut(h1) == before, "bricks moved or lost: " + inHut(lead) + " + " + inHut(h1));
+            AssistReservations.releaseAll(h2, false);
+            helper.assertTrue(h1.takeOverMaterials(kind, 100) == 10 && inHut(lead) == 0 && inHut(h1) == 64, "with nothing held the rest moves: " + inHut(lead) + " + " + inHut(h1));
+
+            // the lead's own request is received: nothing is held at all
+            f.colony().getRequestManager().updateRequestState(own, RequestState.RECEIVED);
+            helper.assertTrue(ledger.reservedStock(lead.getID(), key) == 0, "received: nothing held any more: " + ledger.all());
+
+            // reservations off: no claims, nothing held
+            RsFlags.overrideReservations(false);
+            helper.assertTrue(AssistReservations.reserve(h1, lead, kind, 5, now) == 0, "a claim was made with reservations off");
+            helper.assertTrue(AssistReservations.heldByOthers(lead, h2, kind) == 0, "something is held with reservations off");
+            helper.succeed();
+        }
+        finally
+        {
+            RsFlags.overrideReservations(null);
+        }
+    }
+
+    /**
+     * The whole thing with the request system: the warehouse holds exactly the bricks of a 12x12 floor plus 24 that a rival request
+     * (another hut) asks for at the same time as the lead's hut asks for the floor's materials; two builders build the floor, a courier
+     * carries. Every position is placed once, the floor is complete, the rival gets its 24, and not a single brick is gained or lost.
+     * The helper's claims show in the ledger's history and none is left.
+     */
+    public static void helperAndRivalRequestShareTheWarehouse(final GameTestHelper helper)
+    {
+        RsFlags.overrideReservations(true);
+        RsFlags.overrideSmartRetry(true);
+        BuilderCollab.overrideForTests(true, 3, 10_000, 10, 100_000, 8, 2400);
+        final int rivalWants = 24;
+        final RsFixture f = RsFixture.found(helper, "C1 rs rival", 8);
+        final Live live = new Live(helper);
+        live.colony = f.colony;
+        live.a = (BuildingBuilder) f.builder;
+        live.b = (BuildingBuilder) f.place(ModBlocks.blockHutBuilder, new BlockPos(24, 1, 2), "fundamentals/builder1.blueprint");
+        final IBuilding deliveryman = f.place(ModBlocks.blockHutDeliveryman, new BlockPos(32, 1, 2), "craftsmanship/storage/deliveryman1.blueprint");
+        final IBuilding rival = f.place(ModBlocks.blockHutLumberjack, new BlockPos(8, 1, 24), "fundamentals/lumberjack1.blueprint");
+        forceArea(live.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(60, 1, 36)));
+
+        helper.runAfterDelay(200, () -> {
+            forceArea(live.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(60, 1, 36)));
+            live.ca = f.spawn(new BlockPos(10, 1, 8), false);
+            live.cb = f.spawn(new BlockPos(26, 1, 8), false);
+            final ICitizenData courier = f.spawn(new BlockPos(34, 1, 8), false);
+            helper.assertTrue(live.a.getModule(BuildingModules.BUILDER_WORK).assignCitizen(live.ca), "builder A not assigned");
+            helper.assertTrue(live.b.getModule(BuildingModules.BUILDER_WORK).assignCitizen(live.cb), "builder B not assigned");
+            helper.assertTrue(deliveryman.getModule(BuildingModules.COURIER_WORK).assignCitizen(courier), "courier not assigned to the courier hut");
+            helper.assertTrue(f.warehouse.getModule(BuildingModules.WAREHOUSE_COURIERS).assignCitizen(courier), "courier not assigned to the warehouse");
+            live.ca.getEntity().ifPresent(e -> e.setPos(live.a.getID().getX() + 0.5D, live.a.getID().getY(), live.a.getID().getZ() + 0.5D));
+            live.cb.getEntity().ifPresent(e -> e.setPos(live.b.getID().getX() + 0.5D, live.b.getID().getY(), live.b.getID().getZ() + 0.5D));
+            courier.getEntity().ifPresent(e -> e.setPos(deliveryman.getID().getX() + 0.5D, deliveryman.getID().getY(), deliveryman.getID().getZ() + 0.5D));
+            BuilderCollab.placementProbe = (pos, hut) -> live.placements.computeIfAbsent(pos, p -> new ArrayList<>()).add(hut);
+
+            final int total = SIZE * SIZE + rivalWants;
+            for (int left = total, rack = 0; left > 0; rack++)
+            {
+                final int n = Math.min(left, 64 * 4);
+                f.stock(rack % f.racks.size(), new ItemStack(BUILD_ITEM, n));
+                left -= n;
+            }
+            helper.assertTrue(f.physical(BRICKS) == total, "fixture: the warehouse holds " + f.physical(BRICKS) + " bricks, not " + total);
+            helper.assertTrue(bricksEverywhere(f.colony, f) == total, "fixture: bricks in the colony " + bricksEverywhere(f.colony, f));
+
+            final WorkOrderDecoration order = live.order("rival", new BlockPos(36, 1, 12), BUILD_BLOCK, SIZE, live.a);
+            final IToken<?> rivalRequest = rival.createRequest(new Stack(new ItemStack(BUILD_ITEM, rivalWants), rivalWants, rivalWants), false);
+            final int[] lastReport = {0};
+            poll(live, 45_000, () -> {
+                final int everywhere = bricksEverywhere(f.colony, f);
+                helper.assertTrue(everywhere <= total, "bricks appeared: " + everywhere + " > " + total);
+                return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && idle(live) && inHut(rival) >= rivalWants;
+            }, () -> {
+                helper.assertTrue(floorBuilt(live, order, BUILD_BLOCK, SIZE), "floor not complete");
+                checkPlacedOnce(live, order, SIZE, true);
+                final int everywhere = bricksEverywhere(f.colony, f);
+                helper.assertTrue(everywhere == rivalWants, "bricks not conserved: " + everywhere + " left of " + total + " after " + SIZE * SIZE + " were placed, expected " + rivalWants);
+                helper.assertTrue(inHut(rival) == rivalWants, "the rival request got " + inHut(rival) + " bricks, not " + rivalWants);
+                final ReservationLedger ledger = f.ledger();
+                helper.assertTrue(ledger.whoHolds(s -> true).stream().noneMatch(r -> r.reason() == ReservationReason.BUILD_ASSIST), "a helper's claim is left: " + ledger.all());
+                final List<LedgerEvent> events = ledger.history(BRICKS);
+                helper.assertTrue(events.stream().anyMatch(e -> e.op() == LedgerEvent.Op.RESERVE && e.reason() == ReservationReason.BUILD_ASSIST),
+                  "the helper never claimed bricks in the ledger (" + events.size() + " events)");
+                helper.assertTrue(events.stream().anyMatch(e -> e.op() == LedgerEvent.Op.COMMIT && e.reason() == ReservationReason.BUILD_ASSIST),
+                  "the helper never took claimed bricks (" + events.size() + " events)");
+                Log.getLogger().info("C1 rs rival: ledger events={} rival request {}", events.size(), f.describe(rivalRequest));
+                RsFlags.overrideReservations(null);
+                RsFlags.overrideSmartRetry(null);
+                finish(live);
+            }, () -> describe(live, order) + " everywhere=" + bricksEverywhere(f.colony, f) + " warehouse=" + f.physical(BRICKS) + " rival=" + inHut(rival)
+                       + " rivalRequest=" + f.describe(rivalRequest) + " ledger=" + f.ledger().all());
+        });
     }
 }

@@ -103,6 +103,9 @@ public final class LeaseAllocator
 
         int toLeaveToLead = fresh ? leadBuffer : 0;
         BlockPos lastVisited = fresh ? null : start;
+        // where the scan has to resume from because a position was passed over for lack of stock (it is not leased, the scan must come back)
+        BlockPos resumeFrom = null;
+        boolean passedOverForStock = false;
         final Map<ItemStorage, Integer> accumulated = new HashMap<>();
         int examined = 0;
         boolean exhausted = false;
@@ -122,6 +125,7 @@ public final class LeaseAllocator
 
             final BlockPos local = iterator.getProgressPos();
             final BlockPos worldPos = handler.getProgressPosInWorld(local);
+            final BlockPos before = lastVisited;
             lastVisited = local;
             if (toLeaveToLead > 0)
             {
@@ -132,6 +136,11 @@ public final class LeaseAllocator
             final List<ItemStack> required = placing ? requirements(world, placer, handler, local, worldPos) : List.of();
             if (!fits(accumulated, required, stock, stackBudget))
             {
+                if (!passedOverForStock)
+                {
+                    passedOverForStock = true;
+                    resumeFrom = before;
+                }
                 continue;
             }
             for (final ItemStack stack : required)
@@ -141,6 +150,13 @@ public final class LeaseAllocator
             planned.add(new Planned(local, worldPos, required));
         }
 
+        if (passedOverForStock)
+        {
+            // The positions that did not fit are still open: the scan is not over, and picks them up again when the stock has grown.
+            // (Without this a helper that looks while the materials are still on their way would never get anything to do.)
+            exhausted = false;
+            lastVisited = resumeFrom;
+        }
         collab.setScanExhausted(exhausted);
         collab.setScanCursor(exhausted ? null : lastVisited);
         return planned;

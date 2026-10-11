@@ -186,6 +186,57 @@ public final class ReservationLedger
     }
 
     /**
+     * Part of the stock claimed by a token left the source: the claim shrinks by that amount (and is dropped when it is used up).
+     * Not reported as freed, nothing became available.
+     *
+     * @param token  the request token.
+     * @param scope  the building holding the stock.
+     * @param key    the item.
+     * @param amount how many items left.
+     * @param tick   the game time.
+     * @return the amount committed (less than asked when the token claimed less).
+     */
+    public int commitStock(@NotNull final IToken<?> token, @NotNull final BlockPos scope, @NotNull final ItemStorage key, final int amount, final long tick)
+    {
+        final List<Reservation> mine = byToken.get(token);
+        if (mine == null || amount <= 0)
+        {
+            return 0;
+        }
+        final ItemStorage stored = normalized(key);
+        int left = amount;
+        for (final Iterator<Reservation> it = mine.iterator(); it.hasNext() && left > 0; )
+        {
+            final Reservation reservation = it.next();
+            if (reservation.kind() != ReservationKind.STOCK || !reservation.scope().equals(scope) || !reservation.key().equals(stored))
+            {
+                continue;
+            }
+            final int used = Math.min(left, reservation.amount());
+            left -= used;
+            record(tick, LedgerEvent.Op.COMMIT, reservation, used);
+            if (used == reservation.amount())
+            {
+                it.remove();
+                unindex(reservation);
+            }
+            else
+            {
+                reservation.setAmount(reservation.amount() - used);
+            }
+        }
+        if (mine.isEmpty())
+        {
+            byToken.remove(token);
+        }
+        if (left != amount)
+        {
+            revision++;
+        }
+        return amount - left;
+    }
+
+    /**
      * Ends every claim of a token without a physical change.
      *
      * @param token the request token.
@@ -307,11 +358,66 @@ public final class ReservationLedger
         int dropped = 0;
         for (final IToken<?> token : new ArrayList<>(byToken.keySet()))
         {
-            if (!alive.test(token))
+            if (!alive.test(token) && !isAssistOnly(byToken.get(token)))
             {
                 final List<Reservation> mine = byToken.get(token);
                 dropped += mine == null ? 0 : mine.size();
                 end(token, null, tick, LedgerEvent.Op.ORPHAN, true, r -> true);
+            }
+        }
+        return dropped;
+    }
+
+    /**
+     * Claims of helping builders have no request behind them: they are not orphans of the request sweep, see {@link #sweepStaleAssists}.
+     */
+    private static boolean isAssistOnly(@Nullable final List<Reservation> claims)
+    {
+        if (claims == null || claims.isEmpty())
+        {
+            return false;
+        }
+        for (final Reservation reservation : claims)
+        {
+            if (reservation.reason() != ReservationReason.BUILD_ASSIST)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Self-healing: drops the claims of helping builders that were not renewed or ended for {@code maxAge} ticks (the helper
+     * vanished, his colony part unloaded, the world was reloaded in the middle of it).
+     *
+     * @param tick   the game time.
+     * @param maxAge the age in ticks after which such a claim is dropped.
+     * @return the number of tokens whose claims were dropped.
+     */
+    public int sweepStaleAssists(final long tick, final long maxAge)
+    {
+        int dropped = 0;
+        for (final IToken<?> token : new ArrayList<>(byToken.keySet()))
+        {
+            final List<Reservation> mine = byToken.get(token);
+            if (mine == null)
+            {
+                continue;
+            }
+            boolean stale = false;
+            for (final Reservation reservation : mine)
+            {
+                if (reservation.reason() == ReservationReason.BUILD_ASSIST && tick - reservation.tick() > maxAge)
+                {
+                    stale = true;
+                    break;
+                }
+            }
+            if (stale)
+            {
+                end(token, null, tick, LedgerEvent.Op.ORPHAN, true, r -> r.reason() == ReservationReason.BUILD_ASSIST && tick - r.tick() > maxAge);
+                dropped++;
             }
         }
         return dropped;
@@ -385,6 +491,30 @@ public final class ReservationLedger
         for (final Reservation reservation : list)
         {
             if (!excluded.equals(reservation.token()) && predicate.test(reservation.key().getItemStack()))
+            {
+                total += reservation.amount();
+            }
+        }
+        return total;
+    }
+
+    /**
+     * @param scope  the building.
+     * @param items  which items.
+     * @param counts which claims count.
+     * @return the stock reserved at the building for items matching the predicate by the claims that pass the filter.
+     */
+    public int reservedStockWhere(@NotNull final BlockPos scope, @NotNull final Predicate<ItemStack> items, @NotNull final Predicate<Reservation> counts)
+    {
+        final List<Reservation> list = stockByScope.get(scope);
+        if (list == null)
+        {
+            return 0;
+        }
+        int total = 0;
+        for (final Reservation reservation : list)
+        {
+            if (counts.test(reservation) && items.test(reservation.key().getItemStack()))
             {
                 total += reservation.amount();
             }

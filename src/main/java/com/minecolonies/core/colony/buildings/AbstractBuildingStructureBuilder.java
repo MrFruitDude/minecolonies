@@ -18,6 +18,7 @@ import com.minecolonies.core.colony.buildings.modules.BuildingResourcesModule;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.buildings.utils.BuilderBucket;
 import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource;
+import com.minecolonies.core.colony.workorders.collab.AssistReservations;
 import com.minecolonies.core.colony.workorders.collab.WorkOrderCollab;
 import com.minecolonies.core.util.ItemMover;
 import com.minecolonies.core.colony.jobs.AbstractJobStructure;
@@ -621,6 +622,8 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
         {
             spare -= stillNeeded.getAmount();
         }
+        // stock the ledger holds in the old hut for other requests (items handed to a requester, items a helper is about to take) stays
+        spare -= AssistReservations.held(old, stack);
         if (spare <= 0)
         {
             return 0;
