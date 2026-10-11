@@ -5,6 +5,7 @@ import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.client.render.modeltype.registry.IModelTypeRegistry;
 import com.minecolonies.api.colony.ICitizenDataManager;
 import com.minecolonies.api.colony.IColonyManager;
+import com.minecolonies.api.colony.ICitizenLeisureProvider;
 import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildingextensions.registry.BuildingExtensionRegistries.BuildingExtensionEntry;
 import com.minecolonies.api.colony.buildings.registry.BuildingEntry;
@@ -108,6 +109,7 @@ public class CommonMinecoloniesAPIImpl implements IMinecoloniesAPI
      * Colony pace provider; another mod may replace it. Volatile: set from mod setup, read on the server thread.
      */
     private volatile IColonyPaceProvider colonyPaceProvider = IColonyPaceProvider.DEFAULT;
+    private volatile ICitizenLeisureProvider citizenLeisureProvider = ICitizenLeisureProvider.DEFAULT;
 
     @Override
     @NotNull
@@ -352,6 +354,19 @@ public class CommonMinecoloniesAPIImpl implements IMinecoloniesAPI
     public void setColonyPaceProvider(final IColonyPaceProvider provider)
     {
         this.colonyPaceProvider = provider == null ? IColonyPaceProvider.DEFAULT : provider;
+    }
+
+    @Override
+    @NotNull
+    public ICitizenLeisureProvider getCitizenLeisureProvider()
+    {
+        return citizenLeisureProvider;
+    }
+
+    @Override
+    public void setCitizenLeisureProvider(final ICitizenLeisureProvider provider)
+    {
+        this.citizenLeisureProvider = provider == null ? ICitizenLeisureProvider.DEFAULT : provider;
     }
 }
 
