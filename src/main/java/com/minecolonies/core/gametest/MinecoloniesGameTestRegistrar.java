@@ -928,7 +928,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     {
         for (final String name : new String[] {"scaffold_reach_box_l40", "scaffold_reach_box_l1", "scaffold_reach_clear_l40", "scaffold_legacy_box_l40", "scaffold_legacy_box_l1",
           "scaffold_tall_wall8", "scaffold_tall_tower14", "scaffold_sealed_roof", "scaffold_overhang", "scaffold_tall_tower14_legacy", "scaffold_tall_wall8_legacy",
-          "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held", "scaffold_bridge", "scaffold_probe_top1", "scaffold_probe_top3", "scaffold_probe_top8", "scaffold_probe_inside5", "scaffold_stock_arrives"})
+          "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held", "scaffold_bridge", "scaffold_probe_wall5", "scaffold_probe_top1", "scaffold_probe_top3", "scaffold_probe_top8", "scaffold_probe_inside5", "scaffold_stock_arrives"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -951,6 +951,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_lava" -> BuilderScaffoldGameTests::impossibleOverLava;
                 case "scaffold_held" -> BuilderScaffoldGameTests::positionUnderScaffolding;
                 case "scaffold_bridge" -> BuilderScaffoldGameTests::bridgeOverTrench;
+                case "scaffold_probe_wall5" -> BuilderScaffoldGameTests::climbWall5;
                 case "scaffold_probe_top1" -> BuilderScaffoldGameTests::climbTop1;
                 case "scaffold_probe_top3" -> BuilderScaffoldGameTests::climbTop3;
                 case "scaffold_probe_top8" -> BuilderScaffoldGameTests::climbTop8;

@@ -773,8 +773,24 @@ final class BuilderScaffoldGameTests
      */
     static void climbProbe(final GameTestHelper helper, final String name, final int height, final boolean standOnTop)
     {
+        climbProbe(helper, name, height, standOnTop, false);
+    }
+
+    static void climbProbe(final GameTestHelper helper, final String name, final int height, final boolean standOnTop, final boolean wall)
+    {
         WorkerEfficiencyGameTests.scene(helper, "WSCAF probe " + name, live -> {
             final BlockPos site = helper.absolutePos(SITE);
+            if (wall)
+            {
+                // a wall right next to the tower, 9 high and 5 wide
+                for (int x = 1; x <= 5; x++)
+                {
+                    for (int y = 0; y < 9; y++)
+                    {
+                        live.level.setBlock(site.offset(x, y, 1), WorkerEfficiencyGameTests.BUILD_BLOCK.defaultBlockState(), 3);
+                    }
+                }
+            }
             for (int y = 0; y < height; y++)
             {
                 live.level.setBlock(site.offset(3, y, 0), Blocks.SCAFFOLDING.defaultBlockState().setValue(net.minecraft.world.level.block.ScaffoldingBlock.DISTANCE, 0), 3);
@@ -812,6 +828,11 @@ final class BuilderScaffoldGameTests
     public static void climbTop1(final GameTestHelper helper)
     {
         climbProbe(helper, "top1", 1, true);
+    }
+
+    public static void climbWall5(final GameTestHelper helper)
+    {
+        climbProbe(helper, "wall5", 5, true, true);
     }
 
     public static void climbTop3(final GameTestHelper helper)
