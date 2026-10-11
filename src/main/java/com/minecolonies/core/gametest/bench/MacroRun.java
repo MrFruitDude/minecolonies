@@ -330,8 +330,24 @@ public final class MacroRun
     /**
      * @return false when the run has ended.
      */
+    /**
+     * Pathfinding runs on worker threads and its results are picked up whenever they are ready, so under machine load the
+     * same colony would see its paths a tick or two later than on an idle machine. Waiting (parked, so no CPU time is
+     * charged to the server thread) until the workers are idle before each tick makes every path arrive at the same tick.
+     */
+    private void awaitPathing()
+    {
+        final java.util.concurrent.ThreadPoolExecutor pool = com.minecolonies.core.entity.pathfinding.Pathfinding.getExecutor();
+        final long deadline = System.nanoTime() + 200_000_000L;
+        while ((!pool.getQueue().isEmpty() || pool.getActiveCount() > 0) && System.nanoTime() < deadline)
+        {
+            java.util.concurrent.locks.LockSupport.parkNanos(20_000L);
+        }
+    }
+
     private boolean oneTick()
     {
+        awaitPathing();
         final long cpuNow = ThreadCost.cpuNs();
         final long allocNow = ThreadCost.allocBytes();
         final long rsNow = RsProbe.totalCpuNs();

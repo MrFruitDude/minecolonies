@@ -198,7 +198,7 @@ public final class Scenarios
 
                 recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_LOG, 1)), new ItemStack(Items.OAK_PLANKS, 4), 1);
                 // The fence is made from planks the same sawmill makes from logs: a two-step chain inside one crafter.
-                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 2)), new ItemStack(Items.OAK_FENCE, 1), 2);
+                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 1)), new ItemStack(Items.OAK_FENCE, 1), 1);
                 recipe(mason, BuildingModules.STONEMASON_CRAFT, List.of(new ItemStack(Items.COBBLESTONE, 1)), new ItemStack(Items.STONE_BRICKS, 1), 1);
 
                 this.builder = builder;
@@ -389,7 +389,7 @@ public final class Scenarios
                 r.place(ModBlocks.blockHutMiner, 40, 28, "fundamentals/miner1.blueprint");
                 r.place(ModBlocks.blockHutFarmer, 50, 28, "agriculture/horticulture/farmer1.blueprint");
                 recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_LOG, 1)), new ItemStack(Items.OAK_PLANKS, 4), 1);
-                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 2)), new ItemStack(Items.OAK_FENCE, 1), 2);
+                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 1)), new ItemStack(Items.OAK_FENCE, 1), 1);
                 recipe(mason, BuildingModules.STONEMASON_CRAFT, List.of(new ItemStack(Items.COBBLESTONE, 1)), new ItemStack(Items.STONE_BRICKS, 1), 1);
                 final int small = quick ? 8 : 17;
                 for (int i = 0; i < small; i++)
@@ -500,7 +500,7 @@ public final class Scenarios
                 r.place(ModBlocks.blockHutMiner, 58, 34, "fundamentals/miner1.blueprint");
                 r.place(ModBlocks.blockHutFarmer, 66, 34, "agriculture/horticulture/farmer1.blueprint");
                 recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_LOG, 1)), new ItemStack(Items.OAK_PLANKS, 4), 1);
-                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 2)), new ItemStack(Items.OAK_FENCE, 1), 2);
+                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 1)), new ItemStack(Items.OAK_FENCE, 1), 1);
                 recipe(mason, BuildingModules.STONEMASON_CRAFT, List.of(new ItemStack(Items.COBBLESTONE, 1)), new ItemStack(Items.STONE_BRICKS, 1), 1);
                 for (int i = 0; i < requesters; i++)
                 {

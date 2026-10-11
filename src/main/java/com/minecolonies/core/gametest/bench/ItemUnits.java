@@ -18,7 +18,7 @@ import java.util.Set;
 
 /**
  * Item accounting for the conservation gate. Crafting turns items into other items, so conservation is checked in units
- * that every recipe the benchmark uses preserves (1 log = 4 planks = 8 units, 2 planks = 4 sticks, 1 cobblestone = 1 stone
+ * that every recipe the benchmark uses preserves (1 log = 4 planks = 8 units, 1 plank = 1 fence, 1 cobblestone = 1 stone
  * brick, 3 wheat = 1 bread): the sum over everything in the colony must equal what the scripted suppliers added minus what
  * the scripted sinks took. A duplicated item shows as a surplus, a lost one as a deficit.
  */
@@ -28,7 +28,7 @@ public final class ItemUnits
       Map.entry(Items.OAK_LOG, 8),
       Map.entry(Items.OAK_PLANKS, 2),
       Map.entry(Items.STICK, 1),
-      Map.entry(Items.OAK_FENCE, 4),
+      Map.entry(Items.OAK_FENCE, 2),
       Map.entry(Items.COBBLESTONE, 1),
       Map.entry(Items.STONE_BRICKS, 1),
       Map.entry(Items.WHEAT, 1),
