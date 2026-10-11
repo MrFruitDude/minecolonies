@@ -194,7 +194,7 @@ public final class MacroRun
     private final List<String> fallbackItems = new ArrayList<>();
     private int    unexpectedFallbacks;
     private final List<String> errors = new ArrayList<>();
-    /** Requests that never finished: reported, and tolerated up to a quarter of the repeats (the shipped system hangs now and then). */
+    /** Requests that never finished: a hang, which fails the run (no hang is tolerated). */
     private final List<String> liveness = new ArrayList<>();
     private final JsonObject   gates = new JsonObject();
     private final JsonObject   extra = new JsonObject();

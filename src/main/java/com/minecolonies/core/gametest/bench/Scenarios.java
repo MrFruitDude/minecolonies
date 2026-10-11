@@ -317,8 +317,17 @@ public final class Scenarios
     /** Positions of the many small buildings: two rows north of the colony core, within about 35 blocks of the warehouses. */
     static BlockPos ring(final int i)
     {
-        final int perRow = 8;
-        return new BlockPos(34 + 8 * (i % perRow), 1, 18 + 9 * (i / perRow));
+        final int perRow = 9;
+        final int row = i / perRow;
+        final int col = i % perRow;
+        final int z = switch (row)
+        {
+            case 0 -> 8;
+            case 1 -> 18;
+            case 2 -> 28;
+            default -> 36 + 10 * (row - 3);
+        };
+        return new BlockPos(10 + 10 * col, 1, z);
     }
 
     private static final String[][] CONSUMER_HUTS = {
@@ -573,7 +582,7 @@ public final class Scenarios
                 final int n = quick ? 2 : 4;
                 for (int k = 0; k < n; k++)
                 {
-                    orders.add(order(r, "storm" + k, 10, 62 + 3 * k, hutBlocks(10 + 2 * k, 6, 2 + k % 2, 0), 0));
+                    orders.add(order(r, "storm" + k, 10, 62 + 3 * k, hutBlocks(10 + 2 * k, 6, 2 + k % 2, 2), 0));
                 }
             }
 
