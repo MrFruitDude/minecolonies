@@ -31,6 +31,8 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
     @Override
     public Unit setup(final ServerLevel level)
     {
+        // Tests of the request-system redesign switch the flags in code; none may leak into the next test.
+        com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(null);
         deleteAllColonies(level);
         // A single run starts on a fresh world at sunrise; in a full batch the clock has run on through every earlier
         // batch and can land at night, when citizens without beds stop working. Start every colony test at sunrise too,
@@ -42,6 +44,7 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
     @Override
     public void teardown(final ServerLevel level, final Unit saveData)
     {
+        com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(null);
         deleteAllColonies(level);
     }
 

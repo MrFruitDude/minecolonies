@@ -586,6 +586,39 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_courier_scaling"),
           info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::courierTaskSelectionScales),
           isolatedColonyData(event, "rs_courier_scaling"));
+        // RS1: the reservation ledger.
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_ledger_algebra"),
+          info -> new MinecoloniesGameTestInstance(info, RequestReservationGameTests::ledgerAlgebra),
+          isolatedColonyData(event, "rs_ledger_algebra"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_reserve_compete"),
+          info -> new MinecoloniesGameTestInstance(info, RequestReservationGameTests::competingRequests),
+          isolatedColonyData(event, "rs_reserve_compete"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_reserve_compete_flag_off"),
+          info -> new MinecoloniesGameTestInstance(info, RequestReservationGameTests::competingRequestsFlagOff),
+          isolatedColonyData(event, "rs_reserve_compete_flag_off"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_reserve_cancel"),
+          info -> new MinecoloniesGameTestInstance(info, RequestReservationGameTests::cancelReleases),
+          isolatedColonyData(event, "rs_reserve_cancel"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_reserve_save_load"),
+          info -> new MinecoloniesGameTestInstance(info, RequestReservationGameTests::saveLoadKeepsReservations),
+          isolatedColonyData(event, "rs_reserve_save_load"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_reserve_sweep"),
+          info -> new MinecoloniesGameTestInstance(info, RequestReservationGameTests::sweepDropsOrphans),
+          isolatedColonyData(event, "rs_reserve_sweep"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_reserve_courier_commit"),
+          info -> new MinecoloniesGameTestInstance(info, RequestReservationGameTests::courierCommits),
+          isolatedColonyData(event, "rs_reserve_courier_commit"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_reserve_building_handout"),
+          info -> new MinecoloniesGameTestInstance(info, RequestReservationGameTests::buildingHandoutHeld),
+          isolatedColonyData(event, "rs_reserve_building_handout"));
     }
 
     /**
