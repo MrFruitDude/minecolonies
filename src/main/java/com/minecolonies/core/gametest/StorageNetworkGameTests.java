@@ -60,12 +60,12 @@ public final class StorageNetworkGameTests
     {
         final String[] names = {"index_tracks_racks", "available_reserve_aware", "capacity_and_full", "any_courier_serves_any_warehouse", "courier_locked_flag_off",
           "completion_time_beats_nearest", "request_splits_across_warehouses", "no_routing_to_unserved_warehouse", "dump_continues_past_full_rack", "dump_stops_flag_off",
-          "dump_goes_to_warehouse_with_room", "dump_stays_flag_off", "save_load_mid_delivery", "conservation", "full_storage_pickups_wait", "flag_flip_loses_nothing", "item_cap_stops_collection", "no_cap_collects"};
+          "dump_goes_to_warehouse_with_room", "dump_stays_flag_off", "save_load_mid_delivery", "conservation", "full_storage_pickups_wait", "flag_flip_loses_nothing", "item_cap_stops_collection", "no_cap_collects", "resolver_checks_are_cheap"};
         final java.util.List<java.util.function.Consumer<GameTestHelper>> bodies = List.of(StorageNetworkGameTests::indexTracksRacks, StorageNetworkGameTests::availableIsReserveAware,
           StorageNetworkGameTests::capacityAndFull, StorageNetworkGameTests::anyCourierServesAnyWarehouse, StorageNetworkGameTests::courierLockedFlagOff,
           StorageNetworkGameTests::completionTimeBeatsNearest, StorageNetworkGameTests::requestSplitsAcrossWarehouses, StorageNetworkGameTests::noRoutingToUnservedWarehouse,
           StorageNetworkGameTests::dumpContinuesPastFullRack, StorageNetworkGameTests::dumpStopsFlagOff, StorageNetworkGameTests::dumpGoesToWarehouseWithRoom,
-          StorageNetworkGameTests::dumpStaysFlagOff, StorageNetworkGameTests::saveLoadMidDelivery, StorageNetworkGameTests::conservation, StorageNetworkGameTests::fullStoragePickupsWait, StorageNetworkGameTests::flagFlipLosesNothing, StorageNetworkGameTests::itemCapStopsCollection, StorageNetworkGameTests::noCapCollects);
+          StorageNetworkGameTests::dumpStaysFlagOff, StorageNetworkGameTests::saveLoadMidDelivery, StorageNetworkGameTests::conservation, StorageNetworkGameTests::fullStoragePickupsWait, StorageNetworkGameTests::flagFlipLosesNothing, StorageNetworkGameTests::itemCapStopsCollection, StorageNetworkGameTests::noCapCollects, StorageNetworkGameTests::resolverChecksAreCheap);
         for (int i = 0; i < names.length; i++)
         {
             final String name = "storage_" + names[i];
@@ -846,5 +846,62 @@ public final class StorageNetworkGameTests
             helper.assertTrue(count(courier, COBBLE) == 20, "without a cap the courier collects the cobblestone: it carries " + count(courier, COBBLE));
         }
         helper.succeed();
+    }
+
+    private static long allocated()
+    {
+        return ((com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean()).getCurrentThreadAllocatedBytes();
+    }
+
+    /**
+     * A resolver's canResolveRequest runs for every request and every resolver; with the network on the delivery and pickup resolvers must
+     * stay cheap (no rack walk, no snapshot rebuild per call), in the same tick and from one tick to the next.
+     */
+    public static void resolverChecksAreCheap(final GameTestHelper helper)
+    {
+        RsFlags.overrideStorageNetwork(true);
+        final Net n = Net.found(helper, "storage-cheap", 12, 12);
+        n.stockA(0, new ItemStack(Items.OAK_LOG, 100));
+        n.stockB(0, new ItemStack(Items.OAK_LOG, 100));
+        n.quietCourier(n.a, new BlockPos(34, 1, 8));
+        final IToken<?> token = ask(n.f.builder, 8);
+        final List<Delivery> deliveries = deliveriesOf(n, token);
+        helper.assertTrue(!deliveries.isEmpty(), "fixture: a delivery exists");
+        final IRequest<?> delivery = n.f.request(n.f.request(token).getChildren().iterator().next());
+        final var resolvers = n.a.getResolvers();
+        final com.minecolonies.api.colony.requestsystem.resolver.IRequestResolver<?> deliveryResolver = resolvers.stream()
+          .filter(r -> r instanceof com.minecolonies.core.colony.requestsystem.resolvers.DeliveryRequestResolver).findFirst().orElseThrow();
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        final java.util.function.Supplier<Boolean> call = () -> ((com.minecolonies.api.colony.requestsystem.resolver.IRequestResolver) deliveryResolver).canResolveRequest(n.f.manager(), delivery);
+
+        for (int i = 0; i < 50; i++)
+        {
+            call.get();   // warm up
+        }
+        final long before = allocated();
+        for (int i = 0; i < 200; i++)
+        {
+            call.get();
+        }
+        final long perCall = (allocated() - before) / 200;
+        helper.assertTrue(perCall < 2048, "same tick: a canResolveRequest allocates " + perCall + " bytes");
+
+        final long[] total = {0};
+        final int[] ticks = {0};
+        final Runnable[] step = new Runnable[1];
+        step[0] = () -> {
+            final long b = allocated();
+            call.get();
+            total[0] += allocated() - b;
+            if (++ticks[0] < 30)
+            {
+                helper.runAfterDelay(1, () -> step[0].run());
+                return;
+            }
+            final long perTick = total[0] / ticks[0];
+            helper.assertTrue(perTick < 24 * 1024, "first call of a tick: " + perTick + " bytes");
+            helper.succeed();
+        };
+        helper.runAfterDelay(1, () -> step[0].run());
     }
 }
