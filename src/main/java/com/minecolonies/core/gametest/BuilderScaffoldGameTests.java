@@ -1000,14 +1000,20 @@ final class BuilderScaffoldGameTests
             final WorkOrderDecoration order = live.orderFor("pit", SITE, blueprint);
             final BlockPos origin = order.getLocation();
             final BlockPos bottom = pit.offset(1, -5, 1);
-            live.citizen.getEntity().ifPresent(e -> e.setPos(bottom.getX() + 0.5D, bottom.getY(), bottom.getZ() + 0.5D));
             final Watch watch = new Watch();
             final int[] doneTick = {0};
             final boolean[] out = {false};
+            final boolean[] fell = {false};
             WorkerEfficiencyGameTests.everyTick(live, 20_000, tick -> {
                 watch(live, watch, origin, 32, tick);
                 doneTick[0] = tick;
-                live.citizen.getEntity().ifPresent(e -> out[0] |= e.getY() >= site.getY() - 0.5D && e.position().distanceTo(Vec3.atCenterOf(pit)) < 8.0D);
+                if (!fell[0] && missing(live, blueprint, origin) < solidCount(blueprint) - 4)
+                {
+                    // he has started to build: now he falls into the pit
+                    fell[0] = true;
+                    live.citizen.getEntity().ifPresent(e -> e.setPos(bottom.getX() + 0.5D, bottom.getY(), bottom.getZ() + 0.5D));
+                }
+                if (fell[0]) { live.citizen.getEntity().ifPresent(e -> out[0] |= e.getY() >= site.getY() - 0.5D && e.position().distanceTo(Vec3.atCenterOf(pit)) < 8.0D); }
                 if (tick % 500 == 0)
                 {
                     Log.getLogger().info("WSCAF pit t={} out={} missing={} scaffold={} teleports={} {}", tick, out[0], missing(live, blueprint, origin), scaffoldInWorld(live, origin),

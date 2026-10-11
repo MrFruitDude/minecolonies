@@ -300,4 +300,35 @@ public class ScaffoldPlannerTest
         world.walkable = p -> false;
         assertNull(ScaffoldPlanner.plan(world, List.of(new BlockPos(0, 10, 0)), REACH, EYE, null, 32));
     }
+
+    @Test
+    public void oneTowerServesAWholeSlab()
+    {
+        // a wall of 8 and a slab on top of it, 9 by 5, still to be built: one tower under the middle serves most of it
+        final World world = new World().ground(EVERYWHERE);
+        for (int z = 0; z < 5; z++)
+        {
+            world.wall(0, z, 1, 8);
+        }
+        final List<BlockPos> slab = new java.util.ArrayList<>();
+        for (int x = 0; x < 9; x++)
+        {
+            for (int z = 0; z < 5; z++)
+            {
+                slab.add(new BlockPos(x, 9, z));
+            }
+        }
+        // the cells of the slab are the building's (a high penalty), the air under it is inside its volume (a small one)
+        for (int x = 0; x < 9; x++)
+        {
+            for (int z = 0; z < 5; z++)
+            {
+                world.costly.add(new BlockPos(x, 9, z));
+            }
+        }
+        final ScaffoldPlanner.Plan plan = ScaffoldPlanner.plan(world, slab, REACH, EYE, null, 32, true);
+        assertNotNull(plan);
+        System.out.println("SLAB PLAN " + plan);
+        assertTrue("serves most of the slab: " + plan.covered(), plan.covered() >= 25);
+    }
 }

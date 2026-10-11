@@ -93,6 +93,12 @@ public final class ScaffoldPlanner
     public static final double CELL_COST = 1.2D;
 
     /**
+     * What a tower on its own foot costs on top of its blocks: the walk to it, the climb, and the walk back to take it down. An arm or an extension of
+     * a tower that stands is cheaper than another tower.
+     */
+    public static final double NEW_TOWER_COST = 6.0D;
+
+    /**
      * Plans the scaffolding to reach the first of the blocks.
      *
      * @param grid      the world.
@@ -153,7 +159,8 @@ public final class ScaffoldPlanner
                         continue;
                     }
                     final int covered = anyOrder ? BuildReach.countInReach(feet.below(), eyeHeight, blocks, usable) : BuildReach.prefixInReach(feet.below(), eyeHeight, blocks, usable);
-                    final double cost = support.cells.size() * CELL_COST + support.penalty + penaltyOf(grid, feet) + penaltyOf(grid, head) - covered;
+                    final double cost = support.cells.size() * CELL_COST + support.penalty + penaltyOf(grid, feet) + penaltyOf(grid, head) - covered
+                                          + (!support.cells.isEmpty() && grid.ground(support.cells.get(0).below()) ? NEW_TOWER_COST : 0.0D);
                     if (best == null || cost < best.cost || (cost == best.cost && support.cells.size() < best.cells.size()))
                     {
                         best = new Plan(support.cells, feet, covered, cost);
