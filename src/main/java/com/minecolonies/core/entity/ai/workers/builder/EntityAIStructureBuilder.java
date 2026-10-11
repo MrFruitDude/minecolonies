@@ -301,12 +301,14 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         long since = 0L;
         final Set<BlockPos> bad = new HashSet<>();
         long noSpotUntil = 0L;
+        long noSpotSince = 0L;
 
         void reset()
         {
             spot = null;
             bad.clear();
             noSpotUntil = 0L;
+            noSpotSince = 0L;
         }
     }
 
@@ -433,6 +435,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 worker.getNavigation().stop();
                 walk.spot = null;
             }
+            walk.noSpotSince = 0L;
             workFrom = worker.blockPosition();
             prevBlockPosition = target;
             return true;
@@ -479,6 +482,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             {
                 // nothing to stand on within reach of the block: this is a job for scaffolding
                 walk.noSpotUntil = now + 20;
+                if (walk.noSpotSince == 0L)
+                {
+                    walk.noSpotSince = now;
+                }
                 scaffold.note("no spot for " + target + (mayScaffold ? "" : " (scaffold work)") + " builder at " + worker.blockPosition());
                 if (mayScaffold)
                 {
@@ -488,6 +495,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             }
             walk.spot = spots.get(0).feet();
             walk.since = now;
+            walk.noSpotSince = 0L;
             scaffold.note((walk == mainWalk ? "spot " : "scaffold spot ") + walk.spot + " for " + target + " covers " + spots.get(0).covered() + " walk " + String.format("%.1f", spots.get(0).walk()) + " builder at " + worker.blockPosition());
         }
 
@@ -517,6 +525,20 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
 
     // ------------------------------------------------------------------ scaffolding
+
+    @Override
+    protected boolean cannotReachAtAll(final BlockPos target)
+    {
+        // no spot for 40 ticks and no tower under way: nothing to wait for
+        return usesPhysicalReach() && mainWalk.noSpotSince != 0L && world.getGameTime() - mainWalk.noSpotSince >= 40L && !scaffold.busy();
+    }
+
+    @Override
+    protected void onRetryRound()
+    {
+        scaffold.clearDenial();
+        mainWalk.reset();
+    }
 
     @Override
     protected boolean tryScaffold(final BlockPos target)
@@ -1310,7 +1332,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         reachTarget = usesPhysicalReach() ? planned.world() : null;
         if (!walkToConstructionSite(planned.world()))
         {
-            if (escalateStuck(planned.world()) == WorkStuckTracker.Step.DEFER)
+            if ((usesPhysicalReach() && cannotReachAtAll(planned.world())) || escalateStuck(planned.world()) == WorkStuckTracker.Step.DEFER)
             {
                 // the helper cannot get there: the lead gets the position back, and the helper does not take it again
                 assistGaveUp.add(planned.world().immutable());

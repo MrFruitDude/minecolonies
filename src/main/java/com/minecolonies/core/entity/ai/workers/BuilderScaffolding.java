@@ -123,6 +123,14 @@ public final class BuilderScaffolding
         log(message);
     }
 
+    /**
+     * Another try at a tower is possible again (the items may have come).
+     */
+    public void clearDenial()
+    {
+        deniedUntil = 0L;
+    }
+
     public boolean busy()
     {
         return phase != Phase.IDLE;

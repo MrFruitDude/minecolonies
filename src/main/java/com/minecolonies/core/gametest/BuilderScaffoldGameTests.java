@@ -659,8 +659,10 @@ final class BuilderScaffoldGameTests
                 Log.getLogger().info("WSCAF noitems done at t={} missing={} towers={}", doneTick[0], missing(live, blueprint, origin), BuilderScaffolding.towersBuilt);
                 helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding without items: " + scaffoldInWorld(live, origin));
                 helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
-                // the rows out of reach were given up (or reached some other way), the rest is built
-                helper.assertTrue(missing(live, blueprint, origin) <= 16, "more than the top row missing: " + missing(live, blueprint, origin));
+                // the two rows out of reach were given up (no scaffolding, no other way up), the rest is built
+                helper.assertTrue(missing(live, blueprint, origin) <= 32, "more than the two top rows missing: " + missing(live, blueprint, origin));
+                helper.assertTrue(missing(live, blueprint, origin) > 0 || BuilderScaffolding.towersBuilt > 0, "the top rows were built without scaffolding: out of reach");
+                helper.assertTrue(doneTick[0] < 12_000, "the builder took too long to give up: " + doneTick[0]);
                 WorkerSettings.clearOverrides();
                 ReachAudit.enable(false);
                 helper.succeed();

@@ -563,6 +563,12 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         {
             // the worker cannot get to the block: wait for the walk, and climb the ladder out when it takes too long
             final BlockPos target = blockToMine != null ? blockToMine : worldPos;
+            if (reachTarget != null && cannotReachAtAll(target))
+            {
+                Log.getLogger().debug("{} gives up {}: no place to reach it from", worker.getName().getString(), target);
+                deferBlock(target);
+                return getState();
+            }
             if (escalateStuck(target) == WorkStuckTracker.Step.DEFER)
             {
                 deferBlock(blockToMine != null ? blockToMine : (reachGate ? worldPos : peekNextBlock()));
@@ -1065,6 +1071,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         if (!deferredBlocks.isEmpty() && retryRounds < 1)
         {
             retryRounds++;
+            onRetryRound();
             retryBlocks.addAll(deferredBlocks);
             deferredBlocks.clear();
             workFrom = null;
@@ -1268,6 +1275,13 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * The blocks that were given up on come again: whatever stopped the worker from trying (no scaffolding items) may be over.
+     */
+    protected void onRetryRound()
+    {
+    }
+
+    /**
      * The structure is reset (done, cancelled, released).
      */
     protected void onStructureReset()
@@ -1363,6 +1377,18 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return false;
         }
         return !IPlacementHandler.doesWorldStateMatchBlueprintState(new BlockInfo(local, wanted, handler.getBluePrint().getTileEntityData(worldPos, local)), worldPos, handler);
+    }
+
+    /**
+     * The worker has found no place to reach the block from for a while, and building a tower is no way out (no scaffolding, no room): there is
+     * no use in waiting for the unstuck ladder to run its course.
+     *
+     * @param target the block.
+     * @return true if the block should be given up for now.
+     */
+    protected boolean cannotReachAtAll(final BlockPos target)
+    {
+        return false;
     }
 
     /**
@@ -1714,7 +1740,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         reachTarget = usesPhysicalReach() ? blockToMine : null;
         if (!walkToConstructionSite(blockToMine))
         {
-            if (escalateStuck(blockToMine) == WorkStuckTracker.Step.DEFER)
+            if ((reachTarget != null && cannotReachAtAll(blockToMine)) || escalateStuck(blockToMine) == WorkStuckTracker.Step.DEFER)
             {
                 deferBlock(blockToMine);
                 return BUILDING_STEP;
