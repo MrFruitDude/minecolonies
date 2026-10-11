@@ -566,7 +566,8 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             if (reachTarget != null && cannotReachAtAll(target))
             {
                 Log.getLogger().debug("{} gives up {}: no place to reach it from", worker.getName().getString(), target);
-                deferBlock(target);
+                deferBlock(target, false);
+                escalateStuck(target);
                 return getState();
             }
             if (escalateStuck(target) == WorkStuckTracker.Step.DEFER)
@@ -1023,6 +1024,15 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     protected final void deferBlock(@Nullable final BlockPos worldPos)
     {
+        deferBlock(worldPos, true);
+    }
+
+    /**
+     * @param resetLadder whether the unstuck ladder starts again (a worker who gives up block after block because he is cut off keeps climbing it,
+     *                    so the teleport still comes).
+     */
+    protected final void deferBlock(@Nullable final BlockPos worldPos, final boolean resetLadder)
+    {
         if (worldPos != null)
         {
             final BlockPos pos = worldPos.immutable();
@@ -1043,7 +1053,10 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         workFrom = null;
         gotoPos = null;
         resetWalkTarget();
-        stuck.progress();
+        if (resetLadder)
+        {
+            stuck.progress();
+        }
         toolWaitTicks = 0;
     }
 
@@ -1740,7 +1753,13 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         reachTarget = usesPhysicalReach() ? blockToMine : null;
         if (!walkToConstructionSite(blockToMine))
         {
-            if ((reachTarget != null && cannotReachAtAll(blockToMine)) || escalateStuck(blockToMine) == WorkStuckTracker.Step.DEFER)
+            if (reachTarget != null && cannotReachAtAll(blockToMine))
+            {
+                deferBlock(blockToMine, false);
+                escalateStuck(blockToMine);
+                return BUILDING_STEP;
+            }
+            if (escalateStuck(blockToMine) == WorkStuckTracker.Step.DEFER)
             {
                 deferBlock(blockToMine);
                 return BUILDING_STEP;

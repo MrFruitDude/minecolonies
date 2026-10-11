@@ -530,7 +530,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     protected boolean cannotReachAtAll(final BlockPos target)
     {
         // no spot for 40 ticks and no tower under way: nothing to wait for
-        return usesPhysicalReach() && mainWalk.noSpotSince != 0L && world.getGameTime() - mainWalk.noSpotSince >= 40L && !scaffold.busy();
+        return usesPhysicalReach() && mainWalk.noSpotSince != 0L && world.getGameTime() - mainWalk.noSpotSince >= 40L && !scaffold.busy() && scaffold.denied();
     }
 
     @Override

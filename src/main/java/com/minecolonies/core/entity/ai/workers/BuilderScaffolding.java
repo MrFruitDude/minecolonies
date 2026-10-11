@@ -126,6 +126,11 @@ public final class BuilderScaffolding
     /**
      * Another try at a tower is possible again (the items may have come).
      */
+    public boolean denied()
+    {
+        return ai.world.getGameTime() < deniedUntil;
+    }
+
     public void clearDenial()
     {
         deniedUntil = 0L;
