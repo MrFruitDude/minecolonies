@@ -1038,6 +1038,13 @@ public final class MacroRun
         final BlockPos near = building.getID().offset(1, 0, 4);
         final BlockPos rel = near.subtract(helper.absolutePos(BlockPos.ZERO));
         final ICitizenData citizen = BenchBridge.spawnCitizen(helper, colony, rel, false);
+        // citizens are born with random skills, which sets how fast they work: the same hands for every repeat
+        for (final com.minecolonies.api.entity.citizen.Skill skill : com.minecolonies.api.entity.citizen.Skill.values())
+        {
+            final var data = citizen.getCitizenSkillHandler().getSkills().get(skill);
+            data.setLevel(8);
+            data.setExperience(0);
+        }
         helper.assertTrue(module.get().assignCitizen(citizen), "could not assign a worker to " + building.getSchematicName());
         citizen.getEntity().ifPresent(e -> {
             e.setPos(building.getID().getX() + 0.5D, building.getID().getY(), building.getID().getZ() + 0.5D);
