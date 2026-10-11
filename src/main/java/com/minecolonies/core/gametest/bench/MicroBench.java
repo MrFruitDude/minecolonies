@@ -90,8 +90,11 @@ public final class MicroBench
 
     private final Deque<Runnable> steps = new ArrayDeque<>();
 
-    private MicroBench(final GameTestHelper helper, final String testName, final int scale, final int rep, final boolean warmup)
+    private final java.util.function.Consumer<String> done;
+
+    private MicroBench(final GameTestHelper helper, final String testName, final int scale, final int rep, final boolean warmup, final java.util.function.Consumer<String> done)
     {
+        this.done = done;
         this.helper = helper;
         this.testName = testName;
         this.scale = scale;
@@ -100,9 +103,9 @@ public final class MicroBench
         this.rng = new Random(BenchEnv.seed() * 1_000_003L + scale);
     }
 
-    public static void run(final GameTestHelper helper, final String testName, final int scale, final int rep, final boolean warmup)
+    public static void run(final GameTestHelper helper, final String testName, final int scale, final int rep, final boolean warmup, final java.util.function.Consumer<String> done)
     {
-        new MicroBench(helper, testName, scale, rep, warmup).start();
+        new MicroBench(helper, testName, scale, rep, warmup, done).start();
     }
 
     // ------------------------------------------------------------------ driver
@@ -147,7 +150,7 @@ public final class MicroBench
         {
             StandardToken.seedForBenchmark(null);
             RsProbe.stop();
-            helper.fail("micro bench " + testName + " failed: " + t);
+            done.accept("micro bench " + testName + " failed: " + t);
             t.printStackTrace();
             return;
         }
@@ -350,7 +353,7 @@ public final class MicroBench
         final JsonObject gross = new JsonObject();
         gross.addProperty("events", events);
         gross.addProperty("cpuNs", (double) window / events);
-        gross.addProperty("netOfIdleTicksCpuNs", Math.max(0, (double) window / events - drain * idleTickCpu));
+        gross.addProperty("netOfIdleTicksCpuNs", (double) window / events - drain * idleTickCpu);
         gross.addProperty("allocB", (double) mark.allocBytes() / events);
         gross.addProperty("probeOverheadNs", (double) (b.overhead - a.overhead) / events);
         ops.add("stockEvent", gross);
@@ -373,7 +376,7 @@ public final class MicroBench
             manager.createAndAssignRequest(fx.warehouse.getRequester(), new Delivery(fx.warehouse.getLocation(), to.getLocation(), new ItemStack(Items.DIRT, 1), 13));
         }
         info.addProperty("courierQueue", queue.getMutableRequestList().size());
-        final int picks = 40;
+        final int picks = 100;
         final RsProbe.Snap a = RsProbe.snap();
         final ThreadCost.Mark mark = ThreadCost.mark();
         int got = 0;
@@ -404,7 +407,7 @@ public final class MicroBench
             if (request.getRequest() instanceof Delivery && request.getState() == RequestState.IN_PROGRESS && request.hasParent())
             {
                 deliveries.add(request);
-                if (deliveries.size() >= 60)
+                if (deliveries.size() >= 150)
                 {
                     break;
                 }
@@ -425,7 +428,7 @@ public final class MicroBench
 
     private void phaseCancel()
     {
-        final int cancels = Math.max(20, Math.min(200, scale / 20));
+        final int cancels = Math.max(60, Math.min(300, scale / 10));
         final List<IToken<?>> targets = new ArrayList<>();
         for (int i = 0; i < cancels && !open.isEmpty(); i++)
         {
@@ -617,13 +620,6 @@ public final class MicroBench
         out.add("errors", errors);
         BenchEnv.write(testName, out);
         final boolean bad = !errors.isEmpty() || gates.get("ledgerOrphans").getAsInt() != 0 || !gates.get("saveLoadIdentical").getAsBoolean();
-        if (bad)
-        {
-            helper.fail("micro bench gates failed: " + errors + " gates=" + gates);
-        }
-        else
-        {
-            helper.succeed();
-        }
+        done.accept(bad ? "micro bench " + testName + " gates failed: " + errors + " gates=" + gates : null);
     }
 }

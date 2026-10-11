@@ -210,8 +210,17 @@ public final class MacroRun
     private double  distanceAtDone;
     private long    deliveredItemsAtDone;
 
-    public MacroRun(final GameTestHelper helper, final String testName, final String scenarioName, final int rep, final boolean warmup, final Scenario scenario)
+    private final java.util.function.Consumer<String> done;
+
+    /**
+     * @param sharedPlayer the mock player of the enclosing test (created on the first run, reused by the following ones), may be null
+     * @param done         called once with null when the run passed all gates, else with the failure
+     */
+    public MacroRun(final GameTestHelper helper, final String testName, final String scenarioName, final int rep, final boolean warmup, final Scenario scenario,
+                    final ServerPlayer sharedPlayer, final java.util.function.Consumer<String> done)
     {
+        this.player = sharedPlayer;
+        this.done = done;
         this.helper = helper;
         this.level = helper.getLevel();
         this.testName = testName;
@@ -258,6 +267,11 @@ public final class MacroRun
             helper.runAfterDelay(100, () -> {
                 try
                 {
+                    // whatever an earlier run left lying in the plot is not ours
+                    for (final ItemEntity stray : level.getEntitiesOfClass(ItemEntity.class, plotBox()))
+                    {
+                        stray.discard();
+                    }
                     scenario.begin(this);
                 }
                 catch (final Throwable t)
@@ -287,7 +301,7 @@ public final class MacroRun
         {
             t.printStackTrace();
         }
-        helper.fail("macro bench " + testName + ": " + message);
+        done.accept("macro bench " + testName + ": " + message);
     }
 
     private void tickLoop()
@@ -961,14 +975,7 @@ public final class MacroRun
         StandardToken.seedForBenchmark(null);
         BenchEnv.write(testName, out);
         harnessCpuTotal += end.cpuNs();
-        if (errors.isEmpty())
-        {
-            helper.succeed();
-        }
-        else
-        {
-            helper.fail("macro bench gates failed: " + errors);
-        }
+        done.accept(errors.isEmpty() ? null : "macro bench " + testName + " gates failed: " + errors);
     }
 
     // ------------------------------------------------------------------ world building helpers (used by scenarios)
@@ -991,7 +998,10 @@ public final class MacroRun
             stray.discard();
         }
         colony = BenchBridge.foundColony(helper, name, townHallRel, minX, maxX, minZ, maxZ);
-        player = BenchBridge.connectedPlayer(helper);
+        if (player == null)
+        {
+            player = BenchBridge.connectedPlayer(helper);
+        }
         final BlockPos anchor = colony.getCenter();
         player.teleportTo(anchor.getX() + 0.5D, anchor.getY() + 1, anchor.getZ() + 0.5D);
         colony.getPackageManager().addCloseSubscriber(player);

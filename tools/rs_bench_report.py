@@ -42,7 +42,7 @@ MICRO_OPS = [
     ("create", "cpuNs"),
     ("assign", "cpuNs"),
     ("idleTick", "cpuNs"),
-    ("stockEvent", "netOfIdleTicksCpuNs"),
+    ("stockEvent", "cpuNs"),
     ("courierPick", "cpuNs"),
     ("complete", "cpuNs"),
     ("cancel", "cpuNs"),

@@ -63,7 +63,7 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         return CODEC;
     }
 
-    private static void deleteAllColonies(final ServerLevel level)
+    public static void deleteAllColonies(final ServerLevel level)
     {
         final IColonyManager manager = IColonyManager.getInstance();
         final List<Entity> citizens = new ArrayList<>();
