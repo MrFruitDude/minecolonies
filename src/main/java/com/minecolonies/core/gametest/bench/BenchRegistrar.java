@@ -59,14 +59,17 @@ public final class BenchRegistrar
 
     private static final net.minecraft.world.phys.AABB AABB_NONE = new net.minecraft.world.phys.AABB(0, 0, 0, 0, 0, 0);
 
+    /** Unmeasured repeats before the measured ones: the JIT is still compiling the request system during the first one. */
+    private static final int MACRO_WARMUPS = 2;
+
     private static void macro(final RegisterGameTestsEvent event, final String scenario, final int reps, final Supplier<MacroRun.Scenario> factory)
     {
         final String name = "rsb_" + scenario;
-        add(event, name, (reps + 1) * (factory.get().budget() + 15_000), helper -> {
+        add(event, name, (reps + MACRO_WARMUPS) * (factory.get().budget() + 15_000), helper -> {
             final MacroRun[] last = {null};
             final net.minecraft.server.level.ServerPlayer[] shared = {null};
-            RepeatRunner.run(helper, reps, () -> last[0] == null ? AABB_NONE : last[0].plotBox(), i -> (index, done) -> {
-                final MacroRun run = new MacroRun(helper, name + "_r" + index, scenario, index, index == 0, factory.get(), shared[0], failure -> {
+            RepeatRunner.run(helper, reps + MACRO_WARMUPS - 1, () -> last[0] == null ? AABB_NONE : last[0].plotBox(), i -> (index, done) -> {
+                final MacroRun run = new MacroRun(helper, name + "_r" + index, scenario, index, index < MACRO_WARMUPS, factory.get(), shared[0], failure -> {
                     shared[0] = last[0].player;
                     done.accept(failure);
                 });
