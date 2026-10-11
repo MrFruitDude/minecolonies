@@ -1526,7 +1526,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             final Set<BlockPos> connected = home == null ? null : StandSpots.reachableFrom(world, home, 40, 40000);
             List<ReachSpots.Spot> spots = ReachSpots.best(world, workAhead(target), WorkerSettings.reach(), worker.getEyeHeight(), worker.blockPosition(),
               connected == null ? null : p -> connected.contains(p), 1);
-            if (spots.isEmpty() && scaffoldUnavailable())
+            if (spots.isEmpty() && (scaffoldUnavailable() || retryBlocks.contains(target)))
             {
                 // no tower is possible: the last resort is any spot from which the block is in reach
                 spots = ReachSpots.best(world, workAhead(target), WorkerSettings.reach(), worker.getEyeHeight(), worker.blockPosition(), null, 1);
