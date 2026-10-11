@@ -858,6 +858,21 @@ public final class MacroRun
                 out.append(']');
             }
         }
+        final int[] ghosts = {0, 0};
+        for (final net.minecraft.world.entity.Entity e : level.getEntitiesOfClass(net.minecraft.world.entity.Entity.class, plotBox()))
+        {
+            if (e instanceof com.minecolonies.core.entity.citizen.EntityCitizen citizen)
+            {
+                ghosts[0]++;
+                if (citizen.getCitizenData() == null || citizens.stream().noneMatch(c -> c.getEntity().orElse(null) == citizen))
+                {
+                    ghosts[1]++;
+                }
+            }
+        }
+        out.append(" citizenEntitiesInPlot=").append(ghosts[0]).append(" notOurs=").append(ghosts[1]).append(" pathing[queued=").append(com.minecolonies.core.entity.pathfinding.Pathfinding.getExecutor().getQueue().size())
+          .append(" running=").append(com.minecolonies.core.entity.pathfinding.Pathfinding.Stats.running.get()).append(" submitted=").append(com.minecolonies.core.entity.pathfinding.Pathfinding.Stats.submitted.get())
+          .append(" rejected=").append(com.minecolonies.core.entity.pathfinding.Pathfinding.Stats.rejected.get()).append(']');
         final StringBuilder queues = new StringBuilder();
         for (final IBuilding wh : warehouses)
         {
