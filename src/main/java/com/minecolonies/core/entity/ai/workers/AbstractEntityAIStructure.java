@@ -1486,6 +1486,10 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         {
             return;
         }
+        if (this instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder && com.minecolonies.core.entity.ai.workers.util.ReachAudit.isEnabled())
+        {
+            Log.getLogger().info("SCAFFOLD {} teleports from {} to {} for {}", worker.getName().getString(), worker.blockPosition(), spot, target);
+        }
         puffAt(worker.position());
         worker.getNavigation().stop();
         worker.snapTo(spot.getX() + 0.5D, spot.getY(), spot.getZ() + 0.5D);

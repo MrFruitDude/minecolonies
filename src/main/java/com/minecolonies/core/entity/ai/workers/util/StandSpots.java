@@ -38,8 +38,9 @@ public final class StandSpots
         }
         final BlockPos floor = feet.below();
         final BlockState floorState = level.getBlockState(floor);
-        if (SurfaceType.getSurfaceType(level, floorState, floor) != SurfaceType.WALKABLE)
+        if (SurfaceType.getSurfaceType(level, floorState, floor) != SurfaceType.WALKABLE && !floorState.is(net.minecraft.world.level.block.Blocks.SCAFFOLDING))
         {
+            // (the top of a scaffolding block holds a citizen, the path planner climbs onto it)
             return false;
         }
         return isFree(level, feet) && isFree(level, feet.above());

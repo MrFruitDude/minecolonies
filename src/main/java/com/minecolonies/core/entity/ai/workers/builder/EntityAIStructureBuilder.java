@@ -454,6 +454,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             if (timedOut || !StandSpots.canStandAt(world, walk.spot) || !BuildReach.inReachFromFeet(walk.spot, worker.getEyeHeight(), target, margin)
                   || (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate nav && nav.isStuck()))
             {
+                scaffold.note("spot " + walk.spot + " for " + target + " does not work (timedOut=" + timedOut + ") builder at " + worker.blockPosition());
                 walk.bad.add(walk.spot);
                 walk.spot = null;
                 worker.getNavigation().stop();
@@ -478,6 +479,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             {
                 // nothing to stand on within reach of the block: this is a job for scaffolding
                 walk.noSpotUntil = now + 20;
+                scaffold.note("no spot for " + target + (mayScaffold ? "" : " (scaffold work)") + " builder at " + worker.blockPosition());
                 if (mayScaffold)
                 {
                     tryScaffold(target);
@@ -486,6 +488,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             }
             walk.spot = spots.get(0).feet();
             walk.since = now;
+            scaffold.note((walk == mainWalk ? "spot " : "scaffold spot ") + walk.spot + " for " + target + " covers " + spots.get(0).covered() + " walk " + String.format("%.1f", spots.get(0).walk()) + " builder at " + worker.blockPosition());
         }
 
         if (walk == mainWalk)

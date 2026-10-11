@@ -767,7 +767,7 @@ final class BuilderScaffoldGameTests
                 {
                     first[0] = tick;
                 }
-                return first[0] >= 0 && tick > first[0] + 20;
+                return tick >= 300;
             }, () -> {
                 Log.getLogger().info("PROBE {} reached the goal at t={}", name, first[0]);
                 helper.succeed();

@@ -115,6 +115,14 @@ public final class BuilderScaffolding
         }
     }
 
+    /**
+     * Log line for the tests (when the reach audit is on).
+     */
+    public void note(final String message)
+    {
+        log(message);
+    }
+
     public boolean busy()
     {
         return phase != Phase.IDLE;
@@ -286,6 +294,13 @@ public final class BuilderScaffolding
             return false;
         }
 
+        if (found.cells().isEmpty())
+        {
+            // the spot is there already, the builder just cannot get to it: a tower is no help
+            log("a spot " + found.stand() + " is there but cannot be reached");
+            deniedUntil = now + 200;
+            return false;
+        }
         plan = found;
         next = 0;
         towersBuilt++;
