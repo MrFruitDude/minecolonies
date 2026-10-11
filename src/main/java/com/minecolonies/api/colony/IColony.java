@@ -427,6 +427,31 @@ public interface IColony
     }
 
     /**
+     * Sets who decides whether a faction-owned colony simulates, in place of the players there are none of. See
+     * {@link ColonySimulationDriver}: while the driver {@linkplain ColonySimulationDriver#wantsActive() wants} the colony
+     * active and the chunks of its town hall are loaded, the colony is ACTIVE although no player is close or online; with
+     * {@link #setForceActive(boolean)} the colony also force loads its building chunks (bounded) and is ACTIVE while the
+     * driver wants it, with no manager online. It never simulates offline: nothing ticks while the chunks are unloaded.
+     * The state changes at once; later changes of {@code wantsActive()} are picked up at the next state check (100 ticks).
+     * The driver is not saved: the owner sets it again after a restart.
+     *
+     * @param driver the driver, null to remove it.
+     * @throws IllegalStateException if the colony is not faction-owned (a player colony is run by its players).
+     */
+    default void setSimulationDriver(@Nullable final ColonySimulationDriver driver)
+    {
+    }
+
+    /**
+     * @return the simulation driver of the colony, null if there is none.
+     */
+    @Nullable
+    default ColonySimulationDriver getSimulationDriver()
+    {
+        return null;
+    }
+
+    /**
      * When the colony was founded, as epoch milliseconds (strictly increasing between colonies created in one run).
      * 0 for a colony saved before this was recorded; those are older than any other. Used to find a player's oldest colony.
      *

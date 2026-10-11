@@ -358,6 +358,12 @@ public class Colony implements IColony
     private volatile boolean forceActive = false;
 
     /**
+     * Set by {@link #setSimulationDriver(ColonySimulationDriver)}. Not saved.
+     */
+    @Nullable
+    private volatile ColonySimulationDriver simulationDriver = null;
+
+    /**
      * The texture set of the colony.
      */
     private String textureStyle = "default";
@@ -473,13 +479,15 @@ public class Colony implements IColony
         }
         packageManager.updateAwayTime();
 
-        if (isForceActiveEffective() || !packageManager.getCloseSubscribers().isEmpty() || (loadedChunks.size() > 40 && !packageManager.getImportantColonyPlayers().isEmpty()))
+        final boolean driverWantsActive = driverWantsActive();
+        if (isForceActiveEffective() || !packageManager.getCloseSubscribers().isEmpty() || (loadedChunks.size() > 40 && !packageManager.getImportantColonyPlayers().isEmpty())
+              || (driverWantsActive && isTownHallChunkLoaded()))
         {
             isDirty = true;
             return ACTIVE;
         }
 
-        if (!packageManager.getImportantColonyPlayers().isEmpty() || forceLoadTimer > 0)
+        if (!packageManager.getImportantColonyPlayers().isEmpty() || forceLoadTimer > 0 || driverWantsActive)
         {
             isDirty = true;
             return UNLOADED;
@@ -2029,12 +2037,75 @@ public class Colony implements IColony
         return foundedTime;
     }
 
+    @Override
+    public void setSimulationDriver(@Nullable final ColonySimulationDriver driver)
+    {
+        if (driver != null && !permissions.isFactionOwned())
+        {
+            throw new IllegalStateException("Only a faction-owned colony has a simulation driver; colony " + id + " is run by its players");
+        }
+        if (this.simulationDriver == driver)
+        {
+            return;
+        }
+        this.simulationDriver = driver;
+        if (driver == null)
+        {
+            forceLoadTimer = Math.min(forceLoadTimer, MAX_TICKRATE);
+        }
+        else if (forceActive && isForceActiveEffective() && getConfig().getServer().forceLoadColony.get())
+        {
+            keepBuildingChunksLoaded();
+        }
+        refreshState();
+    }
+
+    @Override
+    @Nullable
+    public ColonySimulationDriver getSimulationDriver()
+    {
+        return simulationDriver;
+    }
+
     /**
-     * Force active only counts while a manager of the colony is online, so the flag can never simulate a colony nobody watches.
+     * @return true if a driver is set, the colony is faction-owned (a driver stops counting if a player takes the colony over)
+     * and the driver wants the colony to simulate.
+     */
+    private boolean driverWantsActive()
+    {
+        final ColonySimulationDriver driver = simulationDriver;
+        if (driver == null || world == null || !permissions.isFactionOwned())
+        {
+            return false;
+        }
+        try
+        {
+            return driver.wantsActive();
+        }
+        catch (final RuntimeException e)
+        {
+            Log.getLogger().warn("The simulation driver of colony {} threw, treating it as not wanting to simulate", id, e);
+            return false;
+        }
+    }
+
+    /**
+     * The driver only simulates what is loaded: the chunk of the town hall (of the center, without one) has to be loaded.
+     */
+    private boolean isTownHallChunkLoaded()
+    {
+        final IBuilding townHall = buildingManager.getTownHall();
+        final BlockPos at = townHall != null ? townHall.getPosition() : center;
+        return loadedChunks.containsKey(ChunkPos.containing(at).pack());
+    }
+
+    /**
+     * Force active only counts while a manager of the colony is online, or the simulation driver of a faction colony
+     * wants it to simulate, so the flag can never simulate a colony nobody watches or runs.
      */
     private boolean isForceActiveEffective()
     {
-        return forceActive && world != null && !packageManager.getImportantColonyPlayers().isEmpty();
+        return forceActive && world != null && (!packageManager.getImportantColonyPlayers().isEmpty() || driverWantsActive());
     }
 
     /**

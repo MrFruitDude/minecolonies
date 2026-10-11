@@ -491,7 +491,11 @@ public class ColonyPackageManager implements IColonyPackageManager
     {
         if (subscriber instanceof FakePlayer)
         {
-            Log.getLogger().warn("Adding fakeplayer as subscriber: this should not happen", new Exception());
+            // A faction colony's worker AI acts through a fake player; that is no subscriber, and no reason to complain.
+            if (!colony.getPermissions().isFactionOwned())
+            {
+                Log.getLogger().warn("Adding fakeplayer as subscriber: this should not happen", new Exception());
+            }
             return;
         }
 
@@ -518,7 +522,10 @@ public class ColonyPackageManager implements IColonyPackageManager
     {
         if (subscriber instanceof FakePlayer)
         {
-            Log.getLogger().warn("Adding fakeplayer as important subscriber: this should not happen", new Exception());
+            if (!colony.getPermissions().isFactionOwned())
+            {
+                Log.getLogger().warn("Adding fakeplayer as important subscriber: this should not happen", new Exception());
+            }
             return;
         }
 
