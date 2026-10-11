@@ -110,6 +110,11 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     private static final int[] UNREACHABLE_BACKOFF = {200, 600, 1200};
 
     /**
+     * Ticks new path jobs are refused after the entity asked twice in a row for a path into an unloaded area.
+     */
+    private static final int UNLOADED_TARGET_PAUSE = 200;
+
+    /**
      * A failed move-to path counts as progress when its end is more than this many blocks (manhattan) closer to the
      * destination than its start: walking it gets the entity closer, so the next try is a real retry.
      */
@@ -292,7 +297,8 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             return null;
         }
 
-        if (job instanceof PathJobMoveToLocation moveJob && isDestinationUnreachable(moveJob.getDestination()))
+        // CA-11, now for the "move close to X near Y" jobs of the builders as well: an unreachable target is not searched again and again
+        if (job instanceof IDestinationPathJob destinationJob && isDestinationUnreachable(destinationJob.getDestination()))
         {
             return null;
         }
@@ -308,11 +314,13 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             if (dest != null && !WorldUtil.isBlockLoaded(ourEntity.level(), dest) && pathResult.getJob() instanceof IDestinationPathJob destinationPathJob &&
                 !WorldUtil.isBlockLoaded(ourEntity.level(), destinationPathJob.getDestination()))
             {
+                // used to discard the citizen (a silent loss of a colonist whose work site was unloaded). He stays; the job is refused and new
+                // ones wait a while, so he is not searching paths into an unloaded area every tick.
                 if (!FMLEnvironment.isProduction())
                 {
-                    Log.getLogger().info("Unloaded citizen:" + ourEntity + " trying to path into unloaded position at: " + dest, new Exception());
+                    Log.getLogger().info("Citizen:" + ourEntity + " trying to path into unloaded position at: " + dest + ", waiting");
                 }
-                ourEntity.discard();
+                pauseTicks = UNLOADED_TARGET_PAUSE;
                 return null;
             }
 
@@ -777,12 +785,12 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
      */
     private void recordMoveToOutcome()
     {
-        if (!(pathResult.getJob() instanceof PathJobMoveToLocation moveJob) || pathResult.getPath() == null)
+        if (!(pathResult.getJob() instanceof IDestinationPathJob destinationJob) || pathResult.getPath() == null)
         {
             return;
         }
 
-        final BlockPos dest = moveJob.getDestination();
+        final BlockPos dest = destinationJob.getDestination();
         if (pathResult.isPathReachingDestination())
         {
             if (dest.equals(unreachableDest))
@@ -804,7 +812,7 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         }
         unreachableFails++;
 
-        final boolean progress = BlockPosUtil.distManhattan(moveJob.getStart(), dest) - BlockPosUtil.distManhattan(pathResult.getPath().getTarget(), dest)
+        final boolean progress = BlockPosUtil.distManhattan(pathResult.getJob().getStart(), dest) - BlockPosUtil.distManhattan(pathResult.getPath().getTarget(), dest)
                                    > UNREACHABLE_PROGRESS_DIST;
         if (unreachableFails >= 2 && !progress)
         {

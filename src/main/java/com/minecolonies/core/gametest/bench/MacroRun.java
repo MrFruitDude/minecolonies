@@ -247,6 +247,11 @@ public final class MacroRun
         RsFlags.overrideSmartRetry(flags);
         RsStats.reset();
         StandardToken.seedForBenchmark(seed);
+        if (BenchEnv.pinWorkers())
+        {
+            // 1.0 speed and real walking: the pace the request system is judged at does not move with the worker-efficiency settings
+            com.minecolonies.core.entity.ai.workers.util.WorkerSettings.overrideForTests(1.0D, 1.0D, null, com.minecolonies.api.colony.WorkerWalking.OFF, null, null);
+        }
         final double[] pair = RsProbe.calibrate(200_000);
         extra.addProperty("probePairCoarseNs", pair[0]);
         extra.addProperty("probePairFineNs", pair[1]);
@@ -302,6 +307,7 @@ public final class MacroRun
 
     private void abort(final String message, final Throwable t)
     {
+        com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
         RsProbe.stop();
         StandardToken.seedForBenchmark(null);
         if (t != null)
@@ -1003,6 +1009,7 @@ public final class MacroRun
         out.addProperty("warmup", warmup);
         out.addProperty("flags", BenchEnv.flagsOn() ? "on" : "off");
         out.addProperty("seed", seed);
+        out.addProperty("workersPinned", BenchEnv.pinWorkers());
         out.addProperty("ticksRun", tick);
         out.addProperty("ticksToCompletion", doneTick);
         out.addProperty("ticksToQuiesce", quiesceTick);
@@ -1113,6 +1120,7 @@ public final class MacroRun
 
         RsProbe.stop();
         StandardToken.seedForBenchmark(null);
+        com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
         BenchEnv.write(testName, out);
         harnessCpuTotal += end.cpuNs();
         done.accept(errors.isEmpty() ? null : "macro bench " + testName + " gates failed: " + errors);

@@ -21,6 +21,7 @@ import java.util.Set;
  * <li>{@code RS_BENCH_REPS=n}: measured repeats per test (default 5 for full, 2 for quick); one extra warm-up repeat precedes them.</li>
  * <li>{@code RS_BENCH_SEED=n}: seed of every random choice (default 117).</li>
  * <li>{@code RS_BENCH_FLAGS=on|off}: the RS reservation + smart-retry switches (default on, the shipped default).</li>
+ * <li>{@code RS_BENCH_WORKERS=pinned|default}: pin worker speed (1.0) and walking (always walk) for the macro scenarios (default pinned).</li>
  * <li>{@code RS_BENCH_OUT=dir}: where the per-test JSON files go (default {@code rs-bench} in the run directory).</li>
  * <li>{@code RS_BENCH_ONLY_TESTS=a,b}: restrict to tests whose name contains one of the words.</li>
  * </ul>
@@ -67,6 +68,15 @@ public final class BenchEnv
     public static boolean flagsOn()
     {
         return !"off".equalsIgnoreCase(get("RS_BENCH_FLAGS", "on"));
+    }
+
+    /**
+     * @return true (default) to pin the worker settings for the macro scenarios: speed 1.0, builder speed 1.0, workers always walk.
+     * {@code RS_BENCH_WORKERS=default} runs with the server's own settings.
+     */
+    public static boolean pinWorkers()
+    {
+        return !"default".equalsIgnoreCase(get("RS_BENCH_WORKERS", "pinned"));
     }
 
     public static Path outDir()
