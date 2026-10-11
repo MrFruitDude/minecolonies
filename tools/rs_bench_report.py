@@ -10,7 +10,7 @@ Run with `python3 -I`. Standard library only.
 
 SCORE (lower is better, 100 = the reference run the score reference file was made from):
 
-  per macro scenario s:   R_s = exp( sum_i w_i * ln(x_i / ref_i) )     (weighted geometric mean of component ratios)
+  per macro scenario s:   R_s = exp( sum_i w_i * ln(x_i / ref_i) )     (weighted geometric mean of component ratios; each component is the median over the measured repeats)
       components i (weight):  rsCpuNsPerTick (0.40)   mean server-thread CPU ns per tick spent inside the request system
                               ticksToCompletion (0.30) game ticks until the scenario's work is done
                               courierDistance (0.15)   blocks the couriers walked until then
@@ -193,7 +193,7 @@ def components(result):
     """The raw component values the score is made of."""
     comp = {"macro": {}, "micro": {}}
     for scenario, metrics in result["macro"].items():
-        comp["macro"][scenario] = {k: metrics[k]["mean"] for k, _ in MACRO_COMPONENTS if k in metrics and metrics[k]["n"]}
+        comp["macro"][scenario] = {k: metrics[k]["median"] for k, _ in MACRO_COMPONENTS if k in metrics and metrics[k]["n"]}
     for scale in MICRO_SCORE_SCALES:
         m = result["micro"].get(scale)
         if not m:
@@ -201,7 +201,7 @@ def components(result):
         for op, field in MICRO_OPS:
             key = "ops.%s.%s" % (op, field)
             if key in m and m[key]["n"]:
-                comp["micro"]["%s:%s.%s" % (scale, op, field)] = m[key]["mean"]
+                comp["micro"]["%s:%s.%s" % (scale, op, field)] = m[key]["median"]
     return comp
 
 
@@ -293,7 +293,7 @@ def verdict(a, b, min_pct):
     """a, b: stats dicts (lower is better). Returns (delta_pct, label, p)."""
     if not a or not b or not a.get("n") or not b.get("n"):
         return None, "n/a", 1.0
-    ma, mb = a["mean"], b["mean"]
+    ma, mb = a["median"], b["median"]
     delta = (mb - ma) / ma * 100.0 if ma else (0.0 if mb == 0 else float("inf"))
     se = math.sqrt((a["sd"] ** 2) / a["n"] + (b["sd"] ** 2) / b["n"])
     p = mann_whitney_p(a["values"], b["values"])
