@@ -137,7 +137,7 @@ public final class WorkerEfficiencyGameTests
 
         void giveTools()
         {
-            for (final net.minecraft.world.item.Item tool : List.of(Items.IRON_PICKAXE, Items.IRON_SHOVEL, Items.IRON_AXE))
+            for (final net.minecraft.world.item.Item tool : List.of(Items.WOODEN_PICKAXE, Items.WOODEN_SHOVEL, Items.WOODEN_AXE))
             {
                 InventoryUtils.addItemStackToItemHandler(citizen.getInventory(), new ItemStack(tool));
             }
@@ -164,15 +164,29 @@ public final class WorkerEfficiencyGameTests
         MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
         final Live live = new Live(helper);
         live.colony = MinecoloniesGameTests.foundGameTestColony(helper, name);
+        // the same scene as the builder collaboration tests: two builder huts (the second one stays idle, collaboration is off) with a citizen each
         live.hut = (BuildingBuilder) MinecoloniesGameTests.placeProductionBuilding(helper, live.colony, ModBlocks.blockHutBuilder, new BlockPos(8, 1, 2), "fundamentals/builder1.blueprint");
+        final BuildingBuilder other = (BuildingBuilder) MinecoloniesGameTests.placeProductionBuilding(helper, live.colony, ModBlocks.blockHutBuilder, new BlockPos(16, 1, 2), "fundamentals/builder1.blueprint");
         final BlockPos anchor = helper.absolutePos(new BlockPos(10, 1, 8));
+        final BlockPos otherAnchor = helper.absolutePos(new BlockPos(18, 1, 8));
         forceArea(live.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(40, 1, 32)));
         BuilderCollab.overrideForTests(false, 3, 10_000, 10, 100_000, 8, 2400);
         helper.runAfterDelay(200, () -> {
             forceArea(live.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(40, 1, 32)));
             live.citizen = live.colony.getCitizenManager().spawnOrCreateCivilian(null, live.level, List.of(anchor), true);
-            helper.assertTrue(live.citizen != null && live.citizen.getEntity().isPresent(), "builder did not spawn");
-            helper.assertTrue(live.hut.getModule(BuildingModules.BUILDER_WORK).assignCitizen(live.citizen), "builder not assigned");
+            final ICitizenData second = live.colony.getCitizenManager().spawnOrCreateCivilian(null, live.level, List.of(otherAnchor), true);
+            helper.assertTrue(live.citizen != null && second != null && live.citizen.getEntity().isPresent(), "builder did not spawn");
+            // the colony hires its first citizens into the free huts by itself: let go of them, the test works with the citizens it spawned
+            for (final BuildingBuilder hut : List.of(live.hut, other))
+            {
+                for (final ICitizenData hired : new java.util.ArrayList<>(hut.getModule(BuildingModules.BUILDER_WORK).getAssignedCitizen()))
+                {
+                    hut.getModule(BuildingModules.BUILDER_WORK).removeCitizen(hired);
+                }
+            }
+            helper.assertTrue(live.hut.getModule(BuildingModules.BUILDER_WORK).assignCitizen(live.citizen), "builder not assigned: assigned="
+              + live.hut.getModule(BuildingModules.BUILDER_WORK).getAssignedCitizen() + " full=" + live.hut.getModule(BuildingModules.BUILDER_WORK).isFull() + " job=" + live.citizen.getJob());
+            helper.assertTrue(other.getModule(BuildingModules.BUILDER_WORK).assignCitizen(second), "second builder not assigned");
             live.citizen.getEntity().ifPresent(e -> e.setPos(live.hut.getID().getX() + 0.5D, live.hut.getID().getY(), live.hut.getID().getZ() + 0.5D));
             ready.accept(live);
         });
@@ -196,12 +210,9 @@ public final class WorkerEfficiencyGameTests
     static void everyTick(final Live live, final int maxTicks, final java.util.function.IntPredicate step, final Runnable onDone, final Supplier<String> failure)
     {
         final int[] elapsed = {0};
-        final boolean[] finished = {false};
-        live.helper.onEachTick(() -> {
-            if (finished[0])
-            {
-                return;
-            }
+        // a fresh Runnable per tick: the GameTest framework keys its callbacks by Runnable
+        final Runnable[] next = new Runnable[1];
+        next[0] = () -> {
             elapsed[0]++;
             if (elapsed[0] % 20 == 0)
             {
@@ -210,15 +221,18 @@ public final class WorkerEfficiencyGameTests
             }
             if (step.test(elapsed[0]))
             {
-                finished[0] = true;
                 onDone.run();
             }
             else if (elapsed[0] >= maxTicks)
             {
-                finished[0] = true;
                 live.helper.assertTrue(false, "timeout after " + maxTicks + " ticks: " + failure.get());
             }
-        });
+            else
+            {
+                live.helper.runAfterDelay(1, () -> next[0].run());
+            }
+        };
+        live.helper.runAfterDelay(1, () -> next[0].run());
     }
 
     // ------------------------------------------------------------------ benchmark

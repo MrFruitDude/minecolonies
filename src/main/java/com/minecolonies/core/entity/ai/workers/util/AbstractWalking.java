@@ -34,10 +34,9 @@ public final class AbstractWalking
     }
 
     /**
-     * Ticks a block of walking takes. A citizen walks about 0.5 blocks per tick on a straight path; paths are not straight and he has to
-     * wait for the path search, so the time stays well above that.
+     * Ticks a block of walking takes: measured with a citizen walking 40 blocks along a flat floor (199 ticks, 4.98 per block, path search included).
      */
-    public static final double TICKS_PER_BLOCK = 2.5D;
+    public static final double TICKS_PER_BLOCK = 5.0D;
 
     /**
      * Straight line to path length.

@@ -38,6 +38,9 @@ import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.interactionhandling.PosBasedInteraction;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.AbstractJob;
+import com.minecolonies.core.entity.ai.workers.util.AbstractWalking;
+import com.minecolonies.core.entity.ai.workers.util.StandSpots;
+import com.minecolonies.core.entity.ai.workers.util.WorkStuckTracker;
 import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
 import com.minecolonies.core.colony.jobs.JobDeliveryman;
 import com.minecolonies.core.colony.requestsystem.resolvers.StationRequestResolver;
@@ -48,6 +51,7 @@ import com.minecolonies.core.util.WorkerUtil;
 import com.minecolonies.core.util.citizenutils.CitizenItemUtils;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -878,8 +882,62 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             return true;
         }
 
-        return EntityNavigationUtils.walkToBuilding(worker, ownBuilding);
+        return checkedWalkToBuilding(ownBuilding);
     }
+
+    /**
+     * The walk to a building with a way out for a worker who cannot get there (fallen into a hole, shut in): when he stands still for too
+     * long on his way to the building he asks for a new path, and then is put on a standable spot at the building's entrance. A worker who
+     * keeps moving is not touched, so long walks stay what they are.
+     */
+    private boolean checkedWalkToBuilding(final IBuilding target)
+    {
+        final boolean arrived = EntityNavigationUtils.walkToBuilding(worker, target);
+        if (arrived)
+        {
+            walkStuck.progress();
+            walkStuckTick = -1L;
+            return true;
+        }
+        if (AbstractWalking.isRelocating(worker))
+        {
+            walkStuck.free();
+            walkStuckTick = -1L;
+            return false;
+        }
+
+        final long now = world.getGameTime();
+        final int dt = walkStuckTick < 0 ? 0 : (int) Math.min(now - walkStuckTick, 200L);
+        walkStuckTick = now;
+        final Vec3 position = worker.position();
+        final double moved = walkStuckPos == null ? 0.0D : position.distanceTo(walkStuckPos);
+        walkStuckPos = position;
+        switch (walkStuck.blocked(dt, moved))
+        {
+            case REPATH:
+                worker.getNavigation().stop();
+                break;
+            case TELEPORT:
+            case DEFER:
+                final BlockPos spot = StandSpots.nearest(world, target.getPosition(), 6, 6, 4, null);
+                if (spot != null)
+                {
+                    worker.getNavigation().stop();
+                    worker.snapTo(spot.getX() + 0.5D, spot.getY(), spot.getZ() + 0.5D);
+                    walkStuck.progress();
+                    walkStuckTick = -1L;
+                    Log.getLogger().debug("{} could not get to {} and was put at {}", worker.getName().getString(), target.getPosition(), spot);
+                }
+                break;
+            default:
+                break;
+        }
+        return false;
+    }
+
+    private final WorkStuckTracker walkStuck = new WorkStuckTracker();
+    private long walkStuckTick = -1L;
+    private Vec3 walkStuckPos  = null;
 
     /**
      * Walk the worker to a tagged workpos in building, or the building pos if non existent.
@@ -935,7 +993,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             return true;
         }
 
-        return EntityNavigationUtils.walkToBuilding(worker, building);
+        return checkedWalkToBuilding(building);
     }
 
     /**

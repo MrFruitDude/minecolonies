@@ -867,7 +867,9 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     private void registerWorkerEfficiency(final RegisterGameTestsEvent event)
     {
         for (final String name : new String[] {"worker_eff_bench_place_l1", "worker_eff_bench_place_l40", "worker_eff_bench_clear_l1", "worker_eff_bench_clear_l40",
-          "worker_eff_stuck_shaft", "worker_eff_stuck_no_tool", "worker_eff_stuck_unloaded", "worker_eff_stuck_floating"})
+          "worker_eff_stuck_shaft", "worker_eff_stuck_no_tool", "worker_eff_stuck_unloaded", "worker_eff_stuck_floating",
+          "worker_eff_set_bench_place_l40_plain", "worker_eff_set_bench_place_l1_plain", "worker_eff_set_bench_clear_l40_plain", "worker_eff_set_bench_place_l40_max",
+          "worker_eff_set_abstract_walking", "worker_eff_set_walk_speed"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -878,7 +880,13 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "worker_eff_stuck_shaft" -> WorkerEfficiencyGameTests::stuckInShaft;
                 case "worker_eff_stuck_no_tool" -> WorkerEfficiencyGameTests::noToolForStone;
                 case "worker_eff_stuck_unloaded" -> WorkerEfficiencyGameTests::unloadedTargetKeepsCitizen;
-                default -> WorkerEfficiencyGameTests::floatingBlockDoesNotHang;
+                case "worker_eff_stuck_floating" -> WorkerEfficiencyGameTests::floatingBlockDoesNotHang;
+                case "worker_eff_set_bench_place_l40_plain" -> WorkerSettingsGameTests::benchPlaceL40Plain;
+                case "worker_eff_set_bench_place_l1_plain" -> WorkerSettingsGameTests::benchPlaceL1Plain;
+                case "worker_eff_set_bench_clear_l40_plain" -> WorkerSettingsGameTests::benchClearL40Plain;
+                case "worker_eff_set_bench_place_l40_max" -> WorkerSettingsGameTests::benchPlaceL40Max;
+                case "worker_eff_set_abstract_walking" -> WorkerSettingsGameTests::abstractWalkingRelocates;
+                default -> WorkerSettingsGameTests::walkSpeedCalibration;
             };
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
