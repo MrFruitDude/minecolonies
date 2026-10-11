@@ -282,7 +282,11 @@ public class MessageUtils
         {
             for (Player player : players)
             {
-                player.sendSystemMessage(create());
+                // No player for the actions of a faction colony (see IFactionColonyActions): nobody to tell.
+                if (player != null)
+                {
+                    player.sendSystemMessage(create());
+                }
             }
         }
 

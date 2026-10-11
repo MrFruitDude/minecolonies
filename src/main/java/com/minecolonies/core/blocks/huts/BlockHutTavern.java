@@ -11,8 +11,10 @@ import com.minecolonies.core.colony.buildings.modules.BuildingModules;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import static com.minecolonies.api.util.constant.TranslationConstants.WARNING_DUPLICATE_TAVERN;
 
@@ -47,9 +49,9 @@ public class BlockHutTavern extends AbstractBlockHut<com.minecolonies.core.block
      * @return true if the block can be placed.
      */
     @Override
-    public boolean canPlaceAt(final BlockPos pos, final Player player)
+    public boolean canPlaceAt(final Level level, final BlockPos pos, @Nullable final Player player)
     {
-        IColony colony = IColonyManager.getInstance().getIColony(player.level(), pos);
+        IColony colony = IColonyManager.getInstance().getIColony(level, pos);
         
         for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
         {

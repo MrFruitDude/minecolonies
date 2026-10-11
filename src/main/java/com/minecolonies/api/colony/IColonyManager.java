@@ -87,6 +87,15 @@ public interface IColonyManager
       int teamColour, @Nullable BannerPatternLayers banner);
 
     /**
+     * The actions a governor of a faction colony takes without a player: place a hut, request an upgrade, hire, set
+     * settings. See the trust boundary in {@link com.minecolonies.api.colony.faction.IFactionColonyActions}.
+     *
+     * @return the faction colony actions.
+     */
+    @NotNull
+    com.minecolonies.api.colony.faction.IFactionColonyActions getFactionColonyActions();
+
+    /**
      * The colonies of a faction, in all dimensions, oldest first.
      *
      * @param factionId the faction id.

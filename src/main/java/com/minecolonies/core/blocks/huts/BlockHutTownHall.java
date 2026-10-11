@@ -218,9 +218,9 @@ public class BlockHutTownHall extends AbstractBlockHut<BlockHutTownHall>
      * @return true if the block can be placed.
      */
     @Override
-    public boolean canPlaceAt(final BlockPos pos, final Player player)
+    public boolean canPlaceAt(final Level level, final BlockPos pos, @Nullable final Player player)
     {
-        IColony colony = IColonyManager.getInstance().getIColony(player.level(), pos);
+        IColony colony = IColonyManager.getInstance().getIColony(level, pos);
         
         if (colony.getCommonBuildingManager().hasTownHall())
         {

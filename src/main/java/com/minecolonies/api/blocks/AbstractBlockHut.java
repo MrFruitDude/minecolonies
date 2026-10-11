@@ -369,6 +369,19 @@ public abstract class AbstractBlockHut<B extends AbstractBlockHut<B>> extends Ab
      */
     public boolean canPlaceAt(final BlockPos pos, final Player player)
     {
+        return canPlaceAt(player.level(), pos, player);
+    }
+
+    /**
+     * Check if the block can be placed at the given position, by a player or, for the colony of an NPC faction, by nobody.
+     *
+     * @param level  the level the block is placed in.
+     * @param pos    the position to check.
+     * @param player the player trying to place the block, null if a faction colony places it (nobody to tell why not).
+     * @return true if the block can be placed.
+     */
+    public boolean canPlaceAt(final Level level, final BlockPos pos, @Nullable final Player player)
+    {
         return true;
     }
 }

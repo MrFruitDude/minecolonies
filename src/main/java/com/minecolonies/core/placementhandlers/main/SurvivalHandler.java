@@ -288,7 +288,7 @@ public class SurvivalHandler implements ISurvivalBlueprintHandler
      * @param blockPos the position to check at.
      * @return true if so.
      */
-    private boolean isBlueprintInColony(final Blueprint blueprint, final IColony colony, final BlockPos blockPos)
+    public static boolean isBlueprintInColony(final Blueprint blueprint, final IColony colony, final BlockPos blockPos)
     {
         final Level world = colony.getWorld();
         final BlockPos zeroPos = blockPos.subtract(blueprint.getPrimaryBlockOffset());

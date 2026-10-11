@@ -283,6 +283,13 @@ public final class ColonyManager implements IColonyManager
 
     @Override
     @NotNull
+    public com.minecolonies.api.colony.faction.IFactionColonyActions getFactionColonyActions()
+    {
+        return FactionColonyActions.INSTANCE;
+    }
+
+    @Override
+    @NotNull
     public List<IColony> getFactionColonies(@NotNull final String factionId)
     {
         final List<IColony> result = new ArrayList<>();
