@@ -314,20 +314,11 @@ public final class Scenarios
         }
     }
 
-    /** Positions on two rows north of the colony core and two south of the build sites, for the many small buildings. */
+    /** Positions of the many small buildings: two rows north of the colony core, within about 35 blocks of the warehouses. */
     static BlockPos ring(final int i)
     {
-        final int perRow = 9;
-        final int row = i / perRow;
-        final int col = i % perRow;
-        final int z = switch (row)
-        {
-            case 0 -> 8;
-            case 1 -> 18;
-            case 2 -> 28;
-            default -> 36 + 10 * (row - 3);
-        };
-        return new BlockPos(10 + 10 * col, 1, z);
+        final int perRow = 8;
+        return new BlockPos(34 + 8 * (i % perRow), 1, 18 + 9 * (i / perRow));
     }
 
     private static final String[][] CONSUMER_HUTS = {
