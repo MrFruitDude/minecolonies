@@ -508,12 +508,24 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         if (walked != 0)
         {
             scaffold.note("walk to " + walk.spot + " ended (" + walked + ") at " + worker.blockPosition() + " for " + target + " nav stuck=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n && n.isStuck())
-                            + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-"));
+                            + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-") + columnDescription(walk.spot));
             // the walk is over, and the block is still out of reach: this spot does not work
             walk.bad.add(walk.spot);
             walk.spot = null;
         }
         return false;
+    }
+
+    private String columnDescription(final BlockPos spot)
+    {
+        final StringBuilder sb = new StringBuilder(" column=");
+        for (int y = spot.getY() - 7; y <= spot.getY() + 1; y++)
+        {
+            final BlockPos p = new BlockPos(spot.getX(), y, spot.getZ());
+            final var st = world.getBlockState(p);
+            sb.append(y - spot.getY()).append(':').append(st.isAir() ? "air" : st.getBlock().getDescriptionId().replace("block.minecraft.", "")).append(st.is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? "[d" + st.getValue(net.minecraft.world.level.block.ScaffoldingBlock.DISTANCE) + (st.getValue(net.minecraft.world.level.block.ScaffoldingBlock.BOTTOM) ? "b" : "") + "]" : "").append(' ');
+        }
+        return sb.toString();
     }
 
     private static String pathDescription(final MinecoloniesAdvancedPathNavigate nav)
