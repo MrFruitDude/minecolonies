@@ -48,7 +48,18 @@ public final class WorkTiming
      */
     public static double researchFactor(final double strength)
     {
-        return 1.0D - strength;
+        // The levels +10%, +25% and +50% take that much off, as ever. A bonus of +100% or +200% used to take all of it off (zero or
+        // negative delay: instant work), so from +50% on the delay shrinks like 0.5 / (1 + 2 * (bonus - 0.5)): half at +50%, a quarter at
+        // +100%, an eighth at +200%, never zero.
+        if (!(strength > 0.0D))
+        {
+            return 1.0D;
+        }
+        if (strength <= 0.5D)
+        {
+            return 1.0D - strength;
+        }
+        return 0.5D / (1.0D + 2.0D * (strength - 0.5D));
     }
 
     /**
@@ -62,7 +73,7 @@ public final class WorkTiming
     public static double placeTicks(final int placeLevel, final double researchStrength, final double builderSpeed)
     {
         final double base = (double) BUILD_BLOCK_DELAY * PROGRESS_MULTIPLIER / (placeLevel / 2 + PROGRESS_MULTIPLIER);
-        return base * researchFactor(researchStrength) / builderSpeed;
+        return Math.max(MIN_PLACE_TICKS, base * researchFactor(researchStrength) / builderSpeed);
     }
 
     /**
@@ -84,6 +95,7 @@ public final class WorkTiming
       final double researchStrength,
       final double builderSpeed)
     {
-        return BLOCK_MINING_DELAY * Math.pow(LEVEL_MODIFIER, breakLevel / 2.0) * hardness / toolSpeed * roleFactor * researchFactor(researchStrength) / builderSpeed;
+        return Math.max(MIN_BREAK_TICKS,
+          BLOCK_MINING_DELAY * Math.pow(LEVEL_MODIFIER, breakLevel / 2.0) * hardness / toolSpeed * roleFactor * researchFactor(researchStrength) / builderSpeed);
     }
 }

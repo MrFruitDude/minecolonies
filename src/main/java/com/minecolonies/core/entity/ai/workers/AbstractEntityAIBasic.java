@@ -38,6 +38,7 @@ import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.interactionhandling.PosBasedInteraction;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.AbstractJob;
+import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
 import com.minecolonies.core.colony.jobs.JobDeliveryman;
 import com.minecolonies.core.colony.requestsystem.resolvers.StationRequestResolver;
 import com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils;
@@ -597,27 +598,28 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     }
 
     /**
-     * The colony's work pace for this worker ({@link IColonyPaceProvider#work}, sanitized; exactly 1.0 without a
-     * colony or provider).
+     * The pace of this worker's waits: the colony pace of another mod ({@link IColonyPaceProvider#work}, sanitized) times the worker speed
+     * of the settings ({@link WorkerSettings#speedMultiplier()}). Exactly 1.0 with the speed setting at 1.0, without a colony or provider.
+     * <p>
+     * This is the one place where both are combined: there is only one {@code IColonyPaceProvider}, so the setting is folded in here instead
+     * of being a second provider, and Colony Command's pace and the setting multiply (pace 2 and setting 1.5 make 3).
      */
-    private double getWorkPace()
+    protected double getWorkPace()
     {
         final IColony colony = job.getColony();
-        return colony == null ? 1.0D : IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().work(colony, job));
+        final double provider = colony == null ? 1.0D : IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().work(colony, job));
+        return WorkerSettings.composePace(provider, WorkerSettings.speedMultiplier());
     }
 
     /**
-     * How much of the delay one wait step counts down: the tick rate times the colony's work pace
-     * ({@link IColonyPaceProvider#work}), with the fraction carried to the next step. At pace 1.0 this is exactly the
-     * tick rate.
+     * How much of the delay one wait step counts down: the tick rate times the work pace ({@link #getWorkPace()}), with the fraction carried
+     * to the next step. At pace 1.0 this is exactly the tick rate.
      *
      * @return the ticks to subtract from the delay.
      */
     private int getPacedTickRate()
     {
-        final IColony colony = job.getColony();
-        final double pace = colony == null ? 1.0D
-          : IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().work(colony, job));
+        final double pace = getWorkPace();
         if (pace == 1.0D)
         {
             paceCarry = 0.0D;

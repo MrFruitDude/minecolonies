@@ -13,6 +13,10 @@ import com.minecolonies.core.colony.workorders.collab.AssistReservations;
 import com.minecolonies.core.colony.workorders.collab.BuilderCollab;
 import com.minecolonies.core.colony.workorders.collab.WorkOrderCollab;
 import com.minecolonies.core.entity.ai.workers.util.BuilderStageRules;
+import com.minecolonies.core.entity.ai.workers.util.AbstractWalking;
+import com.minecolonies.core.entity.ai.workers.util.WorkStuckTracker;
+import com.minecolonies.core.entity.ai.workers.util.WorkTiming;
+import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
 import com.minecolonies.core.entity.ai.workers.util.CollabStructureHandler;
 import com.minecolonies.core.entity.ai.workers.util.LeaseAllocator;
 import com.minecolonies.core.util.ItemMover;
@@ -84,6 +88,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
      * After how many actions should the builder dump his inventory.
      */
     private static final int ACTIONS_UNTIL_DUMP = 4096;
+
+    /**
+     * The most blocks a builder places in one AI step when his time allows it.
+     */
+    private static final int MAX_PLACEMENTS_PER_STEP = 12;
 
     /**
      * Building level to purge mobs at the build site.
@@ -280,6 +289,18 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             return true;
         }
 
+        // A long way to the block: abstract walking (a timed relocation) instead of a long path, if the settings allow it
+        final Boolean relocated = AbstractWalking.tryRelocate(worker, currentBlock, 4);
+        if (relocated != null)
+        {
+            if (relocated)
+            {
+                workFrom = worker.blockPosition();
+                prevBlockPosition = currentBlock;
+            }
+            return relocated;
+        }
+
         if (workFrom != null && workFrom.getX() == currentBlock.getX() && workFrom.getZ() == currentBlock.getZ() && workFrom.getY() >= currentBlock.getY())
         {
             // Reset working position when standing ontop
@@ -367,7 +388,32 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     @Override
     public int getBlockMiningTime(@NotNull final BlockState state, @NotNull final BlockPos pos)
     {
-        return (int) (super.getBlockMiningTime(state, pos) * SPEED_BUFF_0);
+        // a builder breaks at half the time of other workers (SPEED_BUFF_0), faster with the builder speed of the settings, but never in less than the
+        // floor of the break time
+        return (int) Math.ceil(Math.max(WorkTiming.MIN_BREAK_TICKS, super.getBlockMiningTime(state, pos) * SPEED_BUFF_0 / WorkerSettings.builderSpeed()));
+    }
+
+    @Override
+    protected int getMaxPlacementsPerStep()
+    {
+        return MAX_PLACEMENTS_PER_STEP;
+    }
+
+    @Override
+    protected double getPlacementSpeed()
+    {
+        return WorkerSettings.builderSpeed();
+    }
+
+    @Override
+    protected void resetWalkTarget()
+    {
+        if (gotoPath != null)
+        {
+            gotoPath.cancel();
+            gotoPath = null;
+        }
+        super.resetWalkTarget();
     }
 
     /**
@@ -940,6 +986,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
         if (!walkToConstructionSite(planned.world()))
         {
+            if (escalateStuck(planned.world()) == WorkStuckTracker.Step.DEFER)
+            {
+                // the helper cannot get there: the lead gets the position back
+                collab.releaseLease(planned.world());
+                batch.remove(0);
+            }
             return getState();
         }
 
@@ -985,6 +1037,13 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         assistOrder.getCollab().renew(building.getID(), world.getGameTime() + BuilderCollab.leaseTicks());
         if (!walkToConstructionSite(assistMine) || workFrom == null)
         {
+            if (escalateStuck(assistMine) == WorkStuckTracker.Step.DEFER)
+            {
+                assistOrder.getCollab().releaseLease(planned.world());
+                batch.remove(planned);
+                assistMine = null;
+                return ASSIST_WORK;
+            }
             return getState();
         }
         if (!mineBlock(assistMine, workFrom))

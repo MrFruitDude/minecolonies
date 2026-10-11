@@ -7,6 +7,7 @@ import com.minecolonies.api.entity.citizen.citizenhandlers.ICitizenSleepHandler;
 import com.minecolonies.api.util.BlockPosUtil;
 import com.minecolonies.api.util.EntityUtils;
 import com.minecolonies.api.util.WorldUtil;
+import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
 import com.minecolonies.core.colony.interactionhandling.SimpleNotificationInteraction;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.JobMiner;
@@ -261,8 +262,9 @@ public class CitizenSleepHandler implements ICitizenSleepHandler
         final double timeNeeded = (Math.sqrt(xDiff * xDiff + zDiff * zDiff + yDiff * yDiff) + additionalDist) * TIME_PER_BLOCK;
 
         // Estimated arrival is 1hour past night
+        final int night = WorkerSettings.nightStartFor(citizen.getCitizenData().getJob() != null);
         final double timeLeft = (citizen.getCitizenColonyHandler().getColony().getResearchManager().getResearchEffects().getEffectStrength(WORK_LONGER) == 0
-                                   ? NIGHT : NIGHT + citizen.getCitizenColonyHandler().getColony().getResearchManager().getResearchEffects().getEffectStrength(WORK_LONGER) * 1000) - (citizen.level().getOverworldClockTime() % 24000);
+                                   ? night : night + citizen.getCitizenColonyHandler().getColony().getResearchManager().getResearchEffects().getEffectStrength(WORK_LONGER) * 1000) - (citizen.level().getOverworldClockTime() % 24000);
         if (timeLeft <= 0 || (timeLeft - timeNeeded <= 0))
         {
             if (citizen.getCitizenData().getWorkBuilding() != null)

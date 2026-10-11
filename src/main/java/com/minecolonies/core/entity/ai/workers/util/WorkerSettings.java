@@ -58,6 +58,21 @@ public final class WorkerSettings
     }
 
     /**
+     * The pace of a worker's waits: the colony pace of another mod times the worker speed of the settings. A value that is not a finite number
+     * above zero counts as 1.0, like the pace of a provider.
+     *
+     * @param providerPace the colony pace of {@code IColonyPaceProvider.work}.
+     * @param speed        the worker speed multiplier of the settings.
+     * @return the pace.
+     */
+    public static double composePace(final double providerPace, final double speed)
+    {
+        final double provider = Double.isFinite(providerPace) && providerPace > 0.0D ? providerPace : 1.0D;
+        final double setting = Double.isFinite(speed) && speed > 0.0D ? speed : 1.0D;
+        return provider * setting;
+    }
+
+    /**
      * @return the worker speed multiplier, 0.5 to 4, default 1.5.
      */
     public static double speedMultiplier()
@@ -123,6 +138,17 @@ public final class WorkerSettings
     public static int nightStart()
     {
         return nightStartOf(hoursPerDay());
+    }
+
+    /**
+     * The end of the day's work for a citizen: the shift length of the settings for workers, the usual 12600 for the others.
+     *
+     * @param hasJob whether the citizen has a job.
+     * @return the tick of the day at which he starts to go home to sleep.
+     */
+    public static int nightStartFor(final boolean hasJob)
+    {
+        return hasJob ? nightStart() : com.minecolonies.api.util.constant.CitizenConstants.NIGHT;
     }
 
     /**

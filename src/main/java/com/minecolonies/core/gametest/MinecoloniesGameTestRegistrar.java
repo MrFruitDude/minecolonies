@@ -866,14 +866,19 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
      */
     private void registerWorkerEfficiency(final RegisterGameTestsEvent event)
     {
-        for (final String name : new String[] {"worker_eff_bench_place_l1", "worker_eff_bench_place_l40", "worker_eff_bench_clear_l1", "worker_eff_bench_clear_l40"})
+        for (final String name : new String[] {"worker_eff_bench_place_l1", "worker_eff_bench_place_l40", "worker_eff_bench_clear_l1", "worker_eff_bench_clear_l40",
+          "worker_eff_stuck_shaft", "worker_eff_stuck_no_tool", "worker_eff_stuck_unloaded", "worker_eff_stuck_floating"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
                 case "worker_eff_bench_place_l1" -> WorkerEfficiencyGameTests::benchPlaceL1;
                 case "worker_eff_bench_place_l40" -> WorkerEfficiencyGameTests::benchPlaceL40;
                 case "worker_eff_bench_clear_l1" -> WorkerEfficiencyGameTests::benchClearL1;
-                default -> WorkerEfficiencyGameTests::benchClearL40;
+                case "worker_eff_bench_clear_l40" -> WorkerEfficiencyGameTests::benchClearL40;
+                case "worker_eff_stuck_shaft" -> WorkerEfficiencyGameTests::stuckInShaft;
+                case "worker_eff_stuck_no_tool" -> WorkerEfficiencyGameTests::noToolForStone;
+                case "worker_eff_stuck_unloaded" -> WorkerEfficiencyGameTests::unloadedTargetKeepsCitizen;
+                default -> WorkerEfficiencyGameTests::floatingBlockDoesNotHang;
             };
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),

@@ -18,6 +18,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.clock.WorldClocks;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
@@ -43,6 +44,7 @@ public final class WorkerEfficiencyGameTests
     static final int HEIGHT = 5;
     static final Block BUILD_BLOCK = Blocks.STONE_BRICKS;
     static final int SPARE = 24;
+    static final Block WOOL_BLOCK = Blocks.WOOL.pick(DyeColor.WHITE);
 
     // ------------------------------------------------------------------ fixture
 
@@ -246,7 +248,7 @@ public final class WorkerEfficiencyGameTests
      * Builds the 9x9x5 box with a real builder of the given skills and logs ticks to complete, blocks per minute, the distance walked and the path
      * jobs started. With {@code terrain} the footprint is full of dirt two layers deep first, which the clear stage has to mine.
      */
-    private static void bench(final GameTestHelper helper, final String name, final int skill, final boolean terrain)
+    static void bench(final GameTestHelper helper, final String name, final int skill, final boolean terrain)
     {
         scene(helper, "WBENCH " + name, live -> {
             live.setSkills(skill, skill);
@@ -310,5 +312,157 @@ public final class WorkerEfficiencyGameTests
     public static void benchClearL40(final GameTestHelper helper)
     {
         bench(helper, "clear_l40", 40, true);
+    }
+
+    // ------------------------------------------------------------------ stuck cases (failing first)
+
+    /** Where the structure of the stuck tests stands, relative to the test plot. */
+    static final BlockPos SITE = new BlockPos(24, 1, 10);
+
+    private static int countBlocks(final Live live, final BlockPos origin, final Block block, final int layers)
+    {
+        int n = 0;
+        for (int y = 0; y < layers; y++)
+        {
+            for (int x = 0; x < SIZE; x++)
+            {
+                for (int z = 0; z < SIZE; z++)
+                {
+                    if (live.level.getBlockState(origin.offset(x, y, z)).is(block))
+                    {
+                        n++;
+                    }
+                }
+            }
+        }
+        return n;
+    }
+
+    /**
+     * A builder who fell down a 4 deep shaft inside the site he has to clear (the shaft walls are the terrain he has to mine): he cannot walk
+     * out, and the blocks he has to mine are far from where he stands. Before: he stands in the shaft, asks for a path again and again, and
+     * only the stuck handler's teleport after 2400 ticks or more gets him out. After: the unstuck ladder puts him on a spot at the edge of
+     * the site after about 400 ticks, and the clear stage goes on.
+     */
+    public static void stuckInShaft(final GameTestHelper helper)
+    {
+        scene(helper, "WSTUCK shaft", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            live.stock(BUILD_BLOCK.asItem(), live.blocksInBox() + SPARE);
+            final BlockPos rel = SITE;
+            // 4 layers of dirt over the whole footprint, a shaft down to the floor at (1, 1)
+            for (int y = 0; y < 4; y++)
+            {
+                for (int x = 0; x < SIZE; x++)
+                {
+                    for (int z = 0; z < SIZE; z++)
+                    {
+                        helper.setBlock(rel.offset(x, y, z), x == 1 && z == 1 ? Blocks.AIR.defaultBlockState() : Blocks.DIRT.defaultBlockState());
+                    }
+                }
+            }
+            final WorkOrderDecoration order = live.order("shaft", rel);
+            final BlockPos origin = order.getLocation();
+            final BlockPos bottom = origin.offset(1, 0, 1);
+            live.citizen.getEntity().ifPresent(e -> e.setPos(bottom.getX() + 0.5D, bottom.getY(), bottom.getZ() + 0.5D));
+            final int dirt0 = countBlocks(live, origin, Blocks.DIRT, 4);
+            final boolean[] early = {false};
+            everyTick(live, 30_000, tick -> {
+                if (tick == 1000)
+                {
+                    final int cleared = dirt0 - countBlocks(live, origin, Blocks.DIRT, 4);
+                    Log.getLogger().info("WSTUCK shaft t=1000 cleared={} {}", cleared, live.ai());
+                    early[0] = cleared >= 24;
+                    helper.assertTrue(early[0], "the builder stood in the shaft for 1000 ticks and cleared only " + cleared + " blocks: " + live.ai());
+                }
+                return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
+            }, () -> {
+                helper.assertTrue(boxBuilt(live, origin), "box not complete");
+                BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
+                helper.succeed();
+            }, () -> live.ai() + " dirt left=" + countBlocks(live, origin, Blocks.DIRT, 4));
+        });
+    }
+
+    /**
+     * No tool for the stone the clear stage meets first: only wool (no tool needed) lies below it. Before: the builder waits for a pickaxe at the
+     * first stone block for ever and never mines the wool. After: after the tool timeout he leaves the stone for the end of the stage and clears
+     * the wool; the request for the pickaxe stays open.
+     */
+    public static void noToolForStone(final GameTestHelper helper)
+    {
+        scene(helper, "WSTUCK notool", live -> {
+            live.setSkills(40, 40);
+            live.stock(BUILD_BLOCK.asItem(), live.blocksInBox() + SPARE);
+            final BlockPos rel = SITE;
+            for (int x = 0; x < SIZE; x++)
+            {
+                for (int z = 0; z < SIZE; z++)
+                {
+                    helper.setBlock(rel.offset(x, 0, z), Blocks.WOOL.pick(DyeColor.WHITE).defaultBlockState());
+                    helper.setBlock(rel.offset(x, 1, z), Blocks.STONE.defaultBlockState());
+                }
+            }
+            final WorkOrderDecoration order = live.order("notool", rel);
+            final BlockPos origin = order.getLocation();
+            final int wool0 = countBlocks(live, origin, WOOL_BLOCK, 1);
+            everyTick(live, 4000, tick -> {
+                if (tick % 500 == 0)
+                {
+                    Log.getLogger().info("WSTUCK notool t={} wool left={} {}", tick, countBlocks(live, origin, WOOL_BLOCK, 1), live.ai());
+                }
+                // the stone cannot be mined without a pickaxe, the wool can
+                return wool0 - countBlocks(live, origin, WOOL_BLOCK, 1) >= 60;
+            }, () -> {
+                BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
+                helper.succeed();
+            }, () -> "the builder waits for a pickaxe at the stone and does not clear the wool: wool left=" + countBlocks(live, origin, WOOL_BLOCK, 1) + " " + live.ai());
+        });
+    }
+
+    /**
+     * A builder whose path target lies in an unloaded chunk twice in a row used to be discarded (a silent loss of a colonist). He has to stay.
+     */
+    public static void unloadedTargetKeepsCitizen(final GameTestHelper helper)
+    {
+        scene(helper, "WSTUCK unloaded", live -> {
+            final var entity = live.citizen.getEntity().get();
+            final BlockPos far = entity.blockPosition().offset(600, 0, 600);
+            helper.assertTrue(!com.minecolonies.api.util.WorldUtil.isBlockLoaded(live.level, far), "fixture: the far chunk is loaded");
+            final var nav = (com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate) entity.getNavigation();
+            for (int i = 0; i < 3; i++)
+            {
+                nav.setPathJob(new com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveToLocation(live.level, entity.blockPosition(), far, 20, entity), far, 1.0D, false);
+            }
+            helper.runAfterDelay(20, () -> {
+                helper.assertTrue(entity.isAlive() && !entity.isRemoved(), "the citizen was discarded after two path jobs into an unloaded chunk");
+                BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
+                helper.succeed();
+            });
+        });
+    }
+
+    /**
+     * A block floating high above the ground in the footprint (nothing to stand on within reach of it) is cleared; the clear stage and the
+     * building go on. (Physical reach and scaffolding for such blocks are the 3D reach work; this keeps the case from hanging.)
+     */
+    public static void floatingBlockDoesNotHang(final GameTestHelper helper)
+    {
+        scene(helper, "WSTUCK floating", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            live.stock(BUILD_BLOCK.asItem(), live.blocksInBox() + SPARE);
+            final WorkOrderDecoration order = live.order("floating", SITE);
+            final BlockPos origin = order.getLocation();
+            final BlockPos floating = origin.offset(4, 4, 4);
+            helper.setBlock(SITE.offset(4, 4, 4), Blocks.DIRT.defaultBlockState());
+            everyTick(live, 20_000, tick -> live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder(), () -> {
+                helper.assertTrue(boxBuilt(live, origin), "box not complete");
+                helper.assertTrue(live.level.getBlockState(floating).is(BUILD_BLOCK) || live.level.getBlockState(floating).isAir(), "the floating block is still there: " + live.level.getBlockState(floating));
+                BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
+                helper.succeed();
+            }, () -> live.ai());
+        });
     }
 }
