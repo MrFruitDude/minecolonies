@@ -708,7 +708,7 @@ public final class MacroRun
             previousConsumed = consumedUnits;
         }
         conservationMax = Math.max(conservationMax, Math.abs(drift));
-        if (drift != 0)
+        if (drift != 0 && errors.size() < 6)
         {
             final String where = errors.isEmpty() ? " [" + ItemUnits.breakdown(this) + " ]" : "";
             errors.add("item conservation violated at tick " + tick + (last ? " (final)" : "") + ": world holds " + found + " units, suppliers - sinks = " + expected + " (drift " + drift
