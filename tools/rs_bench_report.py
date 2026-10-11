@@ -406,7 +406,8 @@ def main(argv):
         meta = {"sha": opts.get("sha", "?"), "mode": opts.get("mode", "?"), "reps": int(opts.get("reps", 0)),
                 "flags": opts.get("flags", "?"), "seed": int(opts.get("seed", 0)), "status": int(opts.get("status", 0))}
         here = os.path.dirname(os.path.abspath(__file__))
-        ref_path = opts.get("ref") or os.path.join(here, "rs_bench_ref.json")
+        # quick runs have smaller scenarios: their score is relative to their own reference
+        ref_path = opts.get("ref") or os.path.join(here, "rs_bench_ref_quick.json" if meta["mode"] == "quick" else "rs_bench_ref.json")
         result = merge(raw, meta, ref_path)
         out = opts["out"]
         os.makedirs(os.path.dirname(out), exist_ok=True)
