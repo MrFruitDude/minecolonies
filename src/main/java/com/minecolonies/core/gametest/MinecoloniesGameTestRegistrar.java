@@ -520,6 +520,24 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multicolony_force_active_state"),
           info -> new MinecoloniesGameTestInstance(info, MultiColonyGameTests::force_active_state),
           isolatedColonyData(event, "multicolony_force_active_state"));
+        // P5b-MC: NPC faction owner for AI neighbour colonies (one glob: minecolonies:faction_*).
+        for (final String name : new String[] {"faction_create_and_permissions", "faction_persistence", "faction_index_and_limits", "faction_driver_state",
+          "faction_actions_without_player", "faction_raids_off"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "faction_create_and_permissions" -> FactionColonyGameTests::create_and_permissions;
+                case "faction_persistence" -> FactionColonyGameTests::persistence;
+                case "faction_index_and_limits" -> FactionColonyGameTests::index_and_limits;
+                case "faction_driver_state" -> FactionColonyGameTests::driver_state;
+                case "faction_actions_without_player" -> FactionColonyGameTests::actions_without_player;
+                default -> FactionColonyGameTests::raids_off;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
         // CA-4 + CA-2 network sync (one glob: minecolonies:sync_*).
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "sync_view_message_no_tail"),

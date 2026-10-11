@@ -3,6 +3,7 @@ package com.minecolonies.core.colony.events.raid;
 import com.ldtteam.structurize.util.RotationMirror;
 import com.minecolonies.api.MinecoloniesAPIProxy;
 import com.minecolonies.api.colony.ICitizenData;
+import com.minecolonies.api.colony.ColonyState;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.colonyEvents.EventStatus;
@@ -18,6 +19,7 @@ import com.minecolonies.api.util.*;
 import com.minecolonies.api.util.constant.ColonyConstants;
 import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.colony.Colony;
+import com.minecolonies.core.colony.FactionConfig;
 import com.minecolonies.core.colony.buildings.AbstractBuildingGuards;
 import com.minecolonies.core.colony.buildings.modules.LivingBuildingModule;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingGuardTower;
@@ -797,6 +799,15 @@ public class RaidManager implements IRaiderManager
     @Override
     public boolean canRaid()
     {
+        if (colony.getPermissions().isFactionOwned())
+        {
+            // An AI neighbour is raided only if the factions.canBeRaided config says so, and then only while it simulates.
+            return FactionConfig.canBeRaided()
+                     && !WorldUtil.isPeaceful(colony.getWorld())
+                     && (MineColonies.getConfig().getServer().enableColonyRaids.get())
+                     && colony.getRaiderManager().canHaveRaiderEvents()
+                     && colony.getState() == ColonyState.ACTIVE;
+        }
         return !WorldUtil.isPeaceful(colony.getWorld())
                  && (MineColonies.getConfig().getServer().enableColonyRaids.get())
                  && colony.getRaiderManager().canHaveRaiderEvents()

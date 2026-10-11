@@ -36,6 +36,8 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideSmartRetry(null);
         com.minecolonies.core.colony.requestsystem.RsStats.reset();
         com.minecolonies.core.colony.ColonyLimits.overrideMaxPerPlayer(null);
+        com.minecolonies.core.colony.FactionConfig.overrideDefaultPlayerRank(null);
+        com.minecolonies.core.colony.FactionConfig.overrideCanBeRaided(null);
         deleteAllColonies(level);
         // A single run starts on a fresh world at sunrise; in a full batch the clock has run on through every earlier
         // batch and can land at night, when citizens without beds stop working. Start every colony test at sunrise too,
@@ -50,6 +52,8 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideSmartRetry(null);
         com.minecolonies.core.colony.ColonyLimits.overrideMaxPerPlayer(null);
+        com.minecolonies.core.colony.FactionConfig.overrideDefaultPlayerRank(null);
+        com.minecolonies.core.colony.FactionConfig.overrideCanBeRaided(null);
         deleteAllColonies(level);
     }
 

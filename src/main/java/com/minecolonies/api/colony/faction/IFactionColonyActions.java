@@ -93,7 +93,7 @@ public interface IFactionColonyActions
      * Hires a citizen into a job of a building, as the hire button of a player does.
      *
      * @param building the building.
-     * @param moduleId the id of its job module ({@code IAssignsJob}).
+     * @param moduleId the id of its job module ({@code IAssignsJob}), {@code module.getProducer().getRuntimeID()}.
      * @param citizen  the citizen.
      * @return OK, NOT_POSSIBLE if the module does not exist or the citizen could not be assigned.
      */
@@ -104,7 +104,7 @@ public interface IFactionColonyActions
      * Fires a citizen from a job of a building.
      *
      * @param building the building.
-     * @param moduleId the id of its job module ({@code IAssignsJob}).
+     * @param moduleId the id of its job module ({@code IAssignsJob}), {@code module.getProducer().getRuntimeID()}.
      * @param citizen  the citizen.
      * @return OK, NOT_POSSIBLE if the module does not exist or the citizen did not have the job.
      */
