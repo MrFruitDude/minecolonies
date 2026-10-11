@@ -260,7 +260,7 @@ public class ServerConfiguration extends AbstractConfiguration
         creativeResolve = defineBoolean("creativeresolve", false);
         reservations = defineBoolean("reservations", true);
         smartRetry = defineBoolean("smartRetry", true);
-        priorityClasses = defineBoolean("priorityClasses", false);
+        priorityClasses = defineBoolean("priorityClasses", true);
 
         swapToCategory("builders");
 
