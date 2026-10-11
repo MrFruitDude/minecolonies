@@ -130,6 +130,14 @@ public final class BuilderScaffolding
     /**
      * Whether the builder gave up waiting for scaffolding items a short while ago (and so builds nothing that needs a tower for now).
      */
+    /**
+     * Whether a tower is no way out right now: scaffolding is off, or a try to get one failed a short while ago.
+     */
+    public boolean unavailable()
+    {
+        return !enabled() || ai.world.getGameTime() < Math.max(deniedUntil, stockDeniedUntil);
+    }
+
     public boolean denied()
     {
         return ai.world.getGameTime() < stockDeniedUntil;
@@ -400,8 +408,8 @@ public final class BuilderScaffolding
             abort();
             return false;
         }
-        ai.setDelay(20);
-        return true;
+        // the work goes on meanwhile (other blocks, the unstuck ladder): the tower comes when the items are there
+        return false;
     }
 
     private boolean gather(final long now)

@@ -1405,6 +1405,14 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * Whether scaffolding is no way out for the worker for now (switched off, no items, no room for a tower).
+     */
+    protected boolean scaffoldUnavailable()
+    {
+        return true;
+    }
+
+    /**
      * The blocks that count when the worker picks the spot to work from: the target first, then what he works on after it.
      *
      * @param target the block he has to reach.
@@ -1516,8 +1524,13 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             // only spots that connect to the ground by the hut: the top of a wall is no place to be put on (there is no way down from it)
             final BlockPos home = StandSpots.nearest(world, building.getPosition(), 8, 4, 4, null);
             final Set<BlockPos> connected = home == null ? null : StandSpots.reachableFrom(world, home, 40, 40000);
-            final List<ReachSpots.Spot> spots = ReachSpots.best(world, workAhead(target), WorkerSettings.reach(), worker.getEyeHeight(), worker.blockPosition(),
+            List<ReachSpots.Spot> spots = ReachSpots.best(world, workAhead(target), WorkerSettings.reach(), worker.getEyeHeight(), worker.blockPosition(),
               connected == null ? null : p -> connected.contains(p), 1);
+            if (spots.isEmpty() && scaffoldUnavailable())
+            {
+                // no tower is possible: the last resort is any spot from which the block is in reach
+                spots = ReachSpots.best(world, workAhead(target), WorkerSettings.reach(), worker.getEyeHeight(), worker.blockPosition(), null, 1);
+            }
             if (!spots.isEmpty())
             {
                 spot = spots.get(0).feet();

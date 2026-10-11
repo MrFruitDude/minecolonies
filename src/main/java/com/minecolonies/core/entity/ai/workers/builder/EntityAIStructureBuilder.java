@@ -534,6 +534,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
 
     @Override
+    protected boolean scaffoldUnavailable()
+    {
+        return scaffold.unavailable();
+    }
+
+    @Override
     protected void onRetryRound()
     {
         scaffold.clearDenial();
