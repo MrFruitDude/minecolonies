@@ -934,7 +934,7 @@ public final class BuilderScaffolding
         }
         final int baseY = base;
         if (!ai.walkIntoReachFor(cell, () -> List.of(cell), true,
-          feet -> (!feet.below().equals(cell) || descent) && (ledger.contains(feet.below()) || feet.getY() <= baseY + 1)))
+          feet -> (!feet.below().equals(cell) || descent) && (ledger.contains(feet.below()) || ledger.contains(feet) || feet.getY() <= baseY + 1)))
         {
             return true;
         }

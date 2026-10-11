@@ -159,7 +159,7 @@ public final class ScaffoldPlanner
                         continue;
                     }
                     final int covered = anyOrder ? BuildReach.countInReach(feet.below(), eyeHeight, blocks, usable) : BuildReach.prefixInReach(feet.below(), eyeHeight, blocks, usable);
-                    final double cost = support.cells.size() * CELL_COST + support.penalty + penaltyOf(grid, feet) + penaltyOf(grid, head) - covered
+                    final double cost = support.weight() + penaltyOf(grid, feet) + penaltyOf(grid, head) - covered
                                           + (!support.cells.isEmpty() && grid.ground(support.cells.get(0).below()) ? NEW_TOWER_COST : 0.0D);
                     if (best == null || cost < best.cost || (cost == best.cost && support.cells.size() < best.cells.size()))
                     {
@@ -223,13 +223,24 @@ public final class ScaffoldPlanner
         return support != null && (support.cells.isEmpty() || grid.reachable(support.cells.get(0))) ? support : null;
     }
 
-    private record Support(List<BlockPos> cells, int penalty)
+    private record Support(List<BlockPos> cells, int penalty, int armCells)
     {
+        Support(final List<BlockPos> cells, final int penalty)
+        {
+            this(cells, penalty, 0);
+        }
+
         double weight()
         {
-            return cells.size() * CELL_COST + penalty;
+            return cells.size() * CELL_COST + penalty + armCells * ARM_COST;
         }
     }
+
+    /**
+     * What a block of an arm costs on top of its price as a block: the way along an arm is a slow one for a builder, and a tower is the better
+     * deal where there is ground for it.
+     */
+    public static final double ARM_COST = 2.0D;
 
     /**
      * The cheapest way to put a scaffolding block into the floor cell so that it stands: a column to the ground right under it, or a column
@@ -276,6 +287,7 @@ public final class ScaffoldPlanner
         }
         final List<BlockPos> cells = new ArrayList<>(column.cells);
         int penalty = column.penalty;
+        int armCells = 0;
         for (int i = 1; i <= length; i++)
         {
             final BlockPos cell = base.relative(towards, i);
@@ -289,8 +301,9 @@ public final class ScaffoldPlanner
             }
             cells.add(cell);
             penalty += grid.penalty(cell);
+            armCells++;
         }
-        return new Support(cells, penalty);
+        return new Support(cells, penalty, armCells);
     }
 
     /**
