@@ -196,6 +196,8 @@ public final class ColonyHooksGameTests
      */
     public static void paceProviderScalesAiDelay(final GameTestHelper helper)
     {
+        // these test the pace provider alone: the worker speed of the settings (default 1.5) is multiplied in on top, so switch it off
+        com.minecolonies.core.entity.ai.workers.util.WorkerSettings.overrideForTests(1.0D, null, null, null, null, null);
         final ServerLevel level = helper.getLevel();
         crafterFixture(helper, "G0 pace colony", (colony, worker) -> {
             final IMinecoloniesAPI api = IMinecoloniesAPI.getInstance();
@@ -332,6 +334,8 @@ public final class ColonyHooksGameTests
      */
     public static void paceProviderScalesActionCycle(final GameTestHelper helper)
     {
+        // these test the pace provider alone: the worker speed of the settings (default 1.5) is multiplied in on top, so switch it off
+        com.minecolonies.core.entity.ai.workers.util.WorkerSettings.overrideForTests(1.0D, null, null, null, null, null);
         crafterFixture(helper, "G0b pace cycle colony", (colony, worker) -> {
             final IMinecoloniesAPI api = IMinecoloniesAPI.getInstance();
             final IColonyPaceProvider previous = api.getColonyPaceProvider();
@@ -429,6 +433,8 @@ public final class ColonyHooksGameTests
      */
     public static void paceDefaultProviderUnchanged(final GameTestHelper helper)
     {
+        // these test the pace provider alone: the worker speed of the settings (default 1.5) is multiplied in on top, so switch it off
+        com.minecolonies.core.entity.ai.workers.util.WorkerSettings.overrideForTests(1.0D, null, null, null, null, null);
         crafterFixture(helper, "G0 default pace colony", (colony, worker) -> {
             final List<String> failures = new ArrayList<>();
             final IColonyPaceProvider provider = IMinecoloniesAPI.getInstance().getColonyPaceProvider();
