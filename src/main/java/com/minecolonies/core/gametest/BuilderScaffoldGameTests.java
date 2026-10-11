@@ -322,7 +322,7 @@ final class BuilderScaffoldGameTests
      */
     static void tallStructure(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final boolean physical, final int maxTicks, final boolean expectScaffold)
     {
-        WorkerSettings.overrideReachForTests(null, physical, null, null);
+        WorkerSettings.overrideReachForTests(null, physical, null, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
         WorkerEfficiencyGameTests.scene(helper, "WSCAF " + name, live -> {
@@ -417,6 +417,7 @@ final class BuilderScaffoldGameTests
      */
     public static void cancelMidBuild(final GameTestHelper helper)
     {
+        WorkerSettings.overrideReachForTests(null, null, null, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
         WorkerEfficiencyGameTests.scene(helper, "WSCAF cancel", live -> {
@@ -458,6 +459,7 @@ final class BuilderScaffoldGameTests
      */
     public static void saveLoadMidScaffold(final GameTestHelper helper)
     {
+        WorkerSettings.overrideReachForTests(null, null, null, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
         WorkerEfficiencyGameTests.scene(helper, "WSCAF saveload", live -> {
@@ -554,6 +556,7 @@ final class BuilderScaffoldGameTests
      */
     public static void twoBuilders(final GameTestHelper helper)
     {
+        WorkerSettings.overrideReachForTests(null, null, null, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
         WorkerEfficiencyGameTests.scene(helper, "WSCAF two", live -> {
@@ -646,6 +649,7 @@ final class BuilderScaffoldGameTests
      */
     public static void impossibleOverLava(final GameTestHelper helper)
     {
+        WorkerSettings.overrideReachForTests(null, null, null, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
         WorkerEfficiencyGameTests.scene(helper, "WSCAF lava", live -> {
@@ -697,6 +701,7 @@ final class BuilderScaffoldGameTests
      */
     public static void positionUnderScaffolding(final GameTestHelper helper)
     {
+        WorkerSettings.overrideReachForTests(null, null, null, 16);
         ReachAudit.enable(true);
         WorkerEfficiencyGameTests.scene(helper, "WSCAF held", live -> {
             live.setSkills(40, 40);
@@ -731,6 +736,103 @@ final class BuilderScaffoldGameTests
                 ReachAudit.enable(false);
                 helper.succeed();
             }, () -> "missing=" + missing(live, blueprint, origin) + " scaffold=" + scaffoldInWorld(live, origin) + " " + live.ai());
+        });
+    }
+
+    // ------------------------------------------------------------------ probes
+
+    /**
+     * Probe: can a citizen walk up a column of scaffolding to its top with the path planner of the colony? Logs where he is every 20 ticks.
+     */
+    static void climbProbe(final GameTestHelper helper, final String name, final int height, final boolean standOnTop)
+    {
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF probe " + name, live -> {
+            final BlockPos site = helper.absolutePos(SITE);
+            for (int y = 0; y < height; y++)
+            {
+                live.level.setBlock(site.offset(3, y, 0), Blocks.SCAFFOLDING.defaultBlockState().setValue(net.minecraft.world.level.block.ScaffoldingBlock.DISTANCE, 0), 3);
+            }
+            final BlockPos goal = standOnTop ? site.offset(3, height, 0) : site.offset(3, height - 1, 0);
+            final var entity = live.citizen.getEntity().get();
+            entity.setPos(site.getX() + 0.5D, site.getY(), site.getZ() + 0.5D);
+            final int[] first = {-1};
+            WorkerEfficiencyGameTests.everyTick(live, 800, tick -> {
+                com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils.walkToPos(entity, goal, 1, false);
+                if (tick % 20 == 0)
+                {
+                    Log.getLogger().info("PROBE {} t={} pos={} vel={} nav={} goal={} onGround={} below={}", name, tick, entity.blockPosition().toShortString(), entity.getDeltaMovement(),
+                      entity.getNavigation().isDone() ? "done" : "busy", goal.toShortString(), entity.onGround(), live.level.getBlockState(entity.blockPosition().below()).getBlock());
+                }
+                if (entity.blockPosition().equals(goal) || (entity.blockPosition().distSqr(goal) <= 1 && first[0] < 0))
+                {
+                    first[0] = tick;
+                }
+                return first[0] >= 0 && tick > first[0] + 20;
+            }, () -> {
+                Log.getLogger().info("PROBE {} reached the goal at t={}", name, first[0]);
+                helper.succeed();
+            }, () -> "PROBE " + name + " did not reach " + goal + ": at " + entity.blockPosition());
+        });
+    }
+
+    public static void climbTop3(final GameTestHelper helper)
+    {
+        climbProbe(helper, "top3", 3, true);
+    }
+
+    public static void climbTop8(final GameTestHelper helper)
+    {
+        climbProbe(helper, "top8", 8, true);
+    }
+
+    public static void climbInside5(final GameTestHelper helper)
+    {
+        climbProbe(helper, "inside5", 5, false);
+    }
+
+    /**
+     * The scaffolding items are requested like other materials: with none in the hut the builder asks for them, and when they arrive he builds
+     * the tower and finishes the wall.
+     */
+    public static void stockArrives(final GameTestHelper helper)
+    {
+        WorkerSettings.overrideReachForTests(null, null, null, 16);
+        ReachAudit.enable(true);
+        BuilderScaffolding.resetCounters();
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF arrives", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            final Blueprint blueprint = ring("arrives", 10);
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            final WorkOrderDecoration order = live.orderFor("arrives", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            final boolean[] requested = {false};
+            final boolean[] delivered = {false};
+            WorkerEfficiencyGameTests.everyTick(live, 30_000, tick -> {
+                if (!requested[0])
+                {
+                    for (final var request : live.hut.getOpenRequestsOfType(-1, com.google.common.reflect.TypeToken.of(com.minecolonies.api.colony.requestsystem.requestable.Stack.class)))
+                    {
+                        requested[0] |= request.getRequest().getStack().is(Items.SCAFFOLDING);
+                    }
+                }
+                if (requested[0] && !delivered[0])
+                {
+                    // the courier brings 32
+                    delivered[0] = true;
+                    InventoryUtils.addItemStackToItemHandler(live.hut.getItemHandlerCap(), new ItemStack(Items.SCAFFOLDING, 32));
+                    Log.getLogger().info("WSCAF arrives: requested at t={}, delivered", tick);
+                }
+                return delivered[0] && live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
+            }, () -> {
+                helper.assertTrue(built(live, blueprint, origin), "not built: missing " + missing(live, blueprint, origin));
+                helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left");
+                helper.assertTrue(BuilderScaffolding.cellsPlaced > 0, "no scaffolding was used");
+                helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
+                WorkerSettings.clearOverrides();
+                ReachAudit.enable(false);
+                helper.succeed();
+            }, () -> "requested=" + requested[0] + " missing=" + missing(live, blueprint, origin) + " " + live.ai());
         });
     }
 }

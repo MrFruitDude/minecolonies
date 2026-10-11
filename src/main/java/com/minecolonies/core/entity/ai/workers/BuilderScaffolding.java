@@ -107,6 +107,14 @@ public final class BuilderScaffolding
         return phase + (plan == null ? "" : " plan=" + plan.cells().size() + "@" + next + " stand=" + plan.stand().toShortString()) + " down=" + cellsToTakeDown.size() + " denied=" + (deniedUntil > ai.world.getGameTime());
     }
 
+    private void log(final String message)
+    {
+        if (com.minecolonies.core.entity.ai.workers.util.ReachAudit.isEnabled())
+        {
+            Log.getLogger().info("SCAFFOLD {} {}", ai.worker.getName().getString(), message);
+        }
+    }
+
     public boolean busy()
     {
         return phase != Phase.IDLE;
@@ -273,7 +281,7 @@ public final class BuilderScaffolding
         }
         if (found == null)
         {
-            Log.getLogger().debug("{}: no scaffolding possible for {}", ai.worker.getName().getString(), target);
+            log("no scaffolding possible for " + target);
             deniedUntil = now + DENY_TICKS;
             return false;
         }
@@ -298,7 +306,7 @@ public final class BuilderScaffolding
             phase = Phase.WAIT_STOCK;
         }
         ai.worker.getCitizenData().setStatusPosition(target);
-        Log.getLogger().debug("{}: scaffolding for {}: {} blocks, stand at {}", ai.worker.getName().getString(), target, plan.cells().size(), plan.stand());
+        log("plan for " + target + ": cells=" + plan.cells() + " stand=" + plan.stand() + " covered=" + plan.covered() + " phase=" + phase);
         return true;
     }
 
@@ -349,7 +357,7 @@ public final class BuilderScaffolding
         }
         if (now - phaseSince > STOCK_TIMEOUT)
         {
-            Log.getLogger().debug("{}: no scaffolding items after {} ticks, going on without a tower", ai.worker.getName().getString(), STOCK_TIMEOUT);
+            log("no scaffolding items after " + STOCK_TIMEOUT + " ticks, going on without a tower");
             deniedUntil = now + DENY_TICKS;
             abort();
             return false;
@@ -414,7 +422,7 @@ public final class BuilderScaffolding
             if (!new WorldGrid(ledger).free(cell))
             {
                 // something is in the way now
-                Log.getLogger().debug("{}: the place for scaffolding at {} is taken", ai.worker.getName().getString(), cell);
+                log("abort: the place for scaffolding at " + cell + " is taken: " + ai.world.getBlockState(cell));
                 abort();
                 return false;
             }
@@ -428,7 +436,7 @@ public final class BuilderScaffolding
             }
             if (now - stepSince > WORK_TIMEOUT)
             {
-                Log.getLogger().debug("{}: cannot get to {} to put up scaffolding", ai.worker.getName().getString(), cell);
+                log("abort: cannot get to " + cell + " to put up scaffolding, builder at " + ai.worker.blockPosition());
                 deniedUntil = now + DENY_TICKS;
                 abort();
                 return false;
@@ -439,6 +447,7 @@ public final class BuilderScaffolding
             }
             if (!place(cell, ledger))
             {
+                log("abort: cannot place at " + cell);
                 abort();
                 return false;
             }
@@ -449,6 +458,7 @@ public final class BuilderScaffolding
         }
         // standing: from here the normal work goes on from the top of the tower
         final BlockPos stand = plan.stand();
+        log("tower is up, stand " + stand + ", builder at " + ai.worker.blockPosition());
         plan = null;
         phase = Phase.IDLE;
         ai.resetReachWalk();
@@ -631,6 +641,7 @@ public final class BuilderScaffolding
             return false;
         }
         cellsToTakeDown = list;
+        log("taking down " + list.size() + " blocks, builder at " + ai.worker.blockPosition() + " all=" + (tower == null));
         phase = Phase.DISMANTLE;
         phaseSince = now;
         stepSince = now;
@@ -656,7 +667,7 @@ public final class BuilderScaffolding
         if (now - stepSince > WORK_TIMEOUT || !WorldUtil.isBlockLoaded(ai.world, cell))
         {
             // he cannot get there: the colony takes the rest down
-            Log.getLogger().debug("{}: cannot get to {} to take scaffolding down", ai.worker.getName().getString(), cell);
+            log("cannot get to " + cell + " to take scaffolding down, builder at " + ai.worker.blockPosition());
             ScaffoldSweeper.sweep(ai.worker.getCitizenColonyHandler().getColonyOrRegister(), ledger, c -> cellsToTakeDown.contains(c.pos()), Integer.MAX_VALUE);
             noteRescan(cellsToTakeDown);
             cellsToTakeDown.clear();
