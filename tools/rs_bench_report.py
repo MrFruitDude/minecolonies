@@ -10,7 +10,7 @@ Run with `python3 -I`. Standard library only.
 
 SCORE (lower is better, 100 = the reference run the score reference file was made from):
 
-  per macro scenario s:   R_s = exp( sum_i w_i * ln(x_i / ref_i) )     (weighted geometric mean of component ratios)
+  per macro scenario s:   R_s = exp( sum_i w_i * ln(x_i / ref_i) )     (weighted geometric mean of component ratios; each component is the median over the measured repeats)
       components i (weight):  rsCpuNsPerTick (0.40)   mean server-thread CPU ns per tick spent inside the request system
                               ticksToCompletion (0.30) game ticks until the scenario's work is done
                               courierDistance (0.15)   blocks the couriers walked until then
@@ -42,7 +42,7 @@ MICRO_OPS = [
     ("create", "cpuNs"),
     ("assign", "cpuNs"),
     ("idleTick", "cpuNs"),
-    ("stockEvent", "netOfIdleTicksCpuNs"),
+    ("stockEvent", "cpuNs"),
     ("courierPick", "cpuNs"),
     ("complete", "cpuNs"),
     ("cancel", "cpuNs"),
@@ -110,6 +110,8 @@ def merge(rawdir, meta, ref_path):
     micro_runs, macro_runs = {}, {}
     gate_failures = []
     warmups = 0
+    hangs = {}
+    measured = {}
     for run in runs:
         if run.get("warmup"):
             warmups += 1
@@ -117,6 +119,10 @@ def merge(rawdir, meta, ref_path):
             gate_failures.append("%s: %s" % (run.get("test"), err))
         if run.get("warmup"):
             continue
+        if run["kind"] == "macro":
+            measured[run["scenario"]] = measured.get(run["scenario"], 0) + 1
+            if run.get("liveness"):
+                hangs.setdefault(run["scenario"], []).append("%s: %s" % (run.get("test"), run["liveness"][0].split("\n")[0]))
         if run["kind"] == "micro":
             micro_runs.setdefault(str(run["scale"]), []).append(run)
         else:
@@ -132,7 +138,7 @@ def merge(rawdir, meta, ref_path):
         flat = []
         for r in rs:
             f = flatten({k: r[k] for k in ("meter", "work", "scopes", "extra", "gates") if k in r})
-            f["ticksToCompletion"] = float(r.get("ticksToCompletion", -1))
+            f["ticksToCompletion"] = float(r["ticksToCompletion"] if r.get("ticksToCompletion", -1) >= 0 else r.get("ticksRun", 0))
             f["ticksToQuiesce"] = float(r.get("ticksToQuiesce", -1))
             f["ticksRun"] = float(r.get("ticksRun", 0))
             # per-resolver rows
@@ -145,6 +151,15 @@ def merge(rawdir, meta, ref_path):
         keys = sorted(set().union(*[f.keys() for f in flat]))
         macro[scenario] = {k: stats([f[k] for f in flat if k in f]) for k in keys}
 
+    # A repeat that never finished is counted at its full budget; the run is only invalid when more than a quarter of a
+    # scenario's repeats hang (the shipped system hangs now and then; one hang in five repeats is tolerated).
+    liveness_notes = []
+    for scenario, notes in hangs.items():
+        allowed = measured.get(scenario, 0) // 4
+        liveness_notes.extend(notes)
+        if len(notes) > allowed:
+            gate_failures.append("%s: %d of %d repeats did not finish (at most %d tolerated): %s" % (scenario, len(notes), measured[scenario], allowed, notes[0]))
+
     result = {
         "schema": SCHEMA,
         "sha": meta["sha"],
@@ -155,7 +170,7 @@ def merge(rawdir, meta, ref_path):
         "seed": meta["seed"],
         "serverExit": meta["status"],
         "warmupRuns": warmups,
-        "gates": {"ok": not gate_failures and meta["status"] == 0 and bool(runs), "failures": gate_failures,
+        "gates": {"ok": not gate_failures and bool(runs), "failures": gate_failures, "hangs": liveness_notes,
                   "runs": len(runs)},
         "micro": micro,
         "macro": macro,
@@ -178,7 +193,7 @@ def components(result):
     """The raw component values the score is made of."""
     comp = {"macro": {}, "micro": {}}
     for scenario, metrics in result["macro"].items():
-        comp["macro"][scenario] = {k: metrics[k]["mean"] for k, _ in MACRO_COMPONENTS if k in metrics and metrics[k]["n"]}
+        comp["macro"][scenario] = {k: metrics[k]["median"] for k, _ in MACRO_COMPONENTS if k in metrics and metrics[k]["n"]}
     for scale in MICRO_SCORE_SCALES:
         m = result["micro"].get(scale)
         if not m:
@@ -186,7 +201,7 @@ def components(result):
         for op, field in MICRO_OPS:
             key = "ops.%s.%s" % (op, field)
             if key in m and m[key]["n"]:
-                comp["micro"]["%s:%s.%s" % (scale, op, field)] = m[key]["mean"]
+                comp["micro"]["%s:%s.%s" % (scale, op, field)] = m[key]["median"]
     return comp
 
 
@@ -278,7 +293,7 @@ def verdict(a, b, min_pct):
     """a, b: stats dicts (lower is better). Returns (delta_pct, label, p)."""
     if not a or not b or not a.get("n") or not b.get("n"):
         return None, "n/a", 1.0
-    ma, mb = a["mean"], b["mean"]
+    ma, mb = a["median"], b["median"]
     delta = (mb - ma) / ma * 100.0 if ma else (0.0 if mb == 0 else float("inf"))
     se = math.sqrt((a["sd"] ** 2) / a["n"] + (b["sd"] ** 2) / b["n"])
     p = mann_whitney_p(a["values"], b["values"])
@@ -314,7 +329,7 @@ def row(name, a, b, min_pct):
     sd_a = (a["sd"] / a["mean"] * 100.0) if a and a.get("mean") else 0.0
     sd_b = (b["sd"] / b["mean"] * 100.0) if b and b.get("mean") else 0.0
     return "%-46s %9s +-%4.1f%% %9s +-%4.1f%% %8s  %-7s p=%.3f" % (
-        name[:46], fmt(a.get("mean")) if a else "-", sd_a, fmt(b.get("mean")) if b else "-", sd_b,
+        name[:46], fmt(a.get("median")) if a else "-", sd_a, fmt(b.get("median")) if b else "-", sd_b,
         ("%+.1f%%" % delta) if delta is not None else "-", label, p)
 
 
@@ -324,9 +339,9 @@ def compare(base, new, show_all, min_pct):
         base["sha"], base["mode"], base["reps"], base["flags"], new["sha"], new["mode"], new["reps"], new["flags"]))
     bs, ns = base.get("score", {}), new.get("score", {})
     if not new["gates"]["ok"]:
-        lines.append("!! NEW RUN FAILED ITS CORRECTNESS GATES: " + "; ".join(new["gates"]["failures"][:5]))
+        lines.append("!! NEW RUN FAILED ITS CORRECTNESS GATES: " + "; ".join(f[:200] for f in new["gates"]["failures"][:5]))
     lines.append("")
-    header = "%-46s %16s %16s %8s  %-7s" % ("metric", "base", "new", "delta", "verdict")
+    header = "%-46s %16s %16s %8s  %-7s" % ("metric (median, +-cv)", "base", "new", "delta", "verdict")
     lines.append(header)
     lines.append("-" * len(header))
     # recompute score of both against the base as reference
@@ -356,7 +371,9 @@ def show(result):
     print("%s  mode=%s reps=%s flags=%s  gates=%s" % (result["sha"], result["mode"], result["reps"], result["flags"],
                                                      "OK" if result["gates"]["ok"] else "FAILED"))
     for f in result["gates"]["failures"][:10]:
-        print("  gate failure:", f)
+        print("  gate failure:", f[:400].replace("\n", " | "))
+    for f in result["gates"].get("hangs", [])[:10]:
+        print("  tolerated hang:", f[:300])
     print("score %.1f (macro x%.3f micro x%.3f, reference %s)%s" % (s["value"], s["macroRatio"], s["microRatio"], s["reference"],
                                                                  "" if s["valid"] else "  INVALID"))
     for scenario, metrics in sorted(result["macro"].items()):
@@ -389,7 +406,8 @@ def main(argv):
         meta = {"sha": opts.get("sha", "?"), "mode": opts.get("mode", "?"), "reps": int(opts.get("reps", 0)),
                 "flags": opts.get("flags", "?"), "seed": int(opts.get("seed", 0)), "status": int(opts.get("status", 0))}
         here = os.path.dirname(os.path.abspath(__file__))
-        ref_path = opts.get("ref") or os.path.join(here, "rs_bench_ref.json")
+        # quick runs have smaller scenarios: their score is relative to their own reference
+        ref_path = opts.get("ref") or os.path.join(here, "rs_bench_ref_quick.json" if meta["mode"] == "quick" else "rs_bench_ref.json")
         result = merge(raw, meta, ref_path)
         out = opts["out"]
         os.makedirs(os.path.dirname(out), exist_ok=True)

@@ -8,7 +8,7 @@
 #   --only a,b      only tests whose name contains one of the words (e.g. micro_1000,fresh)
 #   --flags on|off  RS reservation + smart-retry switches (default on = the shipped default)
 #   --seed N        seed of every random choice (default 117)
-#   --jfr FILE      record the game JVM with Java Flight Recorder into FILE (profile settings)
+#   --jfr FILE      record the JVMs of the run with Java Flight Recorder (profile settings); put %p in FILE (one file per JVM, the big one is the game)
 #   --out DIR       result directory (default bench-results/)
 #   --keep-raw      keep the per-test JSON files next to the merged result
 #
@@ -46,7 +46,9 @@ export RS_BENCH_ONLY=1 RS_BENCH_MODE="$mode" RS_BENCH_REPS="$reps" RS_BENCH_FLAG
 
 gradle_args=(--offline -Dmaven.repo.local=/mnt/data/mc-mod-ports/rs-maven -x neoFormJoined26.3-1DownloadAssets runGameTestServer)
 if [[ -n "$jfr" ]]; then
-  gradle_args+=(--jvm-args="-XX:StartFlightRecording=filename=$jfr,settings=profile,dumponexit=true -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints")
+  # The task takes no --jvm-args; JAVA_TOOL_OPTIONS reaches every JVM of the run (gradle's too, whose small recordings are
+  # harmless; the game JVM's is the big one). %p in the file name keeps them apart.
+  export JAVA_TOOL_OPTIONS="-XX:StartFlightRecording=filename=$jfr,settings=profile,dumponexit=true -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints"
 fi
 
 log="$raw/gametest.log"

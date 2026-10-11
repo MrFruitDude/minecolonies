@@ -198,7 +198,7 @@ public final class Scenarios
 
                 recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_LOG, 1)), new ItemStack(Items.OAK_PLANKS, 4), 1);
                 // The fence is made from planks the same sawmill makes from logs: a two-step chain inside one crafter.
-                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 2)), new ItemStack(Items.OAK_FENCE, 1), 2);
+                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 1)), new ItemStack(Items.OAK_FENCE, 1), 1);
                 recipe(mason, BuildingModules.STONEMASON_CRAFT, List.of(new ItemStack(Items.COBBLESTONE, 1)), new ItemStack(Items.STONE_BRICKS, 1), 1);
 
                 this.builder = builder;
@@ -314,20 +314,11 @@ public final class Scenarios
         }
     }
 
-    /** Positions on two rows north of the colony core and two south of the build sites, for the many small buildings. */
+    /** Positions of the many small buildings: two rows north of the colony core, within about 35 blocks of the warehouses. */
     static BlockPos ring(final int i)
     {
-        final int perRow = 9;
-        final int row = i / perRow;
-        final int col = i % perRow;
-        final int z = switch (row)
-        {
-            case 0 -> 8;
-            case 1 -> 18;
-            case 2 -> 28;
-            default -> 36 + 10 * (row - 3);
-        };
-        return new BlockPos(10 + 10 * col, 1, z);
+        final int perRow = 8;
+        return new BlockPos(34 + 8 * (i % perRow), 1, 18 + 9 * (i / perRow));
     }
 
     private static final String[][] CONSUMER_HUTS = {
@@ -389,7 +380,7 @@ public final class Scenarios
                 r.place(ModBlocks.blockHutMiner, 40, 28, "fundamentals/miner1.blueprint");
                 r.place(ModBlocks.blockHutFarmer, 50, 28, "agriculture/horticulture/farmer1.blueprint");
                 recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_LOG, 1)), new ItemStack(Items.OAK_PLANKS, 4), 1);
-                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 2)), new ItemStack(Items.OAK_FENCE, 1), 2);
+                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 1)), new ItemStack(Items.OAK_FENCE, 1), 1);
                 recipe(mason, BuildingModules.STONEMASON_CRAFT, List.of(new ItemStack(Items.COBBLESTONE, 1)), new ItemStack(Items.STONE_BRICKS, 1), 1);
                 final int small = quick ? 8 : 17;
                 for (int i = 0; i < small; i++)
@@ -500,7 +491,7 @@ public final class Scenarios
                 r.place(ModBlocks.blockHutMiner, 58, 34, "fundamentals/miner1.blueprint");
                 r.place(ModBlocks.blockHutFarmer, 66, 34, "agriculture/horticulture/farmer1.blueprint");
                 recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_LOG, 1)), new ItemStack(Items.OAK_PLANKS, 4), 1);
-                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 2)), new ItemStack(Items.OAK_FENCE, 1), 2);
+                recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 1)), new ItemStack(Items.OAK_FENCE, 1), 1);
                 recipe(mason, BuildingModules.STONEMASON_CRAFT, List.of(new ItemStack(Items.COBBLESTONE, 1)), new ItemStack(Items.STONE_BRICKS, 1), 1);
                 for (int i = 0; i < requesters; i++)
                 {
@@ -512,7 +503,23 @@ public final class Scenarios
                     r.racks(b, 4);
                     consumers.add(b);
                 }
-                // plain items by registry order: stable across runs
+            }
+
+            @Override
+            public void staff(final MacroRun r)
+            {
+                for (final IBuilding b : builders)
+                {
+                    r.hire(b, () -> b.getModule(BuildingModules.BUILDER_WORK));
+                }
+                r.hire(sawmill, () -> sawmill.getModule(BuildingModules.SAWMILL_WORK));
+                r.hire(mason, () -> mason.getModule(BuildingModules.STONEMASON_WORK));
+                couriers(r, huts, wh);
+            }
+
+            /** The goods the storm asks for: plain items by registry order, chosen once the crafters know their recipes. */
+            private void pickKinds(final MacroRun r)
+            {
                 final List<Item> candidates = new ArrayList<>();
                 for (final Item item : net.minecraft.core.registries.BuiltInRegistries.ITEM)
                 {
@@ -535,20 +542,9 @@ public final class Scenarios
             }
 
             @Override
-            public void staff(final MacroRun r)
-            {
-                for (final IBuilding b : builders)
-                {
-                    r.hire(b, () -> b.getModule(BuildingModules.BUILDER_WORK));
-                }
-                r.hire(sawmill, () -> sawmill.getModule(BuildingModules.SAWMILL_WORK));
-                r.hire(mason, () -> mason.getModule(BuildingModules.STONEMASON_WORK));
-                couriers(r, huts, wh);
-            }
-
-            @Override
             public void begin(final MacroRun r)
             {
+                pickKinds(r);
                 r.supplies.add(new MacroRun.Supply("logs", new ItemStack(Items.OAK_LOG, 12), 250, 100, 0));
                 r.supplies.add(new MacroRun.Supply("cobble", new ItemStack(Items.COBBLESTONE, 16), 250, 180, 0));
                 final java.util.Random rng = new java.util.Random(r.seed * 7919L);
@@ -577,7 +573,7 @@ public final class Scenarios
                 final int n = quick ? 2 : 4;
                 for (int k = 0; k < n; k++)
                 {
-                    orders.add(order(r, "storm" + k, 10, 62 + 3 * k, hutBlocks(10 + 2 * k, 6, 2 + k % 2, 2), 0));
+                    orders.add(order(r, "storm" + k, 10, 62 + 3 * k, hutBlocks(10 + 2 * k, 6, 2 + k % 2, 0), 0));
                 }
             }
 

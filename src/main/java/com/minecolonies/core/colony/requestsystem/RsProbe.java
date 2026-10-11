@@ -116,6 +116,11 @@ public final class RsProbe
     private static final long[][] hist       = new long[SCOPES][BUCKETS];
     private static final Map<Class<?>, long[]> byClass = new IdentityHashMap<>();
 
+    // optional per-call samples of chosen scopes (micro benchmark: robust statistics over a few hundred calls)
+    private static final boolean[] sampling = new boolean[SCOPES];
+    private static final long[][]  samples  = new long[SCOPES][];
+    private static final int[]     sampleN  = new int[SCOPES];
+
     private static long topCount;
     private static long totalCpu;
     private static long totalAlloc;
@@ -219,6 +224,16 @@ public final class RsProbe
         inclAlloc[scope] += inclA;
         selfAlloc[scope] += selfA;
         hist[scope][bucket(incl)]++;
+        if (sampling[scope])
+        {
+            long[] buf = samples[scope];
+            if (buf == null || sampleN[scope] == buf.length)
+            {
+                buf = java.util.Arrays.copyOf(buf == null ? new long[256] : buf, buf == null ? 256 : buf.length * 2);
+                samples[scope] = buf;
+            }
+            buf[sampleN[scope]++] = incl;
+        }
         if (key != null)
         {
             final long[] cell = byClass.computeIfAbsent(key, k -> new long[SCOPES * 3]);
@@ -249,6 +264,24 @@ public final class RsProbe
             extraBytes += (long) bytes * Math.max(1, receivers);
             extraMessages++;
         }
+    }
+
+    /**
+     * Starts recording the inclusive CPU time of every call of a scope (cleared first).
+     */
+    public static void startSampling(final int scope)
+    {
+        sampleN[scope] = 0;
+        sampling[scope] = true;
+    }
+
+    /**
+     * Stops recording and returns the samples taken, nanoseconds per call.
+     */
+    public static long[] stopSampling(final int scope)
+    {
+        sampling[scope] = false;
+        return samples[scope] == null ? new long[0] : java.util.Arrays.copyOf(samples[scope], sampleN[scope]);
     }
 
     // ------------------------------------------------------------------ readout

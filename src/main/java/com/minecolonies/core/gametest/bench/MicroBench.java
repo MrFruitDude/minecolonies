@@ -90,8 +90,11 @@ public final class MicroBench
 
     private final Deque<Runnable> steps = new ArrayDeque<>();
 
-    private MicroBench(final GameTestHelper helper, final String testName, final int scale, final int rep, final boolean warmup)
+    private final java.util.function.Consumer<String> done;
+
+    private MicroBench(final GameTestHelper helper, final String testName, final int scale, final int rep, final boolean warmup, final java.util.function.Consumer<String> done)
     {
+        this.done = done;
         this.helper = helper;
         this.testName = testName;
         this.scale = scale;
@@ -100,9 +103,9 @@ public final class MicroBench
         this.rng = new Random(BenchEnv.seed() * 1_000_003L + scale);
     }
 
-    public static void run(final GameTestHelper helper, final String testName, final int scale, final int rep, final boolean warmup)
+    public static void run(final GameTestHelper helper, final String testName, final int scale, final int rep, final boolean warmup, final java.util.function.Consumer<String> done)
     {
-        new MicroBench(helper, testName, scale, rep, warmup).start();
+        new MicroBench(helper, testName, scale, rep, warmup, done).start();
     }
 
     // ------------------------------------------------------------------ driver
@@ -147,7 +150,7 @@ public final class MicroBench
         {
             StandardToken.seedForBenchmark(null);
             RsProbe.stop();
-            helper.fail("micro bench " + testName + " failed: " + t);
+            done.accept("micro bench " + testName + " failed: " + t);
             t.printStackTrace();
             return;
         }
@@ -246,12 +249,54 @@ public final class MicroBench
         }
     }
 
+    /**
+     * Mean of the calls without the slowest tenth: a GC pause or a JIT compile inside one call must not move the figure.
+     */
+    private static double trimmedMean(final long[] values)
+    {
+        if (values.length == 0)
+        {
+            return 0;
+        }
+        final long[] sorted = values.clone();
+        java.util.Arrays.sort(sorted);
+        final int keep = Math.max(1, (int) Math.floor(sorted.length * 0.9));
+        double sum = 0;
+        for (int i = 0; i < keep; i++)
+        {
+            sum += sorted[i];
+        }
+        return sum / keep;
+    }
+
+    private static final int[] SAMPLED = {RsProbe.CREATE, RsProbe.ASSIGN, RsProbe.STATE, RsProbe.COURIER_PICK, RsProbe.LEDGER, RsProbe.LEDGER_READ, RsProbe.MGR_TICK, RsProbe.CAN_RESOLVE, RsProbe.ATTEMPT};
+
+    private void sampleAll()
+    {
+        for (final int scope : SAMPLED)
+        {
+            RsProbe.startSampling(scope);
+        }
+    }
+
+    private final java.util.Map<Integer, long[]> taken = new java.util.HashMap<>();
+
+    private void collectSamples()
+    {
+        for (final int scope : SAMPLED)
+        {
+            taken.put(scope, RsProbe.stopSampling(scope));
+        }
+    }
+
     private JsonObject stats(final RsProbe.Snap a, final RsProbe.Snap b, final int scope, final long divisor)
     {
         final long calls = b.count[scope] - a.count[scope];
         final JsonObject out = new JsonObject();
         out.addProperty("calls", calls);
-        out.addProperty("cpuNs", calls == 0 ? 0 : (double) (b.inclCpu[scope] - a.inclCpu[scope]) / calls);
+        final long[] sample = taken.get(scope);
+        out.addProperty("meanCpuNs", calls == 0 ? 0 : (double) (b.inclCpu[scope] - a.inclCpu[scope]) / calls);
+        out.addProperty("cpuNs", sample != null && sample.length > 0 ? trimmedMean(sample) : (calls == 0 ? 0 : (double) (b.inclCpu[scope] - a.inclCpu[scope]) / calls));
         out.addProperty("selfCpuNs", calls == 0 ? 0 : (double) (b.selfCpu[scope] - a.selfCpu[scope]) / calls);
         out.addProperty("allocB", calls == 0 ? 0 : (double) (b.inclAlloc[scope] - a.inclAlloc[scope]) / calls);
         out.addProperty("p50Ns", b.quantileNs(scope, 0.5, a));
@@ -276,14 +321,18 @@ public final class MicroBench
     private void phaseIdle()
     {
         // The idle tick at about the full scale: nothing changes, everything waits.
+        sampleAll();
         final RsProbe.Snap a = RsProbe.snap();
-        for (int i = 0; i < 30; i++)
+        for (int i = 0; i < 90; i++)
         {
             manager.tick();
         }
+        collectSamples();
         final RsProbe.Snap b = RsProbe.snap();
         final JsonObject idle = stats(a, b, RsProbe.MGR_TICK, 0);
         ops.add("idleTick", idle);
+        // an idle tick is periodic work (sweeps, retry timers): its amortised mean is the cost, not the trimmed one
+        idle.addProperty("cpuNs", idle.get("meanCpuNs").getAsDouble());
         idleTickCpu = idle.get("cpuNs").getAsDouble();
         info.addProperty("openAtIdle", open.size());
     }
@@ -291,12 +340,14 @@ public final class MicroBench
     private void phaseCreate()
     {
         final int batch = measuredBatch();
+        sampleAll();
         final RsProbe.Snap a = RsProbe.snap();
         final ThreadCost.Mark mark = ThreadCost.mark();
         for (int i = 0; i < batch; i++)
         {
             createOne();
         }
+        collectSamples();
         final RsProbe.Snap b = RsProbe.snap();
         ops.add("create", stats(a, b, RsProbe.CREATE, 0));
         ops.add("assign", stats(a, b, RsProbe.ASSIGN, 0));
@@ -330,29 +381,38 @@ public final class MicroBench
 
     private void phaseStock()
     {
-        final int events = 12;
-        final int drain = 25;
+        final int events = 24;
+        final int drain = 3;
         final long deliveriesBefore = RsStats.deliveriesCreated;
-        final RsProbe.Snap a = RsProbe.snap();
         final ThreadCost.Mark mark = ThreadCost.mark();
-        final long before1 = RsProbe.totalCpuNs();
+        final long[] withEvent = new long[events];
+        final long[] control = new long[events];
+        final RsProbe.Snap a = RsProbe.snap();
         for (int e = 0; e < events; e++)
         {
+            // control window: the same ticks with nothing arriving
+            long t0 = RsProbe.totalCpuNs() - RsProbe.overheadNs();
+            for (int t = 0; t < drain; t++)
+            {
+                manager.tick();
+            }
+            control[e] = RsProbe.totalCpuNs() - RsProbe.overheadNs() - t0;
             final Item item = kinds.get(rng.nextInt(kinds.size()));
+            t0 = RsProbe.totalCpuNs() - RsProbe.overheadNs();
             fx.stock(e % fx.racks.size(), new ItemStack(item, 64));
             for (int t = 0; t < drain; t++)
             {
                 manager.tick();
             }
+            withEvent[e] = RsProbe.totalCpuNs() - RsProbe.overheadNs() - t0;
         }
         final RsProbe.Snap b = RsProbe.snap();
-        final long window = RsProbe.totalCpuNs() - before1;
         final JsonObject gross = new JsonObject();
         gross.addProperty("events", events);
-        gross.addProperty("cpuNs", (double) window / events);
-        gross.addProperty("netOfIdleTicksCpuNs", Math.max(0, (double) window / events - drain * idleTickCpu));
+        gross.addProperty("cpuNs", trimmedMean(withEvent));
+        gross.addProperty("controlCpuNs", trimmedMean(control));
+        gross.addProperty("netOfIdleTicksCpuNs", trimmedMean(withEvent) - trimmedMean(control));
         gross.addProperty("allocB", (double) mark.allocBytes() / events);
-        gross.addProperty("probeOverheadNs", (double) (b.overhead - a.overhead) / events);
         ops.add("stockEvent", gross);
         ops.add("stockEventInline", stats(a, b, RsProbe.STOCK_EVENT, 0));
         ops.add("reevalInTick", stats(a, b, RsProbe.REEVAL, 0));
@@ -373,7 +433,8 @@ public final class MicroBench
             manager.createAndAssignRequest(fx.warehouse.getRequester(), new Delivery(fx.warehouse.getLocation(), to.getLocation(), new ItemStack(Items.DIRT, 1), 13));
         }
         info.addProperty("courierQueue", queue.getMutableRequestList().size());
-        final int picks = 40;
+        final int picks = 100;
+        sampleAll();
         final RsProbe.Snap a = RsProbe.snap();
         final ThreadCost.Mark mark = ThreadCost.mark();
         int got = 0;
@@ -389,6 +450,7 @@ public final class MicroBench
                 courierJob.onTaskDeletion(token);
             }
         }
+        collectSamples();
         final RsProbe.Snap b = RsProbe.snap();
         ops.add("courierPick", stats(a, b, RsProbe.COURIER_PICK, 0));
         ops.add("courierPickTotal", wallStats(mark, picks));
@@ -404,18 +466,20 @@ public final class MicroBench
             if (request.getRequest() instanceof Delivery && request.getState() == RequestState.IN_PROGRESS && request.hasParent())
             {
                 deliveries.add(request);
-                if (deliveries.size() >= 60)
+                if (deliveries.size() >= 150)
                 {
                     break;
                 }
             }
         }
+        sampleAll();
         final RsProbe.Snap a = RsProbe.snap();
         final ThreadCost.Mark mark = ThreadCost.mark();
         for (final IRequest<?> delivery : deliveries)
         {
             manager.updateRequestState(delivery.getId(), RequestState.RESOLVED);
         }
+        collectSamples();
         final RsProbe.Snap b = RsProbe.snap();
         final JsonObject stats = stats(a, b, RsProbe.STATE, 0);
         ops.add("complete", stats);
@@ -425,7 +489,7 @@ public final class MicroBench
 
     private void phaseCancel()
     {
-        final int cancels = Math.max(20, Math.min(200, scale / 20));
+        final int cancels = Math.max(60, Math.min(300, scale / 10));
         final List<IToken<?>> targets = new ArrayList<>();
         for (int i = 0; i < cancels && !open.isEmpty(); i++)
         {
@@ -435,12 +499,14 @@ public final class MicroBench
                 targets.add(token);
             }
         }
+        sampleAll();
         final RsProbe.Snap a = RsProbe.snap();
         final ThreadCost.Mark mark = ThreadCost.mark();
         for (final IToken<?> token : targets)
         {
             manager.updateRequestState(token, RequestState.CANCELLED);
         }
+        collectSamples();
         final RsProbe.Snap b = RsProbe.snap();
         ops.add("cancel", stats(a, b, RsProbe.STATE, 0));
         ops.add("cancelTotal", wallStats(mark, Math.max(1, targets.size())));
@@ -482,6 +548,7 @@ public final class MicroBench
             ledger.reserveStock(scope, fx.racks.get(i % fx.racks.size()), new ItemStorage(new ItemStack(kinds.get(i % kinds.size()))), 1 + i % 8, token, "bench", ReservationReason.OTHER, i);
         }
         final int m = Math.max(50, Math.min(500, scale / 10));
+        sampleAll();
         final RsProbe.Snap a = RsProbe.snap();
         final List<IToken<?>> fresh = new ArrayList<>();
         for (int i = 0; i < m; i++)
@@ -490,44 +557,85 @@ public final class MicroBench
             fresh.add(token);
             ledger.reserveStock(scope, fx.racks.get(i % fx.racks.size()), new ItemStorage(new ItemStack(kinds.get((i * 7) % kinds.size()))), 3, token, "bench", ReservationReason.OTHER, fillCount + i);
         }
+        collectSamples();
         final RsProbe.Snap b = RsProbe.snap();
         ops.add("ledgerReserve", stats(a, b, RsProbe.LEDGER, 0));
+        sampleAll();
         final RsProbe.Snap c = RsProbe.snap();
         for (int i = 0; i < m; i++)
         {
             ledger.available(scope, new ItemStorage(new ItemStack(kinds.get((i * 11) % kinds.size()))), 100);
         }
+        collectSamples();
         final RsProbe.Snap d = RsProbe.snap();
         ops.add("ledgerRead", stats(c, d, RsProbe.LEDGER_READ, 0));
+        sampleAll();
         final RsProbe.Snap e = RsProbe.snap();
         for (int i = 0; i < m; i++)
         {
             ledger.commitStock(fresh.get(i), scope, new ItemStorage(new ItemStack(kinds.get((i * 7) % kinds.size()))), 3, fillCount + m + i);
         }
+        collectSamples();
         final RsProbe.Snap f = RsProbe.snap();
         ops.add("ledgerCommit", stats(e, f, RsProbe.LEDGER, 0));
+        sampleAll();
         final RsProbe.Snap g = RsProbe.snap();
         for (int i = 0; i < m; i++)
         {
             ledger.release(tokens.get(i), fillCount + 2L * m + i);
         }
+        collectSamples();
         final RsProbe.Snap h = RsProbe.snap();
         ops.add("ledgerRelease", stats(g, h, RsProbe.LEDGER, 0));
     }
 
+    /**
+     * Runs a one-shot operation a few times and reports the median cost (CPU, allocation) of the runs; the result of the last run is returned through {@code last}.
+     */
+    private <T> JsonObject median(final int times, final java.util.function.Supplier<T> once, final java.util.function.Consumer<T> last)
+    {
+        final long[] cpu = new long[times];
+        final long[] alloc = new long[times];
+        for (int i = 0; i < times; i++)
+        {
+            final ThreadCost.Mark mark = ThreadCost.mark();
+            final T result = once.get();
+            cpu[i] = mark.cpuNs();
+            alloc[i] = mark.allocBytes();
+            if (i == times - 1)
+            {
+                last.accept(result);
+            }
+        }
+        java.util.Arrays.sort(cpu);
+        java.util.Arrays.sort(alloc);
+        final JsonObject out = new JsonObject();
+        out.addProperty("units", times);
+        out.addProperty("cpuNs", (double) cpu[times / 2]);
+        out.addProperty("allocB", (double) alloc[times / 2]);
+        out.addProperty("minCpuNs", (double) cpu[0]);
+        return out;
+    }
+
+    private int shots()
+    {
+        return scale <= 1000 ? 5 : 3;
+    }
+
     private void phaseView()
     {
-        final ThreadCost.Mark m1 = ThreadCost.mark();
-        final RequestSystemViewSync.Snapshot first = RequestSystemViewSync.snapshot(manager, ra);
-        final JsonObject snapshot = wallStats(m1, 1);
-        snapshot.addProperty("bytes", first.size());
+        final RequestSystemViewSync.Snapshot[] first = new RequestSystemViewSync.Snapshot[1];
+        final JsonObject snapshot = median(shots(), () -> RequestSystemViewSync.snapshot(manager, ra), r -> first[0] = r);
+        snapshot.addProperty("bytes", first[0].size());
         ops.add("viewSnapshot", snapshot);
 
-        final ThreadCost.Mark m2 = ThreadCost.mark();
-        final RegistryFriendlyByteBuf full = new RegistryFriendlyByteBuf(Unpooled.buffer(), ra);
-        RequestSystemViewSync.writeFull(full, first, 1);
-        final JsonObject fullStats = wallStats(m2, 1);
-        fullStats.addProperty("bytes", full.readableBytes());
+        final RegistryFriendlyByteBuf[] full = new RegistryFriendlyByteBuf[1];
+        final JsonObject fullStats = median(shots(), () -> {
+            final RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), ra);
+            RequestSystemViewSync.writeFull(buf, first[0], 1);
+            return buf;
+        }, r -> full[0] = r);
+        fullStats.addProperty("bytes", full[0].readableBytes());
         ops.add("viewFull", fullStats);
 
         // One percent of the requests change: some cancelled, as many created.
@@ -544,15 +652,17 @@ public final class MicroBench
         {
             createOne();
         }
-        final ThreadCost.Mark m3 = ThreadCost.mark();
-        final RequestSystemViewSync.Snapshot second = RequestSystemViewSync.snapshot(manager, ra);
-        final JsonObject snapshot2 = wallStats(m3, 1);
+        final RequestSystemViewSync.Snapshot[] second = new RequestSystemViewSync.Snapshot[1];
+        final JsonObject snapshot2 = median(shots(), () -> RequestSystemViewSync.snapshot(manager, ra), r -> second[0] = r);
         ops.add("viewSnapshot2", snapshot2);
-        final ThreadCost.Mark m4 = ThreadCost.mark();
-        final RegistryFriendlyByteBuf delta = new RegistryFriendlyByteBuf(Unpooled.buffer(), ra);
-        final boolean wrote = RequestSystemViewSync.writeDelta(delta, first, 1, second, 2);
-        final JsonObject deltaStats = wallStats(m4, 1);
-        deltaStats.addProperty("bytes", wrote ? delta.readableBytes() : full.readableBytes());
+        final boolean[] wrote = {false};
+        final RegistryFriendlyByteBuf[] delta = new RegistryFriendlyByteBuf[1];
+        final JsonObject deltaStats = median(shots(), () -> {
+            final RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), ra);
+            wrote[0] = RequestSystemViewSync.writeDelta(buf, first[0], 1, second[0], 2);
+            return buf;
+        }, r -> delta[0] = r);
+        deltaStats.addProperty("bytes", wrote[0] ? delta[0].readableBytes() : full[0].readableBytes());
         deltaStats.addProperty("changes", changes);
         ops.add("viewDelta", deltaStats);
         // The cost of keeping a close player current once per dirty tick: snapshot + delta.
@@ -565,16 +675,15 @@ public final class MicroBench
 
     private void phaseSaveLoad()
     {
-        final ThreadCost.Mark m1 = ThreadCost.mark();
-        final CompoundTag saved = manager.serializeNBT(ra);
-        final JsonObject save = wallStats(m1, 1);
+        final CompoundTag[] saved = new CompoundTag[1];
+        final JsonObject save = median(scale <= 1000 ? 3 : 1, () -> manager.serializeNBT(ra), r -> saved[0] = r);
         try
         {
             final ByteArrayOutputStream raw = new ByteArrayOutputStream();
-            NbtIo.write(saved, new DataOutputStream(raw));
+            NbtIo.write(saved[0], new DataOutputStream(raw));
             save.addProperty("bytes", raw.size());
             final ByteArrayOutputStream gz = new ByteArrayOutputStream();
-            NbtIo.writeCompressed(saved, gz);
+            NbtIo.writeCompressed(saved[0], gz);
             save.addProperty("bytesCompressed", gz.size());
         }
         catch (final java.io.IOException e)
@@ -583,13 +692,29 @@ public final class MicroBench
         }
         ops.add("save", save);
 
-        final StandardRequestManager loaded = new StandardRequestManager(fx.colony);
-        final ThreadCost.Mark m2 = ThreadCost.mark();
-        loaded.deserializeNBT(ra, saved);
-        ops.add("load", wallStats(m2, 1));
+        final StandardRequestManager[] loaded = new StandardRequestManager[1];
+        final int loads = scale <= 1000 ? 3 : 1;
+        final long[] cpu = new long[loads];
+        final long[] alloc = new long[loads];
+        for (int i = 0; i < loads; i++)
+        {
+            final StandardRequestManager fresh = new StandardRequestManager(fx.colony);
+            final ThreadCost.Mark mark = ThreadCost.mark();
+            fresh.deserializeNBT(ra, saved[0]);
+            cpu[i] = mark.cpuNs();
+            alloc[i] = mark.allocBytes();
+            loaded[0] = fresh;
+        }
+        java.util.Arrays.sort(cpu);
+        java.util.Arrays.sort(alloc);
+        final JsonObject load = new JsonObject();
+        load.addProperty("units", loads);
+        load.addProperty("cpuNs", (double) cpu[loads / 2]);
+        load.addProperty("allocB", (double) alloc[loads / 2]);
+        ops.add("load", load);
 
         final RsDigest before = RsDigest.of(manager, ra);
-        final RsDigest after = RsDigest.of(loaded, ra);
+        final RsDigest after = RsDigest.of(loaded[0], ra);
         final String diff = before.diff(after);
         gates.addProperty("saveLoadIdentical", diff == null);
         if (diff != null)
@@ -617,13 +742,6 @@ public final class MicroBench
         out.add("errors", errors);
         BenchEnv.write(testName, out);
         final boolean bad = !errors.isEmpty() || gates.get("ledgerOrphans").getAsInt() != 0 || !gates.get("saveLoadIdentical").getAsBoolean();
-        if (bad)
-        {
-            helper.fail("micro bench gates failed: " + errors + " gates=" + gates);
-        }
-        else
-        {
-            helper.succeed();
-        }
+        done.accept(bad ? "micro bench " + testName + " gates failed: " + errors + " gates=" + gates : null);
     }
 }

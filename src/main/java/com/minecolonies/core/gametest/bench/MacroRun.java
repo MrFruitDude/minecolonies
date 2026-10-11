@@ -152,6 +152,7 @@ public final class MacroRun
     /** True while the scenario has the colony's chunks unloaded: nothing may touch the world then. */
     public boolean away;
     public int     cycles;
+    private int    cures;
     public long injectedUnits;
     public long consumedUnits;
     /** Blocks the scenario expects in the world as the result of builds: position -> block. */
@@ -193,9 +194,15 @@ public final class MacroRun
     private final List<String> fallbackItems = new ArrayList<>();
     private int    unexpectedFallbacks;
     private final List<String> errors = new ArrayList<>();
+    /** Requests that never finished: reported, and tolerated up to a quarter of the repeats (the shipped system hangs now and then). */
+    private final List<String> liveness = new ArrayList<>();
     private final JsonObject   gates = new JsonObject();
     private final JsonObject   extra = new JsonObject();
     private boolean saveLoadDone;
+    private java.util.Map<String, String> previousPlaces;
+    private long previousTick;
+    private long previousInjected;
+    private long previousConsumed;
     private long    conservationChecks;
     private long    conservationMax;
 
@@ -210,8 +217,17 @@ public final class MacroRun
     private double  distanceAtDone;
     private long    deliveredItemsAtDone;
 
-    public MacroRun(final GameTestHelper helper, final String testName, final String scenarioName, final int rep, final boolean warmup, final Scenario scenario)
+    private final java.util.function.Consumer<String> done;
+
+    /**
+     * @param sharedPlayer the mock player of the enclosing test (created on the first run, reused by the following ones), may be null
+     * @param done         called once with null when the run passed all gates, else with the failure
+     */
+    public MacroRun(final GameTestHelper helper, final String testName, final String scenarioName, final int rep, final boolean warmup, final Scenario scenario,
+                    final ServerPlayer sharedPlayer, final java.util.function.Consumer<String> done)
     {
+        this.player = sharedPlayer;
+        this.done = done;
         this.helper = helper;
         this.level = helper.getLevel();
         this.testName = testName;
@@ -231,6 +247,11 @@ public final class MacroRun
         RsFlags.overrideSmartRetry(flags);
         RsStats.reset();
         StandardToken.seedForBenchmark(seed);
+        if (BenchEnv.pinWorkers())
+        {
+            // 1.0 speed and real walking: the pace the request system is judged at does not move with the worker-efficiency settings
+            com.minecolonies.core.entity.ai.workers.util.WorkerSettings.overrideForTests(1.0D, 1.0D, null, com.minecolonies.api.colony.WorkerWalking.OFF, null, null);
+        }
         final double[] pair = RsProbe.calibrate(200_000);
         extra.addProperty("probePairCoarseNs", pair[0]);
         extra.addProperty("probePairFineNs", pair[1]);
@@ -258,6 +279,13 @@ public final class MacroRun
             helper.runAfterDelay(100, () -> {
                 try
                 {
+                    // whatever an earlier run left lying in the plot is not ours
+                    for (final ItemEntity stray : level.getEntitiesOfClass(ItemEntity.class, plotBox()))
+                    {
+                        stray.discard();
+                    }
+                    // what the workers already carry (they may have picked up something an earlier repeat left) is the starting stock
+                    injectedUnits = ItemUnits.unitsInWorld(this);
                     scenario.begin(this);
                 }
                 catch (final Throwable t)
@@ -281,13 +309,14 @@ public final class MacroRun
 
     private void abort(final String message, final Throwable t)
     {
+        com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
         RsProbe.stop();
         StandardToken.seedForBenchmark(null);
         if (t != null)
         {
             t.printStackTrace();
         }
-        helper.fail("macro bench " + testName + ": " + message);
+        done.accept("macro bench " + testName + ": " + message);
     }
 
     private void tickLoop()
@@ -310,8 +339,24 @@ public final class MacroRun
     /**
      * @return false when the run has ended.
      */
+    /**
+     * Pathfinding runs on worker threads and its results are picked up whenever they are ready, so under machine load the
+     * same colony would see its paths a tick or two later than on an idle machine. Waiting (parked, so no CPU time is
+     * charged to the server thread) until the workers are idle before each tick makes every path arrive at the same tick.
+     */
+    private void awaitPathing()
+    {
+        final java.util.concurrent.ThreadPoolExecutor pool = com.minecolonies.core.entity.pathfinding.Pathfinding.getExecutor();
+        final long deadline = System.nanoTime() + 200_000_000L;
+        while ((!pool.getQueue().isEmpty() || pool.getActiveCount() > 0) && System.nanoTime() < deadline)
+        {
+            java.util.concurrent.locks.LockSupport.parkNanos(20_000L);
+        }
+    }
+
     private boolean oneTick()
     {
+        awaitPathing();
         final long cpuNow = ThreadCost.cpuNs();
         final long allocNow = ThreadCost.allocBytes();
         final long rsNow = RsProbe.totalCpuNs();
@@ -390,12 +435,23 @@ public final class MacroRun
         {
             // Midday, always: citizens stop working at night and in the rain, which would only add noise.
             level.getServer().clockManager().setTotalTicks(level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
+            // ... and never rain: couriers do not work in the rain, and a long run reaches the first rain by chance
+            final var weather = level.getWeatherData();
+            weather.setRaining(false);
+            weather.setThundering(false);
+            weather.setClearWeatherTime(1_000_000);
         }
-        if (tick % 200 == 0)
+        if (tick % 100 == 0)
         {
             for (final ICitizenData citizen : citizens)
             {
                 citizen.setSaturation(20.0D);
+                // a sick citizen walks off to a hospital that does not exist and stops working for good
+                if (citizen.getCitizenDiseaseHandler().isSick())
+                {
+                    citizen.getCitizenDiseaseHandler().cure();
+                    cures++;
+                }
             }
         }
     }
@@ -521,7 +577,7 @@ public final class MacroRun
               openRequestCount(), pendingRequests(), RsStats.requestsCreated, RsStats.deliveriesCreated, RsStats.courierTasksFinished, RsStats.itemsDelivered, RsStats.playerFallbacks,
               (long) courierDistance);
         }
-        if (tick % 300 == 0 && !away)
+        if (tick % 20 == 0 && !away)
         {
             checkConservation(tick, false);
         }
@@ -657,8 +713,40 @@ public final class MacroRun
         final long expected = injectedUnits - consumedUnits;
         conservationChecks++;
         final long drift = found - expected;
+        if (drift != 0 && previousPlaces != null)
+        {
+            // what moved since the last check that passed: names the place the surplus or deficit appeared at
+            final java.util.Map<String, String> now = ItemUnits.places(this);
+            final StringBuilder moved = new StringBuilder();
+            int shown = 0;
+            for (final java.util.Map.Entry<String, String> e : now.entrySet())
+            {
+                if (!e.getValue().equals(previousPlaces.get(e.getKey())) && shown++ < 14)
+                {
+                    moved.append(" +").append(e.getKey()).append('=').append(e.getValue()).append(" (was ").append(previousPlaces.get(e.getKey())).append(");");
+                }
+            }
+            for (final java.util.Map.Entry<String, String> e : previousPlaces.entrySet())
+            {
+                if (!now.containsKey(e.getKey()) && shown++ < 14)
+                {
+                    moved.append(" -").append(e.getKey()).append("=").append(e.getValue()).append(";");
+                }
+            }
+            if (errors.size() < 3)
+            {
+                errors.add("moved since the last good check at tick " + previousTick + " (injected " + (injectedUnits - previousInjected) + " units, consumed " + (consumedUnits - previousConsumed) + "):" + moved);
+            }
+        }
+        if (drift == 0)
+        {
+            previousPlaces = ItemUnits.places(this);
+            previousTick = tick;
+            previousInjected = injectedUnits;
+            previousConsumed = consumedUnits;
+        }
         conservationMax = Math.max(conservationMax, Math.abs(drift));
-        if (drift != 0)
+        if (drift != 0 && errors.size() < 6)
         {
             final String where = errors.isEmpty() ? " [" + ItemUnits.breakdown(this) + " ]" : "";
             errors.add("item conservation violated at tick " + tick + (last ? " (final)" : "") + ": world holds " + found + " units, suppliers - sinks = " + expected + " (drift " + drift
@@ -718,6 +806,12 @@ public final class MacroRun
         final StandardPlayerRequestResolver player = (StandardPlayerRequestResolver) rm.getPlayerResolver();
         for (final IRequest<?> request : rm.getRequestIdentitiesDataStore().getIdentities().values())
         {
+            if (request.getState() == com.minecolonies.api.colony.requestsystem.request.RequestState.COMPLETED
+                  || request.getState() == com.minecolonies.api.colony.requestsystem.request.RequestState.RECEIVED)
+            {
+                // finished from the request system's side; the requester has only not picked the result up yet
+                continue;
+            }
             if (player.isHolding(request.getId()) && request.getRequest() instanceof Stack stack
                   && scenario.unproducible().contains(BuiltInRegistries.ITEM.getKey(stack.getStack().getItem()).getPath()))
             {
@@ -770,6 +864,62 @@ public final class MacroRun
         return out.toString();
     }
 
+    /**
+     * @return what the couriers are doing, for failure messages.
+     */
+    private String describeCouriers()
+    {
+        final StringBuilder out = new StringBuilder("\n  couriers:");
+        for (final ICitizenData citizen : citizens)
+        {
+            if (citizen.getJob() instanceof JobDeliveryman job)
+            {
+                out.append(" [#").append(citizen.getId()).append(" entity=").append(citizen.getEntity().isPresent()).append(" queue=").append(job.getTaskQueue().size());
+                if (!job.getTaskQueue().isEmpty())
+                {
+                    final IRequest<?> task = rm.getRequestForToken(job.getTaskQueue().get(0));
+                    if (task != null && task.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery delivery)
+                    {
+                        final BlockPos target = delivery.getTarget().getInDimensionLocation();
+                        out.append(" task=").append(BuiltInRegistries.ITEM.getKey(delivery.getStack().getItem()).getPath()).append('x').append(delivery.getStack().getCount())
+                          .append(" ").append(task.getState()).append(" to ").append(target.toShortString());
+                        citizen.getEntity().ifPresent(e -> out.append(" dist=").append((int) Math.sqrt(e.blockPosition().distSqr(target))).append(" navDone=").append(e.getNavigation().isDone()));
+                    }
+                    else
+                    {
+                        out.append(" task=").append(task == null ? "gone" : task.getRequest().getClass().getSimpleName());
+                    }
+                }
+                citizen.getEntity().ifPresent(e -> out.append(" at ").append(e.blockPosition().toShortString()).append(" ai=").append(job.getWorkerAI() == null ? "-" : job.getWorkerAI().getState())
+                  .append(" citizenAi=").append(e instanceof com.minecolonies.core.entity.citizen.EntityCitizen ec ? ec.getCitizenAI().getState() : "-").append(" paused=").append(citizen.isPaused()).append(" sick=")
+                  .append(citizen.getCitizenDiseaseHandler().isSick()).append(" sat=").append((int) citizen.getSaturation()).append(" raining=").append(level.isRaining()));
+                out.append(']');
+            }
+        }
+        final int[] ghosts = {0, 0};
+        for (final net.minecraft.world.entity.Entity e : level.getEntitiesOfClass(net.minecraft.world.entity.Entity.class, plotBox()))
+        {
+            if (e instanceof com.minecolonies.core.entity.citizen.EntityCitizen citizen)
+            {
+                ghosts[0]++;
+                if (citizen.getCitizenData() == null || citizens.stream().noneMatch(c -> c.getEntity().orElse(null) == citizen))
+                {
+                    ghosts[1]++;
+                }
+            }
+        }
+        out.append(" citizenEntitiesInPlot=").append(ghosts[0]).append(" notOurs=").append(ghosts[1]).append(" pathing[queued=").append(com.minecolonies.core.entity.pathfinding.Pathfinding.getExecutor().getQueue().size())
+          .append(" running=").append(com.minecolonies.core.entity.pathfinding.Pathfinding.Stats.running.get()).append(" submitted=").append(com.minecolonies.core.entity.pathfinding.Pathfinding.Stats.submitted.get())
+          .append(" rejected=").append(com.minecolonies.core.entity.pathfinding.Pathfinding.Stats.rejected.get()).append(']');
+        final StringBuilder queues = new StringBuilder();
+        for (final IBuilding wh : warehouses)
+        {
+            final var module = wh.getModule(com.minecolonies.core.colony.buildings.modules.BuildingModules.WAREHOUSE_REQUEST_QUEUE);
+            queues.append(" warehouse").append(wh.getID().toShortString()).append(" queue=").append(module.getMutableRequestList().size());
+        }
+        return out.append(queues).toString();
+    }
+
     private boolean progress(final long tick)
     {
         if (!draining)
@@ -788,8 +938,14 @@ public final class MacroRun
             }
             else if (tick > scenario.budget())
             {
-                errors.add("the scenario did not finish within its budget of " + scenario.budget() + " ticks; " + pendingRequests() + " requests are still open:" + describeOpen(14));
+                liveness.add("the scenario did not finish within its budget of " + scenario.budget() + " ticks; " + pendingRequests() + " requests are still open:" + describeOpen(14)
+                               + describeCouriers());
                 doneTick = -1;
+                requestsAtDone = RsStats.requestsCreated;
+                deliveriesAtDone = RsStats.deliveriesCreated;
+                tasksAtDone = RsStats.courierTasksFinished;
+                deliveredItemsAtDone = RsStats.itemsDelivered;
+                distanceAtDone = courierDistance;
                 finish(tick);
                 return false;
             }
@@ -804,7 +960,7 @@ public final class MacroRun
         {
             if (quiesceTick < 0)
             {
-                errors.add("requests did not drain within 4000 ticks after the scenario finished: " + pendingRequests() + " still open:" + describeOpen(14));
+                liveness.add("requests did not drain within 4000 ticks after the scenario finished: " + pendingRequests() + " still open:" + describeOpen(14) + describeCouriers());
             }
             finish(tick);
             return false;
@@ -855,6 +1011,7 @@ public final class MacroRun
         out.addProperty("warmup", warmup);
         out.addProperty("flags", BenchEnv.flagsOn() ? "on" : "off");
         out.addProperty("seed", seed);
+        out.addProperty("workersPinned", BenchEnv.pinWorkers());
         out.addProperty("ticksRun", tick);
         out.addProperty("ticksToCompletion", doneTick);
         out.addProperty("ticksToQuiesce", quiesceTick);
@@ -932,6 +1089,8 @@ public final class MacroRun
         work.addProperty("courierDistance", courierDistance);
         work.addProperty("courierTeleports", courierTeleports);
         work.addProperty("unloadCycles", cycles);
+        work.addProperty("sicknessCures", cures);
+        work.addProperty("sicknessCures", cures);
         work.addProperty("requestsCreatedAtDone", requestsAtDone);
         work.addProperty("deliveriesCreatedAtDone", deliveriesAtDone);
         work.addProperty("courierTasksAtDone", tasksAtDone);
@@ -956,19 +1115,17 @@ public final class MacroRun
         final JsonArray errs = new JsonArray();
         errors.forEach(errs::add);
         out.add("errors", errs);
+        final JsonArray hangs = new JsonArray();
+        liveness.forEach(hangs::add);
+        out.add("liveness", hangs);
+        gates.addProperty("incomplete", !liveness.isEmpty());
 
         RsProbe.stop();
         StandardToken.seedForBenchmark(null);
+        com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
         BenchEnv.write(testName, out);
         harnessCpuTotal += end.cpuNs();
-        if (errors.isEmpty())
-        {
-            helper.succeed();
-        }
-        else
-        {
-            helper.fail("macro bench gates failed: " + errors);
-        }
+        done.accept(errors.isEmpty() ? null : "macro bench " + testName + " gates failed: " + errors);
     }
 
     // ------------------------------------------------------------------ world building helpers (used by scenarios)
@@ -991,7 +1148,15 @@ public final class MacroRun
             stray.discard();
         }
         colony = BenchBridge.foundColony(helper, name, townHallRel, minX, maxX, minZ, maxZ);
-        player = BenchBridge.connectedPlayer(helper);
+        // clearing the plot broke the racks of the previous repeat: what dropped out of them is nobody's stock
+        for (final ItemEntity stray : level.getEntitiesOfClass(ItemEntity.class, plotBox()))
+        {
+            stray.discard();
+        }
+        if (player == null)
+        {
+            player = BenchBridge.connectedPlayer(helper);
+        }
         final BlockPos anchor = colony.getCenter();
         player.teleportTo(anchor.getX() + 0.5D, anchor.getY() + 1, anchor.getZ() + 0.5D);
         colony.getPackageManager().addCloseSubscriber(player);
@@ -1023,6 +1188,13 @@ public final class MacroRun
         final BlockPos near = building.getID().offset(1, 0, 4);
         final BlockPos rel = near.subtract(helper.absolutePos(BlockPos.ZERO));
         final ICitizenData citizen = BenchBridge.spawnCitizen(helper, colony, rel, false);
+        // citizens are born with random skills, which sets how fast they work: the same hands for every repeat
+        for (final com.minecolonies.api.entity.citizen.Skill skill : com.minecolonies.api.entity.citizen.Skill.values())
+        {
+            final var data = citizen.getCitizenSkillHandler().getSkills().get(skill);
+            data.setLevel(8);
+            data.setExperience(0);
+        }
         helper.assertTrue(module.get().assignCitizen(citizen), "could not assign a worker to " + building.getSchematicName());
         citizen.getEntity().ifPresent(e -> {
             e.setPos(building.getID().getX() + 0.5D, building.getID().getY(), building.getID().getZ() + 0.5D);

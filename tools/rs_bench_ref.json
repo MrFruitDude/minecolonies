@@ -1,0 +1,61 @@
+{
+ "sha": "b77f4a7a3c",
+ "components": {
+  "macro": {
+   "busy": {
+    "meter.rsCpuNsPerTick": 22148.797184115523,
+    "ticksToCompletion": 12625.0,
+    "work.courierDistanceAtDone": 11818.702115449843,
+    "work.requestsCreatedAtDone": 414.0
+   },
+   "fresh": {
+    "meter.rsCpuNsPerTick": 2936.6485200059496,
+    "ticksToCompletion": 13045.0,
+    "work.courierDistanceAtDone": 1334.0440784685331,
+    "work.requestsCreatedAtDone": 88.0
+   },
+   "storm": {
+    "meter.rsCpuNsPerTick": 30692.116149284968,
+    "ticksToCompletion": 23490.0,
+    "work.courierDistanceAtDone": 10177.502034319024,
+    "work.requestsCreatedAtDone": 352.0
+   },
+   "unload": {
+    "meter.rsCpuNsPerTick": 1909.016339869281,
+    "ticksToCompletion": 17606.0,
+    "work.courierDistanceAtDone": 810.4105541464115,
+    "work.requestsCreatedAtDone": 53.0
+   }
+  },
+  "micro": {
+   "1000:create.cpuNs": 3101.9,
+   "1000:assign.cpuNs": 44502.64444444444,
+   "1000:idleTick.cpuNs": 1129313.4777777777,
+   "1000:stockEvent.cpuNs": 1621660.9523809524,
+   "1000:courierPick.cpuNs": 263635.06666666665,
+   "1000:complete.cpuNs": 38475.652303120354,
+   "1000:cancel.cpuNs": 6698.025974025974,
+   "1000:ledgerReserve.cpuNs": 110.06666666666666,
+   "1000:ledgerCommit.cpuNs": 4587.122222222222,
+   "1000:viewPerDirtyTick.cpuNs": 5820831.0,
+   "1000:viewPerDirtyTick.bytes": 4208.0,
+   "1000:save.cpuNs": 42587426.0,
+   "1000:save.bytes": 1302821.0,
+   "1000:load.cpuNs": 8862617.0,
+   "10000:create.cpuNs": 3055.9244444444444,
+   "10000:assign.cpuNs": 43781.66888888889,
+   "10000:idleTick.cpuNs": 13998494.9,
+   "10000:stockEvent.cpuNs": 5913585.523809524,
+   "10000:courierPick.cpuNs": 5883865.922222222,
+   "10000:complete.cpuNs": 501211.3925925926,
+   "10000:cancel.cpuNs": 12930.898113207548,
+   "10000:ledgerReserve.cpuNs": 124.74444444444444,
+   "10000:ledgerCommit.cpuNs": 8765.404444444444,
+   "10000:viewPerDirtyTick.cpuNs": 61730158.0,
+   "10000:viewPerDirtyTick.bytes": 38995.0,
+   "10000:save.cpuNs": 6044344473.0,
+   "10000:save.bytes": 15286552.0,
+   "10000:load.cpuNs": 90914923.0
+  }
+ }
+}

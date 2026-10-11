@@ -18,7 +18,7 @@ import java.util.Set;
 
 /**
  * Item accounting for the conservation gate. Crafting turns items into other items, so conservation is checked in units
- * that every recipe the benchmark uses preserves (1 log = 4 planks = 8 units, 2 planks = 4 sticks, 1 cobblestone = 1 stone
+ * that every recipe the benchmark uses preserves (1 log = 4 planks = 8 units, 1 plank = 1 fence, 1 cobblestone = 1 stone
  * brick, 3 wheat = 1 bread): the sum over everything in the colony must equal what the scripted suppliers added minus what
  * the scripted sinks took. A duplicated item shows as a surplus, a lost one as a deficit.
  */
@@ -28,7 +28,7 @@ public final class ItemUnits
       Map.entry(Items.OAK_LOG, 8),
       Map.entry(Items.OAK_PLANKS, 2),
       Map.entry(Items.STICK, 1),
-      Map.entry(Items.OAK_FENCE, 4),
+      Map.entry(Items.OAK_FENCE, 2),
       Map.entry(Items.COBBLESTONE, 1),
       Map.entry(Items.STONE_BRICKS, 1),
       Map.entry(Items.WHEAT, 1),
@@ -76,6 +76,26 @@ public final class ItemUnits
         return out.toString();
     }
 
+    /**
+     * Where every tracked unit sits, keyed by place ("rack@pos#slot", "citizenN#slot", "entity@pos", "site@pos"): the next
+     * snapshot differs from this one by exactly what moved, which names the culprit when conservation breaks.
+     */
+    public static java.util.Map<String, String> places(final MacroRun run)
+    {
+        final StringBuilder out = new StringBuilder();
+        scan(run, out);
+        final java.util.Map<String, String> map = new java.util.TreeMap<>();
+        for (final String entry : out.toString().split(";"))
+        {
+            final int eq = entry.indexOf('=');
+            if (eq > 0)
+            {
+                map.merge(entry.substring(0, eq).trim(), entry.substring(eq + 1).trim(), (a, b) -> a + "+" + b);
+            }
+        }
+        return map;
+    }
+
     private static long scan(final MacroRun run, final StringBuilder detail)
     {
         long total = 0;
@@ -97,7 +117,7 @@ public final class ItemUnits
                         total += u;
                         if (detail != null && u > 0)
                         {
-                            detail.append(" rack@").append(building.getSchematicName()).append(pos.toShortString()).append('=').append(rack.getInventory().getStackInSlot(slot)).append(';');
+                            detail.append(" rack@").append(building.getSchematicName()).append(pos.toShortString()).append("#").append(slot).append('=').append(rack.getInventory().getStackInSlot(slot)).append(';');
                         }
                     }
                 }
@@ -112,7 +132,7 @@ public final class ItemUnits
                 total += u;
                 if (detail != null && u > 0)
                 {
-                    detail.append(" citizen").append(citizen.getId()).append('=').append(inventory.getStackInSlot(slot)).append(';');
+                    detail.append(" citizen").append(citizen.getId()).append("#").append(slot).append('=').append(inventory.getStackInSlot(slot)).append(';');
                 }
             }
         }
