@@ -595,7 +595,7 @@ final class BuilderScaffoldGameTests
             {
                 InventoryUtils.addItemStackToItemHandler(second.getInventory(), new ItemStack(tool));
             }
-            final Blueprint blueprint = shape("two", 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10);
+            final Blueprint blueprint = shape("two", 7, 11, 7, (x, y, z) -> x == 0 || z == 0 || x == 6 || z == 6);
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
             live.stock(Items.SCAFFOLDING, 32);
             helper.assertTrue(InventoryUtils.forceItemStackToItemHandler(other.getItemHandlerCap(), new ItemStack(Items.SCAFFOLDING, 32), s -> true).isEmpty(), "no room in the second hut");

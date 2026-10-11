@@ -57,7 +57,7 @@ public final class BuilderScaffolding
     static final int DENY_TICKS = 3000;
 
     /** Ticks a tower has to be of no use before it comes down. */
-    static final int IDLE_GRACE = 100;
+    static final int IDLE_GRACE = 1200;
 
     /** A tower comes down in the middle of the stage only if the builder is this close to it (blocks). */
     static final double DISMANTLE_NEAR = 12.0D;
