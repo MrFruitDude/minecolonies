@@ -65,6 +65,26 @@ public final class ReachSpots
       @Nullable final Predicate<BlockPos> accept,
       final int limit)
     {
+        return best(level, blocks, reach, eyeHeight, from, accept, limit, false);
+    }
+
+    /**
+     * The best spots to work from, best first.
+     *
+     * @param inBlocks whether the spot may be made of the blocks themselves (a builder who stands in the cell he puts scaffolding into, on
+     *                 top of the scaffolding he put up before).
+     * @see #best(Level, List, double, double, BlockPos, Predicate, int)
+     */
+    public static List<Spot> best(
+      final Level level,
+      final List<BlockPos> blocks,
+      final double reach,
+      final double eyeHeight,
+      @Nullable final BlockPos from,
+      @Nullable final Predicate<BlockPos> accept,
+      final int limit,
+      final boolean inBlocks)
+    {
         if (blocks.isEmpty())
         {
             return List.of();
@@ -73,7 +93,7 @@ public final class ReachSpots
         final double usable = Math.max(1.0D, reach - MARGIN);
         final int r = (int) Math.ceil(reach);
         // the blocks the spot must not be made of: the target and the blocks that are worked on soon
-        final Set<BlockPos> soon = new HashSet<>(blocks.subList(0, Math.min(blocks.size(), 12)));
+        final Set<BlockPos> soon = inBlocks ? Set.of() : new HashSet<>(blocks.subList(0, Math.min(blocks.size(), 12)));
         final List<Spot> spots = new ArrayList<>();
         for (int dy = -(r + 1); dy <= r + 1; dy++)
         {

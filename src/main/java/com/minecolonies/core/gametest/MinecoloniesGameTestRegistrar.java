@@ -917,7 +917,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
      */
     private void registerBuilderScaffolding(final RegisterGameTestsEvent event)
     {
-        for (final String name : new String[] {"scaffold_reach_box_l40", "scaffold_reach_box_l1", "scaffold_reach_clear_l40", "scaffold_legacy_box_l40", "scaffold_legacy_box_l1"})
+        for (final String name : new String[] {"scaffold_reach_box_l40", "scaffold_reach_box_l1", "scaffold_reach_clear_l40", "scaffold_legacy_box_l40", "scaffold_legacy_box_l1",
+          "scaffold_tall_wall8", "scaffold_tall_tower14", "scaffold_sealed_roof", "scaffold_overhang", "scaffold_tall_tower14_legacy", "scaffold_tall_wall8_legacy"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -925,7 +926,13 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_reach_box_l1" -> BuilderScaffoldGameTests::reachBoxL1;
                 case "scaffold_reach_clear_l40" -> BuilderScaffoldGameTests::reachClearL40;
                 case "scaffold_legacy_box_l40" -> BuilderScaffoldGameTests::legacyBoxL40;
-                default -> BuilderScaffoldGameTests::legacyBoxL1;
+                case "scaffold_legacy_box_l1" -> BuilderScaffoldGameTests::legacyBoxL1;
+                case "scaffold_tall_wall8" -> BuilderScaffoldGameTests::tallWall8;
+                case "scaffold_tall_tower14" -> BuilderScaffoldGameTests::tallTower14;
+                case "scaffold_sealed_roof" -> BuilderScaffoldGameTests::sealedRoof;
+                case "scaffold_overhang" -> BuilderScaffoldGameTests::overhangSlab;
+                case "scaffold_tall_tower14_legacy" -> BuilderScaffoldGameTests::tallTower14Legacy;
+                default -> BuilderScaffoldGameTests::tallWall8Legacy;
             };
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),

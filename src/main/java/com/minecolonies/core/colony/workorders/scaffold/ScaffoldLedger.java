@@ -167,6 +167,49 @@ public final class ScaffoldLedger
     }
 
     /**
+     * The groups of cells that touch each other (a tower with its arms is one group).
+     *
+     * @param hut only the cells placed by the builders of this hut, or null for all.
+     * @return the groups, each one top down.
+     */
+    public List<List<Cell>> components(@Nullable final BlockPos hut)
+    {
+        final Set<BlockPos> todo = new LinkedHashSet<>();
+        for (final Cell cell : cells.values())
+        {
+            if (hut == null || hut.equals(cell.hut()))
+            {
+                todo.add(cell.pos());
+            }
+        }
+        final List<List<Cell>> groups = new ArrayList<>();
+        while (!todo.isEmpty())
+        {
+            final BlockPos start = todo.iterator().next();
+            todo.remove(start);
+            final List<Cell> group = new ArrayList<>();
+            final java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
+            queue.add(start);
+            while (!queue.isEmpty())
+            {
+                final BlockPos at = queue.poll();
+                group.add(cells.get(at));
+                for (final net.minecraft.core.Direction dir : net.minecraft.core.Direction.values())
+                {
+                    final BlockPos near = at.relative(dir);
+                    if (todo.remove(near))
+                    {
+                        queue.add(near);
+                    }
+                }
+            }
+            group.sort(Comparator.<Cell>comparingInt(c -> -c.pos().getY()).thenComparingInt(c -> -c.distance()));
+            groups.add(group);
+        }
+        return groups;
+    }
+
+    /**
      * Whether the ledger changed since the flag was reset (the work order is saved again).
      */
     public boolean consumeDirty()

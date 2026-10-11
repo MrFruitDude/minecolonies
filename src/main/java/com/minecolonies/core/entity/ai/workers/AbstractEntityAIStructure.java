@@ -152,7 +152,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     private TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> reserved(
       final TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> rule)
     {
-        return (info, pos, handler) -> rule.test(info, pos, handler) || isPositionReserved(pos) || isStuckSkipped(pos);
+        return (info, pos, handler) -> rule.test(info, pos, handler) || isPositionReserved(pos) || isStuckSkipped(pos) || isScaffoldHeld(pos);
     }
 
     /**
@@ -520,6 +520,12 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return IDLE;
         }
 
+        if (runScaffoldTick())
+        {
+            // putting a tower up or taking it down
+            return getState();
+        }
+
         if (!worker.getInventoryCitizen().hasSpace())
         {
             return INVENTORY_FULL;
@@ -619,6 +625,17 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         final boolean firstIteration = building.getProgress() == null;
         if (result.getBlockResult().getResult() == BlockPlacementResult.Result.FINISHED)
         {
+            if (scaffoldBeforeStageEnd())
+            {
+                // the scaffolding comes down before the stage ends
+                return getState();
+            }
+            if (consumeScaffoldRescan())
+            {
+                // positions that stood under scaffolding come again
+                this.storeProgressPos(NULL_POS, currentStage);
+                return getState();
+            }
             if (!canFinishStage())
             {
                 // builders helping with this stage have positions left; wait for them (or for their lease to run out)
@@ -890,6 +907,14 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * The stuck tracker, for the logs of the tests.
+     */
+    protected final String debugStuck()
+    {
+        return stuck.stationaryTicks() + "/" + stuck.overallTicks() + "/" + stuck.lastStep() + " deferred=" + deferredBlocks.size() + " abandoned=" + abandonedBlocks.size();
+    }
+
+    /**
      * Throws away where the worker wanted to stand and the path to it, so the next step asks for a new spot.
      */
     protected void resetWalkTarget()
@@ -1063,6 +1088,147 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         stuckLastPos = null;
         workBank = 0.0D;
         lastBankTick = -1L;
+    }
+
+    // ------------------------------------------------------------------ hooks of the scaffolding work (builders)
+
+    /**
+     * The work order the worker's scaffolding belongs to.
+     *
+     * @return the order, null if there is none.
+     */
+    @Nullable
+    protected IBuilderWorkOrder scaffoldOrder()
+    {
+        return null;
+    }
+
+    /**
+     * The structure the worker builds, for the places where scaffolding would be in the way of the building.
+     */
+    @Nullable
+    protected IStructureHandler scaffoldHandler()
+    {
+        return structurePlacer == null ? null : structurePlacer.getB();
+    }
+
+    /**
+     * What it costs to put scaffolding into a cell: the blocks of the structure go there later, so the scaffolding would have to come down
+     * first (high), the cells inside the volume of the structure are a little in the way (low).
+     *
+     * @param pos the cell.
+     * @return the cost.
+     */
+    protected int scaffoldPenalty(final BlockPos pos)
+    {
+        final IStructureHandler handler = scaffoldHandler();
+        if (handler == null)
+        {
+            return 0;
+        }
+        final BlockPos local = handler.getStructurePosFromWorld(pos);
+        final var blueprint = handler.getBluePrint();
+        if (blueprint == null || local.getX() < 0 || local.getY() < 0 || local.getZ() < 0
+              || local.getX() >= blueprint.getSizeX() || local.getY() >= blueprint.getSizeY() || local.getZ() >= blueprint.getSizeZ())
+        {
+            return 0;
+        }
+        final BlockState state = blueprint.getBlockState(local);
+        return state == null || state.isAir() ? 2 : 40;
+    }
+
+    /**
+     * Gets the worker into a place where he reaches the block, for the scaffolding work.
+     *
+     * @param target     the block.
+     * @param ahead      the blocks that count when the spot is picked (the first is the target).
+     * @param inBlocks   whether the spot may be in the cell itself or on the scaffolding of the cells.
+     * @param accept     extra condition for the spot, or null.
+     * @return true once he reaches the block.
+     */
+    protected boolean walkIntoReachFor(final BlockPos target, final Supplier<List<BlockPos>> ahead, final boolean inBlocks, @Nullable final Predicate<BlockPos> accept)
+    {
+        return true;
+    }
+
+    protected void resetScaffoldWalk()
+    {
+    }
+
+    protected void resetReachWalk()
+    {
+    }
+
+    /**
+     * A tower is up: the worker works from its top.
+     *
+     * @param stand the spot on top of it.
+     */
+    protected void workFromScaffold(final BlockPos stand)
+    {
+        workFrom = stand;
+    }
+
+    /**
+     * The blocks of the next work, for the decision whether scaffolding is still of use.
+     */
+    protected List<BlockPos> peekWorkAhead(final int n)
+    {
+        return peekWork(n);
+    }
+
+    /**
+     * The scaffolding work of this AI step (puts a tower up or takes one down).
+     *
+     * @return true if the step went into it.
+     */
+    protected boolean scaffoldTick()
+    {
+        return false;
+    }
+
+    protected final boolean runScaffoldTick()
+    {
+        if (scaffoldTick())
+        {
+            stuck.free();
+            stuckLastTick = -1L;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Whether a position holds scaffolding that the worker put up: the stage leaves it alone until the scaffolding is down.
+     */
+    protected boolean isScaffoldHeld(final BlockPos worldPos)
+    {
+        return false;
+    }
+
+    /**
+     * Before a stage ends: scaffolding that is still up comes down first.
+     *
+     * @return true while there is scaffolding left (the stage waits).
+     */
+    protected boolean scaffoldBeforeStageEnd()
+    {
+        return false;
+    }
+
+    /**
+     * @return true once if positions of the structure were held back by scaffolding that came down: the stage has to look for them again.
+     */
+    protected boolean consumeScaffoldRescan()
+    {
+        return false;
+    }
+
+    /**
+     * The structure is reset (done, cancelled, released).
+     */
+    protected void onStructureReset()
+    {
     }
 
     /**
@@ -1481,6 +1647,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         if (structurePlacer == null)
         {
             return IDLE;
+        }
+
+        if (runScaffoldTick())
+        {
+            return getState();
         }
 
         final BlockState worldState = world.getBlockState(blockToMine);
@@ -1934,6 +2105,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     public void resetCurrentStructure()
     {
+        onStructureReset();
         resetStuckState();
         workFrom = null;
         structurePlacer = null;

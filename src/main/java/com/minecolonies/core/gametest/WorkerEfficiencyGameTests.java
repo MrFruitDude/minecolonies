@@ -125,6 +125,21 @@ public final class WorkerEfficiencyGameTests
             return order;
         }
 
+        /**
+         * An order for a blueprint of the test.
+         */
+        WorkOrderDecoration orderFor(final String name, final BlockPos rel, final Blueprint blueprint)
+        {
+            final WorkOrderDecoration order = WorkOrderDecoration.create(WorkOrderType.BUILD, "Minecolonies Original", "gametest/" + name + ".blueprint", "gametest." + name,
+              helper.absolutePos(rel), RotationMirror.NONE, 0);
+            order.setBlueprint(blueprint, level);
+            colony.getWorkManager().addWorkOrder(order, true);
+            helper.assertTrue(order.getID() > 0, "no id for " + name);
+            order.setClaimedBy(hut.getID());
+            hut.setWorkOrder(order);
+            return order;
+        }
+
         void stock(final net.minecraft.world.item.Item item, int amount)
         {
             while (amount > 0)
@@ -154,7 +169,8 @@ public final class WorkerEfficiencyGameTests
         String ai()
         {
             return citizen.getEntity().map(e -> e.getCitizenJobHandler().getWorkAI() == null ? "no-ai"
-              : e.getCitizenJobHandler().getWorkAI().getStateAI().getState() + " history=" + e.getCitizenJobHandler().getWorkAI().getStateAI().getHistory().getString()).orElse("no-entity")
+              : e.getCitizenJobHandler().getWorkAI().getStateAI().getState() + " history=" + e.getCitizenJobHandler().getWorkAI().getStateAI().getHistory().getString()
+                  + (e.getCitizenJobHandler().getWorkAI() instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder b ? " " + b.debugInfo() : "")).orElse("no-entity")
                      + " open=" + hut.getOpenRequests(citizen.getId()).stream().map(r -> String.valueOf(r.getRequest())).toList()
                      + " buildingOpen=" + hut.getOpenRequests(-1).stream().map(r -> String.valueOf(r.getRequest())).toList();
         }
@@ -426,7 +442,7 @@ public final class WorkerEfficiencyGameTests
             final BlockPos origin = order.getLocation();
             final int wool0 = countBlocks(live, origin, WOOL_BLOCK, 1);
             everyTick(live, 4000, tick -> {
-                if (tick % 500 == 0)
+                if (tick % 250 == 0)
                 {
                     Log.getLogger().info("WSTUCK notool t={} wool left={} {}", tick, countBlocks(live, origin, WOOL_BLOCK, 1), live.ai());
                 }

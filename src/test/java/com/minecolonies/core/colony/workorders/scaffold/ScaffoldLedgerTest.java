@@ -85,4 +85,22 @@ public class ScaffoldLedgerTest
         assertTrue(a.isEmpty());
         assertEquals(1, b.size());
     }
+
+    @Test
+    public void groupsCellsThatTouch()
+    {
+        final ScaffoldLedger ledger = new ScaffoldLedger();
+        // a tower with an arm, and another tower far away
+        ledger.add(new BlockPos(0, 65, 0), HUT_A, 0);
+        ledger.add(new BlockPos(0, 66, 0), HUT_A, 0);
+        ledger.add(new BlockPos(1, 66, 0), HUT_A, 1);
+        ledger.add(new BlockPos(9, 65, 9), HUT_A, 0);
+        final List<List<ScaffoldLedger.Cell>> groups = ledger.components(null);
+        assertEquals(2, groups.size());
+        assertEquals(3, groups.stream().filter(g -> g.size() == 3).findFirst().orElseThrow().size());
+        // top down inside a group, the end of the arm before the column top
+        final List<ScaffoldLedger.Cell> tower = groups.stream().filter(g -> g.size() == 3).findFirst().orElseThrow();
+        assertEquals(new BlockPos(1, 66, 0), tower.get(0).pos());
+        assertEquals(new BlockPos(0, 65, 0), tower.get(2).pos());
+    }
 }
