@@ -29,11 +29,11 @@ public final class BenchRegistrar
 
         final int[] scales = quick ? new int[] {100, 1000} : new int[] {100, 1000, 10000};
         // micro: scales ascending, each with its warm-up repeat first, all in one test
-        add(event, "rsb_micro", 4000 * scales.length * (reps + 1), helper -> {
+        add(event, "rsb_micro", 4000 * scales.length * (reps + 2), helper -> {
             final List<int[]> plan = new ArrayList<>();
             for (final int scale : scales)
             {
-                for (int rep = 0; rep <= reps; rep++)
+                for (int rep = 0; rep < reps + MICRO_WARMUPS; rep++)
                 {
                     plan.add(new int[] {scale, rep});
                 }
@@ -45,7 +45,7 @@ public final class BenchRegistrar
             }, i -> (index, done) -> {
                 final int scale = plan.get(index)[0];
                 final int rep = plan.get(index)[1];
-                MicroBench.run(helper, "rsb_micro_" + scale + "_r" + rep, scale, rep, rep == 0, done);
+                MicroBench.run(helper, "rsb_micro_" + scale + "_r" + rep, scale, rep, rep < MICRO_WARMUPS, done);
             });
         });
         macro(event, "fresh", reps, () -> Scenarios.fresh(quick));
@@ -61,6 +61,7 @@ public final class BenchRegistrar
 
     /** Unmeasured repeats before the measured ones: the JIT is still compiling the request system during the first one. */
     private static final int MACRO_WARMUPS = 2;
+    private static final int MICRO_WARMUPS = 2;
 
     private static void macro(final RegisterGameTestsEvent event, final String scenario, final int reps, final Supplier<MacroRun.Scenario> factory)
     {

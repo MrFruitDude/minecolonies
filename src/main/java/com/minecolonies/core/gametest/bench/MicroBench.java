@@ -323,7 +323,7 @@ public final class MicroBench
         // The idle tick at about the full scale: nothing changes, everything waits.
         sampleAll();
         final RsProbe.Snap a = RsProbe.snap();
-        for (int i = 0; i < 30; i++)
+        for (int i = 0; i < 90; i++)
         {
             manager.tick();
         }
@@ -331,6 +331,8 @@ public final class MicroBench
         final RsProbe.Snap b = RsProbe.snap();
         final JsonObject idle = stats(a, b, RsProbe.MGR_TICK, 0);
         ops.add("idleTick", idle);
+        // an idle tick is periodic work (sweeps, retry timers): its amortised mean is the cost, not the trimmed one
+        idle.addProperty("cpuNs", idle.get("meanCpuNs").getAsDouble());
         idleTickCpu = idle.get("cpuNs").getAsDouble();
         info.addProperty("openAtIdle", open.size());
     }

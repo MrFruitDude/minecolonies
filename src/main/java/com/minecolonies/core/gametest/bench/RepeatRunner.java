@@ -55,6 +55,8 @@ public final class RepeatRunner
                 }
                 if (i < reps)
                 {
+                    // the garbage of the finished repeat must not make the next one slower than the first
+                    System.gc();
                     helper.runAfterDelay(40, next[0]);
                 }
                 else if (failures.isEmpty())
