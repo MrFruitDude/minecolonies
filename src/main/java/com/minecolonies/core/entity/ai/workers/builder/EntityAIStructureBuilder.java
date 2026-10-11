@@ -430,11 +430,13 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         if (BuildReach.inReach(worker.getX(), worker.getEyeY(), worker.getZ(), target, reach)
               && (accept == null || accept.test(worker.blockPosition())))
         {
-            if (walk.spot != null)
+            if (walk.spot != null && !world.getBlockState(worker.blockPosition()).is(net.minecraft.tags.BlockTags.CLIMBABLE))
             {
+                // (not in the middle of a climb: a builder who stops inside a column gets no path up from there)
                 worker.getNavigation().stop();
                 walk.spot = null;
             }
+            walk.noSpotUntil = 0L;
             walk.noSpotSince = 0L;
             workFrom = worker.blockPosition();
             prevBlockPosition = target;
