@@ -896,6 +896,32 @@ public final class MacroRun
                 out.append(']');
             }
         }
+        out.append("\n  workers:");
+        for (final ICitizenData citizen : citizens)
+        {
+            if (citizen.getJob() != null && !(citizen.getJob() instanceof JobDeliveryman))
+            {
+                out.append(" [#").append(citizen.getId()).append(' ').append(citizen.getJob().getClass().getSimpleName()).append(" entity=").append(citizen.getEntity().isPresent());
+                if (citizen.getJob() instanceof com.minecolonies.core.colony.jobs.AbstractJobCrafter<?, ?> crafter)
+                {
+                    out.append(" craftQueue=").append(crafter.getTaskQueue().size());
+                }
+                citizen.getEntity().ifPresent(e -> out.append(" ai=").append(citizen.getJob().getWorkerAI() == null ? "-" : citizen.getJob().getWorkerAI().getState()).append(" at ").append(e.blockPosition().toShortString()));
+                out.append(']');
+            }
+        }
+        out.append("\n  waitDiagnosis:");
+        int shown = 0;
+        for (final IRequest<?> request : rm.getRequestIdentitiesDataStore().getIdentities().values())
+        {
+            if (request.getRequest() instanceof Stack stack && request.getState() == com.minecolonies.api.colony.requestsystem.request.RequestState.IN_PROGRESS && !request.hasChildren() && shown++ < 8)
+            {
+                out.append(" [").append(BuiltInRegistries.ITEM.getKey(stack.getStack().getItem()).getPath()).append(" recipeSupport=")
+                  .append(com.minecolonies.core.colony.requestsystem.wait.WaitDiagnosis.recipeSupport((com.minecolonies.core.colony.Colony) colony, stack))
+                  .append(" physicalStock=").append(com.minecolonies.core.colony.requestsystem.wait.WaitDiagnosis.physicalStock((com.minecolonies.core.colony.Colony) colony, stack))
+                  .append(" reason=").append(request.getWaitReason()).append(']');
+            }
+        }
         final int[] ghosts = {0, 0};
         for (final net.minecraft.world.entity.Entity e : level.getEntitiesOfClass(net.minecraft.world.entity.Entity.class, plotBox()))
         {
