@@ -3,6 +3,8 @@ package com.minecolonies.core.colony.requestsystem;
 import com.minecolonies.api.MinecoloniesAPIProxy;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Optional;
+
 /**
  * The server switches of the Anno-informed request system redesign. Read through here so code that runs before the
  * config is loaded (unit tests, early world load) sees the old behaviour instead of throwing.
@@ -186,9 +188,15 @@ public final class RsFlags
     @Nullable
     private static Boolean fromEnvironment(final String name)
     {
-        final String value = System.getenv(name);
-        return value == null || value.isBlank() ? null : Boolean.valueOf(value.trim());
+        // The environment does not change while the game runs, and the flags are asked for on every request and courier decision:
+        // System.getenv allocates per call.
+        return ENVIRONMENT.computeIfAbsent(name, key -> {
+            final String value = System.getenv(key);
+            return value == null || value.isBlank() ? Optional.<Boolean>empty() : Optional.of(Boolean.valueOf(value.trim()));
+        }).orElse(null);
     }
+
+    private static final java.util.Map<String, Optional<Boolean>> ENVIRONMENT = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * Forces the reservation switch, for tests. Null returns to the config value.
