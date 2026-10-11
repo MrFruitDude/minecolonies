@@ -520,6 +520,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multicolony_force_active_state"),
           info -> new MinecoloniesGameTestInstance(info, MultiColonyGameTests::force_active_state),
           isolatedColonyData(event, "multicolony_force_active_state"));
+        // MP-D: a building's claim never takes another owner's chunks.
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "claims_other_owner_chunks_are_skipped"),
+          info -> new MinecoloniesGameTestInstance(info, ClaimOwnerGameTests::building_claim_skips_other_owners_chunks),
+          isolatedColonyData(event, "claims_other_owner_chunks_are_skipped"));
         // P5b-MC: NPC faction owner for AI neighbour colonies (one glob: minecolonies:faction_*).
         for (final String name : new String[] {"faction_create_and_permissions", "faction_persistence", "faction_index_and_limits", "faction_driver_state",
           "faction_actions_without_player", "faction_raids_off"})

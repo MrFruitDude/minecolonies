@@ -356,6 +356,12 @@ public final class ChunkDataHelper
 
         if (add)
         {
+            if (claimedByOtherOwner(world, chunkClaimData, colony))
+            {
+                // A building's claim never takes land another owner's colony holds: colonies of different players do not grow into each other (the first claimant keeps the chunk).
+                Log.getLogger().debug("Colony {} did not claim chunk {}: it is claimed by another owner's colony", colony.getID(), chunkBlockPos);
+                return false;
+            }
             chunkClaimData.addBuildingClaim(colony.getID(), buildingPos, chunk);
         }
         else
@@ -364,5 +370,36 @@ public final class ChunkDataHelper
         }
 
         return true;
+    }
+
+    /**
+     * Whether a colony of another owner than {@code colony}'s holds the chunk: it owns it, claims it statically or with a building. Colonies of one owner may share chunks.
+     *
+     * @param world     the world.
+     * @param claimData the chunk's claim data.
+     * @param colony    the colony that wants to claim.
+     * @return true when the claim has to be refused.
+     */
+    public static boolean claimedByOtherOwner(final ServerLevel world, final IChunkClaimData claimData, final Colony colony)
+    {
+        final java.util.Set<Integer> holders = new java.util.HashSet<>(claimData.getStaticClaimColonies());
+        holders.addAll(claimData.getAllClaimingBuildings().keySet());
+        if (claimData.getOwningColony() != 0)
+        {
+            holders.add(claimData.getOwningColony());
+        }
+        for (final int id : holders)
+        {
+            if (id == 0 || id == colony.getID())
+            {
+                continue;
+            }
+            final IColony other = IColonyManager.getInstance().getColonyByDimension(id, world.dimension());
+            if (other != null && !other.getPermissions().getOwner().equals(colony.getPermissions().getOwner()))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }
