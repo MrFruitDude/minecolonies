@@ -16,6 +16,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 
 import java.util.List;
+import java.util.UUID;
 
 import static com.minecolonies.core.commands.CommandArgumentNames.COLONYID_ARG;
 import static com.minecolonies.core.commands.CommandArgumentNames.PLAYERNAME_ARG;
@@ -52,8 +53,7 @@ public class CommandChangeOwner implements IMCColonyOfficerCommand
         }
 
         // A player may own colonies.maxPerPlayer colonies; /colony setowner is no way around that limit.
-        final List<IColony> owned = IColonyManager.getInstance().getIColoniesByOwner(player.getUUID());
-        if (!owned.contains(colony) && owned.size() >= IColonyManager.getInstance().getMaxColoniesPerPlayer())
+        if (wouldExceedLimit(colony, player.getUUID()))
         {
             context.getSource().sendFailure(Component.translatableEscape(CommandTranslationConstants.COMMAND_OWNER_CHANGE_LIMIT, profile.name(), IColonyManager.getInstance().getMaxColoniesPerPlayer()));
             return 0;
@@ -63,6 +63,19 @@ public class CommandChangeOwner implements IMCColonyOfficerCommand
 
         context.getSource().sendSuccess(() -> Component.translatableEscape(CommandTranslationConstants.COMMAND_OWNER_CHANGE_SUCCESS, profile.name(), colony.getName()), true);
         return 1;
+    }
+
+    /**
+     * Whether making the player the owner of the colony would give them more colonies than {@code colonies.maxPerPlayer}.
+     *
+     * @param colony   the colony.
+     * @param newOwner the player who would own it.
+     * @return true if that is more than allowed (a colony the player owns already never counts twice).
+     */
+    public static boolean wouldExceedLimit(final IColony colony, final UUID newOwner)
+    {
+        final List<IColony> owned = IColonyManager.getInstance().getIColoniesByOwner(newOwner);
+        return !owned.contains(colony) && owned.size() >= IColonyManager.getInstance().getMaxColoniesPerPlayer();
     }
 
     /**

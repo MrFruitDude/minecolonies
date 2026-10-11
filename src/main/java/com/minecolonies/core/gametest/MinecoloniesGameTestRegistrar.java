@@ -495,6 +495,31 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "upgrade_request_event_cancels"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::upgradeRequestEventCancels),
           isolatedColonyData(event, "upgrade_request_event_cancels"));
+        // P3a-MC: several colonies per player (one glob: minecolonies:multicolony_*).
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multicolony_founding_and_selection"),
+          info -> new MinecoloniesGameTestInstance(info, MultiColonyGameTests::founding_and_selection),
+          isolatedColonyData(event, "multicolony_founding_and_selection"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multicolony_default_limit_one"),
+          info -> new MinecoloniesGameTestInstance(info, MultiColonyGameTests::default_limit_one),
+          isolatedColonyData(event, "multicolony_default_limit_one"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multicolony_founding_event"),
+          info -> new MinecoloniesGameTestInstance(info, MultiColonyGameTests::founding_event),
+          isolatedColonyData(event, "multicolony_founding_event"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multicolony_abandon_delete_right_one"),
+          info -> new MinecoloniesGameTestInstance(info, MultiColonyGameTests::abandon_delete_right_one),
+          isolatedColonyData(event, "multicolony_abandon_delete_right_one"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multicolony_owned_colonies_message"),
+          info -> new MinecoloniesGameTestInstance(info, MultiColonyGameTests::owned_colonies_message),
+          isolatedColonyData(event, "multicolony_owned_colonies_message"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "multicolony_force_active_state"),
+          info -> new MinecoloniesGameTestInstance(info, MultiColonyGameTests::force_active_state),
+          isolatedColonyData(event, "multicolony_force_active_state"));
         // CA-4 + CA-2 network sync (one glob: minecolonies:sync_*).
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "sync_view_message_no_tail"),
