@@ -29,6 +29,7 @@ import com.minecolonies.core.colony.buildings.modules.CourierAssignmentModule;
 import com.minecolonies.api.colony.requestsystem.request.WaitReason;
 import com.minecolonies.core.colony.requestsystem.RsFlags;
 import com.minecolonies.core.colony.Colony;
+import com.minecolonies.core.colony.requestsystem.RsProbe;
 import com.minecolonies.core.colony.requestsystem.RsStats;
 import com.minecolonies.core.colony.storage.ColonyStorage;
 import com.minecolonies.core.colony.storage.DispatchCost;
@@ -363,13 +364,34 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
     // TODO: Rework logic to account for partially unloaded colonies, skipping tasks who's location is unloaded temporarily
     public IRequest<IDeliverymanRequestable> getCurrentTask()
     {
+        final boolean probe = RsProbe.enabled;
+        if (probe)
+        {
+            RsProbe.begin(RsProbe.COURIER_PICK);
+        }
+        try
+        {
+            return getCurrentTask0();
+        }
+        finally
+        {
+            if (probe)
+            {
+                RsProbe.end(RsProbe.COURIER_PICK);
+            }
+        }
+    }
+
+    @SuppressWarnings(UNCHECKED)
+    private IRequest<IDeliverymanRequestable> getCurrentTask0()
+    {
         final IToken<?> currentRequest = getTaskQueueFromDataStore().peekFirst();
         if (currentRequest != null)
         {
             if (RsFlags.smartRetry() && watchTask(currentRequest))
             {
                 // Given up: the queue moved on.
-                return getCurrentTask();
+                return getCurrentTask0();
             }
             return (IRequest<IDeliverymanRequestable>) getColony().getRequestManager().getRequestForToken(currentRequest);
         }
@@ -556,6 +578,26 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
      * @param successful decides per request whether it was handled successfully.
      */
     public void finishRequest(final Predicate<IRequest<?>> successful)
+    {
+        final boolean probe = RsProbe.enabled;
+        if (probe)
+        {
+            RsProbe.begin(RsProbe.COURIER_DONE);
+        }
+        try
+        {
+            finishRequest0(successful);
+        }
+        finally
+        {
+            if (probe)
+            {
+                RsProbe.end(RsProbe.COURIER_DONE);
+            }
+        }
+    }
+
+    private void finishRequest0(final Predicate<IRequest<?>> successful)
     {
         if (getTaskQueueFromDataStore().isEmpty())
         {

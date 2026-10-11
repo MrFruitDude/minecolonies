@@ -14,11 +14,57 @@ public class StandardToken implements IToken<UUID>
     private final UUID id;
 
     /**
+     * Benchmark hook: when set, new tokens get reproducible ids (a counter mixed with the seed) instead of random ones, so
+     * hash-ordered iteration over tokens is the same from run to run. Null in the game.
+     */
+    private static volatile java.util.concurrent.atomic.AtomicLong benchmarkCounter;
+
+    private static volatile long benchmarkSeed;
+
+    /**
+     * Makes new tokens reproducible from {@code seed} on. For the request-system benchmark only.
+     *
+     * @param seed the seed, or null to return to random ids.
+     */
+    public static void seedForBenchmark(final Long seed)
+    {
+        if (seed == null)
+        {
+            benchmarkCounter = null;
+            return;
+        }
+        benchmarkSeed = seed;
+        benchmarkCounter = new java.util.concurrent.atomic.AtomicLong();
+    }
+
+    /**
+     * @return a new token id: random, or the next reproducible one while {@link #seedForBenchmark} is active.
+     */
+    public static UUID newId()
+    {
+        final java.util.concurrent.atomic.AtomicLong counter = benchmarkCounter;
+        if (counter == null)
+        {
+            return UUID.randomUUID();
+        }
+        final long n = counter.incrementAndGet();
+        // SplitMix64 finalizer over (seed, n): well spread bits, so HashMap buckets behave like those of random ids.
+        long z = n * 0x9E3779B97F4A7C15L + benchmarkSeed;
+        z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+        z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+        z ^= z >>> 31;
+        long y = (n + benchmarkSeed) * 0xD6E8FEB86659FD93L;
+        y = (y ^ (y >>> 32)) * 0xD6E8FEB86659FD93L;
+        y ^= y >>> 32;
+        return new UUID(z, y);
+    }
+
+    /**
      * Creates a new token with a random id.
      */
     public StandardToken()
     {
-        this(UUID.randomUUID());
+        this(newId());
     }
 
     /**

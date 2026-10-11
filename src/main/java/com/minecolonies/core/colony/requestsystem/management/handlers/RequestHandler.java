@@ -14,6 +14,7 @@ import com.minecolonies.api.colony.requestsystem.requester.IRequester;
 import com.minecolonies.api.colony.requestsystem.resolver.IRequestResolver;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.util.Log;
+import com.minecolonies.core.colony.requestsystem.RsProbe;
 import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
 import com.minecolonies.core.colony.requestsystem.management.manager.wrapped.WrappedBlacklistAssignmentRequestManager;
 import com.minecolonies.core.colony.requestsystem.management.manager.wrapped.WrappedStaticStateRequestManager;
@@ -122,6 +123,27 @@ public class RequestHandler implements IRequestHandler
     @SuppressWarnings(UNCHECKED)
     public IToken<?> assignRequestDefault(final IRequest<?> request, final Collection<IToken<?>> resolverTokenBlackList)
     {
+        final boolean probe = RsProbe.enabled;
+        if (probe)
+        {
+            RsProbe.begin(RsProbe.ASSIGN);
+        }
+        try
+        {
+            return assignRequestDefault0(request, resolverTokenBlackList);
+        }
+        finally
+        {
+            if (probe)
+            {
+                RsProbe.end(RsProbe.ASSIGN);
+            }
+        }
+    }
+
+    @SuppressWarnings(UNCHECKED)
+    private IToken<?> assignRequestDefault0(final IRequest<?> request, final Collection<IToken<?>> resolverTokenBlackList)
+    {
         //Check if the request is registered
         getRequest(request.getId());
 
@@ -177,7 +199,7 @@ public class RequestHandler implements IRequestHandler
             }
 
             //Skip if preliminary check fails
-            if (!resolver.canResolveRequest(manager, request))
+            if (!canResolve(resolver, request))
             {
                 continue;
             }
@@ -185,7 +207,7 @@ public class RequestHandler implements IRequestHandler
             if (previousResolver == null)
             {
                 //Skip if attempt failed (aka attemptResult == null)
-                attemptResult = resolver.attemptResolveRequest(new WrappedBlacklistAssignmentRequestManager(manager, resolverTokenBlackList), request);
+                attemptResult = attempt(resolver, new WrappedBlacklistAssignmentRequestManager(manager, resolverTokenBlackList), request);
                 if (attemptResult != null)
                 {
                     previousResolver = resolver;
@@ -198,7 +220,7 @@ public class RequestHandler implements IRequestHandler
                 if (currentResolverMetric < previousMetric)
                 {
                     @Nullable List<IToken<?>> tempAttemptResolveRequest =
-                      resolver.attemptResolveRequest(new WrappedBlacklistAssignmentRequestManager(manager, resolverTokenBlackList), request);
+                      attempt(resolver, new WrappedBlacklistAssignmentRequestManager(manager, resolverTokenBlackList), request);
                     if (tempAttemptResolveRequest != null)
                     {
                         previousResolver = resolver;
@@ -222,6 +244,49 @@ public class RequestHandler implements IRequestHandler
         }
 
         return null;
+    }
+
+    /**
+     * canResolveRequest, timed per resolver class while the benchmark probe is on.
+     */
+    @SuppressWarnings({RAWTYPES, UNCHECKED})
+    private boolean canResolve(final IRequestResolver resolver, final IRequest<?> request)
+    {
+        if (!RsProbe.enabled)
+        {
+            return resolver.canResolveRequest(manager, request);
+        }
+        RsProbe.begin(RsProbe.CAN_RESOLVE);
+        try
+        {
+            return resolver.canResolveRequest(manager, request);
+        }
+        finally
+        {
+            RsProbe.end(RsProbe.CAN_RESOLVE, resolver.getClass());
+        }
+    }
+
+    /**
+     * attemptResolveRequest, timed per resolver class while the benchmark probe is on.
+     */
+    @SuppressWarnings({RAWTYPES, UNCHECKED})
+    @Nullable
+    private List<IToken<?>> attempt(final IRequestResolver resolver, final IRequestManager viewOfManager, final IRequest<?> request)
+    {
+        if (!RsProbe.enabled)
+        {
+            return resolver.attemptResolveRequest(viewOfManager, request);
+        }
+        RsProbe.begin(RsProbe.ATTEMPT);
+        try
+        {
+            return resolver.attemptResolveRequest(viewOfManager, request);
+        }
+        finally
+        {
+            RsProbe.end(RsProbe.ATTEMPT, resolver.getClass());
+        }
     }
 
     /**

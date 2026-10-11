@@ -57,6 +57,8 @@ public final class RsCourierHooks
             storage.recordFlow(source == null ? delivery.getRequest().getStart().getInDimensionLocation() : source,
               delivery.getRequest().getTarget().getInDimensionLocation(), delivery.getRequest().getStack());
         }
+        RsStats.itemsDelivered += delivery.getRequest().getStack().getCount();
+        RsStats.deliveriesArrived++;
         final ReservationLedger ledger = RsAccess.ledger(manager);
         if (ledger == null)
         {

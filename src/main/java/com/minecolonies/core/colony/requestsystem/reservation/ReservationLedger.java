@@ -1,5 +1,7 @@
 package com.minecolonies.core.colony.requestsystem.reservation;
 
+import com.minecolonies.core.colony.requestsystem.RsProbe;
+
 import com.minecolonies.api.colony.requestsystem.factory.IFactoryController;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.crafting.ItemStorage;
@@ -147,6 +149,32 @@ public final class ReservationLedger
       final ReservationReason reason,
       final long tick)
     {
+        if (!RsProbe.enabled)
+        {
+            return add0(kind, scope, container, key, amount, token, requester, reason, tick);
+        }
+        RsProbe.begin(RsProbe.LEDGER);
+        try
+        {
+            return add0(kind, scope, container, key, amount, token, requester, reason, tick);
+        }
+        finally
+        {
+            RsProbe.end(RsProbe.LEDGER);
+        }
+    }
+
+    private int add0(
+      final ReservationKind kind,
+      final BlockPos scope,
+      @Nullable final BlockPos container,
+      final ItemStorage key,
+      final int amount,
+      final IToken<?> token,
+      final String requester,
+      final ReservationReason reason,
+      final long tick)
+    {
         if (amount <= 0)
         {
             return 0;
@@ -197,6 +225,23 @@ public final class ReservationLedger
      * @return the amount committed (less than asked when the token claimed less).
      */
     public int commitStock(@NotNull final IToken<?> token, @NotNull final BlockPos scope, @NotNull final ItemStorage key, final int amount, final long tick)
+    {
+        if (!RsProbe.enabled)
+        {
+            return commitStock0(token, scope, key, amount, tick);
+        }
+        RsProbe.begin(RsProbe.LEDGER);
+        try
+        {
+            return commitStock0(token, scope, key, amount, tick);
+        }
+        finally
+        {
+            RsProbe.end(RsProbe.LEDGER);
+        }
+    }
+
+    private int commitStock0(@NotNull final IToken<?> token, @NotNull final BlockPos scope, @NotNull final ItemStorage key, final int amount, final long tick)
     {
         final List<Reservation> mine = byToken.get(token);
         if (mine == null || amount <= 0)
@@ -295,6 +340,29 @@ public final class ReservationLedger
       final boolean freed,
       final Predicate<Reservation> which)
     {
+        if (!RsProbe.enabled)
+        {
+            return end0(token, kind, tick, op, freed, which);
+        }
+        RsProbe.begin(RsProbe.LEDGER);
+        try
+        {
+            return end0(token, kind, tick, op, freed, which);
+        }
+        finally
+        {
+            RsProbe.end(RsProbe.LEDGER);
+        }
+    }
+
+    private int end0(
+      final IToken<?> token,
+      @Nullable final ReservationKind kind,
+      final long tick,
+      final LedgerEvent.Op op,
+      final boolean freed,
+      final Predicate<Reservation> which)
+    {
         final List<Reservation> mine = byToken.get(token);
         if (mine == null)
         {
@@ -355,6 +423,23 @@ public final class ReservationLedger
      */
     public int sweep(@NotNull final Predicate<IToken<?>> alive, final long tick)
     {
+        if (!RsProbe.enabled)
+        {
+            return sweep0(alive, tick);
+        }
+        RsProbe.begin(RsProbe.LEDGER);
+        try
+        {
+            return sweep0(alive, tick);
+        }
+        finally
+        {
+            RsProbe.end(RsProbe.LEDGER);
+        }
+    }
+
+    private int sweep0(@NotNull final Predicate<IToken<?>> alive, final long tick)
+    {
         int dropped = 0;
         for (final IToken<?> token : new ArrayList<>(byToken.keySet()))
         {
@@ -397,6 +482,23 @@ public final class ReservationLedger
      */
     public int sweepStaleAssists(final long tick, final long maxAge)
     {
+        if (!RsProbe.enabled)
+        {
+            return sweepStaleAssists0(tick, maxAge);
+        }
+        RsProbe.begin(RsProbe.LEDGER);
+        try
+        {
+            return sweepStaleAssists0(tick, maxAge);
+        }
+        finally
+        {
+            RsProbe.end(RsProbe.LEDGER);
+        }
+    }
+
+    private int sweepStaleAssists0(final long tick, final long maxAge)
+    {
         int dropped = 0;
         for (final IToken<?> token : new ArrayList<>(byToken.keySet()))
         {
@@ -431,6 +533,23 @@ public final class ReservationLedger
      * @return the number of claims dropped.
      */
     public int sweepStaleHandouts(final long tick, final long maxAge)
+    {
+        if (!RsProbe.enabled)
+        {
+            return sweepStaleHandouts0(tick, maxAge);
+        }
+        RsProbe.begin(RsProbe.LEDGER);
+        try
+        {
+            return sweepStaleHandouts0(tick, maxAge);
+        }
+        finally
+        {
+            RsProbe.end(RsProbe.LEDGER);
+        }
+    }
+
+    private int sweepStaleHandouts0(final long tick, final long maxAge)
     {
         int dropped = 0;
         for (final IToken<?> token : new ArrayList<>(byToken.keySet()))
@@ -548,6 +667,23 @@ public final class ReservationLedger
     }
 
     private static int sum(@Nullable final List<Reservation> list, @Nullable final BlockPos container, final Predicate<ItemStack> predicate)
+    {
+        if (!RsProbe.enabled)
+        {
+            return sum0(list, container, predicate);
+        }
+        RsProbe.begin(RsProbe.LEDGER_READ);
+        try
+        {
+            return sum0(list, container, predicate);
+        }
+        finally
+        {
+            RsProbe.end(RsProbe.LEDGER_READ);
+        }
+    }
+
+    private static int sum0(@Nullable final List<Reservation> list, @Nullable final BlockPos container, final Predicate<ItemStack> predicate)
     {
         if (list == null)
         {
