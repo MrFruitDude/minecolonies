@@ -574,6 +574,18 @@ public final class BuilderScaffolding
 
     private boolean inUse(final List<ScaffoldLedger.Cell> tower, final BlockPos feet, final List<BlockPos> ahead, final double eye, final double usable)
     {
+        // another builder stands on it or climbs it: it stays
+        net.minecraft.world.phys.AABB box = null;
+        for (final ScaffoldLedger.Cell cell : tower)
+        {
+            final net.minecraft.world.phys.AABB one = new net.minecraft.world.phys.AABB(cell.pos());
+            box = box == null ? one : box.minmax(one);
+        }
+        if (box != null && !ai.world.getEntitiesOfClass(com.minecolonies.api.entity.citizen.AbstractEntityCitizen.class, box.inflate(1.5D, 1.0D, 1.5D).expandTowards(0.0D, 3.0D, 0.0D),
+          citizen -> citizen != ai.worker).isEmpty())
+        {
+            return true;
+        }
         for (final ScaffoldLedger.Cell cell : tower)
         {
             // he stands on it
@@ -692,6 +704,13 @@ public final class BuilderScaffolding
             cellsToTakeDown.clear();
             finishTakeDown();
             return false;
+        }
+        if (!ai.world.getEntitiesOfClass(com.minecolonies.api.entity.citizen.AbstractEntityCitizen.class, new net.minecraft.world.phys.AABB(cell).inflate(0.3D, 0.2D, 0.3D).expandTowards(0.0D, 1.2D, 0.0D),
+              citizen -> citizen != ai.worker).isEmpty())
+        {
+            // somebody stands in it or on it: not now
+            ai.setDelay(10);
+            return true;
         }
         final BlockPos below = cell.below();
         final boolean descent = ledger.contains(below) || ai.world.getBlockState(below).isFaceSturdy(ai.world, below, Direction.UP);

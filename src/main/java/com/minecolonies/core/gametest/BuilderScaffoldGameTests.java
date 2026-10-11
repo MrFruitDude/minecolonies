@@ -608,8 +608,8 @@ final class BuilderScaffoldGameTests
                 doneTick[0] = tick;
                 if (tick % 500 == 0)
                 {
-                    Log.getLogger().info("WSCAF two t={} missing={} scaffold={} ledger={} placedBy={} lead: {}", tick, missing(live, blueprint, origin), scaffoldInWorld(live, origin), ledgerSize(live),
-                      BuilderScaffolding.placedBy.values(), live.ai());
+                    Log.getLogger().info("WSCAF two t={} missing={} scaffold={} ledger={} placedBy={} lead: {} | second: {}", tick, missing(live, blueprint, origin), scaffoldInWorld(live, origin), ledgerSize(live),
+                      BuilderScaffolding.placedBy.values(), live.ai(), second.getEntity().map(e -> e.blockPosition().toShortString() + " " + (e.getCitizenJobHandler().getWorkAI() instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder b ? b.debugInfo() + " state=" + b.getState() : "")).orElse("-"));
                 }
                 return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
             }, () -> {

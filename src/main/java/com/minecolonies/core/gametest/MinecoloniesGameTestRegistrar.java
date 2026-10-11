@@ -670,6 +670,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               isolatedColonyData(event, name));
         }
         registerWorkerEfficiency(event);
+        registerBuilderScaffolding(event);
         // C2 builder collaboration observability and controls (one glob: minecolonies:collab_obs_*).
         for (final String name : new String[] {"collab_obs_view", "collab_obs_cap", "collab_obs_pin", "collab_obs_pin_new", "collab_obs_refusals"})
         {
