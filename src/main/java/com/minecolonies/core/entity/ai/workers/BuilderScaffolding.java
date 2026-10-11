@@ -315,7 +315,9 @@ public final class BuilderScaffolding
         }
         if (found == null)
         {
-            log("no scaffolding possible for " + target);
+            log("no scaffolding possible for " + target + ": builder at " + ai.worker.getBlockX() + "," + ai.worker.getBlockY() + "," + ai.worker.getBlockZ() + " inv=" + inInventory() + " hut=" + inHut()
+                  + " ledger=" + order.getScaffolds().size() + " stock=" + stock + " ahead=" + blocks.size() + " walkable=" + ai.canWalkTo(ai.worker.blockPosition()) + " below="
+                  + ai.world.getBlockState(ai.worker.blockPosition().below()).getBlock());
             deniedUntil = now + DENY_TICKS;
             return false;
         }
