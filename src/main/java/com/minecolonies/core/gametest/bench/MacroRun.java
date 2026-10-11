@@ -839,6 +839,21 @@ public final class MacroRun
             if (citizen.getJob() instanceof JobDeliveryman job)
             {
                 out.append(" [#").append(citizen.getId()).append(" entity=").append(citizen.getEntity().isPresent()).append(" queue=").append(job.getTaskQueue().size());
+                if (!job.getTaskQueue().isEmpty())
+                {
+                    final IRequest<?> task = rm.getRequestForToken(job.getTaskQueue().get(0));
+                    if (task != null && task.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery delivery)
+                    {
+                        final BlockPos target = delivery.getTarget().getInDimensionLocation();
+                        out.append(" task=").append(BuiltInRegistries.ITEM.getKey(delivery.getStack().getItem()).getPath()).append('x').append(delivery.getStack().getCount())
+                          .append(" ").append(task.getState()).append(" to ").append(target.toShortString());
+                        citizen.getEntity().ifPresent(e -> out.append(" dist=").append((int) Math.sqrt(e.blockPosition().distSqr(target))).append(" navDone=").append(e.getNavigation().isDone()));
+                    }
+                    else
+                    {
+                        out.append(" task=").append(task == null ? "gone" : task.getRequest().getClass().getSimpleName());
+                    }
+                }
                 citizen.getEntity().ifPresent(e -> out.append(" at ").append(e.blockPosition().toShortString()).append(" ai=").append(job.getWorkerAI() == null ? "-" : job.getWorkerAI().getState()));
                 out.append(']');
             }
