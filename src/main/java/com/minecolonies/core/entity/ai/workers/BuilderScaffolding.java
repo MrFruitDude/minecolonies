@@ -353,6 +353,8 @@ public final class BuilderScaffolding
                   + " feet=" + ai.world.getBlockState(st) + " around=" + ai.world.getBlockState(st.north()).getBlock() + "," + ai.world.getBlockState(st.south()).getBlock() + ","
                   + ai.world.getBlockState(st.east()).getBlock() + "," + ai.world.getBlockState(st.west()).getBlock());
             deniedUntil = now + 200;
+            // the spots that did not work out before get another chance
+            ai.resetReachWalk();
             return false;
         }
         plan = found;
@@ -824,10 +826,16 @@ public final class BuilderScaffolding
         }
         else
         {
-            // everything of the order that is still up (helpers' towers too: the stage is over)
-            for (final ScaffoldLedger.Cell cell : ledger.topDown(null))
+            // everything of the order that is still up (helpers' towers too: the stage is over), the tower nearest to the builder first
+            final BlockPos here = ai.worker.blockPosition();
+            final List<List<ScaffoldLedger.Cell>> towers = new ArrayList<>(ledger.components(null));
+            towers.sort(java.util.Comparator.comparingDouble(t -> t.stream().mapToDouble(c -> c.pos().distSqr(here)).min().orElse(0.0D)));
+            for (final List<ScaffoldLedger.Cell> one : towers)
             {
-                list.add(cell.pos());
+                for (final ScaffoldLedger.Cell cell : one)
+                {
+                    list.add(cell.pos());
+                }
             }
         }
         if (list.isEmpty())

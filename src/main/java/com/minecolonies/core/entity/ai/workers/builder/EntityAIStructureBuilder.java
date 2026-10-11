@@ -300,6 +300,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         BlockPos spot = null;
         long since = 0L;
         final Set<BlockPos> bad = new HashSet<>();
+        long badSince = 0L;
         long noSpotUntil = 0L;
         long noSpotSince = 0L;
 
@@ -307,6 +308,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             spot = null;
             bad.clear();
+            badSince = 0L;
             noSpotUntil = 0L;
             noSpotSince = 0L;
         }
@@ -451,6 +453,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         }
 
         final long now = world.getGameTime();
+        if (!walk.bad.isEmpty() && now - walk.badSince > 200L)
+        {
+            // spots that did not work get another chance after a while (a tower may have been climbable by now)
+            walk.bad.clear();
+            walk.noSpotUntil = 0L;
+        }
         final double margin = reach - ReachSpots.MARGIN;
         if (walk.spot != null)
         {
@@ -468,6 +476,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             {
                 scaffold.note("spot " + walk.spot + " for " + target + " does not work (timedOut=" + timedOut + ") builder at " + worker.blockPosition());
                 walk.bad.add(walk.spot);
+                walk.badSince = world.getGameTime();
                 walk.spot = null;
                 worker.getNavigation().stop();
             }
@@ -521,6 +530,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                             + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-") + columnDescription(walk.spot));
             // the walk is over, and the block is still out of reach: this spot does not work
             walk.bad.add(walk.spot);
+                walk.badSince = world.getGameTime();
             walk.spot = null;
         }
         return false;

@@ -168,10 +168,14 @@ public final class StandSpots
                     }
                 }
             }
-            // a climbable block under the feet or above them is a way up
+            // a climbable block under the feet or above them is a way down or up
             if (climbable(level, at.above()))
             {
                 visit(level, at.above(), start, radius, seen, queue, true);
+            }
+            if (climbable(level, at.below()))
+            {
+                visit(level, at.below(), start, radius, seen, queue, true);
             }
         }
         return seen;
