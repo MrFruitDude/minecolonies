@@ -67,6 +67,20 @@ public final class MacroRun
         void setup(MacroRun run);
 
         /**
+         * Hires the workers. Called 200 ticks after {@link #setup}: citizens cannot spawn before the colony's chunks are ready.
+         */
+        default void staff(final MacroRun run)
+        {
+        }
+
+        /**
+         * Called when the measurement clock starts (tick 0): queue the work whose completion is measured.
+         */
+        default void begin(final MacroRun run)
+        {
+        }
+
+        /**
          * Called every game tick after the colony ticked (tick 1 is the first one after setup).
          */
         void onTick(MacroRun run, long tick);
@@ -227,18 +241,38 @@ public final class MacroRun
             return;
         }
         rm = (StandardRequestManager) colony.getRequestManager();
-        // Let the colony settle (chunks, spawns) before the clock starts, so every run starts from the same state.
-        helper.runAfterDelay(40, () -> {
-            RsProbe.start();
-            startGameTime = level.getGameTime();
-            lastGameTime = startGameTime;
-            lastMarkCpu = ThreadCost.cpuNs();
-            lastMarkAlloc = ThreadCost.allocBytes();
-            lastMarkRs = RsProbe.totalCpuNs();
-            lastMarkRsAlloc = RsProbe.totalAllocBytes();
-            lastMarkOverhead = RsProbe.overheadNs();
-            RsStats.reset();
-            helper.runAfterDelay(1, this::tickLoop);
+        helper.runAfterDelay(200, () -> {
+            try
+            {
+                scenario.staff(this);
+            }
+            catch (final Throwable t)
+            {
+                abort("staffing failed: " + t, t);
+                return;
+            }
+            // Let the new workers settle before the clock starts, so every run starts from the same state.
+            helper.runAfterDelay(100, () -> {
+                try
+                {
+                    scenario.begin(this);
+                }
+                catch (final Throwable t)
+                {
+                    abort("begin failed: " + t, t);
+                    return;
+                }
+                RsStats.reset();
+                RsProbe.start();
+                startGameTime = level.getGameTime();
+                lastGameTime = startGameTime;
+                lastMarkCpu = ThreadCost.cpuNs();
+                lastMarkAlloc = ThreadCost.allocBytes();
+                lastMarkRs = RsProbe.totalCpuNs();
+                lastMarkRsAlloc = RsProbe.totalAllocBytes();
+                lastMarkOverhead = RsProbe.overheadNs();
+                helper.runAfterDelay(1, this::tickLoop);
+            });
         });
     }
 

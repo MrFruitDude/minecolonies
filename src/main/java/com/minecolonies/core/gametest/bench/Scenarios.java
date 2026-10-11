@@ -60,16 +60,28 @@ public final class Scenarios
     }
 
     /**
-     * Hires {@code count} couriers into a courier hut and a warehouse.
+     * Places {@code count} courier huts in a row starting at (x, z): one courier lives in each (the hut holds one).
      */
-    static void couriers(final MacroRun r, final IBuilding hut, final IBuilding warehouse, final int count)
+    static List<IBuilding> courierHuts(final MacroRun r, final int count, final int x, final int z)
     {
-        hut.setBuildingLevel(Math.max(count, hut.getBuildingLevel()));
-        warehouse.setBuildingLevel(Math.max(count, warehouse.getBuildingLevel()));
+        final List<IBuilding> huts = new ArrayList<>();
         for (int i = 0; i < count; i++)
         {
+            huts.add(r.place(ModBlocks.blockHutDeliveryman, x + 8 * i, z, "craftsmanship/storage/deliveryman1.blueprint"));
+        }
+        return huts;
+    }
+
+    /**
+     * Hires one courier into each courier hut and into the warehouse's courier pool.
+     */
+    static void couriers(final MacroRun r, final List<IBuilding> huts, final IBuilding warehouse)
+    {
+        warehouse.setBuildingLevel(Math.max(huts.size(), warehouse.getBuildingLevel()));
+        for (final IBuilding hut : huts)
+        {
             final ICitizenData courier = r.hire(hut, () -> hut.getModule(BuildingModules.COURIER_WORK));
-            r.helper.assertTrue(warehouse.getModule(BuildingModules.WAREHOUSE_COURIERS).assignCitizen(courier), "courier " + i + " not assigned to the warehouse");
+            r.helper.assertTrue(warehouse.getModule(BuildingModules.WAREHOUSE_COURIERS).assignCitizen(courier), "courier not assigned to the warehouse");
         }
     }
 
@@ -176,7 +188,7 @@ public final class Scenarios
             {
                 core(r, "rsb-fresh", 1);
                 final IBuilding wh = r.warehouses.get(0);
-                final IBuilding dman = r.place(ModBlocks.blockHutDeliveryman, 66, 44, "craftsmanship/storage/deliveryman1.blueprint");
+                dman = courierHuts(r, 2, 66, 44);
                 final IBuilding builder = r.place(ModBlocks.blockHutBuilder, 42, 44, "fundamentals/builder1.blueprint");
                 final IBuilding sawmill = r.place(ModBlocks.blockHutSawmill, 50, 54, "craftsmanship/carpentry/sawmill1.blueprint");
                 final IBuilding mason = r.place(ModBlocks.blockHutStonemason, 66, 54, "craftsmanship/masonry/stonemason1.blueprint");
@@ -189,11 +201,27 @@ public final class Scenarios
                 recipe(sawmill, BuildingModules.SAWMILL_CRAFT, List.of(new ItemStack(Items.OAK_PLANKS, 2)), new ItemStack(Items.OAK_FENCE, 1), 2);
                 recipe(mason, BuildingModules.STONEMASON_CRAFT, List.of(new ItemStack(Items.COBBLESTONE, 1)), new ItemStack(Items.STONE_BRICKS, 1), 1);
 
+                this.builder = builder;
+                this.sawmill = sawmill;
+                this.mason = mason;
+                                this.wh = wh;
+            }
+
+            private IBuilding builder, sawmill, mason, wh;
+            private List<IBuilding> dman;
+
+            @Override
+            public void staff(final MacroRun r)
+            {
                 r.hire(builder, () -> builder.getModule(BuildingModules.BUILDER_WORK));
                 r.hire(sawmill, () -> sawmill.getModule(BuildingModules.SAWMILL_WORK));
                 r.hire(mason, () -> mason.getModule(BuildingModules.STONEMASON_WORK));
-                couriers(r, dman, wh, 2);
+                couriers(r, dman, wh);
+            }
 
+            @Override
+            public void begin(final MacroRun r)
+            {
                 // The gatherers' output, scripted: a haul every few hundred ticks, from the start of the clock.
                 r.supplies.add(new MacroRun.Supply("logs", new ItemStack(Items.OAK_LOG, 8), 300, 100, 0));
                 r.supplies.add(new MacroRun.Supply("cobble", new ItemStack(Items.COBBLESTONE, 12), 400, 200, 0));
