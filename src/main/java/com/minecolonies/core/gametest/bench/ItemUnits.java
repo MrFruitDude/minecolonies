@@ -76,6 +76,26 @@ public final class ItemUnits
         return out.toString();
     }
 
+    /**
+     * Where every tracked unit sits, keyed by place ("rack@pos#slot", "citizenN#slot", "entity@pos", "site@pos"): the next
+     * snapshot differs from this one by exactly what moved, which names the culprit when conservation breaks.
+     */
+    public static java.util.Map<String, String> places(final MacroRun run)
+    {
+        final StringBuilder out = new StringBuilder();
+        scan(run, out);
+        final java.util.Map<String, String> map = new java.util.TreeMap<>();
+        for (final String entry : out.toString().split(";"))
+        {
+            final int eq = entry.indexOf('=');
+            if (eq > 0)
+            {
+                map.merge(entry.substring(0, eq).trim(), entry.substring(eq + 1).trim(), (a, b) -> a + "+" + b);
+            }
+        }
+        return map;
+    }
+
     private static long scan(final MacroRun run, final StringBuilder detail)
     {
         long total = 0;
@@ -97,7 +117,7 @@ public final class ItemUnits
                         total += u;
                         if (detail != null && u > 0)
                         {
-                            detail.append(" rack@").append(building.getSchematicName()).append(pos.toShortString()).append('=').append(rack.getInventory().getStackInSlot(slot)).append(';');
+                            detail.append(" rack@").append(building.getSchematicName()).append(pos.toShortString()).append("#").append(slot).append('=').append(rack.getInventory().getStackInSlot(slot)).append(';');
                         }
                     }
                 }
@@ -112,7 +132,7 @@ public final class ItemUnits
                 total += u;
                 if (detail != null && u > 0)
                 {
-                    detail.append(" citizen").append(citizen.getId()).append('=').append(inventory.getStackInSlot(slot)).append(';');
+                    detail.append(" citizen").append(citizen.getId()).append("#").append(slot).append('=').append(inventory.getStackInSlot(slot)).append(';');
                 }
             }
         }

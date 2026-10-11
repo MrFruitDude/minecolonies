@@ -196,6 +196,10 @@ public final class MacroRun
     private final JsonObject   gates = new JsonObject();
     private final JsonObject   extra = new JsonObject();
     private boolean saveLoadDone;
+    private java.util.Map<String, String> previousPlaces;
+    private long previousTick;
+    private long previousInjected;
+    private long previousConsumed;
     private long    conservationChecks;
     private long    conservationMax;
 
@@ -671,6 +675,38 @@ public final class MacroRun
         final long expected = injectedUnits - consumedUnits;
         conservationChecks++;
         final long drift = found - expected;
+        if (drift != 0 && previousPlaces != null)
+        {
+            // what moved since the last check that passed: names the place the surplus or deficit appeared at
+            final java.util.Map<String, String> now = ItemUnits.places(this);
+            final StringBuilder moved = new StringBuilder();
+            int shown = 0;
+            for (final java.util.Map.Entry<String, String> e : now.entrySet())
+            {
+                if (!e.getValue().equals(previousPlaces.get(e.getKey())) && shown++ < 14)
+                {
+                    moved.append(" +").append(e.getKey()).append('=').append(e.getValue()).append(" (was ").append(previousPlaces.get(e.getKey())).append(");");
+                }
+            }
+            for (final java.util.Map.Entry<String, String> e : previousPlaces.entrySet())
+            {
+                if (!now.containsKey(e.getKey()) && shown++ < 14)
+                {
+                    moved.append(" -").append(e.getKey()).append("=").append(e.getValue()).append(";");
+                }
+            }
+            if (errors.size() < 3)
+            {
+                errors.add("moved since the last good check at tick " + previousTick + " (injected " + (injectedUnits - previousInjected) + " units, consumed " + (consumedUnits - previousConsumed) + "):" + moved);
+            }
+        }
+        if (drift == 0)
+        {
+            previousPlaces = ItemUnits.places(this);
+            previousTick = tick;
+            previousInjected = injectedUnits;
+            previousConsumed = consumedUnits;
+        }
         conservationMax = Math.max(conservationMax, Math.abs(drift));
         if (drift != 0)
         {
