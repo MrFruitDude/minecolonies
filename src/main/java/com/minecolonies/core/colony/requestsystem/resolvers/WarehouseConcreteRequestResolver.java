@@ -26,6 +26,12 @@ public class WarehouseConcreteRequestResolver extends AbstractWarehouseRequestRe
     }
 
     @Override
+    protected boolean handles(final IDeliverable deliverable)
+    {
+        return deliverable instanceof IConcreteDeliverable;
+    }
+
+    @Override
     protected int getWarehouseInternalCount(final BuildingWareHouse wareHouse, final IRequest<? extends IDeliverable> requestToCheck)
     {
         final IDeliverable deliverable = requestToCheck.getRequest();

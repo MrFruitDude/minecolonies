@@ -28,6 +28,9 @@ import com.minecolonies.core.colony.requestsystem.reservation.DestinationRoom;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationReason;
 import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
+import com.minecolonies.core.colony.storage.ColonyStorage;
+import com.minecolonies.core.colony.storage.NetworkSources;
+import com.minecolonies.core.colony.storage.StorageNetwork;
 import com.minecolonies.api.colony.requestsystem.request.WaitReason;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
 import com.minecolonies.core.tileentities.TileEntityWareHouse;
@@ -80,6 +83,32 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
     @Nullable
     private MatchedStacks lastMatched;
 
+    /**
+     * The stacks of one warehouse a network attempt read.
+     *
+     * @param warehouse the warehouse building's id.
+     * @param stacks    the matching stacks with their rack positions, as read (reservations not yet taken off).
+     */
+    private record WarehouseRead(BlockPos warehouse, List<Tuple<ItemStack, BlockPos>> stacks)
+    {
+    }
+
+    /**
+     * What a network attempt read, in the order of the plan (best warehouse first). Transient, like {@link #lastMatched}.
+     *
+     * @param request      the request.
+     * @param reads        the warehouses read.
+     * @param version      the colony storage version at the read.
+     * @param loadEpoch    the rack load epoch at the read.
+     * @param gameTime     the game time of the read.
+     */
+    private record NetworkMatched(IToken<?> request, List<WarehouseRead> reads, long version, int loadEpoch, long gameTime)
+    {
+    }
+
+    @Nullable
+    private NetworkMatched lastNetworkMatched;
+
     public AbstractWarehouseRequestResolver(
       @NotNull final ILocation location,
       @NotNull final IToken<?> token)
@@ -92,6 +121,14 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
     {
         return TypeConstants.DELIVERABLE;
     }
+
+    /**
+     * Storage network: whether this resolver is the one for the request (concrete items or everything else).
+     *
+     * @param deliverable the request.
+     * @return true if this resolver handles it.
+     */
+    protected abstract boolean handles(final IDeliverable deliverable);
 
     /**
      * Override to implement specific warehouse counting rules.
@@ -131,6 +168,11 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             if (!isRequestChainValid(manager, requestToCheck))
             {
                 return false;
+            }
+
+            if (StorageNetwork.on(manager))
+            {
+                return networkCanResolve(colony, (BuildingWareHouse) wareHouse, manager, requestToCheck);
             }
 
             int totalCount = getWarehouseInternalCount((BuildingWareHouse) wareHouse, requestToCheck);
@@ -206,9 +248,14 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         final IBuilding wareHouseBuilding = colony.getServerBuildingManager().getBuilding(getLocation().getInDimensionLocation());
         final TileEntityWareHouse wareHouse = wareHouseBuilding == null ? null : (TileEntityWareHouse) wareHouseBuilding.getTileEntity();
         lastMatched = null;
+        lastNetworkMatched = null;
         if (wareHouse == null)
         {
             return Lists.newArrayList();
+        }
+        if (StorageNetwork.on(manager))
+        {
+            return networkAttempt(colony, manager, request);
         }
         final int totalRequested = request.getRequest().getCount();
         int totalAvailable = 0;
@@ -310,6 +357,11 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             return null;
         }
 
+        if (StorageNetwork.on(manager))
+        {
+            return networkFollowup(colony, manager, wareHouse, completedRequest);
+        }
+
         List<IRequest<?>> deliveries = Lists.newArrayList();
         int remainingCount = completedRequest.getRequest().getCount();
 
@@ -390,6 +442,11 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
     {
         super.onRequestAssigned(manager, request, simulation);
         final ReservationLedger ledger = RsAccess.ledger(manager);
+        if (!simulation && ledger != null && StorageNetwork.on(manager) && lastNetworkMatched != null && lastNetworkMatched.request().equals(request.getId()))
+        {
+            networkHold(manager, ledger, request, lastNetworkMatched);
+            return;
+        }
         final MatchedStacks matched = lastMatched;
         if (simulation || ledger == null || matched == null || !matched.request().equals(request.getId()) || !(manager.getColony() instanceof final Colony colony))
         {
@@ -426,6 +483,263 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
                 remaining -= count;
             }
         }
+    }
+
+    // ------------------------------------------------------------------ storage network
+
+    /**
+     * Storage network: this resolver answers for a request when its warehouse is the best source of it (the colony index
+     * says the stock is there, a courier reaches it, and it completes first), so that exactly one warehouse resolver attempts it.
+     */
+    private boolean networkCanResolve(
+      @NotNull final Colony colony,
+      @NotNull final BuildingWareHouse wareHouse,
+      @NotNull final IRequestManager manager,
+      @NotNull final IRequest<? extends IDeliverable> request)
+    {
+        if (!handles(request.getRequest()))
+        {
+            return false;
+        }
+        final NetworkSources.Plan plan = NetworkSources.plan(colony, manager, request);
+        final NetworkSources.Candidate owner = plan.owner();
+        if (owner == null || owner.warehouse() != wareHouse)
+        {
+            return false;
+        }
+        return plan.total() >= request.getRequest().getCount() || plan.total() >= request.getRequest().getMinimumCount();
+    }
+
+    /**
+     * Storage network: reads the racks of the planned warehouses, best first, until the request is covered.
+     */
+    @NotNull
+    private List<WarehouseRead> networkRead(@NotNull final Colony colony, @NotNull final IRequestManager manager, @NotNull final IRequest<? extends IDeliverable> request, final boolean all)
+    {
+        final NetworkSources.Plan plan = NetworkSources.plan(colony, manager, request);
+        final ReservationLedger ledger = RsAccess.ledger(manager);
+        final int keep = request.getRequest() instanceof final INonExhaustiveDeliverable nonExhaustive ? nonExhaustive.getLeftOver() : 0;
+        final List<WarehouseRead> reads = new ArrayList<>();
+        int covered = 0;
+        for (final NetworkSources.Candidate candidate : plan.ordered())
+        {
+            final TileEntityWareHouse tileEntity = (TileEntityWareHouse) candidate.warehouse().getTileEntity();
+            if (tileEntity == null)
+            {
+                continue;
+            }
+            final List<Tuple<ItemStack, BlockPos>> raw = tileEntity.getMatchingItemStacksInWarehouse(itemStack -> request.getRequest().matches(itemStack));
+            reads.add(new WarehouseRead(candidate.warehouse().getID(), raw));
+            if (!all)
+            {
+                covered += availableOf(unreserved(ledger, raw), keep);
+                if (covered >= request.getRequest().getCount())
+                {
+                    break;
+                }
+            }
+        }
+        return reads;
+    }
+
+    /**
+     * What the stacks of one warehouse offer when {@code keep} of each item stays in it.
+     */
+    private static int availableOf(@NotNull final List<Tuple<ItemStack, BlockPos>> stacks, final int keep)
+    {
+        int total = 0;
+        final Map<ItemStorage, Integer> kept = new HashMap<>();
+        for (final Tuple<ItemStack, BlockPos> tuple : stacks)
+        {
+            final ItemStack stack = tuple.getA();
+            if (stack.isEmpty())
+            {
+                continue;
+            }
+            int count = stack.getCount();
+            if (keep > 0)
+            {
+                final ItemStorage key = new ItemStorage(stack);
+                final int alreadyKept = kept.getOrDefault(key, 0);
+                final int keepHere = Math.min(Math.max(0, keep - alreadyKept), count);
+                kept.put(key, alreadyKept + keepHere);
+                count -= keepHere;
+            }
+            total += count;
+        }
+        return total;
+    }
+
+    @Nullable
+    private List<IToken<?>> networkAttempt(@NotNull final Colony colony, @NotNull final IRequestManager manager, @NotNull final IRequest<? extends IDeliverable> request)
+    {
+        final ReservationLedger ledger = RsAccess.ledger(manager);
+        final int keep = request.getRequest() instanceof final INonExhaustiveDeliverable nonExhaustive ? nonExhaustive.getLeftOver() : 0;
+        final List<WarehouseRead> reads = networkRead(colony, manager, request, false);
+        int totalAvailable = 0;
+        final List<Tuple<ItemStack, BlockPos>> readable = new ArrayList<>();
+        for (final WarehouseRead read : reads)
+        {
+            final List<Tuple<ItemStack, BlockPos>> inv = unreserved(ledger, read.stacks());
+            totalAvailable += availableOf(inv, keep);
+            readable.addAll(inv);
+        }
+        final int totalRequested = request.getRequest().getCount();
+
+        if (ledger != null && totalAvailable > 0 && !destinationHasRoom(manager, request, readable, totalAvailable))
+        {
+            final RequestWaitTracker tracker = RequestWaitTracker.of(manager);
+            if (tracker != null)
+            {
+                tracker.hint(request.getId(), WaitReason.TARGET_FULL);
+            }
+            return null;
+        }
+
+        final ColonyStorage storage = ColonyStorage.of(colony);
+        if (totalAvailable >= totalRequested || totalAvailable >= request.getRequest().getMinimumCount())
+        {
+            lastNetworkMatched = new NetworkMatched(request.getId(), reads, storage.version(), WarehouseRackIndex.loadEpoch(), colony.getWorld().getGameTime());
+            return Lists.newArrayList();
+        }
+        if (ledger != null)
+        {
+            lastNetworkMatched = new NetworkMatched(request.getId(), reads, storage.version(), WarehouseRackIndex.loadEpoch(), colony.getWorld().getGameTime());
+        }
+        final int totalRemainingRequired = totalRequested - Math.max(0, totalAvailable);
+        return Lists.newArrayList(manager.createRequest(this, request.getRequest().copyWithCount(totalRemainingRequired)));
+    }
+
+    /**
+     * One stack to hand out, with where it sits.
+     */
+    private record Allocation(BlockPos warehouse, BlockPos rack, ItemStack stack, int count)
+    {
+    }
+
+    /**
+     * Storage network: splits what the request wants over the warehouses' stacks, best warehouse first, rack by rack.
+     * {@code keep} of each item stays in each warehouse.
+     */
+    @NotNull
+    private static List<Allocation> allocate(
+      @NotNull final List<WarehouseRead> reads,
+      @Nullable final ReservationLedger ledger,
+      final int wanted,
+      final int keep)
+    {
+        final List<Allocation> result = new ArrayList<>();
+        int remaining = wanted;
+        for (final WarehouseRead read : reads)
+        {
+            if (remaining <= 0)
+            {
+                break;
+            }
+            final Map<ItemStorage, Integer> kept = new HashMap<>();
+            for (final Tuple<ItemStack, BlockPos> tuple : unreserved(ledger, read.stacks()))
+            {
+                if (remaining <= 0)
+                {
+                    break;
+                }
+                int available = tuple.getA().getCount();
+                if (available <= 0)
+                {
+                    continue;
+                }
+                if (keep > 0)
+                {
+                    final ItemStorage key = new ItemStorage(tuple.getA());
+                    final int alreadyKept = kept.getOrDefault(key, 0);
+                    final int keepHere = Math.min(Math.max(0, keep - alreadyKept), available);
+                    kept.put(key, alreadyKept + keepHere);
+                    available -= keepHere;
+                }
+                final int count = Math.min(remaining, available);
+                if (count > 0)
+                {
+                    result.add(new Allocation(read.warehouse(), tuple.getB(), tuple.getA(), count));
+                    remaining -= count;
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Storage network: the request was given to this resolver; what the attempt counted is held for it, in every warehouse it
+     * will come from.
+     */
+    private void networkHold(
+      @NotNull final IRequestManager manager,
+      @NotNull final ReservationLedger ledger,
+      @NotNull final IRequest<? extends IDeliverable> request,
+      @NotNull final NetworkMatched matched)
+    {
+        final int keep = request.getRequest() instanceof final INonExhaustiveDeliverable nonExhaustive ? nonExhaustive.getLeftOver() : 0;
+        final String name = describe(manager, request);
+        final long now = RsAccess.now(manager);
+        for (final Allocation allocation : allocate(matched.reads(), ledger, request.getRequest().getCount(), keep))
+        {
+            ledger.reserveStock(allocation.warehouse(), allocation.rack(), new ItemStorage(allocation.stack()), allocation.count(), request.getId(), name,
+              ReservationReason.WAREHOUSE_DELIVERY, now);
+        }
+    }
+
+    @Nullable
+    private List<IRequest<?>> networkFollowup(
+      @NotNull final Colony colony,
+      @NotNull final IRequestManager manager,
+      @NotNull final TileEntityWareHouse anyWareHouse,
+      @NotNull final IRequest<? extends IDeliverable> completedRequest)
+    {
+        final ReservationLedger ledger = RsAccess.ledger(manager);
+        if (ledger != null)
+        {
+            // The hold the attempt put on this request turns into one hold per delivery below.
+            ledger.releaseQuiet(completedRequest.getId(), RsAccess.now(manager));
+        }
+        final int keep = completedRequest.getRequest() instanceof final INonExhaustiveDeliverable nonExhaustive ? nonExhaustive.getLeftOver() : 0;
+        final ColonyStorage storage = ColonyStorage.of(colony);
+        final NetworkMatched remembered = lastNetworkMatched;
+        lastNetworkMatched = null;
+        final List<WarehouseRead> reads;
+        if (remembered != null
+              && remembered.request().equals(completedRequest.getId())
+              && remembered.gameTime() == colony.getWorld().getGameTime()
+              && remembered.version() == storage.version()
+              && remembered.loadEpoch() == WarehouseRackIndex.loadEpoch())
+        {
+            reads = remembered.reads();
+        }
+        else
+        {
+            reads = networkRead(colony, manager, completedRequest, false);
+        }
+
+        final List<IRequest<?>> deliveries = Lists.newArrayList();
+        final String requesterName = ledger == null ? "" : describe(manager, completedRequest);
+        for (final Allocation allocation : allocate(reads, ledger, completedRequest.getRequest().getCount(), keep))
+        {
+            final ItemStack matchingStack = allocation.stack().copy();
+            matchingStack.setCount(allocation.count());
+            completedRequest.addDelivery(matchingStack);
+
+            final ILocation itemStackLocation = manager.getFactoryController().getNewInstance(TypeConstants.ILOCATION, allocation.rack(), anyWareHouse.getLevel().dimension());
+            final Delivery delivery = new Delivery(itemStackLocation, completedRequest.getRequester().getLocation(), matchingStack, getDefaultDeliveryPriority(true));
+            final IToken<?> requestToken = manager.createRequest(this, delivery);
+            deliveries.add(manager.getRequestForToken(requestToken));
+            if (ledger != null)
+            {
+                final long now = RsAccess.now(manager);
+                final ItemStorage key = new ItemStorage(matchingStack);
+                ledger.reserveStock(allocation.warehouse(), allocation.rack(), key, allocation.count(), requestToken, requesterName, ReservationReason.WAREHOUSE_DELIVERY, now);
+                ledger.reserveSpace(completedRequest.getRequester().getLocation().getInDimensionLocation(), key, allocation.count(), requestToken, requesterName,
+                  ReservationReason.WAREHOUSE_DELIVERY, now);
+            }
+        }
+        return deliveries.isEmpty() ? null : deliveries;
     }
 
     /**

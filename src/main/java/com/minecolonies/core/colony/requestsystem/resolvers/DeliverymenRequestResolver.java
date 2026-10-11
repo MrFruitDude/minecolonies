@@ -18,6 +18,10 @@ import com.minecolonies.core.colony.buildings.modules.BuildingModules;
 import com.minecolonies.core.colony.buildings.modules.WarehouseRequestQueueModule;
 import com.minecolonies.core.colony.jobs.JobDeliveryman;
 import com.minecolonies.core.colony.requestsystem.resolvers.core.AbstractRequestResolver;
+import com.minecolonies.core.colony.storage.ColonyStorage;
+import com.minecolonies.core.colony.storage.DispatchCost;
+import com.minecolonies.core.colony.storage.StorageNetwork;
+import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
@@ -45,6 +49,11 @@ public abstract class DeliverymenRequestResolver<R extends IRequestable> extends
             return false;
         }
 
+        if (StorageNetwork.on(manager))
+        {
+            return networkCanResolve(manager, requestToCheck);
+        }
+
         if (manager.getColony().getServerBuildingManager().getBuilding(requestToCheck.getRequester().getLocation().getInDimensionLocation()) instanceof IWareHouse
               && !requestToCheck.getRequester().getLocation().equals(getLocation()))
         {
@@ -52,6 +61,52 @@ public abstract class DeliverymenRequestResolver<R extends IRequestable> extends
         }
 
         return hasCouriers(manager);
+    }
+
+    /**
+     * Storage network: the couriers are the colony's, so a task may sit in any warehouse's queue as long as a courier reaches
+     * that warehouse. A delivery out of a warehouse goes to the queue of the warehouse its items are in (that is where its
+     * handling happens); everything else may go to any reachable warehouse, the cheapest wins.
+     */
+    private boolean networkCanResolve(@NotNull final IRequestManager manager, final IRequest<? extends R> requestToCheck)
+    {
+        final Colony colony = (Colony) manager.getColony();
+        final IWareHouse wareHouse = colony.getServerBuildingManager().getBuilding(getLocation().getInDimensionLocation(), IWareHouse.class);
+        if (wareHouse == null || !StorageNetwork.served(colony, wareHouse))
+        {
+            return false;
+        }
+        final IWareHouse requesterWarehouse = colony.getServerBuildingManager().getBuilding(requestToCheck.getRequester().getLocation().getInDimensionLocation(), IWareHouse.class);
+        if (requesterWarehouse == null)
+        {
+            return true;
+        }
+        if (requestToCheck.getRequest() instanceof final Delivery delivery)
+        {
+            // Made by a warehouse resolver: the queue of the warehouse whose rack holds the items.
+            final IWareHouse source = sourceWarehouse(colony, delivery);
+            return source == null ? requestToCheck.getRequester().getLocation().equals(getLocation()) : source == wareHouse;
+        }
+        return requestToCheck.getRequester().getLocation().equals(getLocation());
+    }
+
+    /**
+     * @param colony   the colony.
+     * @param delivery a delivery.
+     * @return the warehouse that holds the delivery's start position, null when none does.
+     */
+    @Nullable
+    private static IWareHouse sourceWarehouse(@NotNull final Colony colony, @NotNull final Delivery delivery)
+    {
+        final var start = delivery.getStart().getInDimensionLocation();
+        for (final IWareHouse candidate : colony.getServerBuildingManager().getWareHouses())
+        {
+            if (candidate.hasContainerPosition(start))
+            {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     /**
@@ -69,7 +124,13 @@ public abstract class DeliverymenRequestResolver<R extends IRequestable> extends
             return false;
         }
 
-       return !wareHouse.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen().isEmpty();
+        if (StorageNetwork.on(manager))
+        {
+            // Any courier of the colony that reaches this warehouse.
+            return StorageNetwork.served(colony, wareHouse);
+        }
+
+        return !wareHouse.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen().isEmpty();
     }
 
     @Override
@@ -81,7 +142,20 @@ public abstract class DeliverymenRequestResolver<R extends IRequestable> extends
         {
             return distance;
         }
+        if (StorageNetwork.on(manager))
+        {
+            return networkMetric(manager, wareHouse, request);
+        }
         return Math.max(distance/10, 1) + wareHouse.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE).getMutableRequestList().size();
+    }
+
+    /**
+     * Storage network: the estimated completion time in seconds of a trip that involves this warehouse and the requester.
+     */
+    protected int networkMetric(@NotNull final IRequestManager manager, @NotNull final IWareHouse wareHouse, @NotNull final IRequest<? extends R> request)
+    {
+        final ColonyStorage storage = ColonyStorage.of(manager.getColony());
+        return DispatchCost.fetchTicks(wareHouse, storage.taskLoad(wareHouse.getID()), request.getRequester().getLocation().getInDimensionLocation(), 64) / 20;
     }
 
     @Nullable
@@ -106,7 +180,7 @@ public abstract class DeliverymenRequestResolver<R extends IRequestable> extends
             return;
         }
 
-        if (wareHouse.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen().isEmpty())
+        if (!hasCouriers(manager))
         {
             return;
         }

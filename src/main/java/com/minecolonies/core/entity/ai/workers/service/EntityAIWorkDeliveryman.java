@@ -25,6 +25,8 @@ import com.minecolonies.core.colony.interactionhandling.PosBasedInteraction;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.JobDeliveryman;
 import com.minecolonies.core.colony.requestsystem.RsCourierHooks;
+import com.minecolonies.core.colony.storage.ColonyStorage;
+import com.minecolonies.core.colony.storage.StorageNetwork;
 import com.minecolonies.core.colony.requestsystem.requests.StandardRequests.DeliveryRequest;
 import com.minecolonies.core.colony.requestsystem.requests.StandardRequests.PickupRequest;
 import com.minecolonies.core.entity.ai.workers.AbstractEntityAIInteract;
@@ -108,6 +110,11 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     private List<ItemStorage> alreadyKept = new ArrayList<>();
 
     /**
+     * Storage network: warehouses (building ids) that could not take the load during the current dump.
+     */
+    private final Set<BlockPos> dumpRefused = new HashSet<>();
+
+    /**
      * Initialize the deliveryman and add all his tasks.
      *
      * @param deliveryman the job he has.
@@ -180,6 +187,7 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
             return PICKUP;
         }
 
+        job.rememberPickupSource(pickupBuilding.getID());
         if (pickupFromBuilding(pickupBuilding))
         {
             this.alreadyKept = new ArrayList<>();
@@ -253,6 +261,12 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
             return false;
         }
 
+        if (StorageNetwork.on(job.getColony()) && ColonyStorage.of(job.getColony()).isAtCap(new ItemStorage(stack)))
+        {
+            // The colony holds as much of it as the cap allows: it stays with its producer.
+            return false;
+        }
+
         if (ItemStackUtils.isEmpty(handler.getStackInSlot(currentSlot)))
         {
             return false;
@@ -294,15 +308,18 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     }
 
     /**
-     * Dump the inventory into the warehouse.
+     * Dump the inventory into the warehouse. With the storage network on, into the warehouse that finishes the drop first and
+     * has room; whatever it could not take goes on to the next one, and what no warehouse can take stays with the courier.
      *
      * @return the next state to go to.
      */
     private IAIState dump()
     {
-        final @Nullable IWareHouse warehouse = getAndCheckWareHouse();
+        final boolean network = StorageNetwork.on(job.getColony());
+        final @Nullable IWareHouse warehouse = network ? job.findDumpWarehouse(dumpRefused) : getAndCheckWareHouse();
         if (warehouse == null)
         {
+            dumpRefused.clear();
             return START_WORKING;
         }
 
@@ -312,10 +329,69 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
             return DUMPING;
         }
 
+        final List<ItemStack> before = network ? snapshot(worker.getInventoryCitizen()) : List.of();
         warehouse.getTileEntity().dumpInventoryIntoWareHouse(worker.getInventoryCitizen());
         CitizenItemUtils.setHeldItem(worker, InteractionHand.MAIN_HAND, SLOT_HAND);
 
+        if (network)
+        {
+            recordDump(warehouse, before);
+            if (!worker.getInventoryCitizen().isEmpty())
+            {
+                // This warehouse could not take it all: try the next one, or give up for now when none is left.
+                dumpRefused.add(warehouse.getID());
+                return DUMPING;
+            }
+            dumpRefused.clear();
+        }
+
         return START_WORKING;
+    }
+
+    /**
+     * @param inventory an inventory.
+     * @return copies of its stacks.
+     */
+    private static List<ItemStack> snapshot(final IItemHandler inventory)
+    {
+        final List<ItemStack> copy = new ArrayList<>();
+        for (int i = 0; i < inventory.getSlots(); i++)
+        {
+            if (!inventory.getStackInSlot(i).isEmpty())
+            {
+                copy.add(inventory.getStackInSlot(i).copy());
+            }
+        }
+        return copy;
+    }
+
+    /**
+     * Tells the colony storage which items moved into the warehouse (the difference of the inventory over the dump).
+     */
+    private void recordDump(final IWareHouse warehouse, final List<ItemStack> before)
+    {
+        final Map<ItemStorage, Integer> moved = new HashMap<>();
+        for (final ItemStack stack : before)
+        {
+            moved.merge(new ItemStorage(stack.copyWithCount(1)), stack.getCount(), Integer::sum);
+        }
+        final IItemHandler inventory = worker.getInventoryCitizen();
+        for (int i = 0; i < inventory.getSlots(); i++)
+        {
+            final ItemStack left = inventory.getStackInSlot(i);
+            if (!left.isEmpty())
+            {
+                moved.merge(new ItemStorage(left.copyWithCount(1)), -left.getCount(), Integer::sum);
+            }
+        }
+        final ColonyStorage storage = ColonyStorage.of(job.getColony());
+        for (final Map.Entry<ItemStorage, Integer> entry : moved.entrySet())
+        {
+            if (entry.getValue() > 0)
+            {
+                storage.recordFlow(job.lastPickupSource(), warehouse.getID(), entry.getKey().getItemStack().copyWithCount(entry.getValue()));
+            }
+        }
     }
 
     /**

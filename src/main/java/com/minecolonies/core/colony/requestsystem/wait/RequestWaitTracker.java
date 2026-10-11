@@ -673,7 +673,22 @@ public final class RequestWaitTracker
 
     private static boolean allCouriersBusy(final IWareHouse wareHouse, final Colony colony)
     {
-        final var couriers = wareHouse.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen();
+        final java.util.List<com.minecolonies.api.colony.ICitizenData> couriers = new java.util.ArrayList<>();
+        if (com.minecolonies.core.colony.storage.StorageNetwork.on(colony))
+        {
+            // The pool is the colony's: every courier whose service range reaches the warehouse.
+            for (final IWareHouse home : colony.getServerBuildingManager().getWareHouses())
+            {
+                if (com.minecolonies.core.colony.storage.StorageNetwork.inRange(home.getID(), wareHouse.getID()))
+                {
+                    couriers.addAll(home.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen());
+                }
+            }
+        }
+        else
+        {
+            couriers.addAll(wareHouse.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen());
+        }
         if (couriers.isEmpty())
         {
             return false;

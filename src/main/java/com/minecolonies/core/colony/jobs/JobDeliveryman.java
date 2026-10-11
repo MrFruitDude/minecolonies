@@ -28,7 +28,11 @@ import com.minecolonies.api.util.constant.TypeConstants;
 import com.minecolonies.core.colony.buildings.modules.CourierAssignmentModule;
 import com.minecolonies.api.colony.requestsystem.request.WaitReason;
 import com.minecolonies.core.colony.requestsystem.RsFlags;
+import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.requestsystem.RsStats;
+import com.minecolonies.core.colony.storage.ColonyStorage;
+import com.minecolonies.core.colony.storage.DispatchCost;
+import com.minecolonies.core.colony.storage.StorageNetwork;
 import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
 import com.minecolonies.core.colony.requestsystem.priority.RequestScoring;
 import com.minecolonies.core.colony.requestsystem.requests.StandardRequests;
@@ -283,11 +287,54 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             return getRequestPriority(req, queueIndex, queueSize);
         }
         final BlockPos target = getTarget(req);
+        if (StorageNetwork.on(getColony()))
+        {
+            return RequestScoring.courierScore(getColony(), req, getSource(req), target, WorldUtil.isBlockLoaded(getColony().getWorld(), target), estimateSeconds(req));
+        }
         return RequestScoring.courierScore(getColony(), req, getSource(req), target, WorldUtil.isBlockLoaded(getColony().getWorld(), target));
+    }
+
+    /**
+     * Storage network: how long the task takes this courier from where it stands, in seconds: the walk to the pickup, the
+     * wait at the source warehouse's ramps, the handling, the walk to the destination.
+     */
+    private int estimateSeconds(final IRequest<?> req)
+    {
+        final BlockPos here = courierPosition();
+        final ColonyStorage storage = ColonyStorage.of(getColony());
+        final BlockPos target = getTarget(req);
+        if (req.getRequest() instanceof final Delivery delivery)
+        {
+            final BlockPos start = delivery.getStart().getInDimensionLocation();
+            final BlockPos wareHouse = storage.owningWarehouse(start);
+            final IBuilding building = wareHouse == null ? null : getColony().getServerBuildingManager().getBuilding(wareHouse);
+            final int queued = wareHouse == null ? 0 : storage.taskLoad(wareHouse);
+            final int items = Math.max(1, delivery.getStack().getCount());
+            return (DispatchCost.travelTicks(here, start) + DispatchCost.queueTicks(building == null ? 1 : building.getBuildingLevel(), queued) + DispatchCost.handlingTicks(items)
+                      + DispatchCost.travelTicks(start, target) + DispatchCost.handlingTicks(items)) / 20;
+        }
+        final IWareHouse home = findWareHouse();
+        return (DispatchCost.travelTicks(here, target) + DispatchCost.handlingTicks(64) + (home == null ? 0 : DispatchCost.travelTicks(target, home.getID()))) / 20;
+    }
+
+    /**
+     * @return where the courier is now (its home warehouse when it is not in the world).
+     */
+    @NotNull
+    private BlockPos courierPosition()
+    {
+        final var entity = getCitizen().getEntity();
+        if (entity.isPresent())
+        {
+            return entity.get().blockPosition();
+        }
+        final IWareHouse home = findWareHouse();
+        return home == null ? BlockPos.ZERO : home.getID();
     }
 
     private int getRequestPriority(final IRequest<?> req, final int queueIndex, final int queueSize)
     {
+        final boolean network = StorageNetwork.on(getColony());
         int priority = 1;
         if (!WorldUtil.isBlockLoaded(getColony().getWorld(), getTarget(req)))
         {
@@ -303,7 +350,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         }
 
         priority += queueSize - queueIndex;
-        final int distance = (int) Math.sqrt(getSource(req).distManhattan(getTarget(req)));
+        final int distance = network ? estimateSeconds(req) : (int) Math.sqrt(getSource(req).distManhattan(getTarget(req)));
         return priority - distance;
     }
 
@@ -328,14 +375,34 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         }
         watchdog.reset();
 
-        IBuilding wareHouse = findWareHouse();
+        final IBuilding wareHouse = findWareHouse();
         if (wareHouse == null)
         {
             return null;
         }
 
-        final WarehouseRequestQueueModule wareHouseModule = wareHouse.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE);
-        if (wareHouseModule.getMutableRequestList().isEmpty())
+        final boolean network = StorageNetwork.on(getColony());
+        final List<WarehouseRequestQueueModule> queues = new ArrayList<>();
+        if (network)
+        {
+            // The pool is the colony's: every queue of a warehouse in the service range, the home queue first.
+            for (final IWareHouse served : StorageNetwork.servedBy((Colony) getColony(), (IWareHouse) wareHouse))
+            {
+                queues.add(served.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE));
+            }
+        }
+        else
+        {
+            queues.add(wareHouse.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE));
+            adoptOrphanQueues(queues);
+        }
+
+        int totalTasks = 0;
+        for (final WarehouseRequestQueueModule queue : queues)
+        {
+            totalTasks += queue.getMutableRequestList().size();
+        }
+        if (totalTasks == 0)
         {
             return null;
         }
@@ -343,30 +410,40 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         final Set<IToken<?>> reqsToRemove = new HashSet<>();
 
         IToken<?> resultRequestId = null;
+        WarehouseRequestQueueModule resultModule = null;
         int resultIndex = -1;
         long priority = Long.MIN_VALUE;
-        final int queueSize = wareHouseModule.getMutableRequestList().size();
-        int queueIndex = 0;
-        for (final IToken<?> reqId : wareHouseModule.getMutableRequestList())
+        for (final WarehouseRequestQueueModule wareHouseModule : queues)
         {
-            final int position = queueIndex++;
-            final IRequest<?> req = getColony().getRequestManager().getRequestForToken(reqId);
-            if (req == null)
+            final int queueSize = wareHouseModule.getMutableRequestList().size();
+            int queueIndex = 0;
+            for (final IToken<?> reqId : wareHouseModule.getMutableRequestList())
             {
-                reqsToRemove.add(reqId);
-                continue;
-            }
-            final long localPriority = getTaskScore(req, position, queueSize);
-            if (localPriority > priority)
-            {
-                priority = localPriority;
-                resultRequestId = reqId;
-                resultIndex = position;
+                final int position = queueIndex++;
+                final IRequest<?> req = getColony().getRequestManager().getRequestForToken(reqId);
+                if (req == null)
+                {
+                    reqsToRemove.add(reqId);
+                    continue;
+                }
+                final long localPriority = getTaskScore(req, position, queueSize);
+                if (localPriority > priority)
+                {
+                    priority = localPriority;
+                    resultRequestId = reqId;
+                    resultModule = wareHouseModule;
+                    resultIndex = position;
+                }
             }
         }
 
         if (resultRequestId == null)
         {
+            // Only dead tokens: drop them.
+            for (final WarehouseRequestQueueModule wareHouseModule : queues)
+            {
+                wareHouseModule.getMutableRequestList().removeAll(reqsToRemove);
+            }
             return null;
         }
 
@@ -381,43 +458,48 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         {
             getTaskQueueFromDataStore().add(resultRequestId);
         }
-        int index = 0;
         int extendedReqs = 1;
-        for (final IToken<?> reqId : wareHouseModule.getMutableRequestList())
+        batching:
+        for (final WarehouseRequestQueueModule wareHouseModule : queues)
         {
-            final IRequest<?> localRequest = getColony().getRequestManager().getRequestForToken(reqId);
-            if (localRequest == null)
+            int index = 0;
+            for (final IToken<?> reqId : wareHouseModule.getMutableRequestList())
             {
-                reqsToRemove.add(reqId);
-                index++;
-                continue;
-            }
-
-            // If we skipped this, we should add this
-            if (index < resultIndex)
-            {
-                if (localRequest.getRequest() instanceof AbstractDeliverymanRequestable requestable)
+                final IRequest<?> localRequest = getColony().getRequestManager().getRequestForToken(reqId);
+                if (localRequest == null)
                 {
-                    requestable.incrementPriorityDueToAging();
+                    reqsToRemove.add(reqId);
+                    index++;
+                    continue;
                 }
-            }
-            else if (index == resultIndex)
-            {
+
+                final boolean sameQueue = wareHouseModule == resultModule;
+                // If we skipped this, we should add this
+                if (sameQueue && index < resultIndex)
+                {
+                    if (localRequest.getRequest() instanceof AbstractDeliverymanRequestable requestable)
+                    {
+                        requestable.incrementPriorityDueToAging();
+                    }
+                }
+                else if (sameQueue && index == resultIndex)
+                {
+                    index++;
+                    continue;
+                }
+
+                if (getTarget(localRequest).equals(getTarget(resultRequest)))
+                {
+                    getTaskQueueFromDataStore().add(reqId);
+                    extendedReqs++;
+                    reqsToRemove.add(reqId);
+                }
+
                 index++;
-                continue;
-            }
-
-            if (getTarget(localRequest).equals(getTarget(resultRequest)))
-            {
-                getTaskQueueFromDataStore().add(reqId);
-                extendedReqs++;
-                reqsToRemove.add(reqId);
-            }
-
-            index++;
-            if (extendedReqs >= getMaxParallelDeliveries())
-            {
-                break;
+                if (extendedReqs >= getMaxParallelDeliveries())
+                {
+                    break batching;
+                }
             }
         }
 
@@ -426,10 +508,36 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             getTaskQueueFromDataStore().add(resultRequestId);
         }
 
-        wareHouseModule.getMutableRequestList().removeAll(reqsToRemove);
-        wareHouseModule.markDirty();
+        for (final WarehouseRequestQueueModule wareHouseModule : queues)
+        {
+            wareHouseModule.getMutableRequestList().removeAll(reqsToRemove);
+            wareHouseModule.markDirty();
+        }
 
         return (IRequest<IDeliverymanRequestable>) resultRequest;
+    }
+
+    /**
+     * Mixed-flag worlds: tasks that sit in the queue of a warehouse nobody works for (they were queued while the storage
+     * network was on) are served by the other couriers once it is off, so they are not lost.
+     */
+    private void adoptOrphanQueues(@NotNull final List<WarehouseRequestQueueModule> queues)
+    {
+        if (!queues.get(0).getMutableRequestList().isEmpty())
+        {
+            return;
+        }
+        for (final IWareHouse other : getColony().getServerBuildingManager().getWareHouses())
+        {
+            if (other.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen().isEmpty())
+            {
+                final WarehouseRequestQueueModule orphan = other.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE);
+                if (orphan != null && !orphan.getMutableRequestList().isEmpty())
+                {
+                    queues.add(orphan);
+                }
+            }
+        }
     }
 
     /**
@@ -717,6 +825,75 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         }
 
         return null;
+    }
+
+    /**
+     * Where the load the courier carries was last picked up (a building), for the storage flows.
+     */
+    private BlockPos lastPickupSource;
+
+    /**
+     * @param source the building the courier picked up at.
+     */
+    public void rememberPickupSource(@NotNull final BlockPos source)
+    {
+        lastPickupSource = source;
+    }
+
+    /**
+     * @return where the load was picked up, the home warehouse when unknown.
+     */
+    @NotNull
+    public BlockPos lastPickupSource()
+    {
+        if (lastPickupSource != null)
+        {
+            return lastPickupSource;
+        }
+        final IWareHouse home = findWareHouse();
+        return home == null ? BlockPos.ZERO : home.getID();
+    }
+
+    /**
+     * The warehouse this courier should dump its load into. With the storage network off that is the home warehouse. With it
+     * on, it is the warehouse (of those the courier serves) that has room and finishes the drop first: the walk from where the
+     * courier stands plus the wait at the warehouse's ramps plus the handling.
+     *
+     * @param excluded warehouses (building ids) that already refused the load.
+     * @return the warehouse, null when none is left.
+     */
+    @Nullable
+    public IWareHouse findDumpWarehouse(@NotNull final Set<BlockPos> excluded)
+    {
+        final IWareHouse home = findWareHouse();
+        if (home == null || !StorageNetwork.on(getColony()))
+        {
+            return home;
+        }
+        final Colony colony = (Colony) getColony();
+        final ColonyStorage storage = ColonyStorage.of(colony);
+        final BlockPos here = courierPosition();
+        IWareHouse best = null;
+        int bestCost = Integer.MAX_VALUE;
+        for (final IWareHouse candidate : StorageNetwork.servedBy(colony, home))
+        {
+            if (excluded.contains(candidate.getID()) || candidate.getTileEntity() == null || !storage.hasFreeSlots(candidate.getID()))
+            {
+                continue;
+            }
+            final int cost = DispatchCost.dropTicks(candidate, storage.taskLoad(candidate.getID()), here, 64);
+            if (cost < bestCost)
+            {
+                bestCost = cost;
+                best = candidate;
+            }
+        }
+        if (best != null)
+        {
+            return best;
+        }
+        // Nothing has a free slot: the home warehouse still takes what merges into its part-filled stacks.
+        return excluded.contains(home.getID()) ? null : home;
     }
 
     /**

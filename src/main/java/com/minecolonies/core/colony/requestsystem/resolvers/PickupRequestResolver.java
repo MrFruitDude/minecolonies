@@ -6,6 +6,7 @@ import com.minecolonies.api.colony.requestsystem.location.ILocation;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Pickup;
+import com.minecolonies.core.colony.storage.StorageNetwork;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.util.BlockPosUtil;
 import com.minecolonies.api.util.constant.TypeConstants;
@@ -32,6 +33,16 @@ public class PickupRequestResolver extends DeliverymenRequestResolver<Pickup>
     @Override
     public int getSuitabilityMetric(final @NotNull IRequestManager manager, final @NotNull IRequest<? extends Pickup> request)
     {
+        if (StorageNetwork.on(manager))
+        {
+            final IWareHouse wareHouse = manager.getColony().getServerBuildingManager().getBuilding(getLocation().getInDimensionLocation(), IWareHouse.class);
+            if (wareHouse != null)
+            {
+                // A warehouse with no free slot cannot take the pickup's load: it comes last.
+                final boolean room = com.minecolonies.core.colony.storage.ColonyStorage.of(manager.getColony()).hasFreeSlots(wareHouse.getID());
+                return networkMetric(manager, wareHouse, request) + (room ? 0 : 100000);
+            }
+        }
         return (int) BlockPosUtil.getDistance(request.getRequester().getLocation().getInDimensionLocation(), getLocation().getInDimensionLocation());
     }
 
