@@ -1,6 +1,7 @@
 package com.minecolonies.core.colony.workorders.collab;
 
 import com.minecolonies.api.colony.ICitizenData;
+import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.workorders.IBuilderWorkOrder;
 import com.minecolonies.api.colony.workorders.IServerWorkOrder;
@@ -80,11 +81,14 @@ public final class CollabScheduler
             final AbstractBuildingStructureBuilder lead = leadOf(colony, order);
             final int cap = capFor(order);
             final List<BlockPos> huts = collab.getAssistantHuts();
-            for (int i = 0; i < huts.size(); i++)
+            // pinned helpers count against the limit first; the others are kept in the order they joined, up to what is left
+            huts.sort(java.util.Comparator.comparing(h -> !collab.getAssistant(h).isPinned()));
+            int kept = 0;
+            for (final BlockPos hutPos : huts)
             {
-                final BlockPos hutPos = huts.get(i);
                 final WorkOrderCollab.Assistant assistant = collab.getAssistant(hutPos);
                 final IBuilding building = colony.getServerBuildingManager().getBuilding(hutPos);
+                final boolean pinned = assistant != null && assistant.isPinned();
                 final boolean stayedLongEnough = assistant == null || now - assistant.since >= BuilderCollab.stayTicks();
                 boolean remove = !enabled || lead == null || !isUsableHelper(building) || building.equals(lead) || ((AbstractBuildingStructureBuilder) building).hasWorkOrder();
                 long cooldown = 0;
@@ -92,7 +96,7 @@ public final class CollabScheduler
                 {
                     final boolean nothingLeft = collab.hasStageTotals() && collab.getRemainingBlocks() < BuilderCollab.minRemaining();
                     final boolean exhausted = collab.isScanExhausted() && collab.getLeaseCountOf(hutPos) == 0;
-                    final boolean overCap = i >= cap;
+                    final boolean overCap = !pinned && kept >= cap;
                     if (nothingLeft || exhausted || overCap)
                     {
                         remove = true;
@@ -103,6 +107,10 @@ public final class CollabScheduler
                 {
                     collab.removeAssistant(hutPos, cooldown);
                     colony.markDirty();
+                }
+                else
+                {
+                    kept++;
                 }
             }
         }
@@ -148,6 +156,11 @@ public final class CollabScheduler
                 }
                 for (final BlockPos hutPos : helped.getCollab().getAssistantHuts())
                 {
+                    if (helped.getCollab().getAssistant(hutPos).isPinned())
+                    {
+                        // the player keeps him where he is
+                        continue;
+                    }
                     final IBuilding building = colony.getServerBuildingManager().getBuilding(hutPos);
                     if (!(building instanceof BuildingBuilder hut) || !isUsableHelper(hut) || !unclaimed.canBuild(hut))
                     {
@@ -220,7 +233,7 @@ public final class CollabScheduler
                 {
                     continue;
                 }
-                if (!order.canBuildIgnoringDistance(hut, hut.getPosition(), hut.getBuildingLevel()) || hut.getPosition().distSqr(order.getLocation()) > MAX_DISTANCE_SQ)
+                if (!order.canBuildIgnoringDistance(hut, hut.getPosition(), hut.getBuildingLevel()) || !inRange(hut, order))
                 {
                     continue;
                 }
@@ -245,9 +258,31 @@ public final class CollabScheduler
     }
 
     /**
-     * How many helpers an order gets at most: one per this many blocks left, and at least one.
+     * Whether the hut is within the builder range of the order's site.
+     */
+    static boolean inRange(final BuildingBuilder hut, final IBuilderWorkOrder order)
+    {
+        return hut.getPosition().distSqr(order.getLocation()) <= MAX_DISTANCE_SQ;
+    }
+
+    /**
+     * How many helpers an order gets at most: the player's limit if one is set, else {@link #automaticCapFor}; none while too little is left.
      */
     static int capFor(final IBuilderWorkOrder order)
+    {
+        final WorkOrderCollab collab = order.getCollab();
+        if (collab.getRemainingBlocks() < BuilderCollab.minRemaining())
+        {
+            return 0;
+        }
+        final int setting = collab.getMaxAssistantsSetting();
+        return setting >= 0 ? Math.min(setting, CollabControls.LIMIT) : automaticCapFor(order);
+    }
+
+    /**
+     * One helper per this many blocks left, and at least one, at most the configured maximum; none while too little is left.
+     */
+    static int automaticCapFor(final IBuilderWorkOrder order)
     {
         final int remaining = order.getCollab().getRemainingBlocks();
         if (remaining < BuilderCollab.minRemaining())
@@ -262,7 +297,7 @@ public final class CollabScheduler
      * The builder whose hut works on the order.
      */
     @Nullable
-    private static AbstractBuildingStructureBuilder leadOf(final Colony colony, final IBuilderWorkOrder order)
+    static AbstractBuildingStructureBuilder leadOf(final IColony colony, final IBuilderWorkOrder order)
     {
         if (!order.isClaimed())
         {

@@ -631,6 +631,22 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               info -> new MinecoloniesGameTestInstance(info, test),
               isolatedColonyData(event, name));
         }
+        // C2 builder collaboration observability and controls (one glob: minecolonies:collab_obs_*).
+        for (final String name : new String[] {"collab_obs_view", "collab_obs_cap", "collab_obs_pin", "collab_obs_pin_new", "collab_obs_refusals"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "collab_obs_view" -> CollabObservabilityGameTests::viewShowsLeadAssistantAndHandOff;
+                case "collab_obs_cap" -> CollabObservabilityGameTests::controlsMaxAssistants;
+                case "collab_obs_pin" -> CollabObservabilityGameTests::controlsPinSurvivesNewOrders;
+                case "collab_obs_pin_new" -> CollabObservabilityGameTests::controlsPinBringsABuilder;
+                default -> CollabObservabilityGameTests::controlsRefusals;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
         // CA-1 + CA-3 request-system / citizen view sync (one glob: minecolonies:reqsync_*).
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_bytes_per_minute"),

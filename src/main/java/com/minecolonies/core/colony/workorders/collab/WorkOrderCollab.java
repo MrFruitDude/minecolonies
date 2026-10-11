@@ -45,6 +45,8 @@ public class WorkOrderCollab
     private static final String TAG_RESCAN         = "rescan";
     private static final String TAG_PREVIOUS_LEAD  = "previousLead";
     private static final String TAG_COOLDOWNS      = "cooldowns";
+    private static final String TAG_ASSISTANT_PIN  = "pin";
+    private static final String TAG_MAX_ASSISTANTS = "maxAssistants";
 
     /**
      * The order of the stages for the progress display. Stages that do not take part in the stage list of an order have
@@ -74,12 +76,22 @@ public class WorkOrderCollab
         public final BlockPos hut;
         public final long     since;
         public int            strikes;
+        private boolean       pinned;
 
         Assistant(final BlockPos hut, final long since, final int strikes)
         {
             this.hut = hut;
             this.since = since;
             this.strikes = strikes;
+        }
+
+        /**
+         * A pinned helper is kept by the player: new orders, the helper limit and the stay time do not move him (he still goes when the
+         * order has nothing left, the lead is gone or he cannot help any longer).
+         */
+        public boolean isPinned()
+        {
+            return pinned;
         }
     }
 
@@ -100,6 +112,11 @@ public class WorkOrderCollab
      * Huts that left the order and may not come back before the stored game time (stops flapping).
      */
     private final Map<BlockPos, Long>    cooldowns  = new LinkedHashMap<>();
+
+    /**
+     * The player's limit of helpers for this order, -1 for automatic.
+     */
+    private int maxAssistantsSetting = -1;
 
     @Nullable
     private BlockPos scanCursor;
@@ -529,6 +546,11 @@ public class WorkOrderCollab
         }
     }
 
+    public void clearCooldown(final BlockPos hut)
+    {
+        cooldowns.remove(hut);
+    }
+
     public boolean isOnCooldown(final BlockPos hut, final long now)
     {
         final Long until = cooldowns.get(hut);
@@ -542,6 +564,53 @@ public class WorkOrderCollab
             return false;
         }
         return true;
+    }
+
+    public int getMaxAssistantsSetting()
+    {
+        return maxAssistantsSetting;
+    }
+
+    public void setMaxAssistantsSetting(final int max)
+    {
+        if (max != maxAssistantsSetting)
+        {
+            maxAssistantsSetting = max;
+            viewDirty = true;
+        }
+    }
+
+    /**
+     * Pins or unpins a helper.
+     *
+     * @return false if the hut is no helper of the order.
+     */
+    public boolean setPinned(final BlockPos hut, final boolean pinned)
+    {
+        final Assistant assistant = assistants.get(hut);
+        if (assistant == null)
+        {
+            return false;
+        }
+        if (assistant.pinned != pinned)
+        {
+            assistant.pinned = pinned;
+            viewDirty = true;
+        }
+        return true;
+    }
+
+    public int getPinnedCount()
+    {
+        int n = 0;
+        for (final Assistant assistant : assistants.values())
+        {
+            if (assistant.pinned)
+            {
+                n++;
+            }
+        }
+        return n;
     }
 
     @Nullable
@@ -593,6 +662,7 @@ public class WorkOrderCollab
             BlockPosUtil.write(a, TAG_ASSISTANT_POS, assistant.hut);
             a.putLong(TAG_ASSISTANT_SINCE, assistant.since);
             a.putInt(TAG_ASSISTANT_STRIKES, assistant.strikes);
+            a.putBoolean(TAG_ASSISTANT_PIN, assistant.pinned);
             assistantList.add(a);
         }
         tag.put(TAG_ASSISTANTS, assistantList);
@@ -617,6 +687,7 @@ public class WorkOrderCollab
         {
             BlockPosUtil.write(tag, TAG_PREVIOUS_LEAD, previousLead);
         }
+        tag.putInt(TAG_MAX_ASSISTANTS, maxAssistantsSetting);
         compound.put("collab", tag);
     }
 
@@ -644,7 +715,9 @@ public class WorkOrderCollab
         {
             final CompoundTag a = assistantList.getCompoundOrEmpty(i);
             final BlockPos hut = BlockPosUtil.read(a, TAG_ASSISTANT_POS);
-            assistants.put(hut, new Assistant(hut, a.getLongOr(TAG_ASSISTANT_SINCE, 0L), a.getIntOr(TAG_ASSISTANT_STRIKES, 0)));
+            final Assistant assistant = new Assistant(hut, a.getLongOr(TAG_ASSISTANT_SINCE, 0L), a.getIntOr(TAG_ASSISTANT_STRIKES, 0));
+            assistant.pinned = a.getBooleanOr(TAG_ASSISTANT_PIN, false);
+            assistants.put(hut, assistant);
         }
 
         cooldowns.clear();
@@ -659,6 +732,7 @@ public class WorkOrderCollab
         scanExhausted = tag.getBooleanOr(TAG_SCAN_DONE, false);
         rescan = tag.getBooleanOr(TAG_RESCAN, false);
         previousLead = tag.contains(TAG_PREVIOUS_LEAD) ? BlockPosUtil.read(tag, TAG_PREVIOUS_LEAD) : null;
+        maxAssistantsSetting = tag.getIntOr(TAG_MAX_ASSISTANTS, -1);
     }
 
     // ------------------------------------------------------------------ client view
