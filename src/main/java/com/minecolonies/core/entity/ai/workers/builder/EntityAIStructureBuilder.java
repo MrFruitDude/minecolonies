@@ -303,6 +303,9 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     /**
      * The walk to a spot from which a block is in reach: the spot, when it was picked, and the spots that did not get him there.
      */
+    /** The longest wait before a spot that did not work is tried again (ticks). */
+    private static final long BAD_SPOT_MAX_WAIT = 1600L;
+
     private final class ReachWalk
     {
         BlockPos spot = null;
@@ -310,6 +313,17 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         BlockPos from = null;
         long budget = 100L;
         final Set<BlockPos> bad = new HashSet<>();
+        /** How often a spot did not work, and when it may be tried again: the wait doubles with every failure. */
+        final java.util.Map<BlockPos, Integer> fails = new java.util.HashMap<>();
+        final java.util.Map<BlockPos, Long> retryAt = new java.util.HashMap<>();
+
+        void markBad(final BlockPos spot, final long now)
+        {
+            bad.add(spot);
+            final int n = fails.merge(spot, 1, Integer::sum);
+            retryAt.put(spot, now + Math.min(200L << Math.min(n - 1, 4), BAD_SPOT_MAX_WAIT));
+            badSince = now;
+        }
         long badSince = 0L;
         long noSpotUntil = 0L;
         long noSpotSince = 0L;
@@ -320,6 +334,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             spot = null;
             bad.clear();
+            fails.clear();
+            retryAt.clear();
             badSince = 0L;
             noSpotUntil = 0L;
             noSpotSince = 0L;
@@ -468,9 +484,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         final long now = world.getGameTime();
         if (!walk.bad.isEmpty() && now - walk.badSince > 200L)
         {
-            // spots that did not work get another chance after a while (a tower may have been climbable by now)
-            walk.bad.clear();
+            // spots that did not work get another chance after a while (a tower may have been climbable by now), a spot that failed again and again
+            // after a longer while: every try costs a walk to the end of a path that does not lead there
+            walk.bad.removeIf(p -> walk.retryAt.getOrDefault(p, 0L) <= now);
             walk.noSpotUntil = 0L;
+            walk.badSince = now;
         }
         final double margin = reach - ReachSpots.MARGIN;
         if (walk.spot != null)
@@ -494,8 +512,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             else if (walk.spot != null && (timedOut || !StandSpots.canStandAt(world, walk.spot) || (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate nav && nav.isStuck())))
             {
                 scaffold.note("spot " + walk.spot + " for " + target + " does not work (timedOut=" + timedOut + ") builder at " + worker.blockPosition());
-                walk.bad.add(walk.spot);
-                walk.badSince = world.getGameTime();
+                walk.markBad(walk.spot, now);
                 walk.spot = null;
                 worker.getNavigation().stop();
             }
@@ -569,8 +586,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                             + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-") + columnDescription(walk.spot)
                             + " model=" + StandSpots.route(world, walk.from == null ? worker.blockPosition() : walk.from, walk.spot, 28, 30000).stream().map(BlockPos::toShortString).toList());
             // the walk is over, and the block is still out of reach: this spot does not work
-            walk.bad.add(walk.spot);
-                walk.badSince = world.getGameTime();
+            walk.markBad(walk.spot, now);
             walk.spot = null;
         }
         return false;

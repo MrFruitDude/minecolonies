@@ -218,7 +218,23 @@ public class EntityNavigationUtils
             nav.walkTo(pos, 1.0D, false);
             return 0;
         }
-        return nav.isDone() ? -1 : 0;
+        if (nav.isDone())
+        {
+            return -1;
+        }
+        final var path = nav.getPathResult().getPath();
+        if (nav.getPathResult().isDone() && path != null && path.getNodeCount() > 0 && !path.canReach())
+        {
+            // the path is there and ends somewhere else: no walk to the end of a path that does not lead to the block (a builder who is told that a
+            // spot cannot be reached knows it before he walks all the way to the best he could do)
+            final BlockPos end = path.getNode(path.getNodeCount() - 1).asBlockPos();
+            if (!end.equals(pos) && !end.equals(pos.below()))
+            {
+                nav.stop();
+                return -1;
+            }
+        }
+        return 0;
     }
 
     /**

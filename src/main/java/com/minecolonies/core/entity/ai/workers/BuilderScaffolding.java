@@ -220,7 +220,10 @@ public final class BuilderScaffolding
         @Override
         public boolean scaffold(final BlockPos pos)
         {
-            if (!ledger.contains(pos))
+            // (only what he put up himself counts as his support: another builder takes his own towers down when he is done with them, and a tower that
+            // is extended by one and taken down by the other is where both of them lose their time)
+            final ScaffoldLedger.Cell cell = ledger.get(pos);
+            if (cell == null || !cell.hut().equals(ai.building.getPosition()))
             {
                 return false;
             }
@@ -453,7 +456,7 @@ public final class BuilderScaffolding
                 }
                 near |= plan.stand().below().distManhattan(cell.pos()) <= 1;
             }
-            if (mine && !near && !inUse(tower, feet, ahead, eye, usable))
+            if (mine && !near && !standsOn(tower, feet) && served(tower, ahead, eye, usable) <= RECLAIM_SERVES)
             {
                 tower.forEach(c -> free.add(c.pos()));
             }
@@ -904,6 +907,45 @@ public final class BuilderScaffolding
             }
         }
         return false;
+    }
+
+    /** A tower that serves this many of the next blocks or fewer is given up for the items of a new one (when the items are short). */
+    static final int RECLAIM_SERVES = 3;
+
+    private boolean standsOn(final List<ScaffoldLedger.Cell> tower, final BlockPos feet)
+    {
+        for (final ScaffoldLedger.Cell cell : tower)
+        {
+            if (feet.below().equals(cell.pos()) || feet.equals(cell.pos()))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * How many of the blocks a spot on the tower reaches.
+     */
+    private int served(final List<ScaffoldLedger.Cell> tower, final List<BlockPos> ahead, final double eye, final double usable)
+    {
+        final java.util.Set<BlockPos> serves = new java.util.HashSet<>();
+        for (final ScaffoldLedger.Cell cell : tower)
+        {
+            final BlockPos spot = cell.pos().above();
+            if (!ai.world.getBlockState(spot).isAir() || !ai.world.getBlockState(spot.above()).isAir())
+            {
+                continue;
+            }
+            for (final BlockPos next : ahead)
+            {
+                if (BuildReach.inReachFromFeet(spot, eye, next, usable))
+                {
+                    serves.add(next);
+                }
+            }
+        }
+        return serves.size();
     }
 
     private boolean elevatedOn(final List<ScaffoldLedger.Cell> tower, final BlockPos feet)
