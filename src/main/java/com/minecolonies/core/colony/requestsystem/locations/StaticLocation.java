@@ -249,7 +249,24 @@ public class StaticLocation implements ILocation
     public static void serialize(RegistryFriendlyByteBuf buffer, StaticLocation location)
     {
         buffer.writeBlockPos(location.pos);
-        buffer.writeUtf(location.dimensionId());
+        // The dimension id as the wire writes a string (length, then UTF-8), made once per id: a snapshot writes thousands of locations.
+        buffer.writeBytes(encodedDimension(location.dimensionId()));
+    }
+
+    private static final java.util.Map<String, byte[]> ENCODED_DIMENSIONS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static byte[] encodedDimension(final String id)
+    {
+        byte[] encoded = ENCODED_DIMENSIONS.get(id);
+        if (encoded == null)
+        {
+            final io.netty.buffer.ByteBuf scratch = io.netty.buffer.Unpooled.buffer(id.length() + 8);
+            new net.minecraft.network.FriendlyByteBuf(scratch).writeUtf(id);
+            encoded = new byte[scratch.readableBytes()];
+            scratch.readBytes(encoded);
+            ENCODED_DIMENSIONS.put(id, encoded);
+        }
+        return encoded;
     }
 
     /**
