@@ -1036,4 +1036,35 @@ final class BuilderScaffoldGameTests
             }, () -> "out=" + out[0] + " missing=" + missing(live, blueprint, origin) + " scaffold=" + scaffoldInWorld(live, origin) + " " + live.ai());
         });
     }
+
+    /**
+     * Probe: can a citizen walk along an arm of scaffolding at the top of a column (4 blocks out at the height of 6)?
+     */
+    public static void armProbe(final GameTestHelper helper)
+    {
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF arm", live -> {
+            final BlockPos site = helper.absolutePos(SITE);
+            for (int y = 0; y < 7; y++)
+            {
+                live.level.setBlock(site.offset(3, y, 0), Blocks.SCAFFOLDING.defaultBlockState().setValue(net.minecraft.world.level.block.ScaffoldingBlock.DISTANCE, 0), 3);
+            }
+            for (int x = 4; x <= 7; x++)
+            {
+                live.level.setBlock(site.offset(x, 6, 0), Blocks.SCAFFOLDING.defaultBlockState().setValue(net.minecraft.world.level.block.ScaffoldingBlock.DISTANCE, x - 3), 3);
+            }
+            final BlockPos goal = site.offset(7, 7, 0);
+            final var entity = live.citizen.getEntity().get();
+            entity.setPos(site.getX() + 0.5D, site.getY(), site.getZ() + 0.5D);
+            final var reach = com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(live.level, site, 28, 30000);
+            Log.getLogger().info("PROBE arm bfs contains goal={}", reach.contains(goal));
+            WorkerEfficiencyGameTests.everyTick(live, 800, tick -> {
+                com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils.walkToBlock(entity, goal);
+                if (tick % 20 == 0)
+                {
+                    Log.getLogger().info("PROBE arm t={} pos={} nav={}", tick, entity.blockPosition().toShortString(), entity.getNavigation().isDone() ? "done" : "busy");
+                }
+                return tick >= 400;
+            }, () -> helper.succeed(), () -> "x");
+        });
+    }
 }
