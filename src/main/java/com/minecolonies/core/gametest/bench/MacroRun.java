@@ -920,6 +920,20 @@ public final class MacroRun
                 out.append(']');
             }
         }
+        out.append("\n  recipes:");
+        for (final IBuilding b : colony.getServerBuildingManager().getBuildings().values())
+        {
+            for (final com.minecolonies.api.colony.buildings.modules.ICraftingBuildingModule module : b.getModulesByType(com.minecolonies.api.colony.buildings.modules.ICraftingBuildingModule.class))
+            {
+                out.append(" [").append(b.getSchematicName()).append(" level=").append(b.getBuildingLevel()).append(':');
+                for (final IToken<?> token : module.getRecipes())
+                {
+                    final var storage = com.minecolonies.api.colony.IColonyManager.getInstance().getRecipeManager().getRecipes().get(token);
+                    out.append(' ').append(storage == null ? "MISSING-IN-GLOBAL-MANAGER" : BuiltInRegistries.ITEM.getKey(storage.getPrimaryOutput().getItem()).getPath());
+                }
+                out.append(']');
+            }
+        }
         out.append("\n  waitDiagnosis:");
         int shown = 0;
         for (final IRequest<?> request : rm.getRequestIdentitiesDataStore().getIdentities().values())

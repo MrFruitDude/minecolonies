@@ -303,6 +303,9 @@ public abstract class AbstractCraftingBuildingModule extends AbstractBuildingMod
                 if (storage == null || (storage.getRecipeSource() != null && !crafterRecipes.containsKey(storage.getRecipeSource())) || (
                   !isRecipeCompatibleWithCraftingModule(token) && !isPreTaughtRecipe(storage, crafterRecipes)))
                 {
+                    Log.getLogger().warn("Recipe {} of {} left out of the building view and removed ({})", token, building.getSchematicName(),
+                      storage == null ? "not in the recipe manager" : storage.getRecipeSource() != null && !crafterRecipes.containsKey(storage.getRecipeSource()) ? "its source recipe is gone" : "not compatible with the module: "
+                                                                                                                                                                                               + storage.getPrimaryOutput());
                     removeRecipe(token);
                 }
                 else
