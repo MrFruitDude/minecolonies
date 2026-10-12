@@ -930,7 +930,10 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
                 }
 
                 //  Ladder Workaround
-                if (getNextNode().isOnLadder() && afterNext != null && (getNextNode().y != afterNext.y || mob.getY() > getNextNode().y))
+                // (an entity below the node keeps climbing even when the path turns sideways at the node: the top of a column of scaffolding with an arm,
+                // where the next node is at the same height, is where the climb used to stall and slide back down)
+                if (getNextNode().isOnLadder() && afterNext != null && (getNextNode().y != afterNext.y || mob.getY() > getNextNode().y
+                                                                          || (getNextNode().getLadderFacing() == Direction.UP && mob.getY() < getNextNode().y - 0.1D)))
                 {
                     return doLadderMovement();
                 }

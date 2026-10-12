@@ -1253,7 +1253,8 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
             {
                 p.setOnLadder(true);
                 // TODO: Check working, logic is a bit odd
-                if (nextInPath != null && nextInPath.y > pos.getY())
+                // (or if it was climbed into: the top node of a column, where the path turns sideways, is no way down)
+                if ((nextInPath != null && nextInPath.y > pos.getY()) || (node.parent != null && node.parent.isLadder() && node.parent.y < pos.getY()))
                 {
                     //  We only care about facing if going up
                     //In the case of BlockVines (Which does not have Direction) we have to check the metadata of the vines... bitwise...
