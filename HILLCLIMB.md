@@ -48,7 +48,18 @@ The original baseline of the whole effort stays `bench-results/b77f4a7a3c-202610
 Run-to-run difference of the unchanged code against that baseline: score 96.4 (macro x0.977, micro x0.937), i.e. the noise floor of
 the instrument on this machine is a few percent on the score and 10-40% on single micro costs when other workers load the machine.
 
-## Attempts
+## Measuring on a shared machine (what was learned in the first hours)
 
-(table below, newest last)
+- The quick bench with K=3 can never give BETTER (the smallest two-sided Mann-Whitney p for 3 vs 3 is 0.1): use K=5 (`--reps 5`).
+- The machine (6 cores) is shared with other workers' builds and game runs. The same code measured an hour apart differed by up to
+  +-20% in macro RS CPU and by +300% in single micro operations (a whole 5-repeat run slow together). A comparison against a run taken
+  hours earlier is therefore worthless; two runs a few minutes apart ("paired", baseline first, candidate right after) are
+  the only comparison that held up. Verdicts below are from paired or adjacent runs unless said otherwise.
+- Allocation per operation (`allocB`, deterministic) and payload bytes are not affected by the load and are used as supporting evidence.
+
+## Attempts (newest last; every attempt, accepted or not)
+
+| # | change (commit) | verdict | evidence (paired quick K=5 vs the code without it) |
+|---|---|---|---|
+| 1 | retrying resolver keeps delays as due-times in buckets (`66a6683509`, amended to `a5050d4cb7`: its serializers asked for `getDelays()`, now a copy, once per entry, which made save 2x slower at 1k) | REJECTED | idleTick@100 +2.0%, idleTick@1000 +3.3% WORSE, reevalInTick@100 +1.8%, @1000 -3.5% (noise), save@1000 +11.5% WORSE, assign@1000 +11.2% WORSE, macro rsCpu busy +2.8% / storm -7.9% / fresh -9.0% all noise, score 99.9 vs 100. The one earlier run that looked good (-12% idleTick) was an unpaired comparison against an adjacent baseline; the paired rerun did not reproduce it. Commit kept on `origin/rejected/rs-retry-buckets`. |
 
