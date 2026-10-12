@@ -21,6 +21,9 @@ import net.minecraft.tags.BlockTags;
  */
 public final class StandSpots
 {
+    /** How far a drop is that the search takes for a way down (the paths of citizens allow more but at a cost that they avoid). */
+    static final int MAX_DROP = Integer.getInteger("minecolonies.maxdrop", 2);
+
     private StandSpots()
     {
     }
@@ -181,7 +184,7 @@ public final class StandSpots
                 {
                     // a step down (or a short drop, the paths of citizens allow drops, six are taken here); not off the top of scaffolding: the paths do not
                     // leave a tower that way (a spot in a closed building that is only reached by a drop from a tower is no spot)
-                    for (int drop = 1; drop <= 6 && isFree(level, near.below(drop - 1)); drop++)
+                    for (int drop = 1; drop <= MAX_DROP && isFree(level, near.below(drop - 1)); drop++)
                     {
                         if (canStandAt(level, near.below(drop)))
                         {

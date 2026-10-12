@@ -1374,8 +1374,59 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         return false;
     }
 
+    private long trapCheckAt = 0L;
+    private int  trapStrikes  = 0;
+
+    /**
+     * Counts of the times a worker was found shut in and put out (for the tests).
+     */
+    public static volatile int trappedRescues = 0;
+
+    /**
+     * A worker who works with the physical reach may find the walls of the structure risen around him (he stood inside to reach the blocks of the
+     * wall on the other side): no path leads out. He walks in circles at best (the unstuck ladder only counts a worker who stands still), so he is
+     * put out at the entrance of his hut once it is clear that he is shut in.
+     */
+    protected final void checkTrapped()
+    {
+        if (!usesPhysicalReach())
+        {
+            return;
+        }
+        final long now = world.getGameTime();
+        if (now < trapCheckAt)
+        {
+            return;
+        }
+        trapCheckAt = now + 40L;
+        final BlockPos home = StandSpots.nearest(world, building.getPosition(), 8, 4, 4, null);
+        if (home == null || Math.abs(home.getX() - worker.getBlockX()) >= WALKABLE_RADIUS - 2 || Math.abs(home.getZ() - worker.getBlockZ()) >= WALKABLE_RADIUS - 2 || canWalkTo(home))
+        {
+            trapStrikes = 0;
+            return;
+        }
+        if (++trapStrikes < 3)
+        {
+            return;
+        }
+        trapStrikes = 0;
+        Log.getLogger().debug("{} is shut in at {}: put out at {}", worker.getName().getString(), worker.blockPosition(), home);
+        if (this instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder && com.minecolonies.core.entity.ai.workers.util.ReachAudit.isEnabled())
+        {
+            Log.getLogger().info("SCAFFOLD {} is shut in at {}: put out at {}", worker.getName().getString(), worker.blockPosition(), home);
+        }
+        trappedRescues++;
+        puffAt(worker.position());
+        worker.getNavigation().stop();
+        worker.snapTo(home.getX() + 0.5D, home.getY(), home.getZ() + 0.5D);
+        puffAt(worker.position());
+        resetWalkTarget();
+        forgetWalkable();
+    }
+
     protected final boolean runScaffoldTick()
     {
+        checkTrapped();
         if (scaffoldTick())
         {
             stuck.free();

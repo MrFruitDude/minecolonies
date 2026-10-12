@@ -584,12 +584,53 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             scaffold.note("walk to " + walk.spot + " ended (" + walked + ") at " + worker.blockPosition() + " for " + target + " nav stuck=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n && n.isStuck())
                             + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-") + columnDescription(walk.spot)
+                            + probePath(walk.spot)
                             + " model=" + StandSpots.route(world, walk.from == null ? worker.blockPosition() : walk.from, walk.spot, 28, 30000).stream().map(BlockPos::toShortString).toList());
             // the walk is over, and the block is still out of reach: this spot does not work
             walk.markBad(walk.spot, now);
             walk.spot = null;
         }
         return false;
+    }
+
+
+    /**
+     * Only for the logs: the path to a spot searched again right now, on the spot (where the builder is now).
+     */
+    private String probePath(final BlockPos spot)
+    {
+        if (!com.minecolonies.core.entity.ai.workers.util.ReachAudit.isEnabled())
+        {
+            return "";
+        }
+        try
+        {
+            final var job = new com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveToLocation(world, com.minecolonies.core.entity.pathfinding.PathfindingUtils.prepareStart(worker), spot,
+              (int) worker.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE).getValue(), worker);
+            final var path = job.call();
+            if (path == null)
+            {
+                return " probe=null";
+            }
+            final StringBuilder sb = new StringBuilder(" probe: nodes=" + path.getNodeCount() + " reach=" + path.canReach() + " end=" + path.getNode(path.getNodeCount() - 1).asBlockPos().toShortString() + " [");
+            for (int i = 0; i < path.getNodeCount() && i < 12; i++)
+            {
+                sb.append(path.getNode(i).asBlockPos().toShortString()).append(' ');
+            }
+            sb.append("] start=").append(com.minecolonies.core.entity.pathfinding.PathfindingUtils.prepareStart(worker).toShortString());
+            for (final BlockPos alt : new BlockPos[] {spot.below(), spot.below(2)})
+            {
+                final var job2 = new com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveToLocation(world, com.minecolonies.core.entity.pathfinding.PathfindingUtils.prepareStart(worker), alt,
+                  (int) worker.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE).getValue(), worker);
+                final var p2 = job2.call();
+                sb.append(" alt").append(spot.getY() - alt.getY()).append(p2 == null ? "=null" : "(nodes=" + p2.getNodeCount() + " reach=" + p2.canReach() + " end=" + p2.getNode(p2.getNodeCount() - 1).asBlockPos().toShortString() + ")");
+            }
+            return sb.toString();
+        }
+        catch (final RuntimeException e)
+        {
+            return " probe=" + e;
+        }
     }
 
     private String columnDescription(final BlockPos spot)
@@ -1225,7 +1266,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             }
             final Map<ItemStorage, Integer> stockMemo = new HashMap<>();
             final int room = (int) Math.max(1, InventoryUtils.openSlotCount(worker.getInventoryCitizen()) - MIN_OPEN_SLOTS);
-            final List<LeaseAllocator.Planned> plan = LeaseAllocator.plan(world, order, stage, assistHandler, assistPlacer, BuilderCollab.leaseSize(), LEAD_BUFFER,
+            final List<LeaseAllocator.Planned> plan = LeaseAllocator.plan(world, order, stage, assistHandler, assistPlacer, leaseSizeFor(lead), LEAD_BUFFER,
               key -> stockMemo.computeIfAbsent(key, k -> Math.max(0, InventoryUtils.getItemCountInItemHandler(lead.getItemHandlerCap(), sameAs(k.getItemStack()))
                                                                     - AssistReservations.heldByOthers(lead, building, k.getItemStack()))
                                                       + leadCarried(lead, k.getItemStack())
@@ -1302,6 +1343,18 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         }
         EntityNavigationUtils.walkToBlock(worker, ground);
         return true;
+    }
+
+
+    /**
+     * How many positions the helper leases at once: the configured size, more when the hut of the lead is far (every lease costs a walk to the hut and back,
+     * a lease of a few blocks that takes longer to fetch than to place is no help), at most four times the configured size.
+     */
+    private int leaseSizeFor(final AbstractBuildingStructureBuilder lead)
+    {
+        final int base = BuilderCollab.leaseSize();
+        final double distance = Math.sqrt(worker.blockPosition().distSqr(lead.getPosition()));
+        return (int) Math.min(4L * base, base + Math.round(2.0D * distance));
     }
 
     /**
@@ -1443,6 +1496,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return leaveAssist();
         }
+        checkTrapped();
         final AbstractBuildingStructureBuilder lead = leadOf(assistOrder);
         assistOrder.getCollab().renew(building.getID(), world.getGameTime() + BuilderCollab.leaseTicks());
         final boolean giveUp = ++gatherSteps > MAX_GATHER_STEPS;
