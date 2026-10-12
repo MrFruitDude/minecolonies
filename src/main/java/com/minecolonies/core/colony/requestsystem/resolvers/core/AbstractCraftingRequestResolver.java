@@ -2,6 +2,7 @@ package com.minecolonies.core.colony.requestsystem.resolvers.core;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.reflect.TypeToken;
+import com.minecolonies.api.util.constant.TypeConstants;
 import com.minecolonies.api.colony.buildings.modules.ICraftingBuildingModule;
 import com.minecolonies.api.colony.jobs.registry.JobEntry;
 import com.minecolonies.api.colony.requestsystem.location.ILocation;
@@ -80,7 +81,7 @@ public abstract class AbstractCraftingRequestResolver extends AbstractRequestRes
     @Override
     public TypeToken<? extends IDeliverable> getRequestType()
     {
-        return TypeToken.of(IDeliverable.class);
+        return TypeConstants.DELIVERABLE;
     }
 
     @Override
