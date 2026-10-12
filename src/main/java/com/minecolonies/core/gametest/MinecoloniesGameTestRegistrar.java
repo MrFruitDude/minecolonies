@@ -83,6 +83,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 StorageNetworkGameTests.register(event);
             }
+            if (only.contains("reqsync"))
+            {
+                RequestSyncGameTests.register(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -704,22 +708,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               isolatedColonyData(event, name));
         }
         // CA-1 + CA-3 request-system / citizen view sync (one glob: minecolonies:reqsync_*).
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_bytes_per_minute"),
-          info -> new MinecoloniesGameTestInstance(info, RequestSyncGameTests::bytesPerMinute),
-          isolatedColonyData(event, "reqsync_bytes_per_minute"));
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_client_equals_full"),
-          info -> new MinecoloniesGameTestInstance(info, RequestSyncGameTests::clientEqualsFull),
-          isolatedColonyData(event, "reqsync_client_equals_full"));
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_protocol_mismatch"),
-          info -> new MinecoloniesGameTestInstance(info, RequestSyncGameTests::protocolMismatch),
-          isolatedColonyData(event, "reqsync_protocol_mismatch"));
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "reqsync_citizen_view_patch"),
-          info -> new MinecoloniesGameTestInstance(info, RequestSyncGameTests::citizenViewPatch),
-          isolatedColonyData(event, "reqsync_citizen_view_patch"));
+        RequestSyncGameTests.register(event);
         // Request system defect checks (one glob: minecolonies:rs_*).
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_craft_batch_zero"),

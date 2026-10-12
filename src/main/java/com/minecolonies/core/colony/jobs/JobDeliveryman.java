@@ -529,6 +529,10 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
                     if (localRequest.getRequest() instanceof AbstractDeliverymanRequestable requestable)
                     {
                         requestable.incrementPriorityDueToAging();
+                        if (localRequest instanceof com.minecolonies.core.colony.requestsystem.requests.AbstractRequest<?> aged)
+                        {
+                            aged.touch();
+                        }
                     }
                 }
                 else if (sameQueue && index == resultIndex)

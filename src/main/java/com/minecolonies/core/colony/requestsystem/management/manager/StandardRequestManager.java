@@ -137,6 +137,11 @@ public class StandardRequestManager implements IStandardRequestManager
     private final RequestWaitTracker waitTracker = new RequestWaitTracker(this);
 
     /**
+     * The serialized request entries of the client view sync, kept between snapshots.
+     */
+    private final RequestSystemViewSync.EntryCache viewEntryCache = new RequestSystemViewSync.EntryCache();
+
+    /**
      * Stock that came free (a promise on it ended), to be announced on the next tick.
      */
     private final java.util.Map<com.minecolonies.api.crafting.ItemStorage, ItemStack> freedStock = new java.util.LinkedHashMap<>();
@@ -585,6 +590,7 @@ public class StandardRequestManager implements IStandardRequestManager
 
     private void reset(UpdateType type)
     {
+        viewEntryCache.clear();
         setup();
 
         version = -1;
@@ -973,6 +979,15 @@ public class StandardRequestManager implements IStandardRequestManager
     public BuildingPriorities getBuildingPriorities()
     {
         return buildingPriorities;
+    }
+
+    /**
+     * @return the cache of serialized request entries the view sync keeps between snapshots.
+     */
+    @NotNull
+    public RequestSystemViewSync.EntryCache getViewEntryCache()
+    {
+        return viewEntryCache;
     }
 
     @NotNull
