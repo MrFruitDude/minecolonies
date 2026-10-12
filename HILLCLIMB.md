@@ -116,3 +116,10 @@ occurrence shows whether the courier walks in circles or stands still. The hard 
 6. `writeDelta` 5%: byte-array comparison of every entry.
 7. Kept in `perf/rs-hillclimb-dev`, not applied: courier decides on its next task at once (`9f2697ce19`): a gameplay-timing change.
 
+
+## Fork GameTest suite
+
+On the merged branch (all accepted attempts + `ec2d32a508`): run 1 failed `worker_eff_bench_clear_l1` ("box not complete on tick 9300"), run 2 failed
+`scaffold_two_builders_big` ("missing 2 on tick 9755"), run 3: **All 280 required tests passed** (279 of integ/anno + `rs_recipe_tokens_seeded`). The
+`worker_eff` group alone passes (15/15), plain `origin/integ/anno` passed 279/279 in one run. Both failures are builder-AI tick-budget tests (not request-system
+tests) and each ran at a time the machine was loaded by other workers; they did not repeat. Not proven load-only: a fourth run on each side would settle it.
