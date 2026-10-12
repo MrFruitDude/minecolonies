@@ -283,12 +283,16 @@ final class BuilderScaffoldGameTests
         return n;
     }
 
+    /** The record of the tall-structure test that ran last (for the checks of a test that go beyond the common ones). */
+    static Watch lastWatch = null;
+
     /** What a scaffolding test records while it runs. */
     static final class Watch
     {
         int maxScaffold = 0;
         int climbedTicks = 0;
         int maxHeight = 0;
+        int minHeight = 0;
         String conservationBreak = null;
         int orphanedTicks = 0;
         int minItems = Integer.MAX_VALUE;
@@ -326,6 +330,7 @@ final class BuilderScaffoldGameTests
                 watch.climbedTicks++;
             }
             watch.maxHeight = Math.max(watch.maxHeight, feet.getY() - site.getY());
+            watch.minHeight = Math.min(watch.minHeight, feet.getY() - site.getY());
         });
         if (tick % 4 == 0)
         {
@@ -377,6 +382,7 @@ final class BuilderScaffoldGameTests
             final WorkOrderDecoration order = live.orderFor(name, SITE, blueprint);
             final BlockPos origin = order.getLocation();
             final Watch watch = new Watch();
+            lastWatch = watch;
             final Vec3[] last = {live.citizen.getEntity().get().position()};
             final double[] walked = {0};
             final int[] doneTick = {0};
@@ -721,10 +727,23 @@ final class BuilderScaffoldGameTests
             final Watch watch = new Watch();
             final int[] doneTick = {0};
             final java.util.Map<BlockPos, Integer> blocksBy = new java.util.concurrent.ConcurrentHashMap<>();
+            final java.util.Map<BlockPos, Long> lastPlaced = new java.util.concurrent.ConcurrentHashMap<>();
+            final java.util.Map<BlockPos, long[]> gaps = new java.util.concurrent.ConcurrentHashMap<>();
             BuilderCollab.placementProbe = (pos, hut) -> {
                 if (pos.distManhattan(origin) < 200)
                 {
                     blocksBy.merge(hut, 1, Integer::sum);
+                    final long now = live.level.getGameTime();
+                    final Long before = lastPlaced.put(hut, now);
+                    if (before != null)
+                    {
+                        final long gap = now - before;
+                        final long[] h = gaps.computeIfAbsent(hut, k -> new long[10]);
+                        // [count<=2, ticks<=2, count<=5, ticks<=5, count<=12, ticks<=12, count<=40, ticks<=40, count>40, ticks>40]
+                        final int b = gap <= 2 ? 0 : gap <= 5 ? 2 : gap <= 12 ? 4 : gap <= 40 ? 6 : 8;
+                        h[b]++;
+                        h[b + 1] += gap;
+                    }
                 }
             };
             WorkerEfficiencyGameTests.everyTick(live, maxTicks, tick -> {
@@ -746,6 +765,11 @@ final class BuilderScaffoldGameTests
                 }
                 return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
             }, () -> {
+                for (final java.util.Map.Entry<BlockPos, long[]> e : gaps.entrySet())
+                {
+                    Log.getLogger().info("WGAPS {} {} (count,ticks) <=2:{},{} <=5:{},{} <=12:{},{} <=40:{},{} >40:{},{}", name, e.getKey().equals(live.hut.getPosition()) ? "lead" : "second",
+                      e.getValue()[0], e.getValue()[1], e.getValue()[2], e.getValue()[3], e.getValue()[4], e.getValue()[5], e.getValue()[6], e.getValue()[7], e.getValue()[8], e.getValue()[9]);
+                }
                 Log.getLogger().info("WBENCH RESULT " + name + " builders=2 blocksBy={} ticks={} towers={} cells={} placedBy={} maxScaffold={}", blocksBy.values(), doneTick[0], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced,
                   BuilderScaffolding.placedBy.values(), watch.maxScaffold);
                 helper.assertTrue(missing(live, blueprint, origin) == 0, "structure not complete: missing " + missing(live, blueprint, origin));
@@ -1049,6 +1073,72 @@ final class BuilderScaffoldGameTests
                     }
                 }
             }
+        }, () -> helper.assertTrue(lastWatch != null && lastWatch.minHeight > -3,
+          "the builder fell off the arm into the trench: lowest point " + (lastWatch == null ? "?" : lastWatch.minHeight) + " blocks below the site"));
+    }
+
+    /**
+     * A column of scaffolding with an arm out of its top (the way to a spot over a drop or a roof): a citizen walks to the spot on top of the end of
+     * the arm, back to the ground, and to the spot again. Each walk gets there (the top of the column is a way up where the path turns sideways, a
+     * path that starts in a cell of the arm starts there and not at the bottom of the drop under it, and the spot is a destination that is reached
+     * every time, not only the first: the recent end nodes of paths are penalised for a while), and he never falls off.
+     */
+    public static void climbArmTwice(final GameTestHelper helper)
+    {
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF arm twice", live -> {
+            final BlockPos site = helper.absolutePos(SITE);
+            // the ground drops away to the north of the column: a trench under the arm
+            for (int x = 0; x <= 6; x++)
+            {
+                for (int z = -6; z <= -1; z++)
+                {
+                    for (int y = -1; y >= -12; y--)
+                    {
+                        live.level.setBlock(site.offset(x, y, z), Blocks.AIR.defaultBlockState(), 2);
+                    }
+                }
+            }
+            final BlockState stable = Blocks.SCAFFOLDING.defaultBlockState().setValue(net.minecraft.world.level.block.ScaffoldingBlock.DISTANCE, 0);
+            for (int y = 0; y < 5; y++)
+            {
+                live.level.setBlock(site.offset(3, y, 0), stable, 3);
+            }
+            for (int i = 1; i <= 3; i++)
+            {
+                live.level.setBlock(site.offset(3, 4, -i), Blocks.SCAFFOLDING.defaultBlockState().setValue(net.minecraft.world.level.block.ScaffoldingBlock.DISTANCE, i)
+                                                             .setValue(net.minecraft.world.level.block.ScaffoldingBlock.BOTTOM, true), 3);
+            }
+            final BlockPos stand = site.offset(3, 5, -3);
+            final BlockPos ground = site.offset(1, 0, 1);
+            final var entity = live.citizen.getEntity().get();
+            entity.setPos(ground.getX() + 0.5D, ground.getY(), ground.getZ() + 0.5D);
+            // phase 0: up, 1: down, 2: up again; the time each took
+            final int[] phase = {0};
+            final int[] phaseStart = {0};
+            final int[] took = {-1, -1, -1};
+            final int[] lowest = {0};
+            WorkerEfficiencyGameTests.everyTick(live, 1500, tick -> {
+                lowest[0] = Math.min(lowest[0], entity.blockPosition().getY() - site.getY());
+                final boolean up = phase[0] != 1;
+                final int walked = up ? com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils.walkToBlock(entity, stand)
+                                      : (com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils.walkToPos(entity, ground, 1, false) ? 1 : 0);
+                if (walked == 1)
+                {
+                    took[phase[0]] = tick - phaseStart[0];
+                    phase[0]++;
+                    phaseStart[0] = tick;
+                    return phase[0] == 3;
+                }
+                if (walked == -1 || tick - phaseStart[0] > 450)
+                {
+                    helper.fail("phase " + phase[0] + " did not get there (walk=" + walked + ") at " + entity.blockPosition() + ", took " + java.util.Arrays.toString(took));
+                    return true;
+                }
+                return false;
+            }, () -> {
+                helper.assertTrue(lowest[0] > -3, "he fell: lowest point " + lowest[0] + " below the site");
+                helper.succeed();
+            }, () -> "phase " + phase[0] + " took " + java.util.Arrays.toString(took) + " at " + entity.blockPosition());
         });
     }
 

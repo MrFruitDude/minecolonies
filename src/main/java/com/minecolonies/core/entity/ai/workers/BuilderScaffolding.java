@@ -315,7 +315,7 @@ public final class BuilderScaffolding
      */
     private static int carryTarget()
     {
-        return Math.min(64, Integer.getInteger("minecolonies.carrymult", 2) * WorkerSettings.scaffoldStock());
+        return Math.min(64, 2 * WorkerSettings.scaffoldStock());
     }
 
     // ------------------------------------------------------------------ starting a tower

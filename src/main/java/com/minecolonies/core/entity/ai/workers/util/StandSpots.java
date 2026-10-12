@@ -22,7 +22,7 @@ import net.minecraft.tags.BlockTags;
 public final class StandSpots
 {
     /** How far a drop is that the search takes for a way down (the paths of citizens allow more but at a cost that they avoid). */
-    static final int MAX_DROP = Integer.getInteger("minecolonies.maxdrop", 2);
+    static final int MAX_DROP = 2;
 
     private StandSpots()
     {
@@ -126,23 +126,6 @@ public final class StandSpots
     public static Set<BlockPos> reachableFrom(final Level level, final BlockPos start, final int radius, final int maxNodes)
     {
         return reachableFrom(level, start, radius, maxNodes, null);
-    }
-
-    /**
-     * Only for the logs: the way the search found to a position (the positions in order, start first), or an empty list.
-     */
-    public static java.util.List<BlockPos> route(final Level level, final BlockPos start, final BlockPos goal, final int radius, final int maxNodes)
-    {
-        final java.util.Map<BlockPos, BlockPos> parents = new java.util.HashMap<>();
-        reachableFrom(level, start, radius, maxNodes, parents);
-        final java.util.List<BlockPos> path = new java.util.ArrayList<>();
-        BlockPos at = goal;
-        while (at != null && path.size() < 200)
-        {
-            path.add(0, at);
-            at = parents.get(at);
-        }
-        return path.isEmpty() || !path.get(0).equals(start) ? java.util.List.of() : path;
     }
 
     private static Set<BlockPos> reachableFrom(final Level level, final BlockPos start, final int radius, final int maxNodes, @Nullable final java.util.Map<BlockPos, BlockPos> parents)

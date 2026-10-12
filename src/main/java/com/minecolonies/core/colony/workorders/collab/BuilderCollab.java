@@ -146,6 +146,20 @@ public final class BuilderCollab
     }
 
     /**
+     * How many positions a helper leases at once when he has to walk a distance to the hut of the lead for the materials: the configured size, more
+     * when the hut is far (a lease of a few blocks that takes longer to fetch than to place is no help), at most four times the configured size.
+     *
+     * @param base     the configured size.
+     * @param distance the distance to the hut of the lead, in blocks.
+     * @return the number of positions to lease.
+     */
+    public static int scaledLeaseSize(final int base, final double distance)
+    {
+        final int size = Math.max(1, base);
+        return (int) Math.min(4L * size, size + Math.round(2.0D * Math.max(0.0D, distance)));
+    }
+
+    /**
      * Ticks a lease lives without the helper showing life.
      */
     public static int leaseTicks()
