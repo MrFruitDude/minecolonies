@@ -309,25 +309,16 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         long since = 0L;
         long budget = 100L;
         final Set<BlockPos> bad = new HashSet<>();
-        /** Spots he could not get to by a path (the walk ended somewhere else): not tried again for a long while, unlike the spots in bad, which came up too late. */
-        final java.util.Map<BlockPos, Long> unreachable = new java.util.HashMap<>();
         long badSince = 0L;
         long noSpotUntil = 0L;
         long noSpotSince = 0L;
         net.minecraft.world.phys.Vec3 lastPosition = null;
         long lastMoved = 0L;
 
-        boolean isUnreachable(final BlockPos pos, final long now)
-        {
-            final Long since = unreachable.get(pos);
-            return since != null && now - since < 1500L;
-        }
-
         void reset()
         {
             spot = null;
             bad.clear();
-            unreachable.clear();
             badSince = 0L;
             noSpotUntil = 0L;
             noSpotSince = 0L;
@@ -525,7 +516,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 return false;
             }
             final List<ReachSpots.Spot> spots = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(),
-              p -> !walk.bad.contains(p) && !walk.isUnreachable(p, now) && canWalkTo(p) && (inBlocks || hasWayDown(p)) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
+              p -> !walk.bad.contains(p) && canWalkTo(p) && (inBlocks || hasWayDown(p)) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
             if (spots.isEmpty())
             {
                 // nothing to stand on within reach of the block: this is a job for scaffolding
@@ -572,10 +563,6 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             scaffold.note("walk to " + walk.spot + " ended (" + walked + ") at " + worker.blockPosition() + " for " + target + " nav stuck=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n && n.isStuck())
                             + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-") + columnDescription(walk.spot));
             // the walk is over, and the block is still out of reach: this spot does not work
-            if (walked < 0)
-            {
-                walk.unreachable.put(walk.spot, world.getGameTime());
-            }
             walk.bad.add(walk.spot);
                 walk.badSince = world.getGameTime();
             walk.spot = null;
