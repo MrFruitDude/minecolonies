@@ -73,3 +73,46 @@ the instrument on this machine is a few percent on the score and 10-40% on singl
 | 9 | a request hands out one cached immutable list of its children until they change (`AbstractRequest.getChildren` built a new `ImmutableList` per call, 5.8% of RS allocation in the profile; `29dffcffa9`) | REJECTED | paired: busy rsAlloc/tick -4.7% (noise), storm +4.2% (noise), fresh +0.5%; no targeted metric BETTER (busy rsCpu -29% BETTER p=0.016 is not credible for a change worth <1% of CPU, and the micro-100 phase of that candidate run was polluted: every op +30..640%). Commit kept on `origin/rejected/rs-children-cache`. |
 | 10 | a location writes its dimension id from bytes encoded once per id (the string was UTF-8 encoded for every `StaticLocation` in every snapshot; it was 25% of the serialization time in the micro profile; `6ea286e80d`) | ACCEPTED | paired: storm rsAlloc/tick 4056 -> 3656 (-9.8% BETTER), viewSnapshot@100 -16.9% (71.3k -> 59.3k ns, BETTER p=0.008), viewPerDirtyTick@100 -12.7%, viewDelta@1000 -7.6%. WORSE flags on ops it does not touch: complete@100 +10%, ledgerCommit@1000 (bimodal 1.2 / 4.4 us, cv 63%), ledgerRelease. Gates OK. |
 
+## Result (full mode, K=5, flags on, merged with `origin/integ/anno` ec2d32a508)
+
+`bench-results/abd6a775f5-20261012T065328Z.json`: gates OK, 0 hangs in 49 runs. Compared with the original baseline
+`bench-results/b77f4a7a3c-20261011T200053Z.json`: **score 71.5 (macro x0.782, micro x0.580)**; against the re-recorded reference
+(`8808fb5475`, the same code without the climb) 74.1.
+
+| | baseline | now | |
+|---|---|---|---|
+| busy RS CPU / tick | 22.1 us | 10.1 us | -54% BETTER |
+| busy RS CPU p99 tick | 629 us | 276 us | -56% BETTER |
+| busy RS alloc / tick | 16.0 kB | 5.1 kB | -68% BETTER |
+| storm RS CPU / tick | 30.7 us | 12.9 us | -58% BETTER |
+| storm RS CPU p99 tick | 1.06 ms | 346 us | -67% BETTER |
+| storm RS alloc / tick | 21.2 kB | 7.9 kB | -63% BETTER |
+| fresh RS CPU / tick | 2.9 us | 1.5 us | -50% BETTER |
+| unload RS CPU / tick | 1.9 us | 2.6 us | +38% WORSE: total RS CPU 34.5 -> 38.1 ms (+10%) but the run is 20% shorter (14.4k ticks, builder timing of the merged integ/anno), so the per-tick figure rises; alloc/tick -40% |
+| micro @10k: assign / idleTick / courierPick / complete | 43.8 us / 14 ms / 5.9 ms / 501 us | 24.4 us / 7.5 ms / 3.4 ms / 248 us | -44% / -46% / -42% / -51% |
+| micro @10k: save | 6.0 s | 46 ms | -99% |
+| micro @10k: view cost per dirty tick | 61.7 ms | 19.8 ms | -68% |
+| ticks to completion, courier distance, requests created | | | unchanged within noise (the RS got cheaper, nothing it does moved), except fresh/storm requests +2..5% and fresh courier distance +8.8%, which come with the builder changes of the merge |
+
+Worse than baseline: micro ledgerCommit @10k +28% (8.8 -> 11.2 us, a low-noise reading); it was +30% already in the first run on the fixed code before any
+change of the climb, so it is a property of that code/baseline pair and not of an attempt (not investigated).
+
+## Open: an intermittent hang (courier delivery) that is NOT the recipe-token artefact
+
+One quick run (during attempt 7) had 2 of 7 busy repeats where 2 requests (a `cooked_beef x8` stack and its delivery) stayed open for the 4000 drain
+ticks: the courier holding the delivery sat in `PREPARE_DELIVERY` walking to the pickup rack 22-33 blocks away (`pathStatus=IN_PROGRESS_FOLLOWING`,
+path of ~50 nodes, `navDone=false`) and moved only ~67 blocks in 2000 ticks. The same signature appeared once before the climb (`400348f6f3` run,
+repeat 6). 16 further busy repeats, the full run above (49 runs) and 10+ quick runs were clean, so the rate is low (about 1-2% of repeats) and it
+did not reproduce on demand. The hang report now carries a courier trail (position, AI state and path status every 50 drain ticks) so the next
+occurrence shows whether the courier walks in circles or stands still. The hard gate stays at zero hangs. Not caused by an attempt (the signature predates the climb).
+
+## Remaining hot spots (busy / storm, share of RS CPU after the climb)
+
+1. `snapshot` of the view sync, still 27-35%: the resolver store (retrying resolver with every waiting request) and the six "raw" data stores are serialized in full at every dirty tick (74% of a snapshot); a per-store version counter (the stores hand out live maps, so every mutation site must bump it) would make them as cheap as the request entries now are.
+2. `assign`: 41-44% inclusive, of which `canResolve` 17% (courier resolvers' storage-network checks, `WaitDiagnosis.recipeSupport` scanning every crafting module's recipes per starved request, `ArrayList.sort` of candidates).
+3. The retry ladder (`StandardRetryingRequestResolver.tick` -> `reassignRequest`, 12% of RS): real re-assignments; a bucketed due-time clock (attempt 1) was not faster.
+4. `EntityAIWorkDeliveryman.prepareDelivery/deliver` (9% of RS): item-handler walks per delivery.
+5. `courierPick` 6-10%: scans every queue in range (storage network).
+6. `writeDelta` 5%: byte-array comparison of every entry.
+7. Kept in `perf/rs-hillclimb-dev`, not applied: courier decides on its next task at once (`9f2697ce19`): a gameplay-timing change.
+

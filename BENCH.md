@@ -2,7 +2,7 @@
 
 A deterministic measuring instrument for the MineColonies request system (RS): correctness gates, per-operation costs
 at 100 / 1k / 10k open requests, and four macro scenarios with real colonies. It exists to hill-climb RS efficiency;
-it does not optimise anything itself. Baseline: `bench-results/b77f4a7a3c-20261011T200053Z.json` (full; quick: `bench-results/quick-baseline-1edf009567.json`; integ/anno
+it does not optimise anything itself. See `HILLCLIMB.md` for the hill-climb log. Baseline: `bench-results/b77f4a7a3c-20261011T200053Z.json` (full; quick: `bench-results/quick-baseline-1edf009567.json`; integ/anno
 `f0583ee0d3`, flags at the shipped defaults: reservations, smart retry, priority classes on).
 
 ## Run it
@@ -74,8 +74,7 @@ for 3000 ticks), request latency p50/p99 (first seen to gone), peak/mean open re
    finished builds equal what the scripted suppliers added minus what scripted sinks removed. Units are preserved by every recipe used (log 8 = 4 planks x 2;
    fence 2 = plank; cobblestone = stone brick). A duplicate shows as a surplus, a loss as a deficit, and the failure lists what moved since the last good check.
 2. **Completion**: every scenario finishes within its budget and the demand drains. Quirk, documented deliberately: the shipped system hangs a courier or craft
-   now and then; a repeat that never finishes is reported (`gates.hangs`), counted at its full budget in the metrics, and tolerated for up to a quarter of the
-   repeats (1 of 5); more makes the run invalid. (Seen while building this: a same-crafter planks -> fence chain under planks contention stranded a request; couriers livelocking
+   now and then; a repeat that never finishes is reported (`gates.hangs`) with the state of workers, couriers (with a trail) and crafters' recipes, and makes the run invalid: hangs are a hard gate, none tolerated, warm-ups included. (Seen while building this: a same-crafter planks -> fence chain under planks contention stranded a request; couriers livelocking
    at distant consumers. Both were avoided in the scenarios, not fixed.)
 3. **No avoidable player fallback**: any request that fell to the player resolver is a failure (nothing in the scenarios is unproducible). With `--flags off` this
    fails by design: that is the old behaviour.
