@@ -48,7 +48,7 @@ gradle_args=(--no-daemon --offline -Dmaven.repo.local=/mnt/data/mc-mod-ports/rs-
 if [[ -n "$jfr" ]]; then
   # The task takes no --jvm-args; JAVA_TOOL_OPTIONS reaches every JVM of the run (gradle's too, whose small recordings are
   # harmless; the game JVM's is the big one). %p in the file name keeps them apart.
-  export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=${TMPDIR:-/tmp} -Djna.tmpdir=${TMPDIR:-/tmp} -XX:StartFlightRecording=filename=$jfr,settings=profile,dumponexit=true -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints"
+  export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=${TMPDIR:-/tmp} -Djna.tmpdir=${TMPDIR:-/tmp} -XX:StartFlightRecording=filename=$jfr,settings=profile,dumponexit=true,jdk.ExecutionSample#period=1ms -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints"
 fi
 
 export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:--Djava.io.tmpdir=${TMPDIR:-/tmp} -Djna.tmpdir=${TMPDIR:-/tmp}}"   # sandboxes whose /tmp is read-only
