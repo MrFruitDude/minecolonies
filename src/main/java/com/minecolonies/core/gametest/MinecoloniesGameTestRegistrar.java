@@ -937,6 +937,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "worker_eff_set_abstract_walking" -> WorkerSettingsGameTests::abstractWalkingRelocates;
                 default -> WorkerSettingsGameTests::walkSpeedCalibration;
             };
+            if (!nameWanted(name))
+            {
+                continue;
+            }
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),
@@ -944,13 +948,47 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         }
     }
 
+    /**
+     * A development filter inside a group: {@code -Dminecolonies.gametest.names=a,b,!c} keeps the tests whose name contains one of the words and none of the words with a ! in front.
+     */
+    private static boolean nameWanted(final String name)
+    {
+        final String names = System.getProperty("minecolonies.gametest.names", "");
+        if (names.isBlank())
+        {
+            return true;
+        }
+        boolean wanted = false;
+        for (final String word : names.split(","))
+        {
+            final String w = word.trim();
+            if (w.startsWith("!"))
+            {
+                if (name.contains(w.substring(1)))
+                {
+                    return false;
+                }
+            }
+            else if (!w.isEmpty() && name.contains(w))
+            {
+                wanted = true;
+            }
+        }
+        return wanted;
+    }
+
     private void registerScaffoldBench(final RegisterGameTestsEvent event)
     {
-        for (int i = 1; i <= 3; i++)
+        final int reps = Integer.getInteger("minecolonies.gametest.reps", 3);
+        for (int i = 1; i <= reps; i++)
         {
-            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy"})
+            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy", "clear", "clear_legacy", "two", "twobig", "onebig", "onebig_legacy"})
             {
                 final String name = "scaffoldbench_" + base + "_" + i;
+                if (!nameWanted(name))
+                {
+                    continue;
+                }
                 final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (base)
                 {
                     case "tall8" -> BuilderScaffoldGameTests::tallWall8;
@@ -960,6 +998,12 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                     case "tall8_legacy" -> BuilderScaffoldGameTests::tallWall8Legacy;
                     case "tall14_legacy" -> BuilderScaffoldGameTests::tallTower14Legacy;
                     case "overhang_legacy" -> BuilderScaffoldGameTests::overhangLegacy;
+                    case "clear" -> BuilderScaffoldGameTests::reachClearL40;
+                    case "clear_legacy" -> BuilderScaffoldGameTests::legacyClearL40;
+                    case "onebig" -> BuilderScaffoldGameTests::oneBuilderBig;
+                    case "onebig_legacy" -> BuilderScaffoldGameTests::oneBuilderBigLegacy;
+                    case "two" -> BuilderScaffoldGameTests::twoBuilders;
+                    case "twobig" -> BuilderScaffoldGameTests::twoBuildersBig;
                     default -> BuilderScaffoldGameTests::sealedRoofLegacy;
                 };
                 event.registerTest(
@@ -1015,6 +1059,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_probe_inside5" -> BuilderScaffoldGameTests::climbInside5;
                 default -> BuilderScaffoldGameTests::stockArrives;
             };
+            if (!nameWanted(name))
+            {
+                continue;
+            }
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),

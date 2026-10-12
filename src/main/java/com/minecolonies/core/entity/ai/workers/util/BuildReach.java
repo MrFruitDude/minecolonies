@@ -109,4 +109,26 @@ public final class BuildReach
         }
         return h;
     }
+
+    /**
+     * Whether a structure of this size may have blocks that a builder on the ground cannot reach: it is taller than the wall he reaches, or its
+     * top layer is so wide that the middle of it is out of reach from the ground around it (a roof).
+     *
+     * @param sizeX     the width of the blueprint.
+     * @param sizeY     the height of the blueprint.
+     * @param sizeZ     the depth of the blueprint.
+     * @param eyeHeight the eye height of the builder above his feet.
+     * @param reach     the reach in blocks.
+     * @return true if the builder may need scaffolding for it (stock is brought along).
+     */
+    public static boolean mayNeedScaffolding(final int sizeX, final int sizeY, final int sizeZ, final double eyeHeight, final double reach)
+    {
+        if (sizeY >= maxHeightNextToWall(eyeHeight, reach) + 2)
+        {
+            return true;
+        }
+        // the middle of the top layer, seen from the ground right next to the footprint
+        final int middle = 1 + (Math.min(sizeX, sizeZ) - 1) / 2;
+        return sizeY >= 3 && !inReachFromFeet(BlockPos.ZERO, eyeHeight, new BlockPos(middle, sizeY - 1, 0), reach);
+    }
 }

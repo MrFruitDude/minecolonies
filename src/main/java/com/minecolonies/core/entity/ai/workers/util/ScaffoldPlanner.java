@@ -134,6 +134,9 @@ public final class ScaffoldPlanner
         final Set<BlockPos> blocked = new HashSet<>(avoid == null ? Set.of() : avoid);
         blocked.addAll(blocks.subList(0, Math.min(blocks.size(), 12)));
 
+        // the blocks that no spot on the ground reaches: what a tower is for. The rest the builder takes from the ground anyway.
+        final List<BlockPos> hard = anyOrder ? hardBlocks(grid, blocks, usable, eyeHeight, r) : blocks;
+
         Plan best = null;
         for (int dy = -(r + 1); dy <= r + 1; dy++)
         {
@@ -149,7 +152,9 @@ public final class ScaffoldPlanner
                     }
                     final BlockPos head = feet.above();
                     final BlockPos floor = feet.below();
-                    if (blocked.contains(feet) || blocked.contains(head) || blocked.contains(floor) || !grid.free(feet) || !grid.free(head) || grid.scaffold(feet) || grid.scaffold(head))
+                    // (the builder climbs into the top cell, so his body is in the top cell and the cell of the spot: the cell above the spot is no concern
+                    // when the blocks that go there come later, a tower may stand right under a slab)
+                    if (blocked.contains(feet) || blocked.contains(floor) || !grid.free(feet) || !grid.free(head) || grid.scaffold(feet) || grid.scaffold(head))
                     {
                         continue;
                     }
@@ -159,7 +164,14 @@ public final class ScaffoldPlanner
                         continue;
                     }
                     final int covered = anyOrder ? BuildReach.countInReach(feet.below(), eyeHeight, blocks, usable) : BuildReach.prefixInReach(feet.below(), eyeHeight, blocks, usable);
-                    final double cost = support.weight() + penaltyOf(grid, feet) + penaltyOf(grid, head) - covered
+                    double value = covered;
+                    if (anyOrder)
+                    {
+                        // a block for the tower counts in full, one that the ground reaches counts a little; blocks that this tower leaves out are another tower
+                        final int hardCovered = BuildReach.countInReach(feet.below(), eyeHeight, hard, usable);
+                        value = hardCovered + EASY_WEIGHT * (covered - hardCovered) - (hardCovered < hard.size() ? MORE_TOWERS_COST : 0.0D);
+                    }
+                    final double cost = support.weight() + penaltyOf(grid, feet) - value
                                           + (!support.cells.isEmpty() && grid.ground(support.cells.get(0).below()) ? NEW_TOWER_COST : 0.0D);
                     if (best == null || cost < best.cost || (cost == best.cost && support.cells.size() < best.cells.size()))
                     {
@@ -169,6 +181,79 @@ public final class ScaffoldPlanner
             }
         }
         return best;
+    }
+
+    /**
+     * What a block counts that a builder reaches from the ground as well (a tower is for the blocks he does not reach), in blocks.
+     */
+    public static final double EASY_WEIGHT = 0.2D;
+
+    /**
+     * What it costs that a tower leaves blocks out that only a tower reaches: another one has to be put up for them (walk, climb, take down).
+     */
+    public static final double MORE_TOWERS_COST = 12.0D;
+
+    /** The most cells of the box around the blocks that are searched for spots on the ground. */
+    private static final int MAX_SEARCH = 60_000;
+
+    /**
+     * The blocks that no spot on the ground reaches: a spot is a cell with a free cell above it on top of ground the builder can walk to.
+     */
+    private static List<BlockPos> hardBlocks(final Grid grid, final List<BlockPos> blocks, final double usable, final double eyeHeight, final int r)
+    {
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+        for (final BlockPos block : blocks)
+        {
+            minX = Math.min(minX, block.getX());
+            minY = Math.min(minY, block.getY());
+            minZ = Math.min(minZ, block.getZ());
+            maxX = Math.max(maxX, block.getX());
+            maxY = Math.max(maxY, block.getY());
+            maxZ = Math.max(maxZ, block.getZ());
+        }
+        minX -= r;
+        maxX += r;
+        minZ -= r;
+        maxZ += r;
+        minY = Math.max(grid.minY() + 1, minY - r - 1);
+        maxY = Math.min(grid.maxY() - 1, maxY + 1);
+        if ((long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1) > MAX_SEARCH)
+        {
+            return blocks;
+        }
+        final List<BlockPos> spots = new ArrayList<>();
+        for (int x = minX; x <= maxX; x++)
+        {
+            for (int z = minZ; z <= maxZ; z++)
+            {
+                for (int y = minY; y <= maxY; y++)
+                {
+                    final BlockPos feet = new BlockPos(x, y, z);
+                    if (grid.ground(feet.below()) && grid.free(feet) && grid.free(feet.above()) && grid.reachable(feet))
+                    {
+                        spots.add(feet);
+                    }
+                }
+            }
+        }
+        final List<BlockPos> hard = new ArrayList<>();
+        for (final BlockPos block : blocks)
+        {
+            boolean easy = false;
+            for (final BlockPos spot : spots)
+            {
+                if (BuildReach.inReachFromFeet(spot, eyeHeight, block, usable))
+                {
+                    easy = true;
+                    break;
+                }
+            }
+            if (!easy)
+            {
+                hard.add(block);
+            }
+        }
+        return hard;
     }
 
     /**

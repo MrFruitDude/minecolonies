@@ -108,6 +108,11 @@ final class BuilderScaffoldGameTests
         boxAudit(helper, "reach_clear_l40", true, 40, true);
     }
 
+    public static void legacyClearL40(final GameTestHelper helper)
+    {
+        boxAudit(helper, "legacy_clear_l40", false, 40, true);
+    }
+
     public static void legacyBoxL40(final GameTestHelper helper)
     {
         boxAudit(helper, "legacy_box_l40", false, 40, false);
@@ -138,10 +143,8 @@ final class BuilderScaffoldGameTests
             {
                 for (int z = 0; z < sz; z++)
                 {
-                    if (solid.at(x, y, z))
-                    {
-                        blueprint.addBlockState(new BlockPos(x, y, z), WorkerEfficiencyGameTests.BUILD_BLOCK.defaultBlockState());
-                    }
+                    // (a cell of a real blueprint that is empty holds air; the default of a new blueprint is a substitution block, which is something else)
+                    blueprint.addBlockState(new BlockPos(x, y, z), solid.at(x, y, z) ? WorkerEfficiencyGameTests.BUILD_BLOCK.defaultBlockState() : Blocks.AIR.defaultBlockState());
                 }
             }
         }
@@ -353,6 +356,10 @@ final class BuilderScaffoldGameTests
                 walked[0] += Math.hypot(now.x - last[0].x, now.z - last[0].z);
                 last[0] = now;
                 watch(live, watch, origin, 32, tick);
+                if (tick == 1)
+                {
+                    Log.getLogger().info("WSCAF {} start gameTime={} origin={} size={}x{}x{} hut={} unsetState={}", name, live.level.getGameTime(), origin, blueprint.getSizeX(), blueprint.getSizeY(), blueprint.getSizeZ(), live.hut.getPosition(), blueprint.getBlockState(new BlockPos(blueprint.getSizeX() - 1, 1, blueprint.getSizeZ() - 1)));
+                }
                 if (tick % 500 == 0)
                 {
                     Log.getLogger().info("WSCAF {} t={} missing={} scaffold={} ledger={} {}", name, tick, missing(live, blueprint, origin), scaffoldInWorld(live, origin), ledgerSize(live), live.ai());
@@ -435,6 +442,17 @@ final class BuilderScaffoldGameTests
     public static void overhangSlab(final GameTestHelper helper)
     {
         tallStructure(helper, "overhang", () -> overhang("overhang"), true, 30_000, true);
+    }
+
+    /** The ring of the big two-builder test with one builder (for the benchmark: what a second builder is worth). */
+    public static void oneBuilderBig(final GameTestHelper helper)
+    {
+        tallStructure(helper, "onebig", () -> shape("onebig", 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10), true, 40_000, true);
+    }
+
+    public static void oneBuilderBigLegacy(final GameTestHelper helper)
+    {
+        tallStructure(helper, "onebig_legacy", () -> shape("onebig_legacy", 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10), false, 40_000, false);
     }
 
     /** The tall tower with the physical reach off: the L3 behaviour (the builder places from the ground), for the benchmark. */
@@ -630,6 +648,10 @@ final class BuilderScaffoldGameTests
             WorkerEfficiencyGameTests.everyTick(live, maxTicks, tick -> {
                 watch(live, watch, origin, 64, tick);
                 doneTick[0] = tick;
+                if (tick == 1)
+                {
+                    Log.getLogger().info("WSCAF {} start gameTime={} origin={} size={}x{}x{} hut={} other={}", name, live.level.getGameTime(), origin, blueprint.getSizeX(), blueprint.getSizeY(), blueprint.getSizeZ(), live.hut.getPosition(), other.getPosition());
+                }
                 if (tick % 500 == 0)
                 {
                     Log.getLogger().info("WSCAF two t={} missing={} scaffold={} ledger={} placedBy={} lead: {} | second: {}", tick, missing(live, blueprint, origin), scaffoldInWorld(live, origin), ledgerSize(live),

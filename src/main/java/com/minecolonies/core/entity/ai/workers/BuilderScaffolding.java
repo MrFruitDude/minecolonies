@@ -401,7 +401,8 @@ public final class BuilderScaffolding
             phase = Phase.WAIT_STOCK;
         }
         ai.worker.getCitizenData().setStatusPosition(target);
-        log("plan for " + target + ": cells=" + plan.cells() + " stand=" + plan.stand() + " covered=" + plan.covered() + " phase=" + phase);
+        log("plan for " + target + ": cells=" + plan.cells() + " stand=" + plan.stand() + " covered=" + plan.covered() + "/" + blocks.size() + " phase=" + phase + " uncovered="
+              + blocks.stream().filter(b -> !BuildReach.inReachFromFeet(plan.stand().below(), ai.worker.getEyeHeight(), b, Math.max(1.0D, WorkerSettings.reach() - ReachSpots.MARGIN))).limit(10).toList());
         return true;
     }
 
@@ -933,7 +934,8 @@ public final class BuilderScaffolding
             base = Math.min(base, other.pos().getY());
         }
         final int baseY = base;
-        if (!ai.walkIntoReachFor(cell, () -> List.of(cell), true,
+        // the spot is picked for the next cells to come down, not just this one: from the top of the column he reaches the whole arm without a step
+        if (!ai.walkIntoReachFor(cell, () -> new ArrayList<>(cellsToTakeDown.subList(0, Math.min(8, cellsToTakeDown.size()))), true,
           feet -> (!feet.below().equals(cell) || descent) && (ledger.contains(feet.below()) || ledger.contains(feet) || feet.getY() <= baseY + 1)))
         {
             return true;
