@@ -27,6 +27,9 @@ public final class BenchRegistrar
         final int reps = BenchEnv.reps();
         final boolean quick = BenchEnv.quick();
 
+        // harness hygiene (runs first, a second of game time): seeded request tokens must not leak into the process-wide recipe manager
+        add(event, "rsb_harness_recipe_tokens", 200, com.minecolonies.core.gametest.RequestSystemGameTests::recipeTokensAreNotReproducibleWhileTokensAreSeeded);
+
         final int[] scales = quick ? new int[] {100, 1000} : new int[] {100, 1000, 10000};
         // micro: scales ascending, each with its warm-up repeat first, all in one test
         add(event, "rsb_micro", 4000 * scales.length * (reps + 2), helper -> {

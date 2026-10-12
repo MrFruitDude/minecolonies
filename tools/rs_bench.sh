@@ -44,17 +44,25 @@ mkdir -p "$raw" "$out"
 export RS_BENCH_ONLY=1 RS_BENCH_MODE="$mode" RS_BENCH_REPS="$reps" RS_BENCH_FLAGS="$flags" RS_BENCH_SEED="$seed" RS_BENCH_OUT="$raw"
 [[ -n "$only" ]] && export RS_BENCH_ONLY_TESTS="$only"
 
-gradle_args=(--offline -Dmaven.repo.local=/mnt/data/mc-mod-ports/rs-maven -x neoFormJoined26.3-1DownloadAssets runGameTestServer)
+gradle_args=(--no-daemon --offline -Dmaven.repo.local=/mnt/data/mc-mod-ports/rs-maven -x neoFormJoined26.3-1DownloadAssets runGameTestServer)
 if [[ -n "$jfr" ]]; then
   # The task takes no --jvm-args; JAVA_TOOL_OPTIONS reaches every JVM of the run (gradle's too, whose small recordings are
   # harmless; the game JVM's is the big one). %p in the file name keeps them apart.
-  export JAVA_TOOL_OPTIONS="-XX:StartFlightRecording=filename=$jfr,settings=profile,dumponexit=true -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints"
+  export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=${TMPDIR:-/tmp} -XX:StartFlightRecording=filename=$jfr,settings=profile,dumponexit=true -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints"
 fi
+
+export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:--Djava.io.tmpdir=${TMPDIR:-/tmp}}"   # sandboxes whose /tmp is read-only
 
 log="$raw/gametest.log"
 echo "rs_bench: mode=$mode reps=$reps flags=$flags seed=$seed sha=$sha$dirty raw=$raw"
 set +e
-flock /mnt/data/anno117-extract/.cc-gametest.lock timeout 3300 ./gradlew "${gradle_args[@]}" > "$log" 2>&1
+# gametest lock outside, shared fork-Gradle lock inside (sandboxed builds cannot ask another sandbox's daemon to release the caches),
+# after waiting for the Gradle cache to be free; --no-daemon so no daemon keeps the caches locked afterwards.
+cache_wait=/home/mrfruitdude/Projects/MineColonies/anno117-re/tools/gradle-cache-wait.sh
+flock /mnt/data/anno117-extract/.cc-gametest.lock bash -c '
+  [ -x "$1" ] && "$1" 9.2.0 5400
+  shift
+  exec flock /mnt/data/anno117-extract/.fork-gradle.lock timeout 3300 ./gradlew "$@"' _ "$cache_wait" "${gradle_args[@]}" > "$log" 2>&1
 status=$?
 set -e
 echo "rs_bench: gametest server exit status $status (log: $log)"

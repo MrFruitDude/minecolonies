@@ -204,6 +204,35 @@ public final class RequestSystemGameTests
         helper.succeed();
     }
 
+    /**
+     * The benchmark makes request token ids reproducible ({@link StandardToken#seedForBenchmark}); the recipe manager is
+     * process-wide and outlives every benchmark repeat, so recipe tokens must stay random: with reproducible ones a recipe
+     * of a later repeat replaced an unrelated one under the same token (a sawmill that "knew" crimson hyphae instead of
+     * planks, and a request that waited forever for it).
+     */
+    public static void recipeTokensAreNotReproducibleWhileTokensAreSeeded(final GameTestHelper helper)
+    {
+        final var manager = IColonyManager.getInstance().getRecipeManager();
+        try
+        {
+            StandardToken.seedForBenchmark(424242L);
+            final RecipeStorage first = RecipeStorage.builder().withRecipeId(null)
+              .withInputs(List.of(new ItemStorage(new ItemStack(Items.OAK_LOG, 1)))).withPrimaryOutput(new ItemStack(Items.OAK_PLANKS, 4)).build();
+            final IToken<?> firstToken = manager.checkOrAddRecipe(first);
+            StandardToken.seedForBenchmark(424242L);
+            final RecipeStorage second = RecipeStorage.builder().withRecipeId(null)
+              .withInputs(List.of(new ItemStorage(new ItemStack(Items.COBBLESTONE, 1)))).withPrimaryOutput(new ItemStack(Items.STONE_BRICKS, 1)).build();
+            final IToken<?> secondToken = manager.checkOrAddRecipe(second);
+            helper.assertTrue(!firstToken.equals(secondToken), "two different recipes were given the same token while tokens were seeded");
+            helper.assertTrue(first.equals(manager.getRecipe(firstToken)), "the first recipe was replaced under its token by a later, unrelated recipe");
+        }
+        finally
+        {
+            StandardToken.seedForBenchmark(null);
+        }
+        helper.succeed();
+    }
+
     // ------------------------------------------------------------------ 3: minimum stock removal
 
     public static void minimumStockRemovalCancelsItsRequest(final GameTestHelper helper)

@@ -330,7 +330,8 @@ public class RecipeStorage implements IRecipeStorage
         this.alternateOutputs = !builder.alternateOutputs.isEmpty() ? builder.alternateOutputs : ImmutableList.of();
         this.gridSize = builder.gridSize;
         this.intermediate = builder.intermediate;
-        this.token = builder.token == null ? StandardFactoryController.getInstance().getNewInstance(TypeConstants.ITOKEN) : builder.token;
+        // Always random: the recipe manager is process-wide, so recipe tokens must not repeat when request tokens are made reproducible (benchmark).
+        this.token = builder.token == null ? StandardFactoryController.getInstance().getNewInstance(TypeConstants.ITOKEN, java.util.UUID.randomUUID()) : builder.token;
         this.recipeSource = builder.recipeSource;
         this.lootTable = builder.lootTable;
         this.requiredTool = builder.requiredTool;

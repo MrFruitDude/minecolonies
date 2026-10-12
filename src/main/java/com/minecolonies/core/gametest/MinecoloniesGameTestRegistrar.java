@@ -730,6 +730,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::completedRequestsAreListedOnce),
           isolatedColonyData(event, "rs_completed_once"));
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_recipe_tokens_seeded"),
+          info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::recipeTokensAreNotReproducibleWhileTokensAreSeeded),
+          isolatedColonyData(event, "rs_recipe_tokens_seeded"));
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_min_stock_remove"),
           info -> new MinecoloniesGameTestInstance(info, RequestSystemGameTests::minimumStockRemovalCancelsItsRequest),
           isolatedColonyData(event, "rs_min_stock_remove"));
