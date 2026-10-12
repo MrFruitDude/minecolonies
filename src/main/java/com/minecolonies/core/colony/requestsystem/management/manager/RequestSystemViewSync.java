@@ -794,13 +794,36 @@ public final class RequestSystemViewSync
         return ((StandardDataStoreManager) manager.getDataStoreManager()).getStoreMap();
     }
 
+    /**
+     * The write buffer {@link #bytes} reuses: a snapshot makes thousands of small byte arrays, and each used to start from a new
+     * buffer that grew by doubling. Kept per thread (the sync runs on the server thread, a test may call it from another).
+     */
+    private static final ThreadLocal<io.netty.buffer.ByteBuf> SCRATCH = ThreadLocal.withInitial(() -> Unpooled.buffer(1024));
+
+    /**
+     * A scratch buffer that grew past this is dropped after use instead of being kept (one full payload of a huge colony).
+     */
+    private static final int SCRATCH_KEEP_MAX = 1 << 20;
+
     private static byte[] bytes(final RegistryAccess ra, final Consumer<RegistryFriendlyByteBuf> writer)
     {
-        final RegistryFriendlyByteBuf b = new RegistryFriendlyByteBuf(Unpooled.buffer(), ra);
-        writer.accept(b);
-        final byte[] out = new byte[b.writerIndex()];
-        b.getBytes(0, out);
-        return out;
+        final io.netty.buffer.ByteBuf scratch = SCRATCH.get();
+        scratch.clear();
+        final RegistryFriendlyByteBuf b = new RegistryFriendlyByteBuf(scratch, ra);
+        try
+        {
+            writer.accept(b);
+            final byte[] out = new byte[b.writerIndex()];
+            b.getBytes(0, out);
+            return out;
+        }
+        finally
+        {
+            if (scratch.capacity() > SCRATCH_KEEP_MAX)
+            {
+                SCRATCH.set(Unpooled.buffer(1024));
+            }
+        }
     }
 
     @Nullable
