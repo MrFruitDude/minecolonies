@@ -279,12 +279,13 @@ public class ResolverHandler implements IResolverHandler
     @Override
     public IRequestResolver<? extends IRequestable> getResolver(final IToken<?> token)
     {
-        if (!manager.getRequestResolverIdentitiesDataStore().getIdentities().containsKey(token))
+        final IRequestResolver<? extends IRequestable> resolver = manager.getRequestResolverIdentitiesDataStore().getIdentities().get(token);
+        if (resolver == null)
         {
             throw new IllegalArgumentException("The given token for a resolver is not known to this manager!");
         }
 
-        return manager.getRequestResolverIdentitiesDataStore().getIdentities().get(token);
+        return resolver;
     }
 
     @Override

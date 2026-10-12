@@ -47,15 +47,17 @@ public class StandardDataStoreManager implements IDataStoreManager
     @Override
     public <T extends IDataStore> T get(final IToken<?> id, final Supplier<T> factory)
     {
-        if (!storeMap.containsKey(id))
+        final IDataStore existing = storeMap.get(id);
+        if (existing != null)
         {
-            final T defaultInstance = factory.get();
-
-            defaultInstance.setId(id);
-            storeMap.put(id, defaultInstance);
+            return (T) existing;
         }
 
-        return (T) storeMap.get(id);
+        final T defaultInstance = factory.get();
+
+        defaultInstance.setId(id);
+        storeMap.put(id, defaultInstance);
+        return defaultInstance;
     }
 
     /**
