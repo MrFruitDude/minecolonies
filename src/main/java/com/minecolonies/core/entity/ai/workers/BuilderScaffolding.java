@@ -152,11 +152,16 @@ public final class BuilderScaffolding
     }
 
     /**
-     * Whether there are no scaffolding items to build a tower with: none on him, none in his hut.
+     * Whether there is no scaffolding to build a tower with: none on him, none in his hut, none standing in towers of his that could be taken down for it.
      */
     public boolean hasNoItems()
     {
-        return inInventory() + inHut() <= 0;
+        if (inInventory() + inHut() > 0)
+        {
+            return false;
+        }
+        final IBuilderWorkOrder order = ai.scaffoldOrder();
+        return order == null || order.getScaffolds().components(ai.building.getPosition()).isEmpty();
     }
 
     public boolean denied()
