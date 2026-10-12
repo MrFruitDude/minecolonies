@@ -338,17 +338,17 @@ public final class BuilderScaffolding
         final int stock = WorkerSettings.scaffoldStock();
         final List<BlockPos> blocks = ai.workAhead(target, PLAN_LOOKAHEAD);
         ScaffoldPlanner.Plan found = ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, stock, ai.servesAnyOrder());
+        if (found != null && !order.getScaffolds().isEmpty() && inInventory() + inHut() < found.cells().size())
+        {
+            // the items for the tower are not there: towers of his own that serve none of the blocks he works on next come down first (their items go
+            // back to his hut) instead of waiting for items that nobody brings (everything he has is up in towers that are of no use now)
+            reclaimIdleTowers(order, found, blocks);
+        }
         if (found == null && !order.getScaffolds().isEmpty()
               && ScaffoldPlanner.plan(new WorldGrid(order.getScaffolds()), blocks, WorkerSettings.reach(), ai.worker.getEyeHeight(), null, 128, ai.servesAnyOrder()) != null)
         {
             // the stock is what is short: towers that nobody stands on or climbs come down first (their items go back to the hut), then another try
-            final java.util.Set<BlockPos> occupied = new java.util.HashSet<>();
-            for (final com.minecolonies.api.entity.citizen.AbstractEntityCitizen citizen : ai.world.getEntitiesOfClass(com.minecolonies.api.entity.citizen.AbstractEntityCitizen.class,
-              new net.minecraft.world.phys.AABB(ai.worker.blockPosition()).inflate(40.0D)))
-            {
-                occupied.add(citizen.blockPosition().below());
-                occupied.add(citizen.blockPosition());
-            }
+            final java.util.Set<BlockPos> occupied = occupiedCells();
             // whole towers only: a tower that loses its lower cells while somebody stands on its upper ones would collapse
             final java.util.Set<BlockPos> free = new java.util.HashSet<>();
             for (final List<ScaffoldLedger.Cell> tower : order.getScaffolds().components(null))
@@ -406,6 +406,66 @@ public final class BuilderScaffolding
         log("plan for " + target + ": cells=" + plan.cells() + " stand=" + plan.stand() + " covered=" + plan.covered() + "/" + blocks.size() + " phase=" + phase + " uncovered="
               + blocks.stream().filter(b -> !BuildReach.inReachFromFeet(plan.stand().below(), ai.worker.getEyeHeight(), b, Math.max(1.0D, WorkerSettings.reach() - ReachSpots.MARGIN))).limit(10).toList());
         return true;
+    }
+
+    /**
+     * The cells where a citizen stands, or just below.
+     */
+    private java.util.Set<BlockPos> occupiedCells()
+    {
+        final java.util.Set<BlockPos> occupied = new java.util.HashSet<>();
+        for (final com.minecolonies.api.entity.citizen.AbstractEntityCitizen citizen : ai.world.getEntitiesOfClass(com.minecolonies.api.entity.citizen.AbstractEntityCitizen.class,
+          new net.minecraft.world.phys.AABB(ai.worker.blockPosition()).inflate(40.0D)))
+        {
+            occupied.add(citizen.blockPosition().below());
+            occupied.add(citizen.blockPosition());
+        }
+        return occupied;
+    }
+
+    /**
+     * Takes down the towers of this builder that nobody is on and that serve none of the next blocks, and are no support of the plan (so the
+     * items are back in his hut).
+     *
+     * @return the number of scaffolding blocks taken down.
+     */
+    private int reclaimIdleTowers(final IBuilderWorkOrder order, final ScaffoldPlanner.Plan plan, final List<BlockPos> blocks)
+    {
+        final ScaffoldLedger ledger = order.getScaffolds();
+        final java.util.Set<BlockPos> occupied = occupiedCells();
+        final List<BlockPos> ahead = ai.peekWorkAhead(ai.servesAnyOrder() ? 48 : 4);
+        final double eye = ai.worker.getEyeHeight();
+        final double usable = Math.max(1.0D, WorkerSettings.reach() - ReachSpots.MARGIN);
+        final BlockPos feet = ai.worker.blockPosition();
+        final BlockPos hut = ai.building.getPosition();
+        final java.util.Set<BlockPos> free = new java.util.HashSet<>();
+        for (final List<ScaffoldLedger.Cell> tower : ledger.components(null))
+        {
+            boolean mine = true;
+            boolean near = false;
+            for (final ScaffoldLedger.Cell cell : tower)
+            {
+                mine &= cell.hut().equals(hut);
+                near |= occupied.contains(cell.pos()) || occupied.contains(cell.pos().above());
+                for (final BlockPos planned : plan.cells())
+                {
+                    near |= planned.distManhattan(cell.pos()) <= 1;
+                }
+                near |= plan.stand().below().distManhattan(cell.pos()) <= 1;
+            }
+            if (mine && !near && !inUse(tower, feet, ahead, eye, usable))
+            {
+                tower.forEach(c -> free.add(c.pos()));
+            }
+        }
+        if (free.isEmpty())
+        {
+            return 0;
+        }
+        final int removed = ScaffoldSweeper.sweep(ai.worker.getCitizenColonyHandler().getColonyOrRegister(), ledger, cell -> free.contains(cell.pos()), 256);
+        log("took down " + removed + " blocks of idle towers for the plan at " + plan.stand() + " (hut " + inHut() + " inventory " + inInventory() + " needs " + plan.cells().size() + ")");
+        ai.forgetWalkable();
+        return removed;
     }
 
     /**

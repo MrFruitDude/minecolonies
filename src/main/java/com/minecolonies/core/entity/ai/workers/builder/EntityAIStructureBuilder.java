@@ -307,6 +307,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     {
         BlockPos spot = null;
         long since = 0L;
+        BlockPos from = null;
         long budget = 100L;
         final Set<BlockPos> bad = new HashSet<>();
         long badSince = 0L;
@@ -506,6 +507,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             // a spot the unstuck ladder or a tower picked
             walk.spot = workFrom;
             walk.since = now;
+            walk.from = worker.blockPosition();
             walk.lastPosition = null;
             walk.budget = 100L + 12L * (long) Math.ceil(ReachSpots.walkCost(worker.blockPosition(), workFrom));
         }
@@ -515,8 +517,15 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             {
                 return false;
             }
-            final List<ReachSpots.Spot> spots = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(),
-              p -> !walk.bad.contains(p) && canWalkTo(p) && (inBlocks || hasWayDown(p)) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
+            final List<BlockPos> aheadNow = ahead.get();
+            // (spots outside the volume of the structure first: inside it he is shut in when the walls come up around him)
+            List<ReachSpots.Spot> spots = inBlocks ? List.of() : ReachSpots.best(world, aheadNow, reach, worker.getEyeHeight(), worker.blockPosition(),
+              p -> !walk.bad.contains(p) && !insideStructure(p) && canWalkTo(p) && hasWayDown(p) && (accept == null || accept.test(p)), 1, false, servesAnyOrder());
+            if (spots.isEmpty())
+            {
+                spots = ReachSpots.best(world, aheadNow, reach, worker.getEyeHeight(), worker.blockPosition(),
+                  p -> !walk.bad.contains(p) && canWalkTo(p) && (inBlocks || hasWayDown(p)) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
+            }
             if (spots.isEmpty())
             {
                 // nothing to stand on within reach of the block: this is a job for scaffolding
@@ -546,6 +555,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             }
             walk.spot = spots.get(0).feet();
             walk.since = now;
+            walk.from = worker.blockPosition();
             walk.budget = 100L + 12L * (long) Math.ceil(spots.get(0).walk());
             walk.lastPosition = null;
             walk.noSpotSince = 0L;
@@ -561,7 +571,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         if (walked != 0)
         {
             scaffold.note("walk to " + walk.spot + " ended (" + walked + ") at " + worker.blockPosition() + " for " + target + " nav stuck=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n && n.isStuck())
-                            + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-") + columnDescription(walk.spot));
+                            + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-") + columnDescription(walk.spot)
+                            + " model=" + StandSpots.route(world, walk.from == null ? worker.blockPosition() : walk.from, walk.spot, 28, 30000).stream().map(BlockPos::toShortString).toList());
             // the walk is over, and the block is still out of reach: this spot does not work
             walk.bad.add(walk.spot);
                 walk.badSince = world.getGameTime();
@@ -1177,8 +1188,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             {
                 dropBatch();
             }
-            setDelay(40);
-            return getState();
+            return waitAtTheSite();
         }
 
         ensureHandler(order, lead, stage);
@@ -1195,8 +1205,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             if (collab.isScanExhausted())
             {
-                setDelay(40);
-                return getState();
+                return waitAtTheSite();
             }
             final Map<ItemStorage, Integer> stockMemo = new HashMap<>();
             final int room = (int) Math.max(1, InventoryUtils.openSlotCount(worker.getInventoryCitizen()) - MIN_OPEN_SLOTS);
@@ -1208,8 +1217,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
               assistGaveUp::contains);
             if (plan.isEmpty())
             {
-                setDelay(40);
-                return getState();
+                return waitAtTheSite();
             }
             gatherFromLead = false;
             gatherSteps = 0;
@@ -1230,6 +1238,54 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             }
         }
         return ASSIST_WORK;
+    }
+
+
+    /**
+     * A helper with nothing to lease waits at the site, but not on a tower: the tower cannot come down under him, and the lead may be waiting for it.
+     */
+    private IAIState waitAtTheSite()
+    {
+        stepOffScaffolding();
+        setDelay(40);
+        return getState();
+    }
+
+    /**
+     * A builder who stands on or in scaffolding that he has no use for climbs down to the foot of it.
+     *
+     * @return true if he is on his way down.
+     */
+    private boolean stepOffScaffolding()
+    {
+        final IBuilderWorkOrder order = scaffoldOrder();
+        if (order == null || order.getScaffolds().isEmpty())
+        {
+            return false;
+        }
+        final com.minecolonies.core.colony.workorders.scaffold.ScaffoldLedger ledger = order.getScaffolds();
+        final BlockPos feet = worker.blockPosition();
+        if (!ledger.contains(feet) && !ledger.contains(feet.below()))
+        {
+            return false;
+        }
+        int base = feet.getY();
+        for (final com.minecolonies.core.colony.workorders.scaffold.ScaffoldLedger.Cell cell : ledger.all())
+        {
+            if (Math.abs(cell.pos().getX() - feet.getX()) <= 12 && Math.abs(cell.pos().getZ() - feet.getZ()) <= 12)
+            {
+                base = Math.min(base, cell.pos().getY());
+            }
+        }
+        final int baseY = base;
+        final BlockPos ground = StandSpots.nearest(world, feet, 10, feet.getY() - baseY + 2, 0,
+          p -> p.getY() <= baseY + 1 && !ledger.contains(p) && !ledger.contains(p.below()) && !world.getBlockState(p.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) && canWalkTo(p));
+        if (ground == null)
+        {
+            return false;
+        }
+        EntityNavigationUtils.walkToBlock(worker, ground);
+        return true;
     }
 
     /**
@@ -1320,6 +1376,48 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         }
     }
 
+
+
+    /**
+     * Whether the hut of the lead holds any of the materials (that are not claimed for others).
+     */
+    private boolean hutHoldsAnyOf(final AbstractBuildingStructureBuilder lead, final Map<ItemStorage, Integer> missing)
+    {
+        for (final ItemStorage key : missing.keySet())
+        {
+            final ItemStack kind = key.getItemStack();
+            if (InventoryUtils.getItemCountInItemHandler(lead.getItemHandlerCap(), sameAs(kind)) - AssistReservations.heldByOthers(lead, building, kind) > 0)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Gets the helper to the lead for the hand-over of materials: close enough to hand things up or down (the lead may stand on a tower: the
+     * helper waits at the foot of it, he does not climb up to him).
+     *
+     * @return true once he is there.
+     */
+    private boolean walkToLeadForHandOver(final net.minecraft.world.entity.LivingEntity lead)
+    {
+        final BlockPos at = lead.blockPosition();
+        final double horizontal = Math.hypot(worker.getX() - lead.getX(), worker.getZ() - lead.getZ());
+        if (horizontal <= 4.0D && Math.abs(worker.getY() - lead.getY()) <= 10.0D)
+        {
+            return true;
+        }
+        final com.minecolonies.core.colony.workorders.scaffold.ScaffoldLedger ledger = assistOrder == null ? null : assistOrder.getScaffolds();
+        BlockPos ground = at;
+        // down to the foot of the scaffolding he stands on
+        for (int i = 0; i < 40 && ledger != null && (ledger.contains(ground) || ledger.contains(ground.below()) || world.getBlockState(ground.below()).isAir()); i++)
+        {
+            ground = ground.below();
+        }
+        return EntityNavigationUtils.walkToPos(worker, ground, 3, false);
+    }
+
     /**
      * Takes the materials for the batch out of the lead's hut, or from the lead himself.
      */
@@ -1332,6 +1430,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         final AbstractBuildingStructureBuilder lead = leadOf(assistOrder);
         assistOrder.getCollab().renew(building.getID(), world.getGameTime() + BuilderCollab.leaseTicks());
         final boolean giveUp = ++gatherSteps > MAX_GATHER_STEPS;
+        if (!giveUp && !gatherFromLead && !missingForBatch().isEmpty() && !hutHoldsAnyOf(lead, missingForBatch()))
+        {
+            // nothing of it is in the hut (the lead took it all with him): no walk to the hut, the lead has it
+            gatherFromLead = true;
+        }
         if (!giveUp && !gatherFromLead && !missingForBatch().isEmpty())
         {
             // first from the lead's hut ...
@@ -1352,7 +1455,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             final ICitizenData leadCitizen = leadCitizen(lead);
             if (leadCitizen != null)
             {
-                if (leadCitizen.getEntity().isPresent() && !EntityNavigationUtils.walkToPos(worker, leadCitizen.getEntity().get().blockPosition(), 3, false))
+                if (leadCitizen.getEntity().isPresent() && !walkToLeadForHandOver(leadCitizen.getEntity().get()))
                 {
                     return getState();
                 }

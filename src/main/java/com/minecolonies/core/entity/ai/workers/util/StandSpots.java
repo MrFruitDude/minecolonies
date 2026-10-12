@@ -122,6 +122,28 @@ public final class StandSpots
      */
     public static Set<BlockPos> reachableFrom(final Level level, final BlockPos start, final int radius, final int maxNodes)
     {
+        return reachableFrom(level, start, radius, maxNodes, null);
+    }
+
+    /**
+     * Only for the logs: the way the search found to a position (the positions in order, start first), or an empty list.
+     */
+    public static java.util.List<BlockPos> route(final Level level, final BlockPos start, final BlockPos goal, final int radius, final int maxNodes)
+    {
+        final java.util.Map<BlockPos, BlockPos> parents = new java.util.HashMap<>();
+        reachableFrom(level, start, radius, maxNodes, parents);
+        final java.util.List<BlockPos> path = new java.util.ArrayList<>();
+        BlockPos at = goal;
+        while (at != null && path.size() < 200)
+        {
+            path.add(0, at);
+            at = parents.get(at);
+        }
+        return path.isEmpty() || !path.get(0).equals(start) ? java.util.List.of() : path;
+    }
+
+    private static Set<BlockPos> reachableFrom(final Level level, final BlockPos start, final int radius, final int maxNodes, @Nullable final java.util.Map<BlockPos, BlockPos> parents)
+    {
         final Set<BlockPos> seen = new HashSet<>();
         final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
         seen.add(start);
@@ -131,12 +153,12 @@ public final class StandSpots
             final BlockPos at = queue.poll();
             if (climbable(level, at))
             {
-                visit(level, at.above(), start, radius, seen, queue, climbable(level, at.above()) || canStandAt(level, at.above()));
-                visit(level, at.below(), start, radius, seen, queue, climbable(level, at.below()) || canStandAt(level, at.below()));
+                visit(parents, at, level, at.above(), start, radius, seen, queue, climbable(level, at.above()) || canStandAt(level, at.above()));
+                visit(parents, at, level, at.below(), start, radius, seen, queue, climbable(level, at.below()) || canStandAt(level, at.below()));
                 for (final Direction dir : Direction.Plane.HORIZONTAL)
                 {
                     final BlockPos near = at.relative(dir);
-                    visit(level, near, start, radius, seen, queue, climbable(level, near) || canStandAt(level, near));
+                    visit(parents, at, level, near, start, radius, seen, queue, climbable(level, near) || canStandAt(level, near));
                 }
                 continue;
             }
@@ -145,24 +167,25 @@ public final class StandSpots
                 final BlockPos near = at.relative(dir);
                 if (climbable(level, near) || canStandAt(level, near))
                 {
-                    visit(level, near, start, radius, seen, queue, true);
+                    visit(parents, at, level, near, start, radius, seen, queue, true);
                 }
                 else if (canStandAt(level, near.above()) && isFree(level, at.above(2)))
                 {
-                    visit(level, near.above(), start, radius, seen, queue, true);
+                    visit(parents, at, level, near.above(), start, radius, seen, queue, true);
                 }
                 else if (swimmable(level, near))
                 {
-                    visit(level, near, start, radius, seen, queue, true);
+                    visit(parents, at, level, near, start, radius, seen, queue, true);
                 }
-                else if (isFree(level, near))
+                else if (isFree(level, near) && !level.getBlockState(at.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING))
                 {
-                    // a step down (or a short drop, the paths of citizens allow drops, six are taken here)
+                    // a step down (or a short drop, the paths of citizens allow drops, six are taken here); not off the top of scaffolding: the paths do not
+                    // leave a tower that way (a spot in a closed building that is only reached by a drop from a tower is no spot)
                     for (int drop = 1; drop <= 6 && isFree(level, near.below(drop - 1)); drop++)
                     {
                         if (canStandAt(level, near.below(drop)))
                         {
-                            visit(level, near.below(drop), start, radius, seen, queue, true);
+                            visit(parents, at, level, near.below(drop), start, radius, seen, queue, true);
                             break;
                         }
                     }
@@ -171,11 +194,11 @@ public final class StandSpots
             // a climbable block under the feet or above them is a way down or up
             if (climbable(level, at.above()))
             {
-                visit(level, at.above(), start, radius, seen, queue, true);
+                visit(parents, at, level, at.above(), start, radius, seen, queue, true);
             }
             if (climbable(level, at.below()))
             {
-                visit(level, at.below(), start, radius, seen, queue, true);
+                visit(parents, at, level, at.below(), start, radius, seen, queue, true);
             }
         }
         return seen;
@@ -190,7 +213,7 @@ public final class StandSpots
                  && level.getBlockState(feet.above()).getCollisionShape(level, feet.above(), CollisionContext.empty()).isEmpty();
     }
 
-    private static void visit(final Level level, final BlockPos pos, final BlockPos start, final int radius, final Set<BlockPos> seen, final ArrayDeque<BlockPos> queue, final boolean allowed)
+    private static void visit(@Nullable final java.util.Map<BlockPos, BlockPos> parents, final BlockPos from, final Level level, final BlockPos pos, final BlockPos start, final int radius, final Set<BlockPos> seen, final ArrayDeque<BlockPos> queue, final boolean allowed)
     {
         if (!allowed || Math.abs(pos.getX() - start.getX()) > radius || Math.abs(pos.getZ() - start.getZ()) > radius || Math.abs(pos.getY() - start.getY()) > radius * 2)
         {
@@ -198,6 +221,10 @@ public final class StandSpots
         }
         if (seen.add(pos))
         {
+            if (parents != null)
+            {
+                parents.put(pos, from);
+            }
             queue.add(pos);
         }
     }
