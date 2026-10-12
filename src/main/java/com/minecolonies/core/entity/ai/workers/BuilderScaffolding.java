@@ -302,11 +302,20 @@ public final class BuilderScaffolding
             return;
         }
         final AbstractBuildingStructureBuilder hut = ai.building;
-        final int want = WorkerSettings.scaffoldStock() - inInventory();
+        final int want = carryTarget() - inInventory();
         if (want > 0 && hut.getItemHandlerCap() != null)
         {
             ItemMover.move(hut.getItemHandlerCap(), ai.worker.getInventoryCitizen(), stack -> stack.is(Items.SCAFFOLDING), want);
         }
+    }
+
+    /**
+     * How many scaffolding items he carries when he fetches them from the hut: two towers' worth (a trip to the hut for the next tower costs more than
+     * the tower does).
+     */
+    private static int carryTarget()
+    {
+        return Math.min(64, Integer.getInteger("minecolonies.carrymult", 2) * WorkerSettings.scaffoldStock());
     }
 
     // ------------------------------------------------------------------ starting a tower
@@ -644,7 +653,7 @@ public final class BuilderScaffolding
             return true;
         }
         final AbstractBuildingStructureBuilder hut = ai.building;
-        final int want = Math.max(plan.cells().size(), Math.min(WorkerSettings.scaffoldStock(), inHut() + inInventory())) - inInventory();
+        final int want = Math.max(plan.cells().size(), Math.min(carryTarget(), inHut() + inInventory())) - inInventory();
         if (want > 0 && hut.getItemHandlerCap() != null)
         {
             ItemMover.move(hut.getItemHandlerCap(), ai.worker.getInventoryCitizen(), stack -> stack.is(Items.SCAFFOLDING), want);

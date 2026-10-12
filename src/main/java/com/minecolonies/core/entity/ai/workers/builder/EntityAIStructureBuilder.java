@@ -708,6 +708,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     @Override
     protected boolean tryScaffold(final BlockPos target)
     {
+        if (Boolean.getBoolean("minecolonies.helper.notowers") && assistOrder != null && !building.hasWorkOrder())
+        {
+            return false;
+        }
         return usesPhysicalReach() && scaffold.start(target);
     }
 
@@ -999,7 +1003,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     /**
      * Positions right after the lead's cursor that helpers leave to the lead.
      */
-    private static final int LEAD_BUFFER = 4;
+    private static final int LEAD_BUFFER = Integer.getInteger("minecolonies.leadbuffer", 4);
 
     private WorkOrderCollab collabCache     = null;
     private long            collabCacheTick = -1;
@@ -1599,6 +1603,19 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             return INVENTORY_FULL;
         }
 
+        if (usesPhysicalReach() && batch.size() > 1 && !canReachNow(batch.get(0).world()))
+        {
+            // what he reaches from where he stands first, like the lead does: a walk for every position in the order of the batch is most of the helper's time
+            for (final LeaseAllocator.Planned other : batch)
+            {
+                if (canReachNow(other.world()) && !assistGaveUp.contains(other.world()))
+                {
+                    batch.remove(other);
+                    batch.add(0, other);
+                    break;
+                }
+            }
+        }
         final LeaseAllocator.Planned planned = batch.get(0);
         final BlockState worldState = world.getBlockState(planned.world());
         if (batchStage == BuildingProgressStage.CLEAR ? (worldState.isAir() || !worldState.getFluidState().isEmpty())

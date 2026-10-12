@@ -702,7 +702,7 @@ final class BuilderScaffoldGameTests
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
         WorkerEfficiencyGameTests.scene(helper, "WSCAF " + name, live -> {
-            BuilderCollab.overrideForTests(true, 3, 40, 10, 100_000, Integer.getInteger("minecolonies.gametest.lease", 8), 2400);
+            BuilderCollab.overrideForTests(!Boolean.getBoolean("minecolonies.gametest.nocollab"), 3, 40, 10, 100_000, Integer.getInteger("minecolonies.gametest.lease", 8), 2400);
             final BuildingBuilder other = live.colony.getServerBuildingManager().getBuildings().values().stream()
                                             .filter(b -> b instanceof BuildingBuilder && b != live.hut).map(b -> (BuildingBuilder) b).findFirst().orElseThrow();
             final ICitizenData second = other.getModule(BuildingModules.BUILDER_WORK).getAssignedCitizen().get(0);
