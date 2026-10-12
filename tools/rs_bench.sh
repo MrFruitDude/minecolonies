@@ -48,10 +48,10 @@ gradle_args=(--no-daemon --offline -Dmaven.repo.local=/mnt/data/mc-mod-ports/rs-
 if [[ -n "$jfr" ]]; then
   # The task takes no --jvm-args; JAVA_TOOL_OPTIONS reaches every JVM of the run (gradle's too, whose small recordings are
   # harmless; the game JVM's is the big one). %p in the file name keeps them apart.
-  export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=${TMPDIR:-/tmp} -XX:StartFlightRecording=filename=$jfr,settings=profile,dumponexit=true -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints"
+  export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=${TMPDIR:-/tmp} -Djna.tmpdir=${TMPDIR:-/tmp} -XX:StartFlightRecording=filename=$jfr,settings=profile,dumponexit=true -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints"
 fi
 
-export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:--Djava.io.tmpdir=${TMPDIR:-/tmp}}"   # sandboxes whose /tmp is read-only
+export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:--Djava.io.tmpdir=${TMPDIR:-/tmp} -Djna.tmpdir=${TMPDIR:-/tmp}}"   # sandboxes whose /tmp is read-only
 
 log="$raw/gametest.log"
 echo "rs_bench: mode=$mode reps=$reps flags=$flags seed=$seed sha=$sha$dirty raw=$raw"
@@ -64,6 +64,17 @@ flock /mnt/data/anno117-extract/.cc-gametest.lock bash -c '
   shift
   exec flock /mnt/data/anno117-extract/.fork-gradle.lock timeout 3300 ./gradlew "$@"' _ "$cache_wait" "${gradle_args[@]}" > "$log" 2>&1
 status=$?
+# A Gradle cache lock held by a build in another sandbox ("Timeout waiting to lock ... Owner PID") is not our failure: wait (no tight loop) and run again.
+for attempt in 1 2 3 4 5 6; do
+  grep -q "Timeout waiting to lock" "$log" || break
+  echo "rs_bench: Gradle cache busy (another build), waiting 240 s before attempt $((attempt + 1))" >&2
+  sleep 240
+  flock /mnt/data/anno117-extract/.cc-gametest.lock bash -c '
+    [ -x "$1" ] && "$1" 9.2.0 5400
+    shift
+    exec flock /mnt/data/anno117-extract/.fork-gradle.lock timeout 3300 ./gradlew "$@"' _ "$cache_wait" "${gradle_args[@]}" > "$log" 2>&1
+  status=$?
+done
 set -e
 echo "rs_bench: gametest server exit status $status (log: $log)"
 
