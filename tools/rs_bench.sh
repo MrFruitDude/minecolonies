@@ -56,13 +56,13 @@ export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:--Djava.io.tmpdir=${TMPDIR:-/tmp} 
 log="$raw/gametest.log"
 echo "rs_bench: mode=$mode reps=$reps flags=$flags seed=$seed sha=$sha$dirty raw=$raw"
 set +e
-# gametest lock outside, shared fork-Gradle lock inside (sandboxed builds cannot ask another sandbox's daemon to release the caches),
-# after waiting for the Gradle cache to be free; --no-daemon so no daemon keeps the caches locked afterwards.
+# gametest lock outside, the one global Gradle lock inside (every sandboxed Gradle build, fork or CC, shares ~/.gradle/caches/journal-1 and
+# cannot ask another sandbox's daemon to release it), after waiting for the Gradle caches to be free; --no-daemon so no daemon keeps them locked.
 cache_wait=/home/mrfruitdude/Projects/MineColonies/anno117-re/tools/gradle-cache-wait.sh
 flock /mnt/data/anno117-extract/.cc-gametest.lock bash -c '
   [ -x "$1" ] && "$1" 9.2.0 5400
   shift
-  exec flock /mnt/data/anno117-extract/.fork-gradle.lock timeout 3300 ./gradlew "$@"' _ "$cache_wait" "${gradle_args[@]}" > "$log" 2>&1
+  exec flock /mnt/data/anno117-extract/.gradle-global.lock timeout 3300 ./gradlew "$@"' _ "$cache_wait" "${gradle_args[@]}" > "$log" 2>&1
 status=$?
 # A Gradle cache lock held by a build in another sandbox ("Timeout waiting to lock ... Owner PID") is not our failure: wait (no tight loop) and run again.
 for attempt in 1 2 3 4 5 6; do
@@ -72,7 +72,7 @@ for attempt in 1 2 3 4 5 6; do
   flock /mnt/data/anno117-extract/.cc-gametest.lock bash -c '
     [ -x "$1" ] && "$1" 9.2.0 5400
     shift
-    exec flock /mnt/data/anno117-extract/.fork-gradle.lock timeout 3300 ./gradlew "$@"' _ "$cache_wait" "${gradle_args[@]}" > "$log" 2>&1
+    exec flock /mnt/data/anno117-extract/.gradle-global.lock timeout 3300 ./gradlew "$@"' _ "$cache_wait" "${gradle_args[@]}" > "$log" 2>&1
   status=$?
 done
 set -e
