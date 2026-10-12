@@ -77,7 +77,9 @@ public abstract class DeliverymenRequestResolver<R extends IRequestable> extends
         {
             return false;
         }
-        final IWareHouse requesterWarehouse = colony.getServerBuildingManager().getBuilding(requestToCheck.getRequester().getLocation().getInDimensionLocation(), IWareHouse.class);
+        // The requester is any building: ask by type test, not by a cast that throws (and logs a stack trace) for every non-warehouse requester.
+        final IWareHouse requesterWarehouse =
+          colony.getServerBuildingManager().getBuilding(requestToCheck.getRequester().getLocation().getInDimensionLocation()) instanceof final IWareHouse found ? found : null;
         if (requestToCheck.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Pickup && requesterWarehouse == null)
         {
             // The colony storage is full: a courier would collect a load nobody can take. The producer keeps its output (and the managers are told once).
