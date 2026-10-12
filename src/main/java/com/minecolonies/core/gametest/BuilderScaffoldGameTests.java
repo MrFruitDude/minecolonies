@@ -303,13 +303,18 @@ final class BuilderScaffoldGameTests
         {
             return;
         }
-        live.citizen.getEntity().ifPresent(e -> {
+        live.citizen.getEntity().ifPresent(e -> trace(e, name, tick, origin));
+    }
+
+    static void trace(final com.minecolonies.api.entity.citizen.AbstractEntityCitizen e, final String name, final int tick, final BlockPos origin)
+    {
+        {
             final Vec3 p = e.position();
-            final String ai = e.getCitizenJobHandler().getWorkAI() instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder b ? b.debugInfo() : "";
+            final String ai = e.getCitizenJobHandler().getWorkAI() instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder b ? b.getState() + " " + b.debugInfo() : "";
             final Vec3 dm = e.getDeltaMovement();
             Log.getLogger().info("TRACE {} {} t={} rel=({},{},{}) dm=({},{},{}) climb={} hc={} ground={} {}", name, e.getName().getString(), tick, String.format("%.1f", p.x - origin.getX()), String.format("%.1f", p.y - origin.getY()),
               String.format("%.1f", p.z - origin.getZ()), String.format("%.2f", dm.x), String.format("%.2f", dm.y), String.format("%.2f", dm.z), e.onClimbable(), e.horizontalCollision, e.onGround(), ai);
-        });
+        }
     }
 
     static void watch(final WorkerEfficiencyGameTests.Live live, final Watch watch, final BlockPos site, final int total, final int tick)
@@ -715,9 +720,20 @@ final class BuilderScaffoldGameTests
             final BlockPos origin = order.getLocation();
             final Watch watch = new Watch();
             final int[] doneTick = {0};
+            final java.util.Map<BlockPos, Integer> blocksBy = new java.util.concurrent.ConcurrentHashMap<>();
+            BuilderCollab.placementProbe = (pos, hut) -> {
+                if (pos.distManhattan(origin) < 200)
+                {
+                    blocksBy.merge(hut, 1, Integer::sum);
+                }
+            };
             WorkerEfficiencyGameTests.everyTick(live, maxTicks, tick -> {
                 watch(live, watch, origin, 64, tick);
                 trace(live, name, tick, origin);
+                if (TRACE_EVERY > 0 && tick % TRACE_EVERY == 0)
+                {
+                    second.getEntity().ifPresent(e -> trace(e, name + "-2", tick, origin));
+                }
                 doneTick[0] = tick;
                 if (tick == 1)
                 {
@@ -725,12 +741,12 @@ final class BuilderScaffoldGameTests
                 }
                 if (tick % 500 == 0)
                 {
-                    Log.getLogger().info("WSCAF two t={} missing={} scaffold={} ledger={} placedBy={} lead: {} | second: {}", tick, missing(live, blueprint, origin), scaffoldInWorld(live, origin), ledgerSize(live),
+                    Log.getLogger().info("WSCAF two t={} blocksBy(lead,second)={},{} missing={} scaffold={} ledger={} placedBy={} lead: {} | second: {}", tick, blocksBy.getOrDefault(live.hut.getPosition(), 0), blocksBy.getOrDefault(other.getPosition(), 0), missing(live, blueprint, origin), scaffoldInWorld(live, origin), ledgerSize(live),
                       BuilderScaffolding.placedBy.values(), live.ai(), second.getEntity().map(e -> e.blockPosition().toShortString() + " " + (e.getCitizenJobHandler().getWorkAI() instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder b ? b.debugInfo() + " state=" + b.getState() : "")).orElse("-"));
                 }
                 return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
             }, () -> {
-                Log.getLogger().info("WBENCH RESULT " + name + " builders=2 ticks={} towers={} cells={} placedBy={} maxScaffold={}", doneTick[0], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced,
+                Log.getLogger().info("WBENCH RESULT " + name + " builders=2 blocksBy={} ticks={} towers={} cells={} placedBy={} maxScaffold={}", blocksBy.values(), doneTick[0], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced,
                   BuilderScaffolding.placedBy.values(), watch.maxScaffold);
                 helper.assertTrue(missing(live, blueprint, origin) == 0, "structure not complete: missing " + missing(live, blueprint, origin));
                 helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left: " + scaffoldInWorld(live, origin));
@@ -740,6 +756,7 @@ final class BuilderScaffoldGameTests
                 helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
                 helper.assertTrue(BuilderScaffolding.cellsPlaced > 0, "no scaffolding");
                 BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
+                BuilderCollab.placementProbe = null;
                 WorkerSettings.clearOverrides();
                 ReachAudit.enable(false);
                 helper.succeed();
