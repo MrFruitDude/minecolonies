@@ -101,6 +101,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 RequestSyncGameTests.register(event);
             }
+            if (only.contains("courier"))
+            {
+                RequestCourierGameTests.register(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -724,6 +728,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         }
         // CA-1 + CA-3 request-system / citizen view sync (one glob: minecolonies:reqsync_*).
         RequestSyncGameTests.register(event);
+        RequestCourierGameTests.register(event);
         // Request system defect checks (one glob: minecolonies:rs_*).
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_craft_batch_zero"),

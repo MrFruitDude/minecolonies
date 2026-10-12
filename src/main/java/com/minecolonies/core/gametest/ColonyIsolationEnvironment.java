@@ -34,6 +34,7 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         // Tests of the request-system redesign switch the flags in code; none may leak into the next test.
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideSmartRetry(null);
+        com.minecolonies.core.colony.requestsystem.RsFlags.overrideCourierImmediateNextTask(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideStorageNetwork(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideStorageServiceRange(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideStorageItemCap(null);
@@ -58,6 +59,7 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         com.minecolonies.core.entity.ai.workers.util.ReachAudit.enable(false);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideSmartRetry(null);
+        com.minecolonies.core.colony.requestsystem.RsFlags.overrideCourierImmediateNextTask(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideStorageNetwork(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideStorageServiceRange(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideStorageItemCap(null);
