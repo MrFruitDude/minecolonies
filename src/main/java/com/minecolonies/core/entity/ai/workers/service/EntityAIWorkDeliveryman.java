@@ -162,6 +162,21 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     }
 
     /**
+     * A courier that holds a task does not take a leisure break: the break lasts three minutes of walking about,
+     * and the courier's own queue is the only place its task is kept, so every delivery in it, and whoever waits for it, stands
+     * still that long while other couriers idle. (Found by the stall trail of the benchmark: the "stuck courier" of the busy scenario
+     * was a courier in {@code PREPARE_DELIVERY} that the citizen AI sent to wander during leisure time.) Meals, rain, night and
+     * sickness still send it away, as for every worker.
+     *
+     * @return true when the citizen AI may send the courier on a leisure break.
+     */
+    @Override
+    public boolean canTakeLeisure()
+    {
+        return super.canTakeLeisure() && job.getTaskQueue().isEmpty();
+    }
+
+    /**
      * Back to deciding after a task was finished. With the {@code courierImmediateNextTask} switch on the courier looks for its next task at once.
      *
      * @return the deciding state.

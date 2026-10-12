@@ -554,7 +554,7 @@ public class TrackedCollectionsTest
         {
             final Tracked.StoreVersion version = new Tracked.StoreVersion();
             final Map<Integer, Collection<Integer>> wrapper = Tracked.collectionMap(version, new Int2ObjectOpenHashMap<Collection<Integer>>(), Map.of());
-            final Map<Integer, Collection<Integer>> twin = new TreeMap<>();
+            final Map<Integer, Collection<Integer>> twin = new Int2ObjectOpenHashMap<>();
             final List<Named<Map<Integer, Collection<Integer>>>> ops = new ArrayList<>();
             mapOps(ops, LinkedList::new);
             for (int step = 0; step < STEPS; step++)
@@ -584,7 +584,7 @@ public class TrackedCollectionsTest
         {
             final Tracked.StoreVersion version = new Tracked.StoreVersion();
             final Map<String, Integer> wrapper = Tracked.map(version, new Object2IntOpenHashMap<String>(), Map.of());
-            final Map<String, Integer> twin = new TreeMap<>();
+            final Map<String, Integer> twin = new Object2IntOpenHashMap<>();
             for (int step = 0; step < STEPS; step++)
             {
                 final String key = "k" + random.nextInt(6);
@@ -596,7 +596,7 @@ public class TrackedCollectionsTest
                 final Object b = plainOp(wrapper, which, key, value);
                 final String context = "plain map sequence " + sequence + " step " + step + " op " + which + " " + key + " " + value;
                 assertEquals(context + ": result", String.valueOf(a), String.valueOf(b));
-                assertEquals(context + ": content", twin.toString(), new TreeMap<>(wrapper).toString());
+                assertEquals(context + ": content", new TreeMap<>(twin).toString(), new TreeMap<>(wrapper).toString());
                 if (!before.equals(new TreeMap<>(wrapper).toString()))
                 {
                     assertTrue(context + ": changed the content without moving the counter", version.get() != counter);

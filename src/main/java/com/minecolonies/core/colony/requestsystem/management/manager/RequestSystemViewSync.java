@@ -72,6 +72,25 @@ public final class RequestSystemViewSync
     {
     }
 
+    /**
+     * How much serializing the snapshots did (a diagnostic of the tests and the benchmark: a snapshot of a quiet manager should add nothing).
+     */
+    public static final class Stats
+    {
+        /**
+         * Plain data stores serialized.
+         */
+        public static long stores;
+        /**
+         * Request and resolver entries serialized.
+         */
+        public static long entries;
+
+        private Stats()
+        {
+        }
+    }
+
     // ------------------------------------------------------------------ snapshot
 
     /**
@@ -244,6 +263,7 @@ public final class RequestSystemViewSync
                     stores.put(token, held.snap);
                     continue;
                 }
+                Stats.stores++;
                 final StoreSnap snap = new StoreSnap(STORE_RAW, bytes(ra, b -> controller.serialize(b, value)), null, null);
                 stores.put(token, snap);
                 remember(cache, token, held, key, value, version, version >= 0 ? snap : null, generation);
@@ -305,12 +325,14 @@ public final class RequestSystemViewSync
                 final long version = value instanceof final AbstractRequest<?> request ? request.getModCount() : value instanceof final IRequestResolver<?> resolver ? resolver.viewVersion() : -1L;
                 if (version < 0)
                 {
+                    Stats.entries++;
                     entries.put(token, new Entry(bytes(ra, b -> controller.serialize(b, token)), bytes(ra, b -> controller.serialize(b, value))));
                     continue;
                 }
                 EntryCache.Cached cached = cache.get(token);
                 if (cached == null || cached.source != value || cached.version != version)
                 {
+                    Stats.entries++;
                     final Entry entry = new Entry(cached != null ? cached.entry.key() : bytes(ra, b -> controller.serialize(b, token)), bytes(ra, b -> controller.serialize(b, value)));
                     cached = new EntryCache.Cached(value, version, entry, generation);
                     cache.put(token, cached);
