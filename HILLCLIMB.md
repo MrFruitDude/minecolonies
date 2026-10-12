@@ -167,3 +167,9 @@ On the merged branch (all accepted attempts + `ec2d32a508`): run 1 failed `worke
 `scaffold_two_builders_big` ("missing 2 on tick 9755"), run 3: **All 280 required tests passed** (279 of integ/anno + `rs_recipe_tokens_seeded`). The
 `worker_eff` group alone passes (15/15), plain `origin/integ/anno` passed 279/279 in one run. Both failures are builder-AI tick-budget tests (not request-system
 tests) and each ran at a time the machine was loaded by other workers; they did not repeat. Not proven load-only: a fourth run on each side would settle it.
+
+On the branch `fix/rs-courier-sync` (all of the above merged with `origin/integ/anno` b14343c0be, which had nothing newer): `./gradlew test runGameTestServer jar` ran once, JUnit green
+(`TrackedCollectionsTest`, 9 tests) and **All 285 required tests passed** (280 of the earlier run + `rs_courier_next_task_immediate`, `rs_courier_next_task_delayed`, `rs_courier_leisure_keeps_task`,
+`reqsync_store_mutations`, `reqsync_quiet_stores_not_serialized`). Failing first: the three courier tests and the quiet-stores test failed on the code without their change (leisure: "the courier
+took the task 1501 ticks ago and the delivery is not there: it is on a leisure break"; immediate: "waited 100 ticks before its next task"; quiet stores: "serialized 4 stores again"); the
+store-mutation test passes before and after (it guards the new cache).
