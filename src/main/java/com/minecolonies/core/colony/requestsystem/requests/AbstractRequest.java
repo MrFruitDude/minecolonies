@@ -46,6 +46,11 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     private final R               requested;
     @NotNull
     private final List<IToken<?>> children;
+
+    /**
+     * The children as the immutable list {@link #getChildren} hands out; dropped whenever {@link #children} changes.
+     */
+    private ImmutableList<IToken<?>> childrenView;
     @NotNull
     private final IRequester      requester;
     @NotNull
@@ -297,6 +302,7 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     public <T extends IToken<?>> void addChild(@NotNull final T child)
     {
         this.children.add(child);
+        this.childrenView = null;
         modCount++;
     }
 
@@ -337,6 +343,7 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     public <T extends IToken<?>> void removeChild(@NotNull final T child)
     {
         this.children.remove(child);
+        this.childrenView = null;
         modCount++;
     }
 
@@ -392,11 +399,14 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     @Override
     public ImmutableCollection<IToken<?>> getChildren()
     {
-        final ImmutableCollection.Builder<IToken<?>> builder = new ImmutableList.Builder<>();
-
-        builder.addAll(this.children);
-
-        return builder.build();
+        // Asked for by the resolver search, the view sync and the courier code on nearly every step; most requests never change their children.
+        ImmutableList<IToken<?>> view = childrenView;
+        if (view == null)
+        {
+            view = ImmutableList.copyOf(this.children);
+            childrenView = view;
+        }
+        return view;
     }
 
     /**
