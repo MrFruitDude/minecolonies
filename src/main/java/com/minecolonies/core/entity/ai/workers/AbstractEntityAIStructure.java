@@ -1542,7 +1542,8 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     protected List<BlockPos> workAhead(final BlockPos target)
     {
-        return workAhead(target, REACH_LOOKAHEAD);
+        // (the stages that take what is in reach in any order look further ahead than those that go block by block)
+        return workAhead(target, servesAnyOrder() ? REACH_LOOKAHEAD : 16);
     }
 
     /**
