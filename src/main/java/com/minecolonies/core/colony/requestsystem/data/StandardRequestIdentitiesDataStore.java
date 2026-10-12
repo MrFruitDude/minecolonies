@@ -22,6 +22,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Map;
 
@@ -102,7 +103,9 @@ public class StandardRequestIdentitiesDataStore implements IRequestIdentitiesDat
 
             systemCompound.put(TAG_TOKEN, controller.serializeTag(provider, standardRequestIdentitiesDataStore.getId()));
             final ListTag listTag = new ListTag();
-            for (final Map.Entry<IToken<?>, IRequest<?>> entry : new HashSet<>(standardRequestIdentitiesDataStore.getIdentities().entrySet()))
+            // A copy (the loop may remove an entry that fails to serialize). A list, not a set: the entry hash of this map is the
+            // key's hash xor the request's hash, which is the same hash twice, so every entry hashes to 0 and a set of them is one bucket.
+            for (final Map.Entry<IToken<?>, IRequest<?>> entry : new ArrayList<>(standardRequestIdentitiesDataStore.getIdentities().entrySet()))
             {
                 try
                 {
