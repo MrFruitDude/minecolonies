@@ -649,6 +649,13 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         }
         else if (result.getBlockResult().getResult() == BlockPlacementResult.Result.FINISHED)
         {
+            if (!canFinishStage())
+            {
+                // builders helping with this stage have positions left; wait for them (or for their lease to run out). Their scaffolding stays up
+                // meanwhile: it is theirs to work from, and a tower that comes down under a helper is put up again by him.
+                setDelay(TICKS_SECOND);
+                return getState();
+            }
             if (scaffoldBeforeStageEnd())
             {
                 // the scaffolding comes down before the stage ends
@@ -658,12 +665,6 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             {
                 // positions that stood under scaffolding come again
                 this.storeProgressPos(NULL_POS, currentStage);
-                return getState();
-            }
-            if (!canFinishStage())
-            {
-                // builders helping with this stage have positions left; wait for them (or for their lease to run out)
-                setDelay(TICKS_SECOND);
                 return getState();
             }
 
@@ -1319,7 +1320,8 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return 0;
         }
         final BlockState state = blueprint.getBlockState(local);
-        return state == null || state.isAir() ? 2 : 40;
+        // (a structure void is a cell the blueprint leaves alone: nothing goes there)
+        return state == null || state.isAir() || state.is(Blocks.STRUCTURE_VOID) ? 2 : 40;
     }
 
     /**

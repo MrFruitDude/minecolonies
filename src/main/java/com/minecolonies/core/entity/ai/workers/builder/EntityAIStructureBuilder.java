@@ -193,8 +193,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
         structurePlacer = new Tuple<>(new StructurePlacer(structure, building.getWorkOrder().getIteratorType()), structure);
 
-        if (usesPhysicalReach() && BuilderScaffolding.enabled()
-              && structure.getBluePrint().getSizeY() >= BuildReach.maxHeightNextToWall(BuildReach.EYE_HEIGHT, WorkerSettings.reach()) + 2)
+        if (usesPhysicalReach() && BuilderScaffolding.enabled() && mayNeedScaffolding(structure.getBluePrint()))
         {
             // a tall structure: the scaffolding is requested like the materials, so it is in the hut when the first tower is needed
             scaffold.ensureStock(WorkerSettings.scaffoldStock());
@@ -208,6 +207,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 collab.setStageTotal(stage, BuilderStageRules.estimateBlocks(structure.getBluePrint(), stage));
             }
         }
+    }
+
+    private static boolean mayNeedScaffolding(final com.ldtteam.structurize.blueprints.v1.Blueprint blueprint)
+    {
+        return BuildReach.mayNeedScaffolding(blueprint.getSizeX(), blueprint.getSizeY(), blueprint.getSizeZ(), BuildReach.EYE_HEIGHT, WorkerSettings.reach());
     }
 
     @Override
@@ -236,8 +240,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
         if (checkForWorkOrder())
         {
-            if (usesPhysicalReach() && building.getWorkOrder() != null && building.getWorkOrder().getBlueprint() != null
-                  && building.getWorkOrder().getBlueprint().getSizeY() >= BuildReach.maxHeightNextToWall(BuildReach.EYE_HEIGHT, WorkerSettings.reach()) + 2)
+            if (usesPhysicalReach() && building.getWorkOrder() != null && building.getWorkOrder().getBlueprint() != null && mayNeedScaffolding(building.getWorkOrder().getBlueprint()))
             {
                 scaffold.prefetch();
             }
@@ -304,17 +307,27 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     {
         BlockPos spot = null;
         long since = 0L;
+        long budget = 100L;
         final Set<BlockPos> bad = new HashSet<>();
+        /** Spots he could not get to by a path (the walk ended somewhere else): not tried again for a long while, unlike the spots in bad, which came up too late. */
+        final java.util.Map<BlockPos, Long> unreachable = new java.util.HashMap<>();
         long badSince = 0L;
         long noSpotUntil = 0L;
         long noSpotSince = 0L;
         net.minecraft.world.phys.Vec3 lastPosition = null;
         long lastMoved = 0L;
 
+        boolean isUnreachable(final BlockPos pos, final long now)
+        {
+            final Long since = unreachable.get(pos);
+            return since != null && now - since < 1500L;
+        }
+
         void reset()
         {
             spot = null;
             bad.clear();
+            unreachable.clear();
             badSince = 0L;
             noSpotUntil = 0L;
             noSpotSince = 0L;
@@ -470,7 +483,6 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         final double margin = reach - ReachSpots.MARGIN;
         if (walk.spot != null)
         {
-            final double distance = ReachSpots.walkCost(worker.blockPosition(), walk.spot);
             // a walk that does not get anywhere (a path along scaffolding that the builder cannot follow) is given up after a while
             final boolean pathReady = worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate pn && pn.getPathResult() != null && pn.getPathResult().isDone();
             if (walk.lastPosition == null || !pathReady || worker.position().distanceTo(walk.lastPosition) >= 0.4D)
@@ -478,7 +490,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 walk.lastPosition = worker.position();
                 walk.lastMoved = now;
             }
-            final boolean timedOut = now - walk.since > 100 + 12L * (long) Math.ceil(distance) || now - walk.lastMoved > 60L;
+            final boolean timedOut = now - walk.since > walk.budget || now - walk.lastMoved > 60L;
             final BlockPos effective = world.getBlockState(walk.spot.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? walk.spot.below() : walk.spot;
             if (!timedOut && StandSpots.canStandAt(world, walk.spot) && !BuildReach.inReachFromFeet(effective, worker.getEyeHeight(), target, margin)
                   && !(worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate nav0 && nav0.isStuck()))
@@ -503,6 +515,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             // a spot the unstuck ladder or a tower picked
             walk.spot = workFrom;
             walk.since = now;
+            walk.lastPosition = null;
+            walk.budget = 100L + 12L * (long) Math.ceil(ReachSpots.walkCost(worker.blockPosition(), workFrom));
         }
         if (walk.spot == null)
         {
@@ -511,7 +525,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 return false;
             }
             final List<ReachSpots.Spot> spots = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(),
-              p -> !walk.bad.contains(p) && canWalkTo(p) && (inBlocks || hasWayDown(p)) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
+              p -> !walk.bad.contains(p) && !walk.isUnreachable(p, now) && canWalkTo(p) && (inBlocks || hasWayDown(p)) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
             if (spots.isEmpty())
             {
                 // nothing to stand on within reach of the block: this is a job for scaffolding
@@ -541,6 +555,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             }
             walk.spot = spots.get(0).feet();
             walk.since = now;
+            walk.budget = 100L + 12L * (long) Math.ceil(spots.get(0).walk());
             walk.lastPosition = null;
             walk.noSpotSince = 0L;
             scaffold.note((walk == mainWalk ? "spot " : "scaffold spot ") + walk.spot + " for " + target + " covers " + spots.get(0).covered() + " walk " + String.format("%.1f", spots.get(0).walk()) + " builder at " + worker.blockPosition());
@@ -557,6 +572,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             scaffold.note("walk to " + walk.spot + " ended (" + walked + ") at " + worker.blockPosition() + " for " + target + " nav stuck=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n && n.isStuck())
                             + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-") + columnDescription(walk.spot));
             // the walk is over, and the block is still out of reach: this spot does not work
+            if (walked < 0)
+            {
+                walk.unreachable.put(walk.spot, world.getGameTime());
+            }
             walk.bad.add(walk.spot);
                 walk.badSince = world.getGameTime();
             walk.spot = null;

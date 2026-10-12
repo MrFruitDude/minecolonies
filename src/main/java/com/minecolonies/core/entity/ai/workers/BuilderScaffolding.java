@@ -95,6 +95,8 @@ public final class BuilderScaffolding
     public static volatile int towersTakenDown = 0;
     public static volatile int cellsPlaced = 0;
     public static volatile int escapes = 0;
+    /** Only for tests: told about every scaffolding block that is put up. */
+    public static volatile java.util.function.Consumer<BlockPos> cellProbe = null;
     public static final java.util.concurrent.ConcurrentHashMap<BlockPos, Integer> placedBy = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
@@ -401,7 +403,8 @@ public final class BuilderScaffolding
             phase = Phase.WAIT_STOCK;
         }
         ai.worker.getCitizenData().setStatusPosition(target);
-        log("plan for " + target + ": cells=" + plan.cells() + " stand=" + plan.stand() + " covered=" + plan.covered() + " phase=" + phase);
+        log("plan for " + target + ": cells=" + plan.cells() + " stand=" + plan.stand() + " covered=" + plan.covered() + "/" + blocks.size() + " phase=" + phase + " uncovered="
+              + blocks.stream().filter(b -> !BuildReach.inReachFromFeet(plan.stand().below(), ai.worker.getEyeHeight(), b, Math.max(1.0D, WorkerSettings.reach() - ReachSpots.MARGIN))).limit(10).toList());
         return true;
     }
 
@@ -714,6 +717,11 @@ public final class BuilderScaffolding
         ai.world.setBlock(cell, state, 3);
         ledger.add(cell, ai.building.getPosition(), distance);
         cellsPlaced++;
+        final java.util.function.Consumer<BlockPos> probe = cellProbe;
+        if (probe != null)
+        {
+            probe.accept(cell.immutable());
+        }
         ai.forgetWalkable();
         placedBy.merge(ai.building.getPosition(), 1, Integer::sum);
         ai.worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
@@ -933,7 +941,8 @@ public final class BuilderScaffolding
             base = Math.min(base, other.pos().getY());
         }
         final int baseY = base;
-        if (!ai.walkIntoReachFor(cell, () -> List.of(cell), true,
+        // the spot is picked for the next cells to come down, not just this one: from the top of the column he reaches the whole arm without a step
+        if (!ai.walkIntoReachFor(cell, () -> new ArrayList<>(cellsToTakeDown.subList(0, Math.min(8, cellsToTakeDown.size()))), true,
           feet -> (!feet.below().equals(cell) || descent) && (ledger.contains(feet.below()) || ledger.contains(feet) || feet.getY() <= baseY + 1)))
         {
             return true;

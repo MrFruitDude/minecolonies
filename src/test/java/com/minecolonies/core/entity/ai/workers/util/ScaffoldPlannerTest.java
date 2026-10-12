@@ -28,6 +28,8 @@ public class ScaffoldPlannerTest
         final Set<BlockPos> solid = new HashSet<>();
         final Map<BlockPos, Integer> scaffold = new HashMap<>();
         final Set<BlockPos> costly = new HashSet<>();
+        /** Air inside the volume of the building: a little in the way (2), like the structure AI rates it. */
+        final Set<BlockPos> volume = new HashSet<>();
         Predicate<BlockPos> walkable = p -> true;
 
         @Override
@@ -83,7 +85,7 @@ public class ScaffoldPlannerTest
         @Override
         public int penalty(final BlockPos pos)
         {
-            return costly.contains(pos) ? 40 : 0;
+            return costly.contains(pos) ? 40 : volume.contains(pos) ? 2 : 0;
         }
 
         @Override
@@ -328,7 +330,40 @@ public class ScaffoldPlannerTest
         }
         final ScaffoldPlanner.Plan plan = ScaffoldPlanner.plan(world, slab, REACH, EYE, null, 32, true);
         assertNotNull(plan);
-        System.out.println("SLAB PLAN " + plan);
         assertTrue("serves most of the slab: " + plan.covered(), plan.covered() >= 25);
+    }
+
+    @Test
+    public void aTowerUnderTheSlabServesAllOfItInsteadOfSeveralTowersOutside()
+    {
+        // as above, with the air under the slab inside the volume of the building (a small penalty for every cell of the tower) and a plan made when the
+        // wall is built: a tower on the outside reaches only the near rows and leaves the rest to other towers, one in the middle reaches everything
+        final World world = new World().ground(EVERYWHERE);
+        // (nobody walks onto the top of the wall)
+        world.walkable = p -> p.getY() <= 1;
+        for (int z = 0; z < 5; z++)
+        {
+            world.wall(0, z, 1, 8);
+        }
+        final List<BlockPos> slab = new java.util.ArrayList<>();
+        for (int x = 0; x < 9; x++)
+        {
+            for (int z = 0; z < 5; z++)
+            {
+                slab.add(new BlockPos(x, 9, z));
+                world.costly.add(new BlockPos(x, 9, z));
+                for (int y = 1; y < 9; y++)
+                {
+                    if (x != 0)
+                    {
+                        world.volume.add(new BlockPos(x, y, z));
+                    }
+                }
+            }
+        }
+        final ScaffoldPlanner.Plan plan = ScaffoldPlanner.plan(world, slab, REACH, EYE, null, 32, true);
+        assertNotNull(plan);
+        assertEquals("one tower for the whole slab: " + plan, slab.size(), plan.covered());
+        world.build(plan);
     }
 }

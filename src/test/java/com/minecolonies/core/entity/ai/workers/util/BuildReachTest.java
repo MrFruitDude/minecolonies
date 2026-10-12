@@ -63,4 +63,18 @@ public class BuildReachTest
     {
         assertEquals(0.0D, BuildReach.distSq(10.5D, 65.0D, 10.5D, new BlockPos(10, 64, 10)), 1.0E-9D);
     }
+
+    @Test
+    public void tallStructuresAndWideRoofsMayNeedScaffoldingSmallHousesDoNot()
+    {
+        // a wall of 8 or more is out of reach from the ground
+        assertTrue(BuildReach.mayNeedScaffolding(5, 8, 5, EYE, 5.0D));
+        assertFalse(BuildReach.mayNeedScaffolding(5, 5, 5, EYE, 5.0D));
+        // a roof 11 across, 5 high: the middle of it is not in reach from the ground around
+        assertTrue(BuildReach.mayNeedScaffolding(11, 5, 11, EYE, 5.0D));
+        // a flat 11 by 11 floor plan of one or two levels is
+        assertFalse(BuildReach.mayNeedScaffolding(11, 2, 11, EYE, 5.0D));
+        // with a longer reach the roof is in reach too
+        assertFalse(BuildReach.mayNeedScaffolding(11, 5, 11, EYE, 7.0D));
+    }
 }

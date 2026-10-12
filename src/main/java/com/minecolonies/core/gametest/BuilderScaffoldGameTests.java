@@ -22,6 +22,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -108,6 +109,11 @@ final class BuilderScaffoldGameTests
         boxAudit(helper, "reach_clear_l40", true, 40, true);
     }
 
+    public static void legacyClearL40(final GameTestHelper helper)
+    {
+        boxAudit(helper, "legacy_clear_l40", false, 40, true);
+    }
+
     public static void legacyBoxL40(final GameTestHelper helper)
     {
         boxAudit(helper, "legacy_box_l40", false, 40, false);
@@ -138,10 +144,8 @@ final class BuilderScaffoldGameTests
             {
                 for (int z = 0; z < sz; z++)
                 {
-                    if (solid.at(x, y, z))
-                    {
-                        blueprint.addBlockState(new BlockPos(x, y, z), WorkerEfficiencyGameTests.BUILD_BLOCK.defaultBlockState());
-                    }
+                    // (a cell of a real blueprint that is empty holds air; the default of a new blueprint is a substitution block, which is something else)
+                    blueprint.addBlockState(new BlockPos(x, y, z), solid.at(x, y, z) ? WorkerEfficiencyGameTests.BUILD_BLOCK.defaultBlockState() : Blocks.AIR.defaultBlockState());
                 }
             }
         }
@@ -328,6 +332,12 @@ final class BuilderScaffoldGameTests
     static void tallStructure(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final boolean physical, final int maxTicks, final boolean expectScaffold,
       final java.util.function.BiConsumer<WorkerEfficiencyGameTests.Live, BlockPos> beforeOrder)
     {
+        tallStructure(helper, name, blueprintOf, physical, maxTicks, expectScaffold, beforeOrder, null);
+    }
+
+    static void tallStructure(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final boolean physical, final int maxTicks, final boolean expectScaffold,
+      final java.util.function.BiConsumer<WorkerEfficiencyGameTests.Live, BlockPos> beforeOrder, final Runnable extraChecks)
+    {
         WorkerSettings.overrideReachForTests(null, physical, null, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
@@ -353,6 +363,10 @@ final class BuilderScaffoldGameTests
                 walked[0] += Math.hypot(now.x - last[0].x, now.z - last[0].z);
                 last[0] = now;
                 watch(live, watch, origin, 32, tick);
+                if (tick == 1)
+                {
+                    Log.getLogger().info("WSCAF {} start gameTime={} origin={} size={}x{}x{} hut={} unsetState={}", name, live.level.getGameTime(), origin, blueprint.getSizeX(), blueprint.getSizeY(), blueprint.getSizeZ(), live.hut.getPosition(), blueprint.getBlockState(new BlockPos(blueprint.getSizeX() - 1, 1, blueprint.getSizeZ() - 1)));
+                }
                 if (tick % 500 == 0)
                 {
                     Log.getLogger().info("WSCAF {} t={} missing={} scaffold={} ledger={} {}", name, tick, missing(live, blueprint, origin), scaffoldInWorld(live, origin), ledgerSize(live), live.ai());
@@ -372,6 +386,10 @@ final class BuilderScaffoldGameTests
                 if (physical)
                 {
                     helper.assertTrue(ReachAudit.violations() == 0, "blocks were placed out of reach: " + ReachAudit.violations() + " " + ReachAudit.examples());
+                }
+                if (extraChecks != null)
+                {
+                    extraChecks.run();
                 }
                 if (expectScaffold)
                 {
@@ -435,6 +453,57 @@ final class BuilderScaffoldGameTests
     public static void overhangSlab(final GameTestHelper helper)
     {
         tallStructure(helper, "overhang", () -> overhang("overhang"), true, 30_000, true);
+    }
+
+    /** The ring of the big two-builder test with one builder (for the benchmark: what a second builder is worth). */
+    public static void oneBuilderBig(final GameTestHelper helper)
+    {
+        tallStructure(helper, "onebig", () -> shape("onebig", 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10), true, 40_000, true);
+    }
+
+    public static void oneBuilderBigLegacy(final GameTestHelper helper)
+    {
+        tallStructure(helper, "onebig_legacy", () -> shape("onebig_legacy", 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10), false, 40_000, false);
+    }
+
+    /**
+     * The ground the clear stage removes is no base for a tower: a ledge of dirt inside the volume of the structure (reached by a ramp from outside)
+     * is the nearest ground to a pillar of dirt that has to be mined from the top, but it is mined away later, so no scaffolding may ever stand on
+     * it. The builder mines the pillar from a tower on the ground next to it, everything is cleared, the scaffolding comes down whole.
+     */
+    public static void clearNextToALedge(final GameTestHelper helper)
+    {
+        final boolean[] onTheLedge = {false};
+        tallStructure(helper, "ledge", () -> shape("ledge", 9, 12, 9, (x, y, z) -> false), true, 30_000, true, (live, origin) -> {
+            final BlockPos site = helper.absolutePos(SITE);
+            final BlockState dirt = Blocks.DIRT.defaultBlockState();
+            for (int z = 3; z <= 5; z++)
+            {
+                // the ramp (outside of the volume) and the ledge (inside it), steps of one block
+                for (int x = -3; x <= 3; x++)
+                {
+                    final int height = x < 0 ? 4 + x : 4;
+                    for (int y = 0; y < height; y++)
+                    {
+                        live.level.setBlock(site.offset(x, y, z), dirt, 2);
+                    }
+                }
+            }
+            for (int y = 0; y < 10; y++)
+            {
+                live.level.setBlock(site.offset(7, y, 4), dirt, 2);
+            }
+            BuilderScaffolding.cellProbe = cell -> {
+                final BlockPos rel = cell.subtract(site);
+                if (rel.getX() >= 0 && rel.getX() <= 3 && rel.getZ() >= 3 && rel.getZ() <= 5 && rel.getY() >= 4 && rel.getY() <= 9)
+                {
+                    onTheLedge[0] = true;
+                }
+            };
+        }, () -> {
+            BuilderScaffolding.cellProbe = null;
+            helper.assertFalse(onTheLedge[0], "scaffolding stood on the ledge that the clear stage removes");
+        });
     }
 
     /** The tall tower with the physical reach off: the L3 behaviour (the builder places from the ground), for the benchmark. */
@@ -630,6 +699,10 @@ final class BuilderScaffoldGameTests
             WorkerEfficiencyGameTests.everyTick(live, maxTicks, tick -> {
                 watch(live, watch, origin, 64, tick);
                 doneTick[0] = tick;
+                if (tick == 1)
+                {
+                    Log.getLogger().info("WSCAF {} start gameTime={} origin={} size={}x{}x{} hut={} other={}", name, live.level.getGameTime(), origin, blueprint.getSizeX(), blueprint.getSizeY(), blueprint.getSizeZ(), live.hut.getPosition(), other.getPosition());
+                }
                 if (tick % 500 == 0)
                 {
                     Log.getLogger().info("WSCAF two t={} missing={} scaffold={} ledger={} placedBy={} lead: {} | second: {}", tick, missing(live, blueprint, origin), scaffoldInWorld(live, origin), ledgerSize(live),
