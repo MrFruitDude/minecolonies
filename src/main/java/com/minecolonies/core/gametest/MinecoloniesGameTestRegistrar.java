@@ -939,10 +939,16 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 continue;
             }
-            event.registerTest(
-              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
-              info -> new MinecoloniesGameTestInstance(info, test),
-              isolatedColonyData(event, name));
+            // (a development run can repeat a test: -Dminecolonies.gametest.reps=N, the repeats are told apart by a suffix)
+            final int reps = Math.max(1, Integer.getInteger("minecolonies.gametest.reps", 1));
+            for (int rep = 1; rep <= reps; rep++)
+            {
+                final String id = reps == 1 ? name : name + "_r" + rep;
+                event.registerTest(
+                  Identifier.fromNamespaceAndPath(Constants.MOD_ID, id),
+                  info -> new MinecoloniesGameTestInstance(info, test),
+                  isolatedColonyData(event, id));
+            }
         }
     }
 

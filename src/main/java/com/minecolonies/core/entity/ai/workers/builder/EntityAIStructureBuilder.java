@@ -532,8 +532,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             {
                 return false;
             }
+            // (the top of a built wall is a place of last resort: towers come first, and the walk to it often does not lead there; when no tower is
+            // possible - no scaffolding items, none came in time - it is a place to work from like any other)
+            final boolean wallTopsAllowed = scaffold.unavailable() || scaffold.hasNoItems();
             final List<ReachSpots.Spot> spots = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(),
-              p -> !walk.bad.contains(p) && canWalkTo(p) && (inBlocks || (hasWayDown(p) && !isBuiltStructureBlock(p.below()))) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
+              p -> !walk.bad.contains(p) && canWalkTo(p) && (inBlocks || (hasWayDown(p) && (wallTopsAllowed || !isBuiltStructureBlock(p.below())))) && (accept == null || accept.test(p)), 1, inBlocks,
+              !inBlocks && servesAnyOrder());
             if (spots.isEmpty())
             {
                 // nothing to stand on within reach of the block: this is a job for scaffolding

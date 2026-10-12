@@ -151,6 +151,14 @@ public final class BuilderScaffolding
         return !enabled() || ai.world.getGameTime() < Math.max(deniedUntil, stockDeniedUntil);
     }
 
+    /**
+     * Whether there are no scaffolding items to build a tower with: none on him, none in his hut.
+     */
+    public boolean hasNoItems()
+    {
+        return inInventory() + inHut() <= 0;
+    }
+
     public boolean denied()
     {
         return ai.world.getGameTime() < stockDeniedUntil;
