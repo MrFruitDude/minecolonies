@@ -958,7 +958,7 @@ public final class MacroRun
 
     private static void out_path(final StringBuilder out, final com.minecolonies.core.entity.pathfinding.pathresults.PathResult<?> pr)
     {
-        out.append(" path=").append(pr.getStatus()).append('/').append(pr.getPathLength());
+        out.append(" path=").append(pr.getStatus()).append('/').append(pr.hasPath() ? pr.getPathLength() : -1);
     }
 
     /**
@@ -987,7 +987,7 @@ public final class MacroRun
                             if (e.getNavigation() instanceof com.minecolonies.core.entity.pathfinding.navigation.AbstractAdvancedPathNavigate nav && nav.getPathResult() != null)
                             {
                                 final var pr = nav.getPathResult();
-                                out.append(" pathStatus=").append(pr.getStatus()).append(" pathLen=").append(pr.getPathLength()).append(" reaches=").append(pr.isPathReachingDestination())
+                                out.append(" pathStatus=").append(pr.getStatus()).append(" pathLen=").append(pr.hasPath() ? pr.getPathLength() : -1).append(" reaches=").append(pr.isPathReachingDestination())
                                   .append(" job=").append(pr.getJob() == null ? "-" : pr.getJob().getClass().getSimpleName());
                             }
                         });

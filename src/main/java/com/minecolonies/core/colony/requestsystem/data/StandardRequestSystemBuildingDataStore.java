@@ -32,6 +32,12 @@ import static com.minecolonies.api.util.constant.NbtTagConstants.*;
 public class StandardRequestSystemBuildingDataStore implements IRequestSystemBuildingDataStore
 {
     /**
+     * Counts every change of this store's content and id, for the view sync. The four maps below count into it; they and the
+     * collections they hold are the only way to change the store.
+     */
+    private final Tracked.StoreVersion version = new Tracked.StoreVersion();
+
+    /**
      * The id of this data store.
      */
     private IToken<?> id;
@@ -44,17 +50,17 @@ public class StandardRequestSystemBuildingDataStore implements IRequestSystemBui
     /**
      * Requests sorted by citizen (or -1 for building)
      */
-    private final Int2ObjectMap<Collection<IToken<?>>> openRequestsByCitizen;
+    private final Map<Integer, Collection<IToken<?>>> openRequestsByCitizen;
 
     /**
      * Completed Requests sorted by citizen (or -1 for building)
      */
-    private final Int2ObjectMap<Collection<IToken<?>>> completedRequestsByCitizen;
+    private final Map<Integer, Collection<IToken<?>>> completedRequestsByCitizen;
 
     /**
      * Inverted requests sorted by request to citizen.
      */
-    private final Object2IntMap<IToken<?>> citizenByOpenRequest;
+    private final Map<IToken<?>, Integer> citizenByOpenRequest;
 
     public StandardRequestSystemBuildingDataStore(
       final IToken<?> id,
@@ -64,10 +70,10 @@ public class StandardRequestSystemBuildingDataStore implements IRequestSystemBui
       final Object2IntMap<IToken<?>> citizenByOpenRequest)
     {
         this.id = id;
-        this.openRequestsByRequestableType = openRequestsByRequestableType;
-        this.openRequestsByCitizen = openRequestsByCitizen;
-        this.completedRequestsByCitizen = completedRequestsByCitizen;
-        this.citizenByOpenRequest = citizenByOpenRequest;
+        this.openRequestsByRequestableType = Tracked.collectionMap(version, new HashMap<TypeToken<?>, Collection<IToken<?>>>(), openRequestsByRequestableType);
+        this.openRequestsByCitizen = Tracked.collectionMap(version, new Int2ObjectOpenHashMap<Collection<IToken<?>>>(), openRequestsByCitizen);
+        this.completedRequestsByCitizen = Tracked.collectionMap(version, new Int2ObjectOpenHashMap<Collection<IToken<?>>>(), completedRequestsByCitizen);
+        this.citizenByOpenRequest = Tracked.map(version, new Object2IntOpenHashMap<IToken<?>>(), citizenByOpenRequest);
     }
 
     public StandardRequestSystemBuildingDataStore()
@@ -108,7 +114,7 @@ public class StandardRequestSystemBuildingDataStore implements IRequestSystemBui
     {
         if (citizenByOpenRequest.getOrDefault(request.getId(), Integer.MAX_VALUE) == -1)
         {
-            citizenByOpenRequest.removeInt(request.getId());
+            citizenByOpenRequest.remove(request.getId());
             citizenByOpenRequest.put(request.getId(), citizenData.getId());
 
             openRequestsByCitizen.getOrDefault(-1, new ArrayList<>()).remove(request.getId());
@@ -140,6 +146,13 @@ public class StandardRequestSystemBuildingDataStore implements IRequestSystemBui
     public void setId(final IToken<?> id)
     {
         this.id = id;
+        version.bump();
+    }
+
+    @Override
+    public long viewVersion()
+    {
+        return version.get();
     }
 
     /**

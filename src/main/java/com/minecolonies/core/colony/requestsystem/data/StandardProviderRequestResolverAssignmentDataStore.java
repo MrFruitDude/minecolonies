@@ -25,6 +25,11 @@ import java.util.stream.Collectors;
 public class StandardProviderRequestResolverAssignmentDataStore implements IProviderResolverAssignmentDataStore
 {
 
+    /**
+     * Counts every change of this store's content and id, for the view sync.
+     */
+    private final Tracked.StoreVersion version = new Tracked.StoreVersion();
+
     private final Map<IToken<?>, Collection<IToken<?>>> assignments;
     private       IToken<?>                             id;
 
@@ -34,7 +39,7 @@ public class StandardProviderRequestResolverAssignmentDataStore implements IProv
     )
     {
         this.id = id;
-        this.assignments = assignments;
+        this.assignments = Tracked.collectionMap(version, new HashMap<>(), assignments);
     }
 
     public StandardProviderRequestResolverAssignmentDataStore()
@@ -59,6 +64,13 @@ public class StandardProviderRequestResolverAssignmentDataStore implements IProv
     public void setId(final IToken<?> id)
     {
         this.id = id;
+        version.bump();
+    }
+
+    @Override
+    public long viewVersion()
+    {
+        return version.get();
     }
 
     public static class Factory implements IFactory<FactoryVoidInput, StandardProviderRequestResolverAssignmentDataStore>

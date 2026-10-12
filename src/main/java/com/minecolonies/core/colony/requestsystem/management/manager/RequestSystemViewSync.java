@@ -72,6 +72,25 @@ public final class RequestSystemViewSync
     {
     }
 
+    /**
+     * How much serializing the snapshots did (a diagnostic of the tests and the benchmark: a snapshot of a quiet manager should add nothing).
+     */
+    public static final class Stats
+    {
+        /**
+         * Plain data stores serialized.
+         */
+        public static long stores;
+        /**
+         * Request and resolver entries serialized.
+         */
+        public static long entries;
+
+        private Stats()
+        {
+        }
+    }
+
     // ------------------------------------------------------------------ snapshot
 
     /**
@@ -89,40 +108,72 @@ public final class RequestSystemViewSync
     }
 
     /**
-     * The serialized entries of the requests, kept between snapshots: a request whose modification count did not change is
-     * not written again. Most requests wait quietly most of the time, so a snapshot only pays for those that changed.
-     * Dropped whenever a full payload goes out (every five minutes at least), so a change that missed the counter cannot
+     * What a snapshot keeps between snapshots, so that a part that did not change is not serialized again:
+     * <ul>
+     * <li>every request entry, until its modification count moves,</li>
+     * <li>every resolver entry, until its {@link IRequestResolver#viewVersion()} moves,</li>
+     * <li>every plain data store, until its {@link IDataStore#viewVersion()} moves (and the bytes of every store's key).</li>
+     * </ul>
+     * Most requests, resolvers and stores sit quietly most of the time, so a snapshot only pays for what changed.
+     * Dropped whenever a full payload goes out (every five minutes at least), so a change that missed a counter cannot
      * stay hidden for longer than that.
      */
     public static final class EntryCache
     {
-        private final Map<IToken<?>, Cached> entries = new HashMap<>();
+        private final Map<IToken<?>, Cached>      requests  = new HashMap<>();
+        private final Map<IToken<?>, Cached>      resolvers = new HashMap<>();
+        private final Map<IToken<?>, CachedStore> stores    = new HashMap<>();
         private int generation;
 
         private static final class Cached
         {
-            private final IRequest<?> request;
-            private final int         version;
-            private final Entry       entry;
-            private int               generation;
+            private final Object source;
+            private final long   version;
+            private final Entry  entry;
+            private int          generation;
 
-            private Cached(final IRequest<?> request, final int version, final Entry entry, final int generation)
+            private Cached(final Object source, final long version, final Entry entry, final int generation)
             {
-                this.request = request;
+                this.source = source;
                 this.version = version;
                 this.entry = entry;
                 this.generation = generation;
             }
         }
 
-        public void clear()
+        private static final class CachedStore
         {
-            entries.clear();
+            private final byte[]    key;
+            @Nullable
+            private final IDataStore source;
+            private final long      version;
+            @Nullable
+            private final StoreSnap snap;
+            private int             generation;
+
+            private CachedStore(final byte[] key, @Nullable final IDataStore source, final long version, @Nullable final StoreSnap snap, final int generation)
+            {
+                this.key = key;
+                this.source = source;
+                this.version = version;
+                this.snap = snap;
+                this.generation = generation;
+            }
         }
 
+        public void clear()
+        {
+            requests.clear();
+            resolvers.clear();
+            stores.clear();
+        }
+
+        /**
+         * @return how many parts are kept (entries and stores).
+         */
         public int size()
         {
-            return entries.size();
+            return requests.size() + resolvers.size() + stores.size();
         }
     }
 
@@ -164,33 +215,87 @@ public final class RequestSystemViewSync
     }
 
     /**
-     * Serializes the manager part by part.
+     * Serializes the manager part by part, reusing what the manager's cache holds.
      */
     @NotNull
     public static Snapshot snapshot(@NotNull final StandardRequestManager manager, @NotNull final RegistryAccess ra)
+    {
+        return snapshot(manager, ra, manager.getViewEntryCache());
+    }
+
+    /**
+     * Serializes the manager part by part.
+     *
+     * @param cache what was serialized before and has not changed, or null to serialize everything.
+     */
+    @NotNull
+    public static Snapshot snapshot(@NotNull final StandardRequestManager manager, @NotNull final RegistryAccess ra, @Nullable final EntryCache cache)
     {
         final IFactoryController controller = manager.getFactoryController();
         final byte[] header = bytes(ra, b -> manager.writeViewHeader(controller, b));
         final LinkedHashMap<IToken<?>, StoreSnap> stores = new LinkedHashMap<>();
         final Map<IToken<?>, byte[]> storeKeys = new HashMap<>();
+        final int generation = cache == null ? 0 : ++cache.generation;
         for (final Map.Entry<IToken<?>, IDataStore> store : storeMap(manager).entrySet())
         {
-            storeKeys.put(store.getKey(), bytes(ra, b -> controller.serialize(b, store.getKey())));
+            final IToken<?> token = store.getKey();
             final IDataStore value = store.getValue();
+            final EntryCache.CachedStore held = cache == null ? null : cache.stores.get(token);
+            final byte[] key = held != null ? held.key : bytes(ra, b -> controller.serialize(b, token));
+            storeKeys.put(token, key);
             if (value instanceof StandardRequestIdentitiesDataStore requests)
             {
-                stores.put(store.getKey(), identitySnap(STORE_REQUESTS, requests.getId(), requests.getIdentities(), controller, ra, manager.getViewEntryCache()));
+                stores.put(token, identitySnap(STORE_REQUESTS, requests.getId(), requests.getIdentities(), controller, ra, cache == null ? null : cache.requests, generation));
+                remember(cache, token, held, key, null, IDataStore.UNVERSIONED, null, generation);
             }
             else if (value instanceof StandardRequestResolversIdentitiesDataStore resolvers)
             {
-                stores.put(store.getKey(), identitySnap(STORE_RESOLVERS, resolvers.getId(), resolvers.getIdentities(), controller, ra, null));
+                stores.put(token, identitySnap(STORE_RESOLVERS, resolvers.getId(), resolvers.getIdentities(), controller, ra, cache == null ? null : cache.resolvers, generation));
+                remember(cache, token, held, key, null, IDataStore.UNVERSIONED, null, generation);
             }
             else
             {
-                stores.put(store.getKey(), new StoreSnap(STORE_RAW, bytes(ra, b -> controller.serialize(b, value)), null, null));
+                // Read the counter first: a change while serializing makes the store look old next time, never new.
+                final long version = value.viewVersion();
+                if (held != null && version >= 0 && held.source == value && held.version == version && held.snap != null)
+                {
+                    held.generation = generation;
+                    stores.put(token, held.snap);
+                    continue;
+                }
+                Stats.stores++;
+                final StoreSnap snap = new StoreSnap(STORE_RAW, bytes(ra, b -> controller.serialize(b, value)), null, null);
+                stores.put(token, snap);
+                remember(cache, token, held, key, value, version, version >= 0 ? snap : null, generation);
             }
         }
+        if (cache != null && cache.stores.size() != stores.size())
+        {
+            cache.stores.values().removeIf(c -> c.generation != generation);
+        }
         return new Snapshot(header, stores, storeKeys);
+    }
+
+    private static void remember(
+      @Nullable final EntryCache cache,
+      final IToken<?> token,
+      @Nullable final EntryCache.CachedStore held,
+      final byte[] key,
+      @Nullable final IDataStore source,
+      final long version,
+      @Nullable final StoreSnap snap,
+      final int generation)
+    {
+        if (cache == null)
+        {
+            return;
+        }
+        if (held != null && held.source == source && held.version == version && held.snap == snap)
+        {
+            held.generation = generation;
+            return;
+        }
+        cache.stores.put(token, new EntryCache.CachedStore(key, source, version, snap, generation));
     }
 
     private static StoreSnap identitySnap(
@@ -199,7 +304,8 @@ public final class RequestSystemViewSync
       final BiMap<IToken<?>, ?> identities,
       final IFactoryController controller,
       final RegistryAccess ra,
-      @Nullable final EntryCache cache)
+      @Nullable final Map<IToken<?>, EntryCache.Cached> cache,
+      final int generation)
     {
         final LinkedHashMap<IToken<?>, Entry> entries = new LinkedHashMap<>();
         if (cache == null)
@@ -211,30 +317,32 @@ public final class RequestSystemViewSync
         }
         else
         {
-            final int generation = ++cache.generation;
             for (final Map.Entry<IToken<?>, ?> e : identities.entrySet())
             {
                 final IToken<?> token = e.getKey();
-                if (!(e.getValue() instanceof final AbstractRequest<?> request))
+                final Object value = e.getValue();
+                // Read the counter first: a change while serializing makes the entry look old next time, never new.
+                final long version = value instanceof final AbstractRequest<?> request ? request.getModCount() : value instanceof final IRequestResolver<?> resolver ? resolver.viewVersion() : -1L;
+                if (version < 0)
                 {
-                    entries.put(token, new Entry(bytes(ra, b -> controller.serialize(b, token)), bytes(ra, b -> controller.serialize(b, e.getValue()))));
+                    Stats.entries++;
+                    entries.put(token, new Entry(bytes(ra, b -> controller.serialize(b, token)), bytes(ra, b -> controller.serialize(b, value))));
                     continue;
                 }
-                // Read the counter first: a change while serializing makes the entry look old next time, never new.
-                final int version = request.getModCount();
-                EntryCache.Cached cached = cache.entries.get(token);
-                if (cached == null || cached.request != request || cached.version != version)
+                EntryCache.Cached cached = cache.get(token);
+                if (cached == null || cached.source != value || cached.version != version)
                 {
-                    final Entry entry = new Entry(cached != null ? cached.entry.key() : bytes(ra, b -> controller.serialize(b, token)), bytes(ra, b -> controller.serialize(b, request)));
-                    cached = new EntryCache.Cached(request, version, entry, generation);
-                    cache.entries.put(token, cached);
+                    Stats.entries++;
+                    final Entry entry = new Entry(cached != null ? cached.entry.key() : bytes(ra, b -> controller.serialize(b, token)), bytes(ra, b -> controller.serialize(b, value)));
+                    cached = new EntryCache.Cached(value, version, entry, generation);
+                    cache.put(token, cached);
                 }
                 cached.generation = generation;
                 entries.put(token, cached.entry);
             }
-            if (cache.entries.size() != entries.size())
+            if (cache.size() != entries.size())
             {
-                cache.entries.values().removeIf(c -> c.generation != generation);
+                cache.values().removeIf(c -> c.generation != generation);
             }
         }
         return new StoreSnap(kind, new byte[0], bytes(ra, b -> controller.serialize(b, id)), entries);
@@ -755,7 +863,7 @@ public final class RequestSystemViewSync
     @NotNull
     public static byte[] canonicalBytes(@NotNull final StandardRequestManager manager, @NotNull final RegistryAccess ra)
     {
-        final Snapshot snap = snapshot(manager, ra);
+        final Snapshot snap = snapshot(manager, ra, null);
         final RegistryFriendlyByteBuf out = new RegistryFriendlyByteBuf(Unpooled.buffer(), ra);
         out.writeByteArray(snap.header);
         final List<IToken<?>> tokens = new ArrayList<>(snap.stores.keySet());
