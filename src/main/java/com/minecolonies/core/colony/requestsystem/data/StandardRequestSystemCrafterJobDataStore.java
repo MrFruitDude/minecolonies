@@ -30,6 +30,11 @@ import static com.minecolonies.api.util.constant.NbtTagConstants.*;
 public class StandardRequestSystemCrafterJobDataStore implements IRequestSystemCrafterJobDataStore
 {
     /**
+     * Counts every change of this store's content and id, for the view sync.
+     */
+    private final Tracked.StoreVersion version = new Tracked.StoreVersion();
+
+    /**
      * The id of the store.
      */
     private IToken<?> id;
@@ -53,8 +58,8 @@ public class StandardRequestSystemCrafterJobDataStore implements IRequestSystemC
       final List<IToken<?>> tasks)
     {
         this.id = id;
-        this.queue = queue;
-        this.tasks = tasks;
+        this.queue = Tracked.queue(version, queue);
+        this.tasks = Tracked.list(version, tasks);
     }
 
     /**
@@ -87,6 +92,13 @@ public class StandardRequestSystemCrafterJobDataStore implements IRequestSystemC
     public void setId(final IToken<?> id)
     {
         this.id = id;
+        version.bump();
+    }
+
+    @Override
+    public long viewVersion()
+    {
+        return version.get();
     }
 
     /**

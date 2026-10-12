@@ -54,6 +54,23 @@ public class StandardPlayerRequestResolver implements IPlayerRequestResolver
     @NotNull
     private final Set<IToken<?>> assignedRequests = new HashSet<>();
 
+    /**
+     * Counts every change of the held requests, for the view sync ({@link #viewVersion()}). The set is only changed in this class, and every
+     * change goes with a {@link #touch()}.
+     */
+    private long viewVersion;
+
+    private void touch()
+    {
+        viewVersion++;
+    }
+
+    @Override
+    public long viewVersion()
+    {
+        return viewVersion;
+    }
+
     public StandardPlayerRequestResolver(@NotNull final ILocation location, @NotNull final IToken<?> token)
     {
         super();
@@ -139,6 +156,7 @@ public class StandardPlayerRequestResolver implements IPlayerRequestResolver
             }
         }
         assignedRequests.add(request.getId());
+        touch();
         if (!(request.getRequest() instanceof Delivery || request.getRequest() instanceof Pickup))
         {
             RsStats.playerFallback(request.getId());
@@ -168,6 +186,7 @@ public class StandardPlayerRequestResolver implements IPlayerRequestResolver
     public void onAssignedRequestBeingCancelled(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends IRequestable> request)
     {
         assignedRequests.remove(request.getId());
+        touch();
     }
 
     @Override
@@ -205,6 +224,7 @@ public class StandardPlayerRequestResolver implements IPlayerRequestResolver
     public void onSystemReset()
     {
         assignedRequests.clear();
+        touch();
     }
 
     @Override
@@ -223,6 +243,7 @@ public class StandardPlayerRequestResolver implements IPlayerRequestResolver
                       if (newResolverToken != null && !newResolverToken.equals(token))
                       {
                           assignedRequests.remove(request.getId());
+                          touch();
                       }
                   }
                   else
@@ -243,6 +264,7 @@ public class StandardPlayerRequestResolver implements IPlayerRequestResolver
                               if (newResolverToken != getId())
                               {
                                   assignedRequests.remove(request.getId());
+                                  touch();
                                   break;
                               }
                           }
@@ -256,6 +278,7 @@ public class StandardPlayerRequestResolver implements IPlayerRequestResolver
     {
         this.assignedRequests.clear();
         this.assignedRequests.addAll(assignedRequests);
+        touch();
     }
 
     @Override

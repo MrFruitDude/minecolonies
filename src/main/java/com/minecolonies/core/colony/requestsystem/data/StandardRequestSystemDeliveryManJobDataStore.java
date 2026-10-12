@@ -25,6 +25,11 @@ import static com.minecolonies.api.util.constant.NbtTagConstants.*;
 public class StandardRequestSystemDeliveryManJobDataStore implements IRequestSystemDeliveryManJobDataStore
 {
 
+    /**
+     * Counts every change of this store's content and id, for the view sync.
+     */
+    private final Tracked.StoreVersion version = new Tracked.StoreVersion();
+
     private       IToken<?>             id;
     private final LinkedList<IToken<?>> queue;
     private final Set<IToken<?>> ongoingDeliveries;
@@ -32,8 +37,8 @@ public class StandardRequestSystemDeliveryManJobDataStore implements IRequestSys
     public StandardRequestSystemDeliveryManJobDataStore(final IToken<?> id, final LinkedList<IToken<?>> queue, final Set<IToken<?>> ongoingDeliveries)
     {
         this.id = id;
-        this.queue = queue;
-        this.ongoingDeliveries = ongoingDeliveries;
+        this.queue = Tracked.queue(version, queue);
+        this.ongoingDeliveries = Tracked.set(version, ongoingDeliveries);
     }
 
     public StandardRequestSystemDeliveryManJobDataStore()
@@ -64,6 +69,13 @@ public class StandardRequestSystemDeliveryManJobDataStore implements IRequestSys
     public void setId(final IToken<?> id)
     {
         this.id = id;
+        version.bump();
+    }
+
+    @Override
+    public long viewVersion()
+    {
+        return version.get();
     }
 
     public static class Factory implements IFactory<FactoryVoidInput, StandardRequestSystemDeliveryManJobDataStore>

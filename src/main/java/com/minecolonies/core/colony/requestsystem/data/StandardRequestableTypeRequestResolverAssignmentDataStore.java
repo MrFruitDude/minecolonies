@@ -25,6 +25,11 @@ import java.util.stream.Collectors;
 public class StandardRequestableTypeRequestResolverAssignmentDataStore implements IRequestableTypeRequestResolverAssignmentDataStore
 {
 
+    /**
+     * Counts every change of this store's content and id, for the view sync.
+     */
+    private final Tracked.StoreVersion version = new Tracked.StoreVersion();
+
     private       IToken<?>                                id;
     private final Map<TypeToken<?>, Collection<IToken<?>>> assignments;
 
@@ -33,7 +38,7 @@ public class StandardRequestableTypeRequestResolverAssignmentDataStore implement
       final Map<TypeToken<?>, Collection<IToken<?>>> assignments)
     {
         this.id = id;
-        this.assignments = assignments;
+        this.assignments = Tracked.collectionMap(version, new HashMap<>(), assignments);
     }
 
     public StandardRequestableTypeRequestResolverAssignmentDataStore()
@@ -58,6 +63,13 @@ public class StandardRequestableTypeRequestResolverAssignmentDataStore implement
     public void setId(final IToken<?> id)
     {
         this.id = id;
+        version.bump();
+    }
+
+    @Override
+    public long viewVersion()
+    {
+        return version.get();
     }
 
     public static class Factory implements IFactory<FactoryVoidInput, StandardRequestableTypeRequestResolverAssignmentDataStore>

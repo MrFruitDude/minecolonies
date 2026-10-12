@@ -79,9 +79,11 @@ public final class RequestSyncGameTests
      */
     static void register(final net.neoforged.neoforge.event.RegisterGameTestsEvent event)
     {
-        final String[] names = {"reqsync_bytes_per_minute", "reqsync_client_equals_full", "reqsync_protocol_mismatch", "reqsync_citizen_view_patch"};
+        final String[] names = {"reqsync_bytes_per_minute", "reqsync_client_equals_full", "reqsync_protocol_mismatch", "reqsync_citizen_view_patch", "reqsync_store_mutations",
+          "reqsync_quiet_stores_not_serialized"};
         final java.util.List<java.util.function.Consumer<GameTestHelper>> bodies =
-          List.of(RequestSyncGameTests::bytesPerMinute, RequestSyncGameTests::clientEqualsFull, RequestSyncGameTests::protocolMismatch, RequestSyncGameTests::citizenViewPatch);
+          List.of(RequestSyncGameTests::bytesPerMinute, RequestSyncGameTests::clientEqualsFull, RequestSyncGameTests::protocolMismatch, RequestSyncGameTests::citizenViewPatch,
+            RequestSyncGameTests::storeMutations, RequestSyncGameTests::quietStoresNotSerialized);
         for (int i = 0; i < names.length; i++)
         {
             final String name = names[i];
@@ -575,6 +577,15 @@ public final class RequestSyncGameTests
             // Away for two sync rounds, then back.
             f.helper.runAfterDelay(45, () -> f.colony.getPackageManager().addCloseSubscriber(f.player));
         }));
+        runEquality(helper, f, client, log, steps);
+    }
+
+    /**
+     * Runs the steps one after the other (each followed by a sync round) and, after each, compares the client view with the
+     * full-payload reference of the latest send.
+     */
+    private static void runEquality(final GameTestHelper helper, final Fixture f, final SimClient client, final List<String> log, final List<Map.Entry<String, Runnable>> steps)
+    {
         final int[] index = {0};
         final Runnable[] next = new Runnable[1];
         next[0] = () -> {
@@ -610,6 +621,177 @@ public final class RequestSyncGameTests
             });
         };
         after(f, STEP_TICKS, next[0]);
+    }
+
+    // ------------------------------------------------------------------ per-store versions
+
+    private static IToken<?> newToken()
+    {
+        return StandardFactoryController.getInstance().getNewInstance(com.minecolonies.api.util.constant.TypeConstants.ITOKEN);
+    }
+
+    /**
+     * The view sync serializes a data store again only when its version counter moved. So every way a store is changed (and the stores
+     * hand out live collections for exactly that) has to move it: each step below changes one store through the collection the store
+     * hands out, as the request manager, the buildings and the jobs do, and after the sync round the client view must equal the full
+     * payload. A store that changed without moving its counter would show as a client that still holds the old content.
+     */
+    public static void storeMutations(final GameTestHelper helper)
+    {
+        final Fixture f = fixture(helper, "CA1 stores", true);
+        final SimClient client = new SimClient(f.colony);
+        final List<String> log = new ArrayList<>();
+        final Map<String, IToken<?>> t = new HashMap<>();
+        final com.minecolonies.core.colony.requestsystem.data.StandardDataStoreManager stores =
+          (com.minecolonies.core.colony.requestsystem.data.StandardDataStoreManager) f.rm().getDataStoreManager();
+        final List<Map.Entry<String, Runnable>> steps = new ArrayList<>();
+        steps.add(Map.entry("initial", () -> {}));
+        steps.add(Map.entry("create (building, assignment and resolver stores change)", () -> t.put("a", f.request(Items.DIAMOND, 2))));
+        steps.add(Map.entry("provider store: new provider, add, remove", () -> {
+            final var assignments = f.rm().getProviderResolverAssignmentDataStore().getAssignments();
+            t.put("p", newToken());
+            assignments.put(t.get("p"), new ArrayList<>(List.of(newToken())));
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("provider store: add to the list it holds", () -> {
+            f.rm().getProviderResolverAssignmentDataStore().getAssignments().computeIfAbsent(t.get("p"), k -> new ArrayList<>()).add(newToken());
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("provider store: remove the entry", () -> {
+            f.rm().getProviderResolverAssignmentDataStore().getAssignments().remove(t.get("p"));
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("requestable type store: new type, add, remove", () -> {
+            final var assignments = f.rm().getRequestableTypeRequestResolverAssignmentDataStore().getAssignments();
+            final com.google.common.reflect.TypeToken<?> type = com.google.common.reflect.TypeToken.of(Stack.class);
+            assignments.computeIfAbsent(type, k -> new ArrayList<>()).add(newToken());
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("requestable type store: change the list it holds", () -> {
+            final var assignments = f.rm().getRequestableTypeRequestResolverAssignmentDataStore().getAssignments();
+            final var list = assignments.get(com.google.common.reflect.TypeToken.of(Stack.class));
+            list.add(newToken());
+            final var it = list.iterator();
+            it.next();
+            it.remove();
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("resolver assignment store: put a resolver, add and remove a request", () -> {
+            final var assignments = f.rm().getRequestResolverRequestAssignmentDataStore().getAssignments();
+            t.put("r", newToken());
+            assignments.put(t.get("r"), new HashSet<>());
+            assignments.get(t.get("r")).add(newToken());
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("resolver assignment store: remove the resolver", () -> {
+            f.rm().getRequestResolverRequestAssignmentDataStore().getAssignments().remove(t.get("r"));
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("building store: every map and list of it", () -> {
+            final var building = (com.minecolonies.core.colony.requestsystem.data.StandardRequestSystemBuildingDataStore) stores.getStoreMap().values().stream()
+              .filter(s -> s instanceof com.minecolonies.core.colony.requestsystem.data.StandardRequestSystemBuildingDataStore).findFirst().orElseThrow();
+            building.getOpenRequestsByCitizen().computeIfAbsent(77, k -> new ArrayList<>()).add(newToken());
+            building.getCompletedRequestsByCitizen().computeIfAbsent(78, k -> new ArrayList<>()).add(newToken());
+            building.getOpenRequestsByRequestableType().computeIfAbsent(com.google.common.reflect.TypeToken.of(Stack.class), k -> new ArrayList<>()).add(newToken());
+            building.getCitizensByRequest().put(newToken(), 77);
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("building store: remove from a list, drop an entry", () -> {
+            final var building = (com.minecolonies.core.colony.requestsystem.data.StandardRequestSystemBuildingDataStore) stores.getStoreMap().values().stream()
+              .filter(s -> s instanceof com.minecolonies.core.colony.requestsystem.data.StandardRequestSystemBuildingDataStore).findFirst().orElseThrow();
+            building.getOpenRequestsByCitizen().get(77).clear();
+            building.getCompletedRequestsByCitizen().remove(78);
+            final var citizens = building.getCitizensByRequest().keySet().iterator();
+            citizens.next();
+            citizens.remove();
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("courier job store: new store, queue, ongoing deliveries", () -> {
+            t.put("dman", newToken());
+            final var store = stores.get(t.get("dman"), () -> new com.minecolonies.core.colony.requestsystem.data.StandardRequestSystemDeliveryManJobDataStore());
+            store.getQueue().add(newToken());
+            store.getOngoingDeliveries().add(newToken());
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("courier job store: change the queue and the set", () -> {
+            final var store = stores.get(t.get("dman"), com.google.common.reflect.TypeToken.of(com.minecolonies.core.colony.requestsystem.data.StandardRequestSystemDeliveryManJobDataStore.class));
+            store.getQueue().addFirst(newToken());
+            store.getQueue().removeLast();
+            store.getOngoingDeliveries().clear();
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("crafter job store: new store, queue, tasks", () -> {
+            t.put("crafter", newToken());
+            final var store = stores.get(t.get("crafter"), () -> new com.minecolonies.core.colony.requestsystem.data.StandardRequestSystemCrafterJobDataStore());
+            store.getQueue().add(newToken());
+            store.getAssignedTasks().add(newToken());
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("crafter job store: change the tasks", () -> {
+            final var store = stores.get(t.get("crafter"), com.google.common.reflect.TypeToken.of(com.minecolonies.core.colony.requestsystem.data.StandardRequestSystemCrafterJobDataStore.class));
+            store.getAssignedTasks().set(0, newToken());
+            store.getQueue().poll();
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("a store goes away", () -> {
+            stores.remove(t.get("crafter"));
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("retrying resolver changes its held requests", () -> {
+            final var retrying = (com.minecolonies.core.colony.requestsystem.resolvers.StandardRetryingRequestResolver) f.rm().getRetryingRequestResolver();
+            final IToken<?> held = newToken();
+            retrying.updateData(Map.of(held, 2), Map.of(held, 40));
+            f.rm().markDirty();
+        }));
+        steps.add(Map.entry("player resolver changes its held requests", () -> {
+            final var player = (com.minecolonies.core.colony.requestsystem.resolvers.StandardPlayerRequestResolver) f.rm().getPlayerResolver();
+            player.setAllAssignedRequests(new HashSet<>(List.of(newToken())));
+            f.rm().markDirty();
+        }));
+        runEquality(helper, f, client, log, steps);
+    }
+
+    /**
+     * A snapshot of a manager that did not change serializes nothing again; changing one store (or one request) serializes that
+     * one and nothing else.
+     */
+    public static void quietStoresNotSerialized(final GameTestHelper helper)
+    {
+        final Fixture f = fixture(helper, "CA1 quiet stores");
+        final RegistryAccess ra = f.level.registryAccess();
+        for (final Item item : requestItems(30, 0))
+        {
+            f.request(item, 1);
+        }
+        after(f, SETTLE_TICKS, () -> {
+            final StandardRequestManager rm = f.rm();
+            // no tick runs between the snapshots below: this is one game tick of the test thread
+            RequestSystemViewSync.snapshot(rm, ra);
+            final long stores0 = RequestSystemViewSync.Stats.stores;
+            final long entries0 = RequestSystemViewSync.Stats.entries;
+            RequestSystemViewSync.snapshot(rm, ra);
+            final long quietStores = RequestSystemViewSync.Stats.stores - stores0;
+            final long quietEntries = RequestSystemViewSync.Stats.entries - entries0;
+
+            final long stores1 = RequestSystemViewSync.Stats.stores;
+            rm.getProviderResolverAssignmentDataStore().getAssignments().put(newToken(), new ArrayList<>(List.of(newToken())));
+            RequestSystemViewSync.snapshot(rm, ra);
+            final long oneStore = RequestSystemViewSync.Stats.stores - stores1;
+
+            final long entries1 = RequestSystemViewSync.Stats.entries;
+            final IToken<?> one = f.request(Items.BARRIER, 1);
+            final long entries2 = RequestSystemViewSync.Stats.entries;
+            RequestSystemViewSync.snapshot(rm, ra);
+            final long changedEntries = RequestSystemViewSync.Stats.entries - entries2;
+            f.close();
+            Log.getLogger().info("CA1 quiet stores: quiet snapshot serialized {} stores and {} entries; one store changed: {} stores; one request created: {} entries ({} stores total, request {})",
+              quietStores, quietEntries, oneStore, changedEntries, rm.getRequestIdentitiesDataStore().getIdentities().size(), one);
+            helper.assertTrue(quietStores == 0, "a snapshot of a manager that did not change serialized " + quietStores + " stores again");
+            helper.assertTrue(quietEntries == 0, "a snapshot of a manager that did not change serialized " + quietEntries + " request or resolver entries again");
+            helper.assertTrue(oneStore == 1, "one changed store should be serialized once, not " + oneStore);
+            helper.assertTrue(changedEntries >= 1 && changedEntries <= 12, "one new request changes a handful of entries, not " + changedEntries);
+            helper.succeed();
+        });
     }
 
     // ------------------------------------------------------------------ protocol
