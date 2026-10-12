@@ -975,7 +975,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         final int reps = Integer.getInteger("minecolonies.gametest.reps", 3);
         for (int i = 1; i <= reps; i++)
         {
-            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy", "clear", "clear_legacy", "two", "twobig", "onebig", "onebig_legacy"})
+            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy", "clear", "clear_legacy", "two", "twobig", "onebig", "onebig_legacy", "bridge"})
             {
                 final String name = "scaffoldbench_" + base + "_" + i;
                 if (!nameWanted(name))
@@ -997,6 +997,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                     case "onebig_legacy" -> BuilderScaffoldGameTests::oneBuilderBigLegacy;
                     case "two" -> BuilderScaffoldGameTests::twoBuilders;
                     case "twobig" -> BuilderScaffoldGameTests::twoBuildersBig;
+                    case "bridge" -> BuilderScaffoldGameTests::bridgeOverTrench;
                     default -> BuilderScaffoldGameTests::sealedRoofLegacy;
                 };
                 event.registerTest(

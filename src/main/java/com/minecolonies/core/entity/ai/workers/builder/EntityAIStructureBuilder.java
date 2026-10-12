@@ -559,7 +559,9 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             walk.budget = 100L + 12L * (long) Math.ceil(spots.get(0).walk());
             walk.lastPosition = null;
             walk.noSpotSince = 0L;
-            scaffold.note((walk == mainWalk ? "spot " : "scaffold spot ") + walk.spot + " for " + target + " covers " + spots.get(0).covered() + " walk " + String.format("%.1f", spots.get(0).walk()) + " builder at " + worker.blockPosition());
+            scaffold.note((walk == mainWalk ? "spot " : "scaffold spot ") + walk.spot + " for " + target + " covers " + spots.get(0).covered() + " walk " + String.format("%.1f", spots.get(0).walk()) + " builder at " + worker.blockPosition()
+                            + (com.minecolonies.core.entity.ai.workers.util.ReachAudit.isEnabled() && spots.get(0).feet().getY() >= worker.blockPosition().getY() + 3
+                                 ? " model=" + StandSpots.route(world, worker.blockPosition(), walk.spot, 28, 30000).stream().map(BlockPos::toShortString).toList() : ""));
         }
 
         if (walk == mainWalk)
@@ -605,7 +607,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             sb.append(path.getNode(i).asBlockPos().toShortString()).append(' ');
         }
-        return sb.append(']').toString();
+        sb.append(']');
+        if (path.getNextNodeIndex() < path.getNodeCount() && path.getNode(path.getNextNodeIndex()) instanceof com.minecolonies.core.entity.pathfinding.PathPointExtended ppe)
+        {
+            sb.append(" nextNode=").append(ppe.asBlockPos().toShortString()).append(" ladder=").append(ppe.isOnLadder()).append(" facing=").append(ppe.getLadderFacing());
+        }
+        return sb.toString();
     }
 
     /**

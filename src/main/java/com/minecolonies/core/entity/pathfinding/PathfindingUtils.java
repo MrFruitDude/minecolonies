@@ -146,7 +146,9 @@ public class PathfindingUtils
         }
 
         BlockState down = level.getBlockState(pos.below());
-        while (canStandInSolidBlock(bs) && canStandInSolidBlock(down) && !down.getBlock().isLadder(down, level, pos.below(), entity) && down.getFluidState().isEmpty())
+        // (not out of a block of scaffolding: it holds him up with a plate; an arm of it over a drop would otherwise start the path at the bottom of the drop)
+        while (!bs.is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) && canStandInSolidBlock(bs) && canStandInSolidBlock(down) && !down.getBlock().isLadder(down, level, pos.below(), entity)
+                 && down.getFluidState().isEmpty())
         {
             pos.move(Direction.DOWN, 1);
             bs = down;
