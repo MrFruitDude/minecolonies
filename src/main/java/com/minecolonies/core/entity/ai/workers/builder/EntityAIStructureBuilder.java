@@ -605,7 +605,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         return "pos=" + worker.blockPosition().toShortString() + " eye=" + String.format("%.1f", worker.getEyeY()) + " workFrom=" + (workFrom == null ? "-" : workFrom.toShortString())
                  + " mine=" + (blockToMine == null ? "-" : blockToMine.toShortString()) + " spot=" + (mainWalk.spot == null ? "-" : mainWalk.spot.toShortString())
                  + " bad=" + mainWalk.bad.size() + " reachTarget=" + (reachTarget == null ? "-" : reachTarget.toShortString()) + " nav=" + (worker.getNavigation().isDone() ? "done" : "busy")
-                 + " stuck=" + debugStuck() + " scaffold=" + scaffold.debug();
+                 + " stuck=" + debugStuck() + " scaffold=" + scaffold.debug()
+                 + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate pn && pn.getPathResult() != null && !worker.getNavigation().isDone() ? " path=" + pn.getPathResult().getStatus() + " " + pathDescription(pn) : "");
     }
 
     // ------------------------------------------------------------------ scaffolding
