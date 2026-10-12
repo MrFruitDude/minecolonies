@@ -48,6 +48,26 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     private final HashMap<IToken<?>, Integer> delays           = new HashMap<>();
     private final HashMap<IToken<?>, Integer> assignedRequests = new HashMap<>();
 
+    /**
+     * Counts every change of the two maps above, for the view sync ({@link #viewVersion()}). The maps are only changed in this class, and
+     * every change goes with a {@link #touch()}; what the getters hand out cannot be changed.
+     */
+    private long viewVersion;
+
+    private final Map<IToken<?>, Integer> delaysView           = Collections.unmodifiableMap(delays);
+    private final Map<IToken<?>, Integer> assignedRequestsView = Collections.unmodifiableMap(assignedRequests);
+
+    private void touch()
+    {
+        viewVersion++;
+    }
+
+    @Override
+    public long viewVersion()
+    {
+        return viewVersion;
+    }
+
     public StandardRetryingRequestResolver(final IFactoryController factoryController, final IRequestManager manager)
     {
         this.updateManager(manager);
@@ -123,6 +143,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     {
         final int attempt = assignedRequests.containsKey(request.getId()) ? assignedRequests.get(request.getId()) + 1 : 1;
         assignedRequests.put(request.getId(), attempt);
+        touch();
         if (RsFlags.smartRetry())
         {
             delays.put(request.getId(), backoff(attempt));
@@ -134,6 +155,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
             return;
         }
         delays.put(request.getId(), getMaximalDelayBetweenRetriesInTicks());
+        touch();
     }
 
     /**
@@ -155,6 +177,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
         if (assignedRequests.containsKey(token))
         {
             delays.put(token, 1);
+            touch();
         }
     }
 
@@ -183,6 +206,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
         {
             delays.remove(request.getId());
             assignedRequests.remove(request.getId());
+            touch();
         }
     }
 
@@ -205,6 +229,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
         manager.log("Starting reassignment.");
 
         //Lets decrement all delays
+        touch();
         getAllAssignedRequests().forEach(t -> {
             Integer current = delays.remove(t);
             delays.put(t, --current);
@@ -228,22 +253,26 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
             {
                 assignedRequests.remove(t);
                 delays.remove(t);
+                touch();
                 return false;
             }
 
             this.setCurrent(null);
 
             assignedRequests.put(t, ++currentAttempt);
+            touch();
 
             if (resultingResolver != null && !resultingResolver.equals(getId()))
             {
                 assignedRequests.remove(t);
                 delays.remove(t);
+                touch();
             }
             else if (resultingResolver != null && RsFlags.smartRetry())
             {
                 // Back here: wait twice as long before the next fallback retry (events still wake it sooner).
                 delays.put(t, backoff(currentAttempt));
+                touch();
             }
 
             return resultingResolver != null;
@@ -267,6 +296,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     {
         assignedRequests.clear();
         delays.clear();
+        touch();
     }
 
     public void setCurrent(@Nullable final IToken<?> token)
@@ -313,16 +343,23 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
 
         this.delays.clear();
         this.delays.putAll(newDelays);
+        touch();
     }
 
+    /**
+     * @return the delays of the held requests, as they are now (read only).
+     */
     public Map<IToken<?>, Integer> getDelays()
     {
-        return delays;
+        return delaysView;
     }
 
+    /**
+     * @return the attempt counts of the held requests (read only).
+     */
     public Map<IToken<?>, Integer> getAssignedRequests()
     {
-        return assignedRequests;
+        return assignedRequestsView;
     }
 
     @Override
@@ -341,6 +378,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
                       if (newResolverToken != null && !newResolverToken.equals(getId()))
                       {
                           assignedRequests.remove(request.getId());
+                          touch();
                       }
                   }
                   else
@@ -361,6 +399,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
                               if (!getId().equals(newResolverToken))
                               {
                                   assignedRequests.remove(request.getId());
+                                  touch();
                                   break;
                               }
                           }

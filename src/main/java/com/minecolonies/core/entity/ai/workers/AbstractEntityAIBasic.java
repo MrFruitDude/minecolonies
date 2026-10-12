@@ -2088,6 +2088,17 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     }
 
     /**
+     * Whether the citizen AI may send this worker on a leisure break now (a few minutes of walking about). Workers that hold work nobody
+     * else can take over say no.
+     *
+     * @return true if a leisure break is fine.
+     */
+    public boolean canTakeLeisure()
+    {
+        return canBeInterrupted();
+    }
+
+    /**
      * If the worker currently has work to do or could also just wander around.
      * @return true if can go idle.
      */

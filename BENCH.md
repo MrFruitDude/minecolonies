@@ -20,7 +20,7 @@ python3 -I tools/rs_bench_report.py show bench-results/<file>.json
 The run is one `runGameTestServer` under `flock /mnt/data/anno117-extract/.cc-gametest.lock` and `timeout 3300`; waiting for
 the lock can take a long time when other workers run GameTests. Results go to `bench-results/<git-sha>[-dirty]-<timestamp>.json`
 (`--keep-raw` keeps the per-repeat JSON in `bench-tmp/`, git-ignored). Exit code is non-zero when a gate failed.
-Settings are environment variables (`RS_BENCH_ONLY/MODE/REPS/SEED/FLAGS/WORKERS/OUT/ONLY_TESTS`, see `BenchEnv`);
+Settings are environment variables (`RS_BENCH_ONLY/MODE/REPS/SEED/FLAGS/WORKERS/OUT/ONLY_TESTS`, see `BenchEnv`); the courier switch `requestSystem.courierImmediateNextTask` is read from `MINECOLONIES_RS_COURIER_IMMEDIATE=false` (a paired run of the same code with the switch off);
 the runner sets them. `RS_BENCH_ONLY=1` makes the registrar register only the `minecolonies:rsb_*` tests.
 
 ## What is where
@@ -166,7 +166,7 @@ Ranked by share of **request-system** CPU (inclusive unless marked self):
   chain than logs -> planks -> fence was not built.
 - **Gatherers are scripted** (lumberjack, miner, farmer huts exist, workers are not simulated); consumption is scripted (requests created through `building.createRequest`, items removed from racks), not driven by citizen hunger or tool wear.
 - **Runs are deterministic in inputs, not in outcomes**: pathfinding and AI make `fresh`/`unload` ticks-to-completion vary ~12% between repeats even with seeded RNG, pinned skills and synchronised path results.
-- **Intermittent hangs of the shipped system** exist (a courier delivery that never completes; see Gate 2); the baseline run had none in 5 repeats but earlier trial runs of `busy` with consumers 40+ blocks from the warehouses hung in ~40% of repeats, so consumers sit within ~35 blocks.
+- **Intermittent hangs of the shipped system** were a courier on a leisure break holding a task (fixed, see `HILLCLIMB.md` "Closed: the stuck courier"); the baseline run had none in 5 repeats but earlier trial runs of `busy` with consumers 40+ blocks from the warehouses hung in ~40% of repeats, so consumers sit within ~35 blocks. A stall trail (`stallTrail` in the result JSON, `RS_BENCH_STALL_TRAIL` in the log: the couriers' position, AI state, task and path every 50 ticks once a request tree stood still for 1500 ticks) explains a slow or hung repeat; `--keep-raw` keeps the JSON.
 - Tool requests (`Tool` requestable) are not used; consumers ask for plain stacks. Minimum stock is used only in `storm`.
 - `--flags off` only switches reservations and smart retry; priority classes stay at the config default.
 - Probe overhead (1.7 us per coarse scope) lands inside the inclusive micro figures; absolute micro numbers are therefore slightly high, relative changes are valid.

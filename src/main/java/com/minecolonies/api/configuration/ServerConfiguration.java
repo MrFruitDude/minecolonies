@@ -203,6 +203,12 @@ public class ServerConfiguration extends AbstractConfiguration
     public final BooleanValue priorityClasses;
 
     /**
+     * RS4: a courier that just finished a task decides on its next one at once, instead of idling for most of the decision
+     * delay (5 s) after every task. Off = the original timing.
+     */
+    public final BooleanValue courierImmediateNextTask;
+
+    /**
      * Global storage network: the colony's warehouses are one storage (one stock index, one courier pool, source and
      * drop-off chosen by estimated completion time).
      */
@@ -320,6 +326,7 @@ public class ServerConfiguration extends AbstractConfiguration
         reservations = defineBoolean("reservations", true);
         smartRetry = defineBoolean("smartRetry", true);
         priorityClasses = defineBoolean("priorityClasses", true);
+        courierImmediateNextTask = defineBoolean("courierImmediateNextTask", true);
         storageNetwork = defineBoolean("storageNetwork", true);
         storageServiceRange = defineInteger("storageServiceRange", 0, 0, 100000);
         storageItemCap = defineInteger("storageItemCap", 0, 0, 100000000);

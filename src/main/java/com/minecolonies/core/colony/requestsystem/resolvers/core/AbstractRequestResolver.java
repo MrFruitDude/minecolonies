@@ -35,6 +35,16 @@ public abstract class AbstractRequestResolver<R extends IRequestable> implements
         return token;
     }
 
+    /**
+     * What these resolvers send to the client view is their id, their location and (crafters) their job: all fixed for the life of the
+     * object, so one counter value will do. A subclass with state in its view overrides this.
+     */
+    @Override
+    public long viewVersion()
+    {
+        return 0L;
+    }
+
     @NotNull
     @Override
     public ILocation getLocation()

@@ -21,6 +21,9 @@ public final class RsFlags
     private static volatile Boolean priorityClassesOverride;
 
     @Nullable
+    private static volatile Boolean courierImmediateOverride;
+
+    @Nullable
     private static volatile Boolean storageNetworkOverride;
 
     @Nullable
@@ -107,6 +110,33 @@ public final class RsFlags
         try
         {
             return MinecoloniesAPIProxy.getInstance().getConfig().getServer().priorityClasses.get();
+        }
+        catch (final RuntimeException | LinkageError e)
+        {
+            return false;
+        }
+    }
+
+    /**
+     * RS4: a courier that finished a task decides on the next one at once (the decision delay is skipped).
+     *
+     * @return true when couriers do not idle for the decision delay after every task.
+     */
+    public static boolean courierImmediateNextTask()
+    {
+        final Boolean override = courierImmediateOverride;
+        if (override != null)
+        {
+            return override;
+        }
+        final Boolean env = fromEnvironment("MINECOLONIES_RS_COURIER_IMMEDIATE");
+        if (env != null)
+        {
+            return env;
+        }
+        try
+        {
+            return MinecoloniesAPIProxy.getInstance().getConfig().getServer().courierImmediateNextTask.get();
         }
         catch (final RuntimeException | LinkageError e)
         {
@@ -226,6 +256,16 @@ public final class RsFlags
     public static void overridePriorityClasses(@Nullable final Boolean value)
     {
         priorityClassesOverride = value;
+    }
+
+    /**
+     * Forces the immediate-next-task switch, for tests. Null returns to the config value.
+     *
+     * @param value the forced value.
+     */
+    public static void overrideCourierImmediateNextTask(@Nullable final Boolean value)
+    {
+        courierImmediateOverride = value;
     }
 
     /**

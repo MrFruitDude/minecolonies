@@ -22,6 +22,17 @@ import java.util.function.Predicate;
  */
 public interface IRequestResolver<R extends IRequestable> extends IRequester
 {
+    /**
+     * A counter that changes whenever anything this resolver sends to the client view changes. The view sync serializes a
+     * resolver again only when its counter moved. A resolver that cannot say returns -1 and is serialized every time.
+     *
+     * @return the change counter, or -1.
+     */
+    default long viewVersion()
+    {
+        return -1L;
+    }
+
 
     /**
      * Used to determine which type of requests can be resolved by this Resolver.

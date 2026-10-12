@@ -29,8 +29,13 @@ public class StandardRequestResolverRequestAssignmentDataStore implements IReque
 {
 
     /**
+     * Counts every change of this store's content and id, for the view sync.
+     */
+    private final Tracked.StoreVersion version = new Tracked.StoreVersion();
+
+    /**
      * The resolver to requests assignments. Mutations through the map or through its collections keep the index below
-     * up to date.
+     * up to date (and count into {@link #version}).
      */
     private final IndexedAssignments assignments = new IndexedAssignments();
 
@@ -85,6 +90,13 @@ public class StandardRequestResolverRequestAssignmentDataStore implements IReque
     public void setId(final IToken<?> id)
     {
         this.id = id;
+        version.bump();
+    }
+
+    @Override
+    public long viewVersion()
+    {
+        return version.get();
     }
 
     private void indexed(final IToken<?> request, final IToken<?> resolver)
@@ -138,6 +150,7 @@ public class StandardRequestResolverRequestAssignmentDataStore implements IReque
                 return false;
             }
             indexed(request, resolver);
+            version.bump();
             return true;
         }
 
@@ -149,6 +162,7 @@ public class StandardRequestResolverRequestAssignmentDataStore implements IReque
                 return false;
             }
             unindexed((IToken<?>) request, resolver);
+            version.bump();
             return true;
         }
 
@@ -199,6 +213,7 @@ public class StandardRequestResolverRequestAssignmentDataStore implements IReque
                 {
                     inner.remove();
                     unindexed(last, resolver);
+                    version.bump();
                 }
             };
         }
@@ -220,6 +235,7 @@ public class StandardRequestResolverRequestAssignmentDataStore implements IReque
                 unassign(resolver, previous);
             }
             taken.addAll(requests);
+            version.bump();
             return previous;
         }
 
@@ -236,6 +252,7 @@ public class StandardRequestResolverRequestAssignmentDataStore implements IReque
             if (previous != null)
             {
                 unassign((IToken<?>) resolver, previous);
+                version.bump();
             }
             return previous;
         }
@@ -246,6 +263,7 @@ public class StandardRequestResolverRequestAssignmentDataStore implements IReque
             super.clear();
             resolverByRequest.clear();
             sharedRequests = false;
+            version.bump();
         }
 
         private void unassign(final IToken<?> resolver, final Collection<IToken<?>> requests)

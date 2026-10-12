@@ -72,6 +72,9 @@ the instrument on this machine is a few percent on the score and 10-40% on singl
 | 8 | the storage-network courier resolver tests whether a request's requester is a warehouse by type; it used `getBuilding(pos, IWareHouse.class)`, whose `ClassCastException` is thrown, caught and logged WITH A STACK TRACE for every non-warehouse requester (`546ec2d220`) | ACCEPTED | found because `DeliveryRequestResolver.canResolve` was 13% of busy RS CPU at 35 kB allocated per call. Log of the base run: 234 "getBuilding called with wrong type" stack traces (27.9k lines), candidate run: 0 (13.6k lines). Scope timings, busy: `canResolve` 1853 -> 700 ns/tick (-62%); storm assign -13%, storm rsAlloc -11.7% BETTER, fresh rsAlloc -28.9% BETTER. In the same paired run every OTHER busy scope ran 40-90% slower in the candidate (create +85%, ledgerWrite +68%, reeval +91%): a load window, so the busy rsCpu verdict (+28%, noise) is not about this change; the accepting evidence is the scope that only this change touches plus the deterministic exception count. Gates OK. |
 | 9 | a request hands out one cached immutable list of its children until they change (`AbstractRequest.getChildren` built a new `ImmutableList` per call, 5.8% of RS allocation in the profile; `29dffcffa9`) | REJECTED | paired: busy rsAlloc/tick -4.7% (noise), storm +4.2% (noise), fresh +0.5%; no targeted metric BETTER (busy rsCpu -29% BETTER p=0.016 is not credible for a change worth <1% of CPU, and the micro-100 phase of that candidate run was polluted: every op +30..640%). Commit kept on `origin/rejected/rs-children-cache`. |
 | 10 | a location writes its dimension id from bytes encoded once per id (the string was UTF-8 encoded for every `StaticLocation` in every snapshot; it was 25% of the serialization time in the micro profile; `6ea286e80d`) | ACCEPTED | paired: storm rsAlloc/tick 4056 -> 3656 (-9.8% BETTER), viewSnapshot@100 -16.9% (71.3k -> 59.3k ns, BETTER p=0.008), viewPerDirtyTick@100 -12.7%, viewDelta@1000 -7.6%. WORSE flags on ops it does not touch: complete@100 +10%, ledgerCommit@1000 (bimodal 1.2 / 4.4 us, cv 63%), ledgerRelease. Gates OK. |
+| 11 | per-store version counters in the view sync: every plain data store (the six "raw" ones) is serialized again only when its counter moved, and every resolver entry only when its `viewVersion()` moved (`Tracked` collections + store versions, resolver versions; branch `fix/rs-courier-sync`) | ACCEPTED | paired quick K=5 vs the code without it (courier switch off in the candidate, so only the sync and the leisure fix differ): viewSnapshot@100 -52.3%, @1000 -57.1%; viewSnapshot2 (the snapshot after 1% changed) @100 -49.4%, @1000 -60.2% (all BETTER p=0.008); micro-only repeat: @100 -85.2%, @1000 -61.8%, viewPerDirtyTick@100 -47.4% (BETTER). Macro: busy rsShare -17.7% (BETTER p=0.032), busy rsAlloc/tick 2925 -> 2288 (-21.8% BETTER), busy rsCpuP99 -23.1%; fresh rsCpu/tick 3817 -> 1583 ns (-58.5% BETTER), storm rsCpuP99 -30.4% (BETTER); busy rsCpu/tick -11.8% and storm -8.0% are noise at K=5. Save format identical (save bytes 101k / 1.31M unchanged), client view equal to the full payload (`reqsync_*`, 5 GameTests + `reqsync_store_mutations` + `reqsync_quiet_stores_not_serialized`, JUnit `TrackedCollectionsTest`). WORSE flags: viewDelta/viewFull@100 (+419% / +248%) in the first run, which the repeat did not reproduce (neither function was touched; 100-scale first-phase noise), ledgerReserve/Commit/Read +6..18% (change cannot touch them). Profile after: `sendRequestSystemPackets` 27-35% -> 18.6% of RS CPU. Gates OK. |
+| 12 | RS4: a courier decides on its next task at once after finishing one (`9f2697ce19`, cherry-picked; switch `requestSystem.courierImmediateNextTask`, default on, env `MINECOLONIES_RS_COURIER_IMMEDIATE`) | ACCEPTED by the user as a gameplay-timing change (not judged by the CPU verdict) | paired quick K=5, same code with the switch off, then on: storm ticksToCompletion 10.5k -> 7860 (-25.1% BETTER), storm latency p50 5560 -> 4270 (-23.2%), p99 -25.5%; busy latency p50 930 -> 700 (-24.7% BETTER), busy ticks -3.9% (noise, 6090 -> 5850; a busy repeat is limited by the builders' timing more than by the couriers); fresh unchanged. RS CPU per tick goes UP, as expected, because the same work is done in a shorter run: storm +39.6% / busy +32.6% per tick, busy alloc/tick +10.7%; the per-request costs fall (complete -29%, courierPick -56%, create -33% in storm: fewer waiting requests are re-evaluated). Gates OK, 0 hangs. Tests: `rs_courier_next_task_immediate` (the courier sits in the decision state 5 ticks between two tasks) and `rs_courier_next_task_delayed` (switch off: 100 ticks, the old timing); failing first (without the change: 100 ticks, the test failed). |
+| - | the courier leisure fix (below) | CORRECTNESS FIX, not judged by CPU | see "Closed: the stuck courier". |
 
 ## Result (full mode, K=5, flags on, merged with `origin/integ/anno` ec2d32a508)
 
@@ -97,18 +100,59 @@ the instrument on this machine is a few percent on the score and 10-40% on singl
 Worse than baseline: micro ledgerCommit @10k +28% (8.8 -> 11.2 us, a low-noise reading); it was +30% already in the first run on the fixed code before any
 change of the climb, so it is a property of that code/baseline pair and not of an attempt (not investigated).
 
-## Open: an intermittent hang (courier delivery) that is NOT the recipe-token artefact
+## Result of this round (full mode, K=5; paired: `a9d58ba767` = the code above, then this branch, same machine, adjacent runs)
 
-One quick run (during attempt 7) had 2 of 7 busy repeats where 2 requests (a `cooked_beef x8` stack and its delivery) stayed open for the 4000 drain
-ticks: the courier holding the delivery sat in `PREPARE_DELIVERY` walking to the pickup rack 22-33 blocks away (`pathStatus=IN_PROGRESS_FOLLOWING`,
-path of ~50 nodes, `navDone=false`) and moved only ~67 blocks in 2000 ticks. The same signature appeared once before the climb (`400348f6f3` run,
-repeat 6). 16 further busy repeats, the full run above (49 runs) and 10+ quick runs were clean, so the rate is low (about 1-2% of repeats) and it
-did not reproduce on demand. The hang report now carries a courier trail (position, AI state and path status every 50 drain ticks) so the next
-occurrence shows whether the courier walks in circles or stands still. The hard gate stays at zero hangs. Not caused by an attempt (the signature predates the climb).
+`bench-results/full/a9d58ba767-20261012T170234Z.json` (base; its busy repeats 5 and 6 tripped over the trail NPE and ended early, gates OK) and
+`bench-results/full/63a6fa8849-20261012T170823Z.json` (this branch, defaults: courier switch on): gates OK, 0 hangs. Score 94.0 against the base (macro x0.941, micro x0.939).
+The same branch with the courier switch off (`...T171553Z.json`, its micro-100 phase polluted by load, its storm repeat 0 lost to "could not spawn a citizen at tick 200"):
+busy RS CPU/tick 13.6k -> 8.8k ns (-35.0% BETTER), busy rsAlloc/tick -23.8%, busy p99 -37.1%, storm rsShare -8.5%, storm rsAlloc -10.2%: that is the view sync.
+
+| | base | this branch (switch on) | |
+|---|---|---|---|
+| view snapshot per dirty tick @100 / @1000 / @10k | 62.9 us / 619 us / 11.2 ms | 10.6 us / 206 us / 3.7 ms | -83% / -67% / -67% BETTER |
+| view cost per dirty tick (snapshot + delta) @100 / @1000 / @10k | 89.8 us / 1.32 ms / 21.7 ms | 36.0 us / 0.90 ms / 13.8 ms | -60% / -32% / -37% BETTER |
+| busy RS CPU / tick, p99 tick | 13.6 us, 337 us | 11.5 us (-15%, noise), 250 us (-25.8% BETTER) | |
+| fresh RS CPU / tick, alloc / tick | 1702 ns, 541 B | 1415 ns, 471 B | -16.9% / -13.0% BETTER |
+| storm RS alloc / tick | 7384 B | 7027 B | -4.8% BETTER |
+| storm view bytes sent | 1.19 MB | 782 kB | -34.5% BETTER (faster run) |
+| storm ticks to completion | 23.2k | 18.1k | -21.8% BETTER (courier switch) |
+| storm / busy request latency p50 | 11.8k / 1910 | 9250 / 1640 | -21.9% / -14.1% BETTER |
+| storm RS CPU / tick | 12.4 us | 12.9 us (noise) | same work in a 22% shorter run |
+| storm `stuckRoots` (trees unchanged for 3000 ticks) | 113 | 237 | WORSE by the verdict rule; the switch off gives 113 again, so it comes with the courier switch; every storm repeat finishes (0 hangs), the scripted stock arrives in 5 bursts at fixed ticks and a faster courier leaves more requests waiting for the next burst; not investigated further |
+
+Micro @100/1000 WORSE flags that the changes cannot touch (complete +26%, stockEventInline +31..40%, ledgerRead +17.7%, save@1000 +12.8%, idleTick@1000 +3.5%): the usual load pattern of this machine
+(the same ops move +-20% between two runs of identical code; the paired quick runs above show them flat).
+
+## Closed: the stuck courier was a courier on a leisure break
+
+Seen before: 2 of 7 busy repeats (one quick run), once before the climb, ~1-2% of repeats with a drain that never finished; 2 requests (a `cooked_beef x8` stack and its
+delivery) stayed open, the courier holding the delivery sat in `PREPARE_DELIVERY` "walking" to the pickup rack 22-33 blocks away, moved ~67 blocks in 2000 ticks.
+
+Reproduced on the first try of the branch (20 quick busy repeats, three times in a row, with a new "stall trail" in `MacroRun`: from the moment a request tree stood still for 1500
+ticks the couriers' state is sampled every 50 ticks, in the whole run, not only in the drain): 1 hang of 19 repeats and `stuckRoots` > 0 in 3 of 19, one repeat finishing at 10365 ticks
+instead of ~5500. The trail of the hung repeat shows the courier (AI state `PREPARE_DELIVERY`, task `cooked_beef x8`, 20-30 blocks from the rack) running **`PathJobRandomPos`** paths of
+12-15 nodes, one every ~250 ticks, standing still 100 ticks in between: a wander, not a walk to the rack. No code of the courier starts a random walk; the citizen AI does:
+`CitizenAI.calculateNextState` sends a worker to `IDLE` (-> `EntityAICitizenWander`, leisure site, 3 minutes) whenever `leisureTime > 0` (set at random, about once per two hours of game time per
+citizen) and the worker AI says it may be interrupted. `PREPARE_DELIVERY` is "okay to eat" = interruptible. While the citizen is not in `WORKING` its worker AI does not tick, so the
+`CourierWatchdog` (which only runs from `getCurrentTask`) never fires, the task sits in this courier's own queue (the only place it is kept) and the other 5 couriers idle next to
+a full warehouse. A break is 3600 ticks plus the walk, longer than the bench's 4000-tick drain, and a real colony waits that long too.
+
+Fix: a courier that holds a task takes no leisure break (`AbstractEntityAIBasic.canTakeLeisure()`, overridden in `EntityAIWorkDeliveryman`: `super && taskQueue.isEmpty()`; `CitizenAI` asks it
+next to the old interruptible check). Meals, rain, night and sickness still send it away as before. Test, failing first: `rs_courier_leisure_keeps_task` (a leisure break is due the tick the
+courier takes its task; the delivery to the builder must arrive within 1500 ticks) failed before ("... it is on a leisure break (leisure 2100, queue 1, worker AI PREPARE_DELIVERY)"),
+passes after (delivered 260 ticks after the task was taken).
+
+Evidence in the bench: samples of a courier with a task running a random-walk path: before 105 in 3 of 19 repeats, after 0 in 62 repeats; 0 hangs in 184 busy repeats (3 runs of 60, all gates OK;
+before: 1 of 19). `stuckRoots` (a request tree unchanged for 3000 ticks) stays in ~15% of busy repeats: those are not stuck couriers (their trails show couriers walking with tasks, queue 1,
+`PathJobMoveToLocation` / `PathJobMoveCloseToXNearY`), they are deliveries that take long under contention (6 couriers for 17 consumers), which is the bench's busy scenario working as designed.
+
+Found on the way: `MacroRun.recordCourierTrail` threw `NullPointerException` (`PathResult.getPathLength` on a path not computed yet) in 3 of 61 repeats of one run; the repeat was then reported as "tick failed". Guarded.
+
+Not changed (a gameplay decision, left to the owner): a courier that is sent to eat, sleep or hide from rain while it holds a task still strands that task for the duration. A guard that gives the task back to the pool when the owner's AI has not ticked for N ticks would cover those too.
 
 ## Remaining hot spots (busy / storm, share of RS CPU after the climb)
 
-1. `snapshot` of the view sync, still 27-35%: the resolver store (retrying resolver with every waiting request) and the six "raw" data stores are serialized in full at every dirty tick (74% of a snapshot); a per-store version counter (the stores hand out live maps, so every mutation site must bump it) would make them as cheap as the request entries now are.
+1. `sendRequestSystemPackets` is 18.6% of RS CPU after attempt 11 (was 27-35%). What is left: the retrying resolver (its delays count down every request-system tick, so its entry changes at every snapshot while anything waits), the full payloads (`writeStoreWhole` is 18% of RS allocation), `StandardFactoryController.serialize` 2.9%, the per-request `modCount` scan of the whole request store and `writeDelta`'s walk over every entry.
 2. `assign`: 41-44% inclusive, of which `canResolve` 17% (courier resolvers' storage-network checks, `WaitDiagnosis.recipeSupport` scanning every crafting module's recipes per starved request, `ArrayList.sort` of candidates).
 3. The retry ladder (`StandardRetryingRequestResolver.tick` -> `reassignRequest`, 12% of RS): real re-assignments; a bucketed due-time clock (attempt 1) was not faster.
 4. `EntityAIWorkDeliveryman.prepareDelivery/deliver` (9% of RS): item-handler walks per delivery.
@@ -123,3 +167,9 @@ On the merged branch (all accepted attempts + `ec2d32a508`): run 1 failed `worke
 `scaffold_two_builders_big` ("missing 2 on tick 9755"), run 3: **All 280 required tests passed** (279 of integ/anno + `rs_recipe_tokens_seeded`). The
 `worker_eff` group alone passes (15/15), plain `origin/integ/anno` passed 279/279 in one run. Both failures are builder-AI tick-budget tests (not request-system
 tests) and each ran at a time the machine was loaded by other workers; they did not repeat. Not proven load-only: a fourth run on each side would settle it.
+
+On the branch `fix/rs-courier-sync` (all of the above merged with `origin/integ/anno` b14343c0be, which had nothing newer): `./gradlew test runGameTestServer jar` ran once, JUnit green
+(`TrackedCollectionsTest`, 9 tests) and **All 285 required tests passed** (280 of the earlier run + `rs_courier_next_task_immediate`, `rs_courier_next_task_delayed`, `rs_courier_leisure_keeps_task`,
+`reqsync_store_mutations`, `reqsync_quiet_stores_not_serialized`). Failing first: the three courier tests and the quiet-stores test failed on the code without their change (leisure: "the courier
+took the task 1501 ticks ago and the delivery is not there: it is on a leisure break"; immediate: "waited 100 ticks before its next task"; quiet stores: "serialized 4 stores again"); the
+store-mutation test passes before and after (it guards the new cache).
