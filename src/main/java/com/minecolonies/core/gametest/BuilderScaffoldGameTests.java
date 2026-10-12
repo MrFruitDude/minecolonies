@@ -294,6 +294,24 @@ final class BuilderScaffoldGameTests
         int minItems = Integer.MAX_VALUE;
     }
 
+    /** A development trace of the builder every few ticks ({@code -Dminecolonies.gametest.trace=N}): where he is relative to the site, what the AI does. */
+    static final int TRACE_EVERY = Integer.getInteger("minecolonies.gametest.trace", 0);
+
+    static void trace(final WorkerEfficiencyGameTests.Live live, final String name, final int tick, final BlockPos origin)
+    {
+        if (TRACE_EVERY <= 0 || tick % TRACE_EVERY != 0)
+        {
+            return;
+        }
+        live.citizen.getEntity().ifPresent(e -> {
+            final Vec3 p = e.position();
+            final String ai = e.getCitizenJobHandler().getWorkAI() instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder b ? b.debugInfo() : "";
+            final Vec3 dm = e.getDeltaMovement();
+            Log.getLogger().info("TRACE {} {} t={} rel=({},{},{}) dm=({},{},{}) climb={} hc={} ground={} {}", name, e.getName().getString(), tick, String.format("%.1f", p.x - origin.getX()), String.format("%.1f", p.y - origin.getY()),
+              String.format("%.1f", p.z - origin.getZ()), String.format("%.2f", dm.x), String.format("%.2f", dm.y), String.format("%.2f", dm.z), e.onClimbable(), e.horizontalCollision, e.onGround(), ai);
+        });
+    }
+
     static void watch(final WorkerEfficiencyGameTests.Live live, final Watch watch, final BlockPos site, final int total, final int tick)
     {
         live.citizen.getEntity().ifPresent(e -> {
@@ -363,6 +381,7 @@ final class BuilderScaffoldGameTests
                 walked[0] += Math.hypot(now.x - last[0].x, now.z - last[0].z);
                 last[0] = now;
                 watch(live, watch, origin, 32, tick);
+                trace(live, name, tick, origin);
                 if (tick == 1)
                 {
                     Log.getLogger().info("WSCAF {} start gameTime={} origin={} size={}x{}x{} hut={} unsetState={}", name, live.level.getGameTime(), origin, blueprint.getSizeX(), blueprint.getSizeY(), blueprint.getSizeZ(), live.hut.getPosition(), blueprint.getBlockState(new BlockPos(blueprint.getSizeX() - 1, 1, blueprint.getSizeZ() - 1)));
@@ -698,6 +717,7 @@ final class BuilderScaffoldGameTests
             final int[] doneTick = {0};
             WorkerEfficiencyGameTests.everyTick(live, maxTicks, tick -> {
                 watch(live, watch, origin, 64, tick);
+                trace(live, name, tick, origin);
                 doneTick[0] = tick;
                 if (tick == 1)
                 {
