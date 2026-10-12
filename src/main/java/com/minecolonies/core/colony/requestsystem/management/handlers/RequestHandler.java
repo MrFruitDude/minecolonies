@@ -688,12 +688,13 @@ public class RequestHandler implements IRequestHandler
     @Override
     public IRequest<?> getRequest(final IToken<?> token)
     {
-        if (!manager.getRequestIdentitiesDataStore().getIdentities().containsKey(token))
+        final IRequest<?> request = getRequestOrNull(token);
+        if (request == null)
         {
             throw new IllegalArgumentException("The given token:" + token + " is not registered as a request to this manager");
         }
 
-        return getRequestOrNull(token);
+        return request;
     }
 
     /**
