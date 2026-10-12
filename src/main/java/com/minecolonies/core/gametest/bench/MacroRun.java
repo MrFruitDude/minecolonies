@@ -864,6 +864,40 @@ public final class MacroRun
         return out.toString();
     }
 
+    private final StringBuilder courierTrail = new StringBuilder();
+    private int courierTrailLines;
+
+    /**
+     * Remembers where the couriers that hold a task are and what they do; a request that never drains is then explained by a trail, not a snapshot.
+     */
+    private void recordCourierTrail(final long tick)
+    {
+        if (courierTrailLines > 90)
+        {
+            return;
+        }
+        for (final ICitizenData citizen : citizens)
+        {
+            if (citizen.getJob() instanceof JobDeliveryman job && !job.getTaskQueue().isEmpty() && citizen.getEntity().isPresent())
+            {
+                final var e = citizen.getEntity().get();
+                courierTrail.append("\n    t=").append(tick - drainStart).append(" #").append(citizen.getId()).append(" at ").append(e.blockPosition().toShortString()).append(" ai=")
+                  .append(job.getWorkerAI() == null ? "-" : job.getWorkerAI().getState()).append(" navDone=").append(e.getNavigation().isDone());
+                if (e.getNavigation() instanceof com.minecolonies.core.entity.pathfinding.navigation.AbstractAdvancedPathNavigate nav && nav.getPathResult() != null)
+                {
+                    final var pr = nav.getPathResult();
+                    out_path(courierTrail, pr);
+                }
+                courierTrailLines++;
+            }
+        }
+    }
+
+    private static void out_path(final StringBuilder out, final com.minecolonies.core.entity.pathfinding.pathresults.PathResult<?> pr)
+    {
+        out.append(" path=").append(pr.getStatus()).append('/').append(pr.getPathLength());
+    }
+
     /**
      * @return what the couriers are doing, for failure messages.
      */
@@ -1006,11 +1040,16 @@ public final class MacroRun
         {
             quiesceTick = tick;
         }
+        if (quiesceTick < 0 && (tick - drainStart) % 50 == 0)
+        {
+            recordCourierTrail(tick);
+        }
         if (quiesceTick >= 0 && tick - quiesceTick >= 400 || tick - drainStart > 4000)
         {
             if (quiesceTick < 0)
             {
-                liveness.add("requests did not drain within 4000 ticks after the scenario finished: " + pendingRequests() + " still open:" + describeOpen(14) + describeCouriers());
+                liveness.add("requests did not drain within 4000 ticks after the scenario finished: " + pendingRequests() + " still open:" + describeOpen(14) + describeCouriers()
+                               + "\n  courierTrail (every 50 ticks of the drain, couriers with a task: position, AI state, navigation):" + courierTrail);
             }
             finish(tick);
             return false;
