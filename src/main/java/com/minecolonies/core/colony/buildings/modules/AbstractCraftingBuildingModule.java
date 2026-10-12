@@ -882,6 +882,11 @@ public abstract class AbstractCraftingBuildingModule extends AbstractBuildingMod
     {
         if(recipes.remove(token))
         {
+            if (Log.getLogger().isDebugEnabled() || System.getenv("MINECOLONIES_TRACE_RECIPE_REMOVAL") != null)
+            {
+                final IRecipeStorage removed = IColonyManager.getInstance().getRecipeManager().getRecipes().get(token);
+                Log.getLogger().warn("Recipe for {} removed from {} ({})", removed == null ? token : removed.getPrimaryOutput(), building.getSchematicName(), getClass().getSimpleName(), new Throwable("recipe removal"));
+            }
             recipesDirty = true;
             disabledRecipes.remove(token);
             markDirty();
