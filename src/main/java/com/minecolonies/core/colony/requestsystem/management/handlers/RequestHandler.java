@@ -153,10 +153,11 @@ public class RequestHandler implements IRequestHandler
 
         final Set<TypeToken<?>> requestTypes = request.getSuperClasses();
 
-        final List<TypeToken<?>> typeIndexList = new LinkedList<>(requestTypes);
-
-        List<IRequestResolver<? extends IRequestable>> resolverList = new ArrayList<>();
-        for (final TypeToken<?> requestTypeToken : requestTypes)
+        // The candidates: every resolver of one of the request's types once, then by priority (high first) and by how early
+        // its own request type comes in the request's type order.
+        final List<TypeToken<?>> typeOrder = new ArrayList<>(requestTypes);
+        final Map<IToken<?>, ResolverCandidate> candidates = new LinkedHashMap<>();
+        for (final TypeToken<?> requestTypeToken : typeOrder)
         {
             final Collection<IToken<?>> resolverTokens = manager.getRequestableTypeRequestResolverAssignmentDataStore()
               .getAssignments()
@@ -169,18 +170,26 @@ public class RequestHandler implements IRequestHandler
 
             for (IToken<?> iToken : resolverTokens)
             {
-                final IRequestResolver<? extends IRequestable> iRequestResolver = manager.getResolverHandler().getResolver(iToken);
-                if (requestTypes.contains(iRequestResolver.getRequestType()))
+                if (candidates.containsKey(iToken))
                 {
-                    resolverList.add(iRequestResolver);
+                    continue;
+                }
+                final IRequestResolver<? extends IRequestable> iRequestResolver = manager.getResolverHandler().getResolver(iToken);
+                final TypeToken<?> resolverType = iRequestResolver.getRequestType();
+                if (requestTypes.contains(resolverType))
+                {
+                    candidates.put(iToken, new ResolverCandidate(iRequestResolver, iRequestResolver.getPriority(), typeOrder.indexOf(resolverType)));
                 }
             }
         }
 
-        resolverList.sort(Comparator.comparingInt((IRequestResolver<?> r) -> -1 * r.getPriority())
-          .thenComparingInt((IRequestResolver<?> r) -> typeIndexList.indexOf(r.getRequestType())));
-
-        final Set<IRequestResolver<?>> resolvers = new LinkedHashSet<>(resolverList);
+        final List<ResolverCandidate> ordered = new ArrayList<>(candidates.values());
+        ordered.sort(RESOLVER_ORDER);
+        final List<IRequestResolver<? extends IRequestable>> resolvers = new ArrayList<>(ordered.size());
+        for (final ResolverCandidate candidate : ordered)
+        {
+            resolvers.add(candidate.resolver());
+        }
 
         IRequestResolver previousResolver = null;
         int previousMetric = Integer.MAX_VALUE;
@@ -245,6 +254,19 @@ public class RequestHandler implements IRequestHandler
 
         return null;
     }
+
+    /**
+     * A resolver that may take a request, with the numbers its place in the search order comes from.
+     */
+    private record ResolverCandidate(IRequestResolver<? extends IRequestable> resolver, int priority, int typeIndex)
+    {
+    }
+
+    /**
+     * Highest priority first, then the resolver whose request type comes first in the request's type order.
+     */
+    private static final Comparator<ResolverCandidate> RESOLVER_ORDER =
+      Comparator.comparingInt((ResolverCandidate c) -> -c.priority()).thenComparingInt(ResolverCandidate::typeIndex);
 
     /**
      * canResolveRequest, timed per resolver class while the benchmark probe is on.

@@ -32,6 +32,11 @@ import java.util.Optional;
 public abstract class AbstractCraftingProductionResolver<C extends AbstractCrafting> extends AbstractRequestResolver<C> implements IBuildingBasedRequester
 {
     private final Class<C> cClass;
+
+    /**
+     * The request type, made once: the resolver search asks for it for every request it looks at.
+     */
+    private final TypeToken<C> requestType;
     private final JobEntry jobEntry;
 
     /**
@@ -48,13 +53,14 @@ public abstract class AbstractCraftingProductionResolver<C extends AbstractCraft
     {
         super(location, token);
         this.cClass = cClass;
+        this.requestType = TypeToken.of(cClass);
         this.jobEntry = jobEntry;
     }
 
     @Override
     public TypeToken<? extends C> getRequestType()
     {
-        return TypeToken.of(cClass);
+        return requestType;
     }
 
     /**
