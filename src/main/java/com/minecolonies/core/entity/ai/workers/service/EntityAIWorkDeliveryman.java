@@ -11,6 +11,7 @@ import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.IDelive
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.entity.ai.statemachine.AITarget;
+import com.minecolonies.core.colony.requestsystem.RsFlags;
 import com.minecolonies.api.entity.ai.statemachine.states.IAIState;
 import com.minecolonies.api.entity.citizen.VisibleCitizenStatus;
 import com.minecolonies.api.util.InventoryUtils;
@@ -74,6 +75,12 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     private static final int DECISION_DELAY = TICKS_SECOND * 5;
 
     /**
+     * RS4: ticks a courier waits to decide on its next task right after it finished one (the decision delay runs out only while
+     * the courier is in the deciding state, so without this every task is followed by almost the whole delay of waiting).
+     */
+    private static final int QUICK_DECISION_DELAY = 1;
+
+    /**
      * Wait a few ticks for the worker to decide what to pick up.
      */
     private static final int PICKUP_DELAY = 5;
@@ -115,6 +122,11 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     private final Set<BlockPos> dumpRefused = new HashSet<>();
 
     /**
+     * The target that decides on the next task; its delay is shortened when a task has just been finished.
+     */
+    private final AITarget<IAIState> decisionTarget = new AITarget<>(START_WORKING, this::checkIfExecute, this::decide, DECISION_DELAY);
+
+    /**
      * Initialize the deliveryman and add all his tasks.
      *
      * @param deliveryman the job he has.
@@ -127,7 +139,7 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
            * Check if tasks should be executed.
            */
           new AITarget(IDLE, () -> START_WORKING, 1),
-          new AITarget(START_WORKING, this::checkIfExecute, this::decide, DECISION_DELAY),
+          decisionTarget,
           new AITarget(PREPARE_DELIVERY, this::prepareDelivery, STANDARD_DELAY),
           new AITarget(DELIVERY, this::deliver, STANDARD_DELAY),
           new AITarget(PICKUP, this::pickup, PICKUP_DELAY),
@@ -147,6 +159,20 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     public Class<BuildingDeliveryman> getExpectedBuildingClass()
     {
         return BuildingDeliveryman.class;
+    }
+
+    /**
+     * Back to deciding after a task was finished. With the {@code courierImmediateNextTask} switch on the courier looks for its next task at once.
+     *
+     * @return the deciding state.
+     */
+    private IAIState nextTask()
+    {
+        if (RsFlags.courierImmediateNextTask())
+        {
+            decisionTarget.setTicksToUpdate(QUICK_DECISION_DELAY);
+        }
+        return START_WORKING;
     }
 
     /**
@@ -204,7 +230,7 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
             }
             else
             {
-                return START_WORKING;
+                return nextTask();
             }
         }
         else if (InventoryUtils.openSlotCount(worker.getInventoryCitizen()) <= 0)
@@ -345,7 +371,7 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
             dumpRefused.clear();
         }
 
-        return START_WORKING;
+        return nextTask();
     }
 
     /**
@@ -561,7 +587,7 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
             }
         }
         job.finishRequest(request -> !undelivered.contains(request.getId()));
-        return success && notDelivered.isEmpty() ? START_WORKING : DUMPING;
+        return success && notDelivered.isEmpty() ? nextTask() : DUMPING;
     }
 
     /**
