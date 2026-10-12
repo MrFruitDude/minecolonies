@@ -1299,6 +1299,29 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * Whether the block at the position is one of the structure that stands in the world already (the top of a wall is no place that a path leads to).
+     *
+     * @param pos the world position.
+     * @return true if the world has there what the blueprint wants, and it is no air.
+     */
+    protected final boolean isBuiltStructureBlock(final BlockPos pos)
+    {
+        final IStructureHandler handler = scaffoldHandler();
+        final var blueprint = handler == null ? null : handler.getBluePrint();
+        if (blueprint == null)
+        {
+            return false;
+        }
+        final BlockPos local = handler.getStructurePosFromWorld(pos);
+        if (local.getX() < 0 || local.getY() < 0 || local.getZ() < 0 || local.getX() >= blueprint.getSizeX() || local.getY() >= blueprint.getSizeY() || local.getZ() >= blueprint.getSizeZ())
+        {
+            return false;
+        }
+        final BlockState wanted = blueprint.getBlockState(local);
+        return wanted != null && !wanted.isAir() && wanted == world.getBlockState(pos);
+    }
+
+    /**
      * What it costs to put scaffolding into a cell: the blocks of the structure go there later, so the scaffolding would have to come down
      * first (high), the cells inside the volume of the structure are a little in the way (low).
      *
@@ -1400,7 +1423,9 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         }
         trapCheckAt = now + 40L;
         final BlockPos home = StandSpots.nearest(world, building.getPosition(), 8, 4, 4, null);
-        if (home == null || Math.abs(home.getX() - worker.getBlockX()) >= WALKABLE_RADIUS - 2 || Math.abs(home.getZ() - worker.getBlockZ()) >= WALKABLE_RADIUS - 2 || canWalkTo(home))
+        // (only on the level of his hut: on a wall or in a pit he is not "shut in", that is for the unstuck ladder)
+        if (home == null || Math.abs(worker.getBlockY() - home.getY()) > 1 || Math.abs(home.getX() - worker.getBlockX()) >= WALKABLE_RADIUS - 2
+              || Math.abs(home.getZ() - worker.getBlockZ()) >= WALKABLE_RADIUS - 2 || canWalkTo(home))
         {
             trapStrikes = 0;
             return;

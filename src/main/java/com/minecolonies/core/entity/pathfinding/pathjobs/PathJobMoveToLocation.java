@@ -97,8 +97,11 @@ public class PathJobMoveToLocation extends AbstractPathJob implements IDestinati
 
         if (atDest)
         {
-            atDest = SurfaceType.getSurfaceType(world, cachedBlockLookup.getBlockState(n.x, n.y - 1, n.z), tempWorldPos.set(n.x, n.y - 1, n.z), getPathingOptions())
-                       == SurfaceType.WALKABLE;
+            final net.minecraft.world.level.block.state.BlockState floor = cachedBlockLookup.getBlockState(n.x, n.y - 1, n.z);
+            // (the top of a block of scaffolding holds a citizen, though the block has no collision for a path: a spot on top of a tower is a destination
+            // that is reached, not only approached - a path that only approaches it ends where the recently used end nodes are not penalised)
+            atDest = floor.is(net.minecraft.world.level.block.Blocks.SCAFFOLDING)
+                       || SurfaceType.getSurfaceType(world, floor, tempWorldPos.set(n.x, n.y - 1, n.z), getPathingOptions()) == SurfaceType.WALKABLE;
         }
 
         return atDest;

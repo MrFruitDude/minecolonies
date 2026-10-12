@@ -304,7 +304,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
      * The walk to a spot from which a block is in reach: the spot, when it was picked, and the spots that did not get him there.
      */
     /** The longest wait before a spot that did not work is tried again (ticks). */
-    private static final long BAD_SPOT_MAX_WAIT = 1600L;
+    private static final long BAD_SPOT_MAX_WAIT = Long.getLong("minecolonies.badspotwait", 1600L);
 
     private final class ReachWalk
     {
@@ -535,7 +535,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 return false;
             }
             final List<ReachSpots.Spot> spots = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(),
-              p -> !walk.bad.contains(p) && canWalkTo(p) && (inBlocks || hasWayDown(p)) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
+              p -> !walk.bad.contains(p) && canWalkTo(p) && (inBlocks || (hasWayDown(p) && !isBuiltStructureBlock(p.below()))) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
             if (spots.isEmpty())
             {
                 // nothing to stand on within reach of the block: this is a job for scaffolding
@@ -579,7 +579,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             workFrom = walk.spot;
         }
         // walk to the very spot (the usual walk stops a block and a half short, and that is a block below the top of a tower)
-        final int walked = EntityNavigationUtils.walkToBlock(worker, walk.spot);
+        final int walked = EntityNavigationUtils.walkToBlock(worker, walk.spot, isBuiltStructureBlock(walk.spot.below()));
         if (walked != 0)
         {
             scaffold.note("walk to " + walk.spot + " ended (" + walked + ") at " + worker.blockPosition() + " for " + target + " nav stuck=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n && n.isStuck())
