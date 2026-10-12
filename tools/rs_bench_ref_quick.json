@@ -1,41 +1,41 @@
 {
- "sha": "1edf009567",
+ "sha": "8808fb5475",
  "components": {
   "macro": {
    "busy": {
-    "meter.rsCpuNsPerTick": 23328.350433971744,
-    "ticksToCompletion": 6702.5,
-    "work.courierDistanceAtDone": 6030.212694794493,
-    "work.requestsCreatedAtDone": 192.5
+    "meter.rsCpuNsPerTick": 20850.382702702704,
+    "ticksToCompletion": 6190.0,
+    "work.courierDistanceAtDone": 6318.452031596167,
+    "work.requestsCreatedAtDone": 157.0
    },
    "fresh": {
-    "meter.rsCpuNsPerTick": 2996.309701850179,
-    "ticksToCompletion": 6330.0,
-    "work.courierDistanceAtDone": 614.2283053455335,
+    "meter.rsCpuNsPerTick": 4127.818415051312,
+    "ticksToCompletion": 6630.0,
+    "work.courierDistanceAtDone": 696.6885497929887,
     "work.requestsCreatedAtDone": 43.0
    },
    "storm": {
-    "meter.rsCpuNsPerTick": 14584.2740933027,
-    "ticksToCompletion": 10197.5,
-    "work.courierDistanceAtDone": 2778.5824613100385,
-    "work.requestsCreatedAtDone": 123.0
+    "meter.rsCpuNsPerTick": 14990.028006589786,
+    "ticksToCompletion": 10435.0,
+    "work.courierDistanceAtDone": 2824.7140731021036,
+    "work.requestsCreatedAtDone": 138.0
    }
   },
   "micro": {
-   "1000:create.cpuNs": 4598.872222222222,
-   "1000:assign.cpuNs": 50213.82777777778,
-   "1000:idleTick.cpuNs": 1231046.7277777777,
-   "1000:stockEvent.cpuNs": 2630229.4523809524,
-   "1000:courierPick.cpuNs": 554854.9722222222,
-   "1000:complete.cpuNs": 69696.49331352155,
-   "1000:cancel.cpuNs": 10832.993506493507,
-   "1000:ledgerReserve.cpuNs": 119.85555555555555,
-   "1000:ledgerCommit.cpuNs": 4002.366666666667,
-   "1000:viewPerDirtyTick.cpuNs": 6520544.5,
-   "1000:viewPerDirtyTick.bytes": 4208.0,
-   "1000:save.cpuNs": 44197444.0,
-   "1000:save.bytes": 1302821.0,
-   "1000:load.cpuNs": 12213944.5
+   "1000:create.cpuNs": 3149.7444444444445,
+   "1000:assign.cpuNs": 48525.0,
+   "1000:idleTick.cpuNs": 1143694.4555555556,
+   "1000:stockEvent.cpuNs": 1518890.857142857,
+   "1000:courierPick.cpuNs": 284854.9111111111,
+   "1000:complete.cpuNs": 35720.90490341753,
+   "1000:cancel.cpuNs": 7349.108108108108,
+   "1000:ledgerReserve.cpuNs": 102.78888888888889,
+   "1000:ledgerCommit.cpuNs": 3924.277777777778,
+   "1000:viewPerDirtyTick.cpuNs": 5209583.0,
+   "1000:viewPerDirtyTick.bytes": 4190.0,
+   "1000:save.cpuNs": 44201087.0,
+   "1000:save.bytes": 1305629.0,
+   "1000:load.cpuNs": 7899599.0
   }
  }
 }
