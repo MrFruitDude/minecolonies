@@ -517,15 +517,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             {
                 return false;
             }
-            final List<BlockPos> aheadNow = ahead.get();
-            // (spots outside the volume of the structure first: inside it he is shut in when the walls come up around him)
-            List<ReachSpots.Spot> spots = inBlocks ? List.of() : ReachSpots.best(world, aheadNow, reach, worker.getEyeHeight(), worker.blockPosition(),
-              p -> !walk.bad.contains(p) && !insideStructure(p) && canWalkTo(p) && hasWayDown(p) && (accept == null || accept.test(p)), 1, false, servesAnyOrder());
-            if (spots.isEmpty())
-            {
-                spots = ReachSpots.best(world, aheadNow, reach, worker.getEyeHeight(), worker.blockPosition(),
-                  p -> !walk.bad.contains(p) && canWalkTo(p) && (inBlocks || hasWayDown(p)) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
-            }
+            final List<ReachSpots.Spot> spots = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(),
+              p -> !walk.bad.contains(p) && canWalkTo(p) && (inBlocks || hasWayDown(p)) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
             if (spots.isEmpty())
             {
                 // nothing to stand on within reach of the block: this is a job for scaffolding

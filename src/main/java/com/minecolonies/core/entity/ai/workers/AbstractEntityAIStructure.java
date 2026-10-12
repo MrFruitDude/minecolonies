@@ -1299,25 +1299,6 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
-     * Whether a position is inside the volume of the structure: a builder who works from there is shut in when the walls come up around him
-     * (and is a nuisance for the blocks that go where he stands).
-     *
-     * @param pos the world position.
-     * @return true if it is in the box of the blueprint.
-     */
-    protected final boolean insideStructure(final BlockPos pos)
-    {
-        final IStructureHandler handler = scaffoldHandler();
-        final var blueprint = handler == null ? null : handler.getBluePrint();
-        if (blueprint == null)
-        {
-            return false;
-        }
-        final BlockPos local = handler.getStructurePosFromWorld(pos);
-        return local.getX() >= 0 && local.getY() >= 0 && local.getZ() >= 0 && local.getX() < blueprint.getSizeX() && local.getY() < blueprint.getSizeY() && local.getZ() < blueprint.getSizeZ();
-    }
-
-    /**
      * What it costs to put scaffolding into a cell: the blocks of the structure go there later, so the scaffolding would have to come down
      * first (high), the cells inside the volume of the structure are a little in the way (low).
      *

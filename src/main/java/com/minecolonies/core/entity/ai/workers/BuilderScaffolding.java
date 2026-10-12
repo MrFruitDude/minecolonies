@@ -462,7 +462,29 @@ public final class BuilderScaffolding
         {
             return 0;
         }
-        final int removed = ScaffoldSweeper.sweep(ai.worker.getCitizenColonyHandler().getColonyOrRegister(), ledger, cell -> free.contains(cell.pos()), 256);
+        // (taken down by him, as far as the items go: they are in his inventory, he does not have to fetch them from his hut)
+        int removed = 0;
+        for (final ScaffoldLedger.Cell cell : ledger.topDown(null))
+        {
+            if (!free.contains(cell.pos()))
+            {
+                continue;
+            }
+            if (ai.world.getBlockState(cell.pos()).is(Blocks.SCAFFOLDING))
+            {
+                ai.world.removeBlock(cell.pos(), false);
+                removed++;
+            }
+            ledger.remove(cell.pos());
+        }
+        if (removed > 0)
+        {
+            final ItemStack rest = InventoryUtils.transferItemStackIntoNextBestSlotInItemHandlerWithResult(new ItemStack(Items.SCAFFOLDING, removed), ai.worker.getInventoryCitizen());
+            if (!rest.isEmpty() && ai.building.getItemHandlerCap() != null)
+            {
+                InventoryUtils.transferItemStackIntoNextBestSlotInItemHandlerWithResult(rest, ai.building.getItemHandlerCap());
+            }
+        }
         log("took down " + removed + " blocks of idle towers for the plan at " + plan.stand() + " (hut " + inHut() + " inventory " + inInventory() + " needs " + plan.cells().size() + ")");
         ai.forgetWalkable();
         return removed;
