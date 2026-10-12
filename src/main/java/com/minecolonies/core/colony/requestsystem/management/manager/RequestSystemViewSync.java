@@ -7,6 +7,7 @@ import com.minecolonies.api.colony.requestsystem.factory.IFactoryController;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.resolver.IRequestResolver;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
+import com.minecolonies.core.colony.requestsystem.requests.AbstractRequest;
 import com.minecolonies.core.colony.requestsystem.data.StandardDataStoreManager;
 import com.minecolonies.core.colony.requestsystem.data.StandardRequestIdentitiesDataStore;
 import com.minecolonies.core.colony.requestsystem.data.StandardRequestResolversIdentitiesDataStore;
@@ -88,6 +89,44 @@ public final class RequestSystemViewSync
     }
 
     /**
+     * The serialized entries of the requests, kept between snapshots: a request whose modification count did not change is
+     * not written again. Most requests wait quietly most of the time, so a snapshot only pays for those that changed.
+     * Dropped whenever a full payload goes out (every five minutes at least), so a change that missed the counter cannot
+     * stay hidden for longer than that.
+     */
+    public static final class EntryCache
+    {
+        private final Map<IToken<?>, Cached> entries = new HashMap<>();
+        private int generation;
+
+        private static final class Cached
+        {
+            private final IRequest<?> request;
+            private final int         version;
+            private final Entry       entry;
+            private int               generation;
+
+            private Cached(final IRequest<?> request, final int version, final Entry entry, final int generation)
+            {
+                this.request = request;
+                this.version = version;
+                this.entry = entry;
+                this.generation = generation;
+            }
+        }
+
+        public void clear()
+        {
+            entries.clear();
+        }
+
+        public int size()
+        {
+            return entries.size();
+        }
+    }
+
+    /**
      * The request manager as bytes, part by part, in the manager's own iteration order.
      */
     public static final class Snapshot
@@ -140,11 +179,11 @@ public final class RequestSystemViewSync
             final IDataStore value = store.getValue();
             if (value instanceof StandardRequestIdentitiesDataStore requests)
             {
-                stores.put(store.getKey(), identitySnap(STORE_REQUESTS, requests.getId(), requests.getIdentities(), controller, ra));
+                stores.put(store.getKey(), identitySnap(STORE_REQUESTS, requests.getId(), requests.getIdentities(), controller, ra, manager.getViewEntryCache()));
             }
             else if (value instanceof StandardRequestResolversIdentitiesDataStore resolvers)
             {
-                stores.put(store.getKey(), identitySnap(STORE_RESOLVERS, resolvers.getId(), resolvers.getIdentities(), controller, ra));
+                stores.put(store.getKey(), identitySnap(STORE_RESOLVERS, resolvers.getId(), resolvers.getIdentities(), controller, ra, null));
             }
             else
             {
@@ -159,12 +198,44 @@ public final class RequestSystemViewSync
       final IToken<?> id,
       final BiMap<IToken<?>, ?> identities,
       final IFactoryController controller,
-      final RegistryAccess ra)
+      final RegistryAccess ra,
+      @Nullable final EntryCache cache)
     {
         final LinkedHashMap<IToken<?>, Entry> entries = new LinkedHashMap<>();
-        for (final Map.Entry<IToken<?>, ?> e : identities.entrySet())
+        if (cache == null)
         {
-            entries.put(e.getKey(), new Entry(bytes(ra, b -> controller.serialize(b, e.getKey())), bytes(ra, b -> controller.serialize(b, e.getValue()))));
+            for (final Map.Entry<IToken<?>, ?> e : identities.entrySet())
+            {
+                entries.put(e.getKey(), new Entry(bytes(ra, b -> controller.serialize(b, e.getKey())), bytes(ra, b -> controller.serialize(b, e.getValue()))));
+            }
+        }
+        else
+        {
+            final int generation = ++cache.generation;
+            for (final Map.Entry<IToken<?>, ?> e : identities.entrySet())
+            {
+                final IToken<?> token = e.getKey();
+                if (!(e.getValue() instanceof final AbstractRequest<?> request))
+                {
+                    entries.put(token, new Entry(bytes(ra, b -> controller.serialize(b, token)), bytes(ra, b -> controller.serialize(b, e.getValue()))));
+                    continue;
+                }
+                // Read the counter first: a change while serializing makes the entry look old next time, never new.
+                final int version = request.getModCount();
+                EntryCache.Cached cached = cache.entries.get(token);
+                if (cached == null || cached.request != request || cached.version != version)
+                {
+                    final Entry entry = new Entry(cached != null ? cached.entry.key() : bytes(ra, b -> controller.serialize(b, token)), bytes(ra, b -> controller.serialize(b, request)));
+                    cached = new EntryCache.Cached(request, version, entry, generation);
+                    cache.entries.put(token, cached);
+                }
+                cached.generation = generation;
+                entries.put(token, cached.entry);
+            }
+            if (cache.entries.size() != entries.size())
+            {
+                cache.entries.values().removeIf(c -> c.generation != generation);
+            }
         }
         return new StoreSnap(kind, new byte[0], bytes(ra, b -> controller.serialize(b, id)), entries);
     }

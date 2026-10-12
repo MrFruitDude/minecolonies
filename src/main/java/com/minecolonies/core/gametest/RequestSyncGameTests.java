@@ -74,6 +74,25 @@ public final class RequestSyncGameTests
     {
     }
 
+    /**
+     * Registers the view sync tests (glob {@code minecolonies:reqsync_*}).
+     */
+    static void register(final net.neoforged.neoforge.event.RegisterGameTestsEvent event)
+    {
+        final String[] names = {"reqsync_bytes_per_minute", "reqsync_client_equals_full", "reqsync_protocol_mismatch", "reqsync_citizen_view_patch"};
+        final java.util.List<java.util.function.Consumer<GameTestHelper>> bodies =
+          List.of(RequestSyncGameTests::bytesPerMinute, RequestSyncGameTests::clientEqualsFull, RequestSyncGameTests::protocolMismatch, RequestSyncGameTests::citizenViewPatch);
+        for (int i = 0; i < names.length; i++)
+        {
+            final String name = names[i];
+            final java.util.function.Consumer<GameTestHelper> body = bodies.get(i);
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, body),
+              MinecoloniesGameTestRegistrar.isolatedColonyData(event, name));
+        }
+    }
+
     // ------------------------------------------------------------------ fixture
 
     /**
@@ -534,6 +553,20 @@ public final class RequestSyncGameTests
         }));
         steps.add(Map.entry("complete", () -> f.rm().updateRequestState(t.get("b"), RequestState.COMPLETED)));
         steps.add(Map.entry("cancel", () -> f.rm().updateRequestState(t.get("c"), RequestState.CANCELLED)));
+        steps.add(Map.entry("courier priority ages", () -> {
+            final com.minecolonies.api.colony.requestsystem.location.ILocation at =
+              new com.minecolonies.core.colony.requestsystem.locations.StaticLocation(f.colony.getCenter(), net.minecraft.world.level.Level.OVERWORLD);
+            final com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery delivery =
+              new com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery(at, at, new ItemStack(Items.COAL, 3), 2);
+            t.put("delivery", f.colony.getServerBuildingManager().getTownHall().createRequest(delivery, false));
+        }));
+        steps.add(Map.entry("courier priority grows", () -> {
+            // what JobDeliveryman does to a request it skipped: the requested object changes and the request is told
+            final var request = f.rm().getRequestForToken(t.get("delivery"));
+            ((com.minecolonies.api.colony.requestsystem.requestable.deliveryman.IDeliverymanRequestable) request.getRequest()).incrementPriorityDueToAging();
+            ((com.minecolonies.core.colony.requestsystem.requests.AbstractRequest<?>) request).touch();
+            f.rm().markDirty();
+        }));
         steps.add(Map.entry("reconnect", () -> {
             f.colony.getPackageManager().removeCloseSubscriber(f.player);
             t.put("e", f.request(Items.REDSTONE, 6));

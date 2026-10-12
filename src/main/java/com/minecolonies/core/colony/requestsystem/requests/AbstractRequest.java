@@ -62,6 +62,29 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
 
     private ImmutableList<ItemStack> itemExamples;
 
+    /**
+     * Counts the changes of everything that goes into the client view of this request (state, wait reason, children,
+     * parent, result, deliveries). The view sync serializes a request again only when the count moved.
+     */
+    private int modCount;
+
+    /**
+     * @return the number of changes made to this request so far (wraps around).
+     */
+    public int getModCount()
+    {
+        return modCount;
+    }
+
+    /**
+     * Records a change that went through the requested object (for instance a courier priority that grew with age) and not
+     * through this request, so the client view is made again.
+     */
+    public void touch()
+    {
+        modCount++;
+    }
+
     protected AbstractRequest(@NotNull final IRequester requester, @NotNull final IToken<?> token, @NotNull final R requested)
     {
         this.requester = requester;
@@ -145,6 +168,7 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
             return false;
         }
         this.waitReason = reason;
+        modCount++;
         return true;
     }
 
@@ -161,6 +185,7 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     {
         final RequestState previous = this.state;
         this.state = state;
+        modCount++;
         manager.log("Updated state from: " + getId() + " to: " + state);
         RequestLifecycle.onStateSet(manager, this, previous);
 
@@ -213,6 +238,7 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     public void setResult(@NotNull final R result)
     {
         this.result = result;
+        modCount++;
     }
 
     /**
@@ -248,6 +274,7 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     public <T extends IToken<?>> void setParent(@Nullable final T parent)
     {
         this.parent = parent;
+        modCount++;
     }
 
     /**
@@ -270,6 +297,7 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     public <T extends IToken<?>> void addChild(@NotNull final T child)
     {
         this.children.add(child);
+        modCount++;
     }
 
     /**
@@ -309,6 +337,7 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     public <T extends IToken<?>> void removeChild(@NotNull final T child)
     {
         this.children.remove(child);
+        modCount++;
     }
 
     /**
@@ -423,6 +452,7 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     public void overrideCurrentDeliveries(@NotNull final ImmutableList<ItemStack> stacks)
     {
         this.deliveries = Lists.newArrayList(stacks);
+        modCount++;
     }
 
     @Override
@@ -430,6 +460,7 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     {
         this.deliveries.add(stack);
         this.deliveries = InventoryUtils.processItemStackListAndMerge(this.deliveries);
+        modCount++;
     }
 
     @Override
@@ -437,12 +468,14 @@ public abstract class AbstractRequest<R extends IRequestable> implements IReques
     {
         this.deliveries.addAll(list);
         this.deliveries = InventoryUtils.processItemStackListAndMerge(this.deliveries);
+        modCount++;
     }
 
     @Override
     public void resetDeliveries()
     {
         this.deliveries.clear();
+        modCount++;
     }
 
     @NotNull

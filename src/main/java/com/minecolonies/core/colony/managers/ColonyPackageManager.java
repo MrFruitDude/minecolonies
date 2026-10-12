@@ -340,6 +340,11 @@ public class ColonyPackageManager implements IColonyPackageManager
         }
 
         final RequestSystemViewSync.Snapshot snapshot;
+        if (previous == null || fullDue)
+        {
+            // A full payload goes out: serialize everything again, whatever the entry cache believes.
+            manager.getViewEntryCache().clear();
+        }
         try
         {
             if (RsProbe.enabled)
