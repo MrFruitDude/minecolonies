@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.minecolonies.api.blocks.ModBlocks;
 import com.minecolonies.api.colony.ICitizenData;
+import com.minecolonies.api.util.Log;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
@@ -893,6 +894,68 @@ public final class MacroRun
         }
     }
 
+    /**
+     * What the couriers did while some request tree stood still: sampled every 50 ticks once a tree went unchanged for 1500 ticks (half of what counts as stuck),
+     * so a courier that recovers by itself after 5000 ticks leaves the same evidence as one that never does.
+     */
+    private final StringBuilder stallTrail = new StringBuilder();
+    private int stallTrailLines;
+    private final Map<Integer, BlockPos> stallLastPos = new HashMap<>();
+    private static final int STALL_SAMPLE_TICKS = 1500;
+
+    private void recordStallTrail(final long tick)
+    {
+        if (stallTrailLines > 1200 || tick % 50 != 0)
+        {
+            return;
+        }
+        int stalled = 0;
+        long oldest = 0;
+        for (final long[] known : rootFp.values())
+        {
+            if (tick - known[1] >= STALL_SAMPLE_TICKS)
+            {
+                stalled++;
+                oldest = Math.max(oldest, tick - known[1]);
+            }
+        }
+        if (stalled == 0)
+        {
+            return;
+        }
+        stallTrail.append("\n  t=").append(tick).append(" stalledRoots=").append(stalled).append(" oldestUnchanged=").append(oldest);
+        for (final ICitizenData citizen : citizens)
+        {
+            if (citizen.getJob() instanceof JobDeliveryman job && citizen.getEntity().isPresent())
+            {
+                final var e = citizen.getEntity().get();
+                final BlockPos here = e.blockPosition();
+                final BlockPos before = stallLastPos.put(citizen.getId(), here);
+                stallTrail.append("\n    #").append(citizen.getId()).append(" at ").append(here.toShortString()).append(" moved=").append(before == null ? "?" : (int) Math.sqrt(here.distSqr(before)))
+                  .append(" queue=").append(job.getTaskQueue().size()).append(" ai=").append(job.getWorkerAI() == null ? "-" : job.getWorkerAI().getState()).append(" navDone=").append(e.getNavigation().isDone());
+                if (!job.getTaskQueue().isEmpty())
+                {
+                    final IRequest<?> task = rm.getRequestForToken(job.getTaskQueue().get(0));
+                    if (task != null && task.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery delivery)
+                    {
+                        final BlockPos target = delivery.getTarget().getInDimensionLocation();
+                        final BlockPos start = delivery.getStart().getInDimensionLocation();
+                        stallTrail.append(" task=").append(BuiltInRegistries.ITEM.getKey(delivery.getStack().getItem()).getPath()).append('x').append(delivery.getStack().getCount()).append(' ').append(task.getState())
+                          .append(" start=").append(start.toShortString()).append(" distToStart=").append((int) Math.sqrt(here.distSqr(start))).append(" target=").append(target.toShortString())
+                          .append(" distToTarget=").append((int) Math.sqrt(here.distSqr(target)));
+                    }
+                }
+                if (e.getNavigation() instanceof com.minecolonies.core.entity.pathfinding.navigation.AbstractAdvancedPathNavigate nav && nav.getPathResult() != null)
+                {
+                    final var pr = nav.getPathResult();
+                    out_path(stallTrail, pr);
+                    stallTrail.append(" reaches=").append(pr.isPathReachingDestination()).append(" job=").append(pr.getJob() == null ? "-" : pr.getJob().getClass().getSimpleName());
+                }
+                stallTrailLines++;
+            }
+        }
+    }
+
     private static void out_path(final StringBuilder out, final com.minecolonies.core.entity.pathfinding.pathresults.PathResult<?> pr)
     {
         out.append(" path=").append(pr.getStatus()).append('/').append(pr.getPathLength());
@@ -1006,6 +1069,7 @@ public final class MacroRun
 
     private boolean progress(final long tick)
     {
+        recordStallTrail(tick);
         if (!draining)
         {
             if (scenario.done(this, tick))
@@ -1199,6 +1263,11 @@ public final class MacroRun
         work.addProperty("latencyP99", quantile(lat, lat.length, 0.99));
         work.addProperty("latencyMean", lat.length == 0 ? 0 : java.util.Arrays.stream(lat).average().orElse(0));
         out.add("work", work);
+        if (stallTrail.length() > 0)
+        {
+            out.addProperty("stallTrail", stallTrail.toString());
+            Log.getLogger().info("RS_BENCH_STALL_TRAIL {}{}", testName, stallTrail);
+        }
         out.add("gates", gates);
         out.add("extra", extra);
         final JsonArray errs = new JsonArray();
