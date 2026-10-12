@@ -472,7 +472,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             final double distance = ReachSpots.walkCost(worker.blockPosition(), walk.spot);
             // a walk that does not get anywhere (a path along scaffolding that the builder cannot follow) is given up after a while
-            if (walk.lastPosition == null || worker.position().distanceTo(walk.lastPosition) >= 0.4D)
+            final boolean pathReady = worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate pn && pn.getPathResult() != null && pn.getPathResult().isDone();
+            if (walk.lastPosition == null || !pathReady || worker.position().distanceTo(walk.lastPosition) >= 0.4D)
             {
                 walk.lastPosition = worker.position();
                 walk.lastMoved = now;
