@@ -199,6 +199,29 @@ public class EntityNavigationUtils
     }
 
     /**
+     * Walks to the very block (the usual walk counts a block and a half as arrived, which is a block below the top of a tower of scaffolding).
+     *
+     * @return 1 once the entity stands in the block, 0 while he walks, -1 when the walk ended and he is somewhere else.
+     */
+    public static <T extends Mob> int walkToBlock(final T entity, final BlockPos pos)
+    {
+        if (entity.blockPosition().equals(pos) || (entity.blockPosition().equals(pos.below()) && entity.level().getBlockState(pos.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING)))
+        {
+            // (the path ends inside the top cell of a column of scaffolding, one below the spot on top of it)
+            ((MinecoloniesAdvancedPathNavigate) entity.getNavigation()).stop();
+            return 1;
+        }
+        final MinecoloniesAdvancedPathNavigate nav = (MinecoloniesAdvancedPathNavigate) entity.getNavigation();
+        final boolean onTask = nav.getPathResult() != null && PathJobMoveToLocation.isJobFor(nav.getPathResult().getJob(), pos);
+        if (!onTask)
+        {
+            nav.walkTo(pos, 1.0D, false);
+            return 0;
+        }
+        return nav.isDone() ? -1 : 0;
+    }
+
+    /**
      * Walks away from a given position
      *
      * @return True when arrived

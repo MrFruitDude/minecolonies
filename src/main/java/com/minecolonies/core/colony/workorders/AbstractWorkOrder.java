@@ -16,6 +16,7 @@ import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.api.util.constant.NbtTagConstants;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingBuilder;
 import com.minecolonies.core.colony.workorders.collab.WorkOrderCollab;
+import com.minecolonies.core.colony.workorders.scaffold.ScaffoldLedger;
 import com.minecolonies.core.colony.workorders.view.*;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
 import net.minecraft.core.BlockPos;
@@ -172,6 +173,15 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
      * The state that builders share on this order: progress cursor, leases of helpers and block counts.
      */
     protected final WorkOrderCollab collab = new WorkOrderCollab();
+
+    /**
+     * The scaffolding put up for this order and still standing (saved with the order, swept when the order ends).
+     */
+    protected final ScaffoldLedger scaffolds = new ScaffoldLedger();
+
+    {
+        scaffolds.setOnChange(() -> changed = true);
+    }
 
     /**
      * The project this order is a part of, empty if none.
@@ -695,6 +705,7 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
         }
 
         collab.read(compound);
+        scaffolds.read(compound);
         projectId = compound.getStringOr(TAG_PROJECT, "");
 
         if (compound.contains(TAG_BB))
@@ -730,6 +741,7 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
         compound.putBoolean(TAG_IS_REQUESTED, requested);
         compound.putInt(TAG_STAGE, stage == null ? 0 : stage.ordinal());
         collab.write(compound);
+        scaffolds.write(compound);
         compound.putString(TAG_PROJECT, projectId);
 
         if (box != Constants.EMPTY_AABB)
@@ -951,6 +963,12 @@ public abstract class AbstractWorkOrder implements IBuilderWorkOrder
     public WorkOrderCollab getCollab()
     {
         return collab;
+    }
+
+    @Override
+    public ScaffoldLedger getScaffolds()
+    {
+        return scaffolds;
     }
 
     @Override

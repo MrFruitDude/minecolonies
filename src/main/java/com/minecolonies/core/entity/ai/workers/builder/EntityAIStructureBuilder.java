@@ -12,7 +12,10 @@ import com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder;
 import com.minecolonies.core.colony.workorders.collab.AssistReservations;
 import com.minecolonies.core.colony.workorders.collab.BuilderCollab;
 import com.minecolonies.core.colony.workorders.collab.WorkOrderCollab;
+import com.minecolonies.core.entity.ai.workers.util.BuildReach;
 import com.minecolonies.core.entity.ai.workers.util.BuilderStageRules;
+import com.minecolonies.core.entity.ai.workers.util.ReachSpots;
+import com.minecolonies.core.entity.ai.workers.util.StandSpots;
 import com.minecolonies.core.entity.ai.workers.util.AbstractWalking;
 import com.minecolonies.core.entity.ai.workers.util.WorkStuckTracker;
 import com.minecolonies.core.entity.ai.workers.util.WorkTiming;
@@ -31,6 +34,11 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.component.SwingAnimation;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
+import org.jetbrains.annotations.Nullable;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +56,7 @@ import com.minecolonies.core.colony.buildings.workerbuildings.BuildingBuilder;
 import com.minecolonies.core.colony.jobs.JobBuilder;
 import com.minecolonies.core.colony.workorders.WorkOrderBuilding;
 import com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructureWithWorkOrder;
+import com.minecolonies.core.entity.ai.workers.BuilderScaffolding;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
 import com.minecolonies.core.entity.ai.workers.util.BuildingStructureHandler;
 import com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate;
@@ -184,6 +193,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
         structurePlacer = new Tuple<>(new StructurePlacer(structure, building.getWorkOrder().getIteratorType()), structure);
 
+        if (usesPhysicalReach() && BuilderScaffolding.enabled() && mayNeedScaffolding(structure.getBluePrint()))
+        {
+            // a tall structure: the scaffolding is requested like the materials, so it is in the hut when the first tower is needed
+            scaffold.ensureStock(WorkerSettings.scaffoldStock());
+        }
+
         final WorkOrderCollab collab = building.getWorkOrder().getCollab();
         if (!collab.hasStageTotals())
         {
@@ -192,6 +207,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 collab.setStageTotal(stage, BuilderStageRules.estimateBlocks(structure.getBluePrint(), stage));
             }
         }
+    }
+
+    private static boolean mayNeedScaffolding(final com.ldtteam.structurize.blueprints.v1.Blueprint blueprint)
+    {
+        return BuildReach.mayNeedScaffolding(blueprint.getSizeX(), blueprint.getSizeY(), blueprint.getSizeZ(), BuildReach.EYE_HEIGHT, WorkerSettings.reach());
     }
 
     @Override
@@ -220,6 +240,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
         if (checkForWorkOrder())
         {
+            if (usesPhysicalReach() && building.getWorkOrder() != null && building.getWorkOrder().getBlueprint() != null && mayNeedScaffolding(building.getWorkOrder().getBlueprint()))
+            {
+                scaffold.prefetch();
+            }
             final IAIState state = super.startWorkingAtOwnBuilding();
             if (state == IDLE)
             {
@@ -274,9 +298,423 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         return PICK_UP;
     }
 
+    // ------------------------------------------------------------------ physical reach
+
+    /**
+     * The walk to a spot from which a block is in reach: the spot, when it was picked, and the spots that did not get him there.
+     */
+    private final class ReachWalk
+    {
+        BlockPos spot = null;
+        long since = 0L;
+        long budget = 100L;
+        final Set<BlockPos> bad = new HashSet<>();
+        long badSince = 0L;
+        long noSpotUntil = 0L;
+        long noSpotSince = 0L;
+        net.minecraft.world.phys.Vec3 lastPosition = null;
+        long lastMoved = 0L;
+
+        void reset()
+        {
+            spot = null;
+            bad.clear();
+            badSince = 0L;
+            noSpotUntil = 0L;
+            noSpotSince = 0L;
+            lastPosition = null;
+        }
+    }
+
+    private final ReachWalk mainWalk     = new ReachWalk();
+    private final ReachWalk scaffoldWalk = new ReachWalk();
+
+    private final BuilderScaffolding scaffold = new BuilderScaffolding(this);
+
+    @Override
+    protected boolean usesPhysicalReach()
+    {
+        return WorkerSettings.physicalReach();
+    }
+
+    @Override
+    protected boolean canReachNow(final BlockPos pos)
+    {
+        return !usesPhysicalReach() || BuildReach.inReach(worker.getX(), worker.getEyeY(), worker.getZ(), pos, WorkerSettings.reach());
+    }
+
+    @Override
+    protected List<BlockPos> workAhead(final BlockPos target, final int n)
+    {
+        if (assistOrder != null && !building.hasWorkOrder() && !batch.isEmpty())
+        {
+            // a helper works through his leased positions in the order of his batch
+            final List<BlockPos> list = new ArrayList<>(batch.size());
+            list.add(target);
+            for (final LeaseAllocator.Planned planned : batch)
+            {
+                if (!planned.world().equals(target))
+                {
+                    list.add(planned.world());
+                }
+            }
+            return list;
+        }
+        return super.workAhead(target, n);
+    }
+
+    @Override
+    protected List<BlockPos> peekWorkAhead(final int n)
+    {
+        if (assistOrder != null && !building.hasWorkOrder())
+        {
+            final List<BlockPos> list = new ArrayList<>();
+            for (final LeaseAllocator.Planned planned : batch)
+            {
+                list.add(planned.world());
+                if (list.size() >= n)
+                {
+                    break;
+                }
+            }
+            return list;
+        }
+        return super.peekWorkAhead(n);
+    }
+
+    @Override
+    protected void resetWalkTarget()
+    {
+        mainWalk.reset();
+        if (gotoPath != null)
+        {
+            gotoPath.cancel();
+            gotoPath = null;
+        }
+        super.resetWalkTarget();
+    }
+
+    @Override
+    protected void resetScaffoldWalk()
+    {
+        scaffoldWalk.reset();
+    }
+
+    @Override
+    protected void resetReachWalk()
+    {
+        mainWalk.reset();
+    }
+
+    @Override
+    protected void workFromScaffold(final BlockPos stand)
+    {
+        // the tower is up: the spots that did not work out before get a new chance (the tower may be the way to them), and the top of the tower is the first
+        mainWalk.reset();
+        workFrom = stand;
+    }
+
+    @Override
+    protected boolean walkIntoReachFor(final BlockPos target, final Supplier<List<BlockPos>> ahead, final boolean inBlocks, @Nullable final Predicate<BlockPos> accept)
+    {
+        return walkIntoReach(scaffoldWalk, target, ahead, inBlocks, accept, false);
+    }
+
+    /**
+     * Gets the builder to a place where he reaches the block: stays where he stands if the block is in reach from there, else walks to the
+     * best spot (the one that serves most of the blocks he works on next).
+     *
+     * @param walk       the walk state.
+     * @param target     the block.
+     * @param ahead      the blocks that count for the choice of the spot, the first one is the target.
+     * @param inBlocks   whether the spot may be made of the cell itself (scaffolding work).
+     * @param accept     extra condition for a spot, or null.
+     * @param mayScaffold whether a block without any spot gets a tower.
+     * @return true once the builder reaches the block.
+     */
+    private boolean walkIntoReach(
+      final ReachWalk walk,
+      final BlockPos target,
+      final Supplier<List<BlockPos>> ahead,
+      final boolean inBlocks,
+      @Nullable final Predicate<BlockPos> accept,
+      final boolean mayScaffold)
+    {
+        final double reach = WorkerSettings.reach();
+        if (BuildReach.inReach(worker.getX(), worker.getEyeY(), worker.getZ(), target, reach)
+              && (accept == null || accept.test(worker.blockPosition())))
+        {
+            if (walk.spot != null && !world.getBlockState(worker.blockPosition()).is(net.minecraft.tags.BlockTags.CLIMBABLE))
+            {
+                // (not in the middle of a climb: a builder who stops inside a column gets no path up from there)
+                worker.getNavigation().stop();
+                walk.spot = null;
+            }
+            walk.noSpotUntil = 0L;
+            walk.noSpotSince = 0L;
+            workFrom = worker.blockPosition();
+            prevBlockPosition = target;
+            return true;
+        }
+
+        // A long way to the block: abstract walking (a timed relocation) instead of a long path, if the settings allow it
+        final Boolean relocated = AbstractWalking.tryRelocate(worker, target, 4);
+        if (relocated != null && !relocated)
+        {
+            return false;
+        }
+
+        final long now = world.getGameTime();
+        if (!walk.bad.isEmpty() && now - walk.badSince > 200L)
+        {
+            // spots that did not work get another chance after a while (a tower may have been climbable by now)
+            walk.bad.clear();
+            walk.noSpotUntil = 0L;
+        }
+        final double margin = reach - ReachSpots.MARGIN;
+        if (walk.spot != null)
+        {
+            // a walk that does not get anywhere (a path along scaffolding that the builder cannot follow) is given up after a while
+            final boolean pathReady = worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate pn && pn.getPathResult() != null && pn.getPathResult().isDone();
+            if (walk.lastPosition == null || !pathReady || worker.position().distanceTo(walk.lastPosition) >= 0.4D)
+            {
+                walk.lastPosition = worker.position();
+                walk.lastMoved = now;
+            }
+            final boolean timedOut = now - walk.since > walk.budget || now - walk.lastMoved > 60L;
+            final BlockPos effective = world.getBlockState(walk.spot.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? walk.spot.below() : walk.spot;
+            if (!timedOut && StandSpots.canStandAt(world, walk.spot) && !BuildReach.inReachFromFeet(effective, worker.getEyeHeight(), target, margin)
+                  && !(worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate nav0 && nav0.isStuck()))
+            {
+                // the block the spot was picked for is not the one he works on now: another spot (this one is no worse for it)
+                walk.spot = null;
+                worker.getNavigation().stop();
+            }
+            else if (walk.spot != null && (timedOut || !StandSpots.canStandAt(world, walk.spot) || (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate nav && nav.isStuck())))
+            {
+                scaffold.note("spot " + walk.spot + " for " + target + " does not work (timedOut=" + timedOut + ") builder at " + worker.blockPosition());
+                walk.bad.add(walk.spot);
+                walk.badSince = world.getGameTime();
+                walk.spot = null;
+                worker.getNavigation().stop();
+            }
+        }
+        if (walk == mainWalk && walk.spot == null && workFrom != null && !workFrom.equals(worker.blockPosition()) && !walk.bad.contains(workFrom)
+              && StandSpots.canStandAt(world, workFrom)
+              && BuildReach.inReachFromFeet(world.getBlockState(workFrom.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? workFrom.below() : workFrom, worker.getEyeHeight(), target, margin))
+        {
+            // a spot the unstuck ladder or a tower picked
+            walk.spot = workFrom;
+            walk.since = now;
+            walk.lastPosition = null;
+            walk.budget = 100L + 12L * (long) Math.ceil(ReachSpots.walkCost(worker.blockPosition(), workFrom));
+        }
+        if (walk.spot == null)
+        {
+            if (now < walk.noSpotUntil)
+            {
+                return false;
+            }
+            final List<ReachSpots.Spot> spots = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(),
+              p -> !walk.bad.contains(p) && canWalkTo(p) && (inBlocks || hasWayDown(p)) && (accept == null || accept.test(p)), 1, inBlocks, !inBlocks && servesAnyOrder());
+            if (spots.isEmpty())
+            {
+                // nothing to stand on within reach of the block: this is a job for scaffolding
+                walk.noSpotUntil = now + 20;
+                if (walk.noSpotSince == 0L)
+                {
+                    walk.noSpotSince = now;
+                }
+                if (!mayScaffold)
+                {
+                    final List<ReachSpots.Spot> all = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(), null, 200, inBlocks, false);
+                    final long walkable = all.stream().filter(sp -> canWalkTo(sp.feet())).count();
+                    final long accepted = all.stream().filter(sp -> canWalkTo(sp.feet()) && (accept == null || accept.test(sp.feet()))).count();
+                    final long notBad = all.stream().filter(sp -> canWalkTo(sp.feet()) && (accept == null || accept.test(sp.feet())) && !walk.bad.contains(sp.feet())).count();
+                    scaffold.note("no spot for " + target + " (scaffold work) builder at " + worker.blockPosition() + " candidates=" + all.size() + " walkable=" + walkable + " accepted=" + accepted + " notBad=" + notBad
+                                    + " bad=" + walk.bad + " first=" + (all.isEmpty() ? "-" : all.get(0).feet().toShortString()));
+                }
+                else
+                {
+                    scaffold.note("no spot for " + target + " builder at " + worker.blockPosition());
+                }
+                if (mayScaffold)
+                {
+                    tryScaffold(target);
+                }
+                return false;
+            }
+            walk.spot = spots.get(0).feet();
+            walk.since = now;
+            walk.budget = 100L + 12L * (long) Math.ceil(spots.get(0).walk());
+            walk.lastPosition = null;
+            walk.noSpotSince = 0L;
+            scaffold.note((walk == mainWalk ? "spot " : "scaffold spot ") + walk.spot + " for " + target + " covers " + spots.get(0).covered() + " walk " + String.format("%.1f", spots.get(0).walk()) + " builder at " + worker.blockPosition());
+        }
+
+        if (walk == mainWalk)
+        {
+            workFrom = walk.spot;
+        }
+        // walk to the very spot (the usual walk stops a block and a half short, and that is a block below the top of a tower)
+        final int walked = EntityNavigationUtils.walkToBlock(worker, walk.spot);
+        if (walked != 0)
+        {
+            scaffold.note("walk to " + walk.spot + " ended (" + walked + ") at " + worker.blockPosition() + " for " + target + " nav stuck=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n && n.isStuck())
+                            + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-") + columnDescription(walk.spot));
+            // the walk is over, and the block is still out of reach: this spot does not work
+            walk.bad.add(walk.spot);
+                walk.badSince = world.getGameTime();
+            walk.spot = null;
+        }
+        return false;
+    }
+
+    private String columnDescription(final BlockPos spot)
+    {
+        final StringBuilder sb = new StringBuilder(" column=");
+        for (int y = spot.getY() - 7; y <= spot.getY() + 1; y++)
+        {
+            final BlockPos p = new BlockPos(spot.getX(), y, spot.getZ());
+            final var st = world.getBlockState(p);
+            sb.append(y - spot.getY()).append(':').append(st.isAir() ? "air" : st.getBlock().getDescriptionId().replace("block.minecraft.", "")).append(st.is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? "[d" + st.getValue(net.minecraft.world.level.block.ScaffoldingBlock.DISTANCE) + (st.getValue(net.minecraft.world.level.block.ScaffoldingBlock.BOTTOM) ? "b" : "") + "]" : "").append(' ');
+        }
+        return sb.toString();
+    }
+
+    private static String pathDescription(final MinecoloniesAdvancedPathNavigate nav)
+    {
+        final var path = nav.getPathResult().getPath();
+        if (path == null)
+        {
+            return "no path";
+        }
+        final StringBuilder sb = new StringBuilder("nodes=" + path.getNodeCount() + " next=" + path.getNextNodeIndex() + " [");
+        for (int i = 0; i < path.getNodeCount() && i < 14; i++)
+        {
+            sb.append(path.getNode(i).asBlockPos().toShortString()).append(' ');
+        }
+        return sb.append(']').toString();
+    }
+
+    /**
+     * What the builder is up to, for the logs of the tests.
+     */
+    public String debugInfo()
+    {
+        return "pos=" + worker.blockPosition().toShortString() + " eye=" + String.format("%.1f", worker.getEyeY()) + " workFrom=" + (workFrom == null ? "-" : workFrom.toShortString())
+                 + " mine=" + (blockToMine == null ? "-" : blockToMine.toShortString()) + " spot=" + (mainWalk.spot == null ? "-" : mainWalk.spot.toShortString())
+                 + " bad=" + mainWalk.bad.size() + " reachTarget=" + (reachTarget == null ? "-" : reachTarget.toShortString()) + " nav=" + (worker.getNavigation().isDone() ? "done" : "busy")
+                 + " stuck=" + debugStuck() + " scaffold=" + scaffold.debug();
+    }
+
+    // ------------------------------------------------------------------ scaffolding
+
+    @Override
+    protected boolean cannotReachAtAll(final BlockPos target)
+    {
+        // no spot for 40 ticks and no tower under way: nothing to wait for
+        return usesPhysicalReach() && mainWalk.noSpotSince != 0L && world.getGameTime() - mainWalk.noSpotSince >= 40L && !scaffold.busy() && scaffold.denied();
+    }
+
+    @Override
+    protected boolean scaffoldUnavailable()
+    {
+        return scaffold.unavailable();
+    }
+
+    @Override
+    protected void onRetryRound()
+    {
+        scaffold.clearDenial();
+        mainWalk.reset();
+    }
+
+    @Override
+    protected boolean tryEscapeTower()
+    {
+        return usesPhysicalReach() && scaffold.startEscape();
+    }
+
+    @Override
+    protected boolean tryScaffold(final BlockPos target)
+    {
+        return usesPhysicalReach() && scaffold.start(target);
+    }
+
+    @Override
+    protected boolean scaffoldTick()
+    {
+        return usesPhysicalReach() && scaffold.tick();
+    }
+
+    @Override
+    protected IBuilderWorkOrder scaffoldOrder()
+    {
+        if (assistOrder != null && !building.hasWorkOrder())
+        {
+            return assistOrder;
+        }
+        return building.getWorkOrder();
+    }
+
+    @Override
+    protected com.ldtteam.structurize.placement.structure.IStructureHandler scaffoldHandler()
+    {
+        if (assistOrder != null && !building.hasWorkOrder() && assistHandler != null)
+        {
+            return assistHandler;
+        }
+        return super.scaffoldHandler();
+    }
+
+    @Override
+    protected boolean isScaffoldHeld(final BlockPos worldPos)
+    {
+        final IBuilderWorkOrder order = building.getWorkOrder();
+        return order != null && !order.getScaffolds().isEmpty() && order.getScaffolds().contains(worldPos);
+    }
+
+    @Override
+    protected boolean scaffoldBeforeStageEnd()
+    {
+        final IBuilderWorkOrder order = building.getWorkOrder();
+        if (order == null || !usesPhysicalReach())
+        {
+            return false;
+        }
+        if (order.getScaffolds().isEmpty() && !scaffold.busy())
+        {
+            return false;
+        }
+        scaffold.requestTakeDownAll();
+        return true;
+    }
+
+    @Override
+    protected boolean consumeScaffoldRescan()
+    {
+        return scaffold.consumeRescan();
+    }
+
+    @Override
+    protected void onStructureReset()
+    {
+        scaffold.reset();
+        // the scaffolding items he carries go back into his hut
+        scaffold.returnStock();
+        mainWalk.reset();
+        scaffoldWalk.reset();
+    }
+
     @Override
     public boolean walkToConstructionSite(final BlockPos currentBlock)
     {
+        if (usesPhysicalReach() && currentBlock.equals(reachTarget))
+        {
+            return walkIntoReach(mainWalk, currentBlock, () -> workAhead(currentBlock), false, null, true);
+        }
+
         // A builder that is already within the normal working radius does not
         // need an asynchronous path calculation.  This is also important for
         // freshly-created worlds where the path executor can briefly lag the
@@ -403,17 +841,6 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     protected double getPlacementSpeed()
     {
         return WorkerSettings.builderSpeed();
-    }
-
-    @Override
-    protected void resetWalkTarget()
-    {
-        if (gotoPath != null)
-        {
-            gotoPath.cancel();
-            gotoPath = null;
-        }
-        super.resetWalkTarget();
     }
 
     /**
@@ -609,6 +1036,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     private StructurePlacer                  assistPlacer  = null;
     private BlockPos                         assistMine    = null;
     private int                              assistTries   = 0;
+    private final Set<BlockPos>              assistGaveUp  = new HashSet<>();
     private boolean                          gatherFromLead = false;
     private int                              gatherSteps    = 0;
 
@@ -644,6 +1072,23 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
      */
     private IAIState leaveAssist()
     {
+        // the helper leaves: what he put up comes down, with the items back in his hut
+        if (assistOrder != null && !assistOrder.getScaffolds().isEmpty())
+        {
+            final BlockPos hutPos = building.getPosition();
+            // the towers that are all his; a tower with cells of the lead on it stays for the lead to take down
+            final Set<BlockPos> mine = new HashSet<>();
+            for (final List<com.minecolonies.core.colony.workorders.scaffold.ScaffoldLedger.Cell> tower : assistOrder.getScaffolds().components(null))
+            {
+                if (tower.stream().allMatch(c -> hutPos.equals(c.hut())))
+                {
+                    tower.forEach(c -> mine.add(c.pos()));
+                }
+            }
+            com.minecolonies.core.colony.workorders.scaffold.ScaffoldSweeper.sweep(building.getColony(), assistOrder.getScaffolds(), cell -> mine.contains(cell.pos()), Integer.MAX_VALUE);
+        }
+        scaffold.reset();
+        assistGaveUp.clear();
         dropBatch();
         assistOrder = null;
         assistHandler = null;
@@ -758,7 +1203,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
               key -> stockMemo.computeIfAbsent(key, k -> Math.max(0, InventoryUtils.getItemCountInItemHandler(lead.getItemHandlerCap(), sameAs(k.getItemStack()))
                                                                     - AssistReservations.heldByOthers(lead, building, k.getItemStack()))
                                                       + leadCarried(lead, k.getItemStack())
-                                                      + InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), sameAs(k.getItemStack()))), room);
+                                                      + InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), sameAs(k.getItemStack()))), room,
+              assistGaveUp::contains);
             if (plan.isEmpty())
             {
                 setDelay(40);
@@ -970,6 +1416,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             return leaveAssist();
         }
         collab.renew(building.getID(), world.getGameTime() + BuilderCollab.leaseTicks());
+        if (runScaffoldTick())
+        {
+            return getState();
+        }
         if (!worker.getInventoryCitizen().hasSpace())
         {
             return INVENTORY_FULL;
@@ -984,13 +1434,16 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             return getState();
         }
 
+        reachTarget = usesPhysicalReach() ? planned.world() : null;
         if (!walkToConstructionSite(planned.world()))
         {
-            if (escalateStuck(planned.world()) == WorkStuckTracker.Step.DEFER)
+            if ((usesPhysicalReach() && cannotReachAtAll(planned.world())) || escalateStuck(planned.world()) == WorkStuckTracker.Step.DEFER)
             {
-                // the helper cannot get there: the lead gets the position back
+                // the helper cannot get there: the lead gets the position back, and the helper does not take it again
+                assistGaveUp.add(planned.world().immutable());
                 collab.releaseLease(planned.world());
                 batch.remove(0);
+                stuckGaveUp();
             }
             return getState();
         }
@@ -1035,10 +1488,17 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             return ASSIST_WORK;
         }
         assistOrder.getCollab().renew(building.getID(), world.getGameTime() + BuilderCollab.leaseTicks());
+        if (runScaffoldTick())
+        {
+            return getState();
+        }
+        reachTarget = usesPhysicalReach() ? assistMine : null;
         if (!walkToConstructionSite(assistMine) || workFrom == null)
         {
             if (escalateStuck(assistMine) == WorkStuckTracker.Step.DEFER)
             {
+                assistGaveUp.add(planned.world().immutable());
+                stuckGaveUp();
                 assistOrder.getCollab().releaseLease(planned.world());
                 batch.remove(planned);
                 assistMine = null;

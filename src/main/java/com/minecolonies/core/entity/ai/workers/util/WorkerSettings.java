@@ -32,6 +32,10 @@ public final class WorkerSettings
     private static volatile WorkerWalking walkingOverride;
     private static volatile Integer       minBlocksOverride;
     private static volatile Boolean       fastClearOverride;
+    private static volatile Double        reachOverride;
+    private static volatile Boolean       physicalReachOverride;
+    private static volatile Boolean       scaffoldingOverride;
+    private static volatile Integer       scaffoldStockOverride;
 
     /**
      * Only for tests: overrides the config. Null values go back to the config.
@@ -55,6 +59,18 @@ public final class WorkerSettings
     public static void clearOverrides()
     {
         overrideForTests(null, null, null, null, null, null);
+        overrideReachForTests(null, null, null, null);
+    }
+
+    /**
+     * Only for tests: overrides the reach and scaffolding settings. Null values go back to the config.
+     */
+    public static void overrideReachForTests(final Double reach, final Boolean physicalReach, final Boolean scaffolding, final Integer scaffoldStock)
+    {
+        reachOverride = reach;
+        physicalReachOverride = physicalReach;
+        scaffoldingOverride = scaffolding;
+        scaffoldStockOverride = scaffoldStock;
     }
 
     /**
@@ -214,6 +230,89 @@ public final class WorkerSettings
         catch (final RuntimeException | NoClassDefFoundError e)
         {
             return true;
+        }
+    }
+
+    public static final double DEFAULT_REACH         = 5.0D;
+    public static final int    DEFAULT_SCAFFOLD_STOCK = 32;
+
+    /**
+     * @return how far (blocks, 3D, from the eye) a builder places and breaks blocks, 2 to 16, default 5.
+     */
+    public static double reach()
+    {
+        final Double override = reachOverride;
+        if (override != null)
+        {
+            return sane(override, 2.0D, 16.0D, DEFAULT_REACH);
+        }
+        try
+        {
+            return sane(MinecoloniesAPIProxy.getInstance().getConfig().getServer().builderReach.get(), 2.0D, 16.0D, DEFAULT_REACH);
+        }
+        catch (final RuntimeException | NoClassDefFoundError e)
+        {
+            return DEFAULT_REACH;
+        }
+    }
+
+    /**
+     * @return whether builders need the physical 3D reach (default on). Off: the old horizontal test.
+     */
+    public static boolean physicalReach()
+    {
+        final Boolean override = physicalReachOverride;
+        if (override != null)
+        {
+            return override;
+        }
+        try
+        {
+            return MinecoloniesAPIProxy.getInstance().getConfig().getServer().builderPhysicalReach.get();
+        }
+        catch (final RuntimeException | NoClassDefFoundError e)
+        {
+            return true;
+        }
+    }
+
+    /**
+     * @return whether builders put up scaffolding for blocks out of reach (default on, needs the physical reach).
+     */
+    public static boolean scaffolding()
+    {
+        final Boolean override = scaffoldingOverride;
+        if (override != null)
+        {
+            return override;
+        }
+        try
+        {
+            return MinecoloniesAPIProxy.getInstance().getConfig().getServer().builderScaffolding.get();
+        }
+        catch (final RuntimeException | NoClassDefFoundError e)
+        {
+            return true;
+        }
+    }
+
+    /**
+     * @return how many scaffolding items a builder keeps in stock, 8 to 128, default 32.
+     */
+    public static int scaffoldStock()
+    {
+        final Integer override = scaffoldStockOverride;
+        if (override != null)
+        {
+            return Math.max(1, Math.min(128, override));
+        }
+        try
+        {
+            return Math.max(8, Math.min(128, MinecoloniesAPIProxy.getInstance().getConfig().getServer().builderScaffoldingStock.get()));
+        }
+        catch (final RuntimeException | NoClassDefFoundError e)
+        {
+            return DEFAULT_SCAFFOLD_STOCK;
         }
     }
 

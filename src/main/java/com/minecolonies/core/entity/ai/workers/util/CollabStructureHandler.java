@@ -137,6 +137,7 @@ public class CollabStructureHandler extends AbstractStructureHandler
 
         if (placement && worker != null)
         {
+            ReachAudit.record(worker, worldPos);
             com.minecolonies.core.colony.workorders.collab.BuilderCollab.placed(worldPos, worker.getCitizenData().getWorkBuilding().getID());
             worker.getCitizenExperienceHandler().addExperience(XP_EACH_BLOCK);
             for (final ItemStack ignored : list)

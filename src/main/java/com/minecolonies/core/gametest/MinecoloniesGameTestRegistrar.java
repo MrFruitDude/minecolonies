@@ -70,9 +70,23 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             com.minecolonies.core.gametest.bench.BenchRegistrar.register(event);
             return;
         }
-        if ("worker_eff".equals(System.getProperty("minecolonies.gametest.only")))
+        final String onlyProperty = System.getProperty("minecolonies.gametest.only", "");
+        if (onlyProperty.contains("scaffoldbench"))
         {
-            registerWorkerEfficiency(event);
+            // the tall-structure benchmarks, three times each (the ticks vary a little from run to run)
+            registerScaffoldBench(event);
+            return;
+        }
+        if (!onlyProperty.isEmpty() && (onlyProperty.contains("worker_eff") || onlyProperty.contains("scaffold")))
+        {
+            if (onlyProperty.contains("worker_eff"))
+            {
+                registerWorkerEfficiency(event);
+            }
+            if (onlyProperty.contains("scaffold"))
+            {
+                registerBuilderScaffolding(event);
+            }
             return;
         }
         final String only = System.getenv("MINECOLONIES_GAMETEST_ONLY");
@@ -691,6 +705,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               isolatedColonyData(event, name));
         }
         registerWorkerEfficiency(event);
+        registerBuilderScaffolding(event);
         // C2 builder collaboration observability and controls (one glob: minecolonies:collab_obs_*).
         for (final String name : new String[] {"collab_obs_view", "collab_obs_cap", "collab_obs_pin", "collab_obs_pin_new", "collab_obs_refusals"})
         {
@@ -915,6 +930,133 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "worker_eff_set_abstract_walking" -> WorkerSettingsGameTests::abstractWalkingRelocates;
                 default -> WorkerSettingsGameTests::walkSpeedCalibration;
             };
+            if (!nameWanted(name))
+            {
+                continue;
+            }
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
+    }
+
+    /**
+     * A development filter inside a group: {@code -Dminecolonies.gametest.names=a,b,!c} keeps the tests whose name contains one of the words and none of the words with a ! in front.
+     */
+    private static boolean nameWanted(final String name)
+    {
+        final String names = System.getProperty("minecolonies.gametest.names", "");
+        if (names.isBlank())
+        {
+            return true;
+        }
+        boolean wanted = false;
+        for (final String word : names.split(","))
+        {
+            final String w = word.trim();
+            if (w.startsWith("!"))
+            {
+                if (name.contains(w.substring(1)))
+                {
+                    return false;
+                }
+            }
+            else if (!w.isEmpty() && name.contains(w))
+            {
+                wanted = true;
+            }
+        }
+        return wanted;
+    }
+
+    private void registerScaffoldBench(final RegisterGameTestsEvent event)
+    {
+        final int reps = Integer.getInteger("minecolonies.gametest.reps", 3);
+        for (int i = 1; i <= reps; i++)
+        {
+            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy", "clear", "clear_legacy", "two", "twobig", "onebig", "onebig_legacy"})
+            {
+                final String name = "scaffoldbench_" + base + "_" + i;
+                if (!nameWanted(name))
+                {
+                    continue;
+                }
+                final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (base)
+                {
+                    case "tall8" -> BuilderScaffoldGameTests::tallWall8;
+                    case "tall14" -> BuilderScaffoldGameTests::tallTower14;
+                    case "overhang" -> BuilderScaffoldGameTests::overhangSlab;
+                    case "sealed" -> BuilderScaffoldGameTests::sealedRoof;
+                    case "tall8_legacy" -> BuilderScaffoldGameTests::tallWall8Legacy;
+                    case "tall14_legacy" -> BuilderScaffoldGameTests::tallTower14Legacy;
+                    case "overhang_legacy" -> BuilderScaffoldGameTests::overhangLegacy;
+                    case "clear" -> BuilderScaffoldGameTests::reachClearL40;
+                    case "clear_legacy" -> BuilderScaffoldGameTests::legacyClearL40;
+                    case "onebig" -> BuilderScaffoldGameTests::oneBuilderBig;
+                    case "onebig_legacy" -> BuilderScaffoldGameTests::oneBuilderBigLegacy;
+                    case "two" -> BuilderScaffoldGameTests::twoBuilders;
+                    case "twobig" -> BuilderScaffoldGameTests::twoBuildersBig;
+                    default -> BuilderScaffoldGameTests::sealedRoofLegacy;
+                };
+                event.registerTest(
+                  Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, test),
+                  isolatedColonyData(event, name));
+            }
+        }
+    }
+
+    /**
+     * L4 builder reach and scaffolding tests. Run on their own with {@code JAVA_TOOL_OPTIONS=-Dminecolonies.gametest.only=scaffold}.
+     */
+    private void registerBuilderScaffolding(final RegisterGameTestsEvent event)
+    {
+        for (final String name : new String[] {"scaffold_reach_box_l40", "scaffold_reach_box_l1", "scaffold_reach_clear_l40", "scaffold_legacy_box_l40", "scaffold_legacy_box_l1",
+          "scaffold_tall_wall8", "scaffold_tall_tower14", "scaffold_sealed_roof", "scaffold_overhang", "scaffold_tall_tower14_legacy", "scaffold_tall_wall8_legacy",
+          "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held", "scaffold_bridge", "scaffold_overhang_legacy", "scaffold_sealed_legacy", "scaffold_two_builders_big", "scaffold_escape_pit", "scaffold_supply_delivery", "scaffold_supply_crafters", "scaffold_clear_ledge", "scaffold_probe_arm", "scaffold_probe_descend", "scaffold_probe_wall5", "scaffold_probe_top1", "scaffold_probe_top3", "scaffold_probe_top8", "scaffold_probe_inside5", "scaffold_stock_arrives"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "scaffold_reach_box_l40" -> BuilderScaffoldGameTests::reachBoxL40;
+                case "scaffold_reach_box_l1" -> BuilderScaffoldGameTests::reachBoxL1;
+                case "scaffold_reach_clear_l40" -> BuilderScaffoldGameTests::reachClearL40;
+                case "scaffold_legacy_box_l40" -> BuilderScaffoldGameTests::legacyBoxL40;
+                case "scaffold_legacy_box_l1" -> BuilderScaffoldGameTests::legacyBoxL1;
+                case "scaffold_tall_wall8" -> BuilderScaffoldGameTests::tallWall8;
+                case "scaffold_tall_tower14" -> BuilderScaffoldGameTests::tallTower14;
+                case "scaffold_sealed_roof" -> BuilderScaffoldGameTests::sealedRoof;
+                case "scaffold_overhang" -> BuilderScaffoldGameTests::overhangSlab;
+                case "scaffold_tall_tower14_legacy" -> BuilderScaffoldGameTests::tallTower14Legacy;
+                case "scaffold_tall_wall8_legacy" -> BuilderScaffoldGameTests::tallWall8Legacy;
+                case "scaffold_cancel" -> BuilderScaffoldGameTests::cancelMidBuild;
+                case "scaffold_save_load" -> BuilderScaffoldGameTests::saveLoadMidScaffold;
+                case "scaffold_orphans" -> BuilderScaffoldGameTests::orphansAfterLoad;
+                case "scaffold_two_builders" -> BuilderScaffoldGameTests::twoBuilders;
+                case "scaffold_no_items" -> BuilderScaffoldGameTests::noScaffoldingItems;
+                case "scaffold_lava" -> BuilderScaffoldGameTests::impossibleOverLava;
+                case "scaffold_held" -> BuilderScaffoldGameTests::positionUnderScaffolding;
+                case "scaffold_bridge" -> BuilderScaffoldGameTests::bridgeOverTrench;
+                case "scaffold_overhang_legacy" -> BuilderScaffoldGameTests::overhangLegacy;
+                case "scaffold_sealed_legacy" -> BuilderScaffoldGameTests::sealedRoofLegacy;
+                case "scaffold_two_builders_big" -> BuilderScaffoldGameTests::twoBuildersBig;
+                case "scaffold_escape_pit" -> BuilderScaffoldGameTests::escapeFromPit;
+                case "scaffold_supply_delivery" -> ScaffoldSupplyGameTests::warehouseDelivers;
+                case "scaffold_supply_crafters" -> ScaffoldSupplyGameTests::craftersThatKnowScaffolding;
+                case "scaffold_clear_ledge" -> BuilderScaffoldGameTests::clearNextToALedge;
+                case "scaffold_probe_arm" -> BuilderScaffoldGameTests::armProbe;
+                case "scaffold_probe_descend" -> BuilderScaffoldGameTests::descendProbe;
+                case "scaffold_probe_wall5" -> BuilderScaffoldGameTests::climbWall5;
+                case "scaffold_probe_top1" -> BuilderScaffoldGameTests::climbTop1;
+                case "scaffold_probe_top3" -> BuilderScaffoldGameTests::climbTop3;
+                case "scaffold_probe_top8" -> BuilderScaffoldGameTests::climbTop8;
+                case "scaffold_probe_inside5" -> BuilderScaffoldGameTests::climbInside5;
+                default -> BuilderScaffoldGameTests::stockArrives;
+            };
+            if (!nameWanted(name))
+            {
+                continue;
+            }
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),

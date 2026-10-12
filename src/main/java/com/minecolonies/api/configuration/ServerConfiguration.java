@@ -175,6 +175,19 @@ public class ServerConfiguration extends AbstractConfiguration
     public final DoubleValue builderSpeedMultiplier;
 
     /**
+     * Physical reach of builders: a block is placed or broken only within this many blocks (3D, from the eye) of where the builder stands.
+     */
+    public final DoubleValue  builderReach;
+    public final BooleanValue builderPhysicalReach;
+
+    /**
+     * Whether builders put up temporary scaffolding (vanilla scaffolding blocks) to reach blocks they cannot reach from the ground, and
+     * how many scaffolding items they keep in stock for it.
+     */
+    public final BooleanValue builderScaffolding;
+    public final IntValue     builderScaffoldingStock;
+
+    /**
      * RS1: stock and space are reserved in a per-colony ledger when a delivery is planned, and released when it ends.
      */
     public final BooleanValue reservations;
@@ -332,6 +345,11 @@ public class ServerConfiguration extends AbstractConfiguration
         // The clear stage leaves blocks alone that already are what the blueprint wants there (instead of mining and placing them again).
         builderFastClear = defineBoolean("fastClear", true);
         builderSpeedMultiplier = defineDouble("speedMultiplier", 1.5, 0.5, 4.0);
+        // 3D reach from the eye (a worker places and breaks only what he can reach; out of reach he walks to a better spot or builds scaffolding)
+        builderReach = defineDouble("reach", 5.0, 2.0, 16.0);
+        builderPhysicalReach = defineBoolean("physicalReach", true);
+        builderScaffolding = defineBoolean("scaffolding", true);
+        builderScaffoldingStock = defineInteger("scaffoldingStock", 32, 8, 128);
 
         finishCategory();
     }

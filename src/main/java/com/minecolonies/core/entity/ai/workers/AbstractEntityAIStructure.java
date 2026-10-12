@@ -6,6 +6,8 @@ import com.ldtteam.structurize.api.util.Tuple;
 import com.ldtteam.structurize.placement.BlockPlacementResult;
 import com.ldtteam.structurize.placement.StructurePhasePlacementResult;
 import com.ldtteam.structurize.placement.StructurePlacer;
+import com.ldtteam.structurize.placement.handlers.placement.IPlacementHandler;
+import com.ldtteam.structurize.util.BlockInfo;
 import com.ldtteam.structurize.placement.structure.IStructureHandler;
 import com.ldtteam.structurize.util.BlockUtils;
 import com.ldtteam.structurize.util.BlueprintPositionInfo;
@@ -33,7 +35,9 @@ import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource;
 import com.minecolonies.core.colony.jobs.AbstractJobStructure;
 import com.minecolonies.core.entity.ai.workers.util.BuilderStageRules;
 import com.minecolonies.core.entity.ai.workers.util.AbstractWalking;
+import com.minecolonies.core.entity.ai.workers.util.ReachSpots;
 import com.minecolonies.core.entity.ai.workers.util.StandSpots;
+import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
 import com.minecolonies.core.entity.ai.workers.util.WorkStuckTracker;
 import com.minecolonies.core.entity.ai.workers.util.WorkTiming;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
@@ -148,7 +152,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     private TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> reserved(
       final TriPredicate<BlueprintPositionInfo, BlockPos, IStructureHandler> rule)
     {
-        return (info, pos, handler) -> rule.test(info, pos, handler) || isPositionReserved(pos) || isStuckSkipped(pos);
+        return (info, pos, handler) -> rule.test(info, pos, handler) || isPositionReserved(pos) || isStuckSkipped(pos) || isScaffoldHeld(pos) || (!servedOutOfOrder.isEmpty() && servedOutOfOrder.contains(pos));
     }
 
     /**
@@ -516,6 +520,12 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return IDLE;
         }
 
+        if (runScaffoldTick())
+        {
+            // putting a tower up or taking it down
+            return getState();
+        }
+
         if (!worker.getInventoryCitizen().hasSpace())
         {
             return INVENTORY_FULL;
@@ -528,22 +538,45 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         //Fill workFrom with the position from where the builder should build.
         //also ensure we are at that position.
         final BlockPos progress = getProgressPos() == null ? NULL_POS : getProgressPos().getA();
-        final BlockPos worldPos = getPosToWorkAt();
+        BlockPos worldPos = getPosToWorkAt();
+        boolean reachGate = false;
+        if (usesPhysicalReach() && blockToMine == null && !limitReached)
+        {
+            // the worker works on what he reaches: the next block that has something to do is the one he has to be able to reach
+            final List<BlockPos> next = peekWork(1);
+            if (!next.isEmpty())
+            {
+                worldPos = next.get(0);
+                reachGate = true;
+            }
+        }
 
         if (getProgressPos() != null)
         {
             structurePlacer.getB().setStage(getProgressPos().getB());
         }
 
-        final boolean mustWalk = (worldPos != null || blockToMine != null) && !limitReached
+        // what the worker reaches from where he stands is worked on before he moves, whatever its place in the order of the stage
+        final BlockPos nearby = reachGate && !canReachNow(worldPos) ? pollNearby(structurePlacer.getB().getStage()) : null;
+        final boolean outOfOrder = nearby != null;
+
+        reachTarget = usesPhysicalReach() ? (blockToMine != null ? blockToMine : (reachGate ? worldPos : null)) : null;
+        final boolean mustWalk = !outOfOrder && (worldPos != null || blockToMine != null) && !limitReached
                                    && (blockToMine == null ? !walkToConstructionSite(worldPos) : !walkToConstructionSite(blockToMine));
         if (mustWalk)
         {
             // the worker cannot get to the block: wait for the walk, and climb the ladder out when it takes too long
             final BlockPos target = blockToMine != null ? blockToMine : worldPos;
+            if (reachTarget != null && cannotReachAtAll(target))
+            {
+                Log.getLogger().debug("{} gives up {}: no place to reach it from", worker.getName().getString(), target);
+                deferBlock(target, false);
+                escalateStuck(target);
+                return getState();
+            }
             if (escalateStuck(target) == WorkStuckTracker.Step.DEFER)
             {
-                deferBlock(blockToMine != null ? blockToMine : peekNextBlock());
+                deferBlock(blockToMine != null ? blockToMine : (reachGate ? worldPos : peekNextBlock()));
             }
             return getState();
         }
@@ -554,6 +587,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         final StructurePhasePlacementResult result;
         final StructurePlacer placer = structurePlacer.getA();
         final BuildingProgressStage currentStage = structurePlacer.getB().getStage();
+        if (outOfOrder)
+        {
+            result = placeNearby(placer, nearby);
+        }
+        else
         switch (currentStage)
         {
             case BUILD_SOLID:
@@ -601,12 +639,32 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         }
 
         final boolean firstIteration = building.getProgress() == null;
-        if (result.getBlockResult().getResult() == BlockPlacementResult.Result.FINISHED)
+        if (outOfOrder)
+        {
+            // the cursor of the stage stays where it is
+            if (result.getBlockResult().getResult() == BlockPlacementResult.Result.SUCCESS)
+            {
+                servedOutOfOrder.add(nearby.immutable());
+            }
+        }
+        else if (result.getBlockResult().getResult() == BlockPlacementResult.Result.FINISHED)
         {
             if (!canFinishStage())
             {
-                // builders helping with this stage have positions left; wait for them (or for their lease to run out)
+                // builders helping with this stage have positions left; wait for them (or for their lease to run out). Their scaffolding stays up
+                // meanwhile: it is theirs to work from, and a tower that comes down under a helper is put up again by him.
                 setDelay(TICKS_SECOND);
+                return getState();
+            }
+            if (scaffoldBeforeStageEnd())
+            {
+                // the scaffolding comes down before the stage ends
+                return getState();
+            }
+            if (consumeScaffoldRescan())
+            {
+                // positions that stood under scaffolding come again
+                this.storeProgressPos(NULL_POS, currentStage);
                 return getState();
             }
 
@@ -874,6 +932,23 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * A helper gave up on a position: the unstuck ladder starts again for the next one (the worker walks from scratch).
+     */
+    protected final void stuckGaveUp()
+    {
+        stuck.progress();
+        resetWalkTarget();
+    }
+
+    /**
+     * The stuck tracker, for the logs of the tests.
+     */
+    protected final String debugStuck()
+    {
+        return stuck.stationaryTicks() + "/" + stuck.overallTicks() + "/" + stuck.lastStep() + " deferred=" + deferredBlocks.size() + " abandoned=" + abandonedBlocks.size();
+    }
+
+    /**
      * Throws away where the worker wanted to stand and the path to it, so the next step asks for a new spot.
      */
     protected void resetWalkTarget()
@@ -892,6 +967,62 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     protected boolean tryScaffold(final BlockPos target)
     {
         return false;
+    }
+
+    /**
+     * Builds a tower of scaffolding that gets the worker out of a hole he cannot walk out of.
+     *
+     * @return true if a tower is on its way.
+     */
+    protected boolean tryEscapeTower()
+    {
+        return false;
+    }
+
+    /**
+     * Whether a perch high above the base of the structure has a way down: a ladder or scaffolding next to it, or ground within a drop of three
+     * blocks. A builder who stands on top of a wall that grows under him must not be left with a fall of ten blocks.
+     *
+     * @param feet the spot.
+     * @return true if he could get off it again.
+     */
+    protected final boolean hasWayDown(final BlockPos feet)
+    {
+        final BlockPos[] area = workArea();
+        if (area == null || feet.getY() <= area[0].getY() + 3)
+        {
+            return true;
+        }
+        for (final net.minecraft.core.Direction dir : net.minecraft.core.Direction.Plane.HORIZONTAL)
+        {
+            final BlockPos near = feet.relative(dir);
+            if (world.getBlockState(near).is(net.minecraft.tags.BlockTags.CLIMBABLE) || world.getBlockState(near.below()).is(net.minecraft.tags.BlockTags.CLIMBABLE))
+            {
+                return true;
+            }
+            for (int drop = 0; drop <= 3 && StandSpots.isFree(world, near.below(Math.max(0, drop - 1))); drop++)
+            {
+                if (StandSpots.canStandAt(world, near.below(drop)))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether the worker is cut off from his hut by a drop he cannot climb (a pit), as far as a search of the standable spots around him tells.
+     */
+    protected final boolean isStrandedInHole()
+    {
+        final BlockPos home = StandSpots.nearest(world, building.getPosition(), 8, 4, 4, null);
+        if (home == null || Math.abs(home.getX() - worker.getBlockX()) >= WALKABLE_RADIUS - 2 || Math.abs(home.getZ() - worker.getBlockZ()) >= WALKABLE_RADIUS - 2)
+        {
+            return false;
+        }
+        // standing well below the spot by his hut, with no way up
+        return home.getY() - worker.getBlockY() >= 3 && !canWalkTo(home);
     }
 
     /**
@@ -920,9 +1051,14 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         stuckLastPos = position;
 
         WorkStuckTracker.Step step = stuck.blocked(dt, moved);
-        if (step == WorkStuckTracker.Step.NONE && stuck.stationaryTicks() >= WorkStuckTracker.REPATH_AT + 20 && fellBelowWorkArea())
+        if (step == WorkStuckTracker.Step.NONE && stuck.stationaryTicks() >= WorkStuckTracker.REPATH_AT + 20 && (fellBelowWorkArea() || isStrandedInHole()))
         {
-            // fallen into a hole below the site and no way up: no need to try the gentler steps first
+            // fallen into a hole and no way up: a tower of scaffolding up and out if there is one, else no need to try the gentler steps first
+            if (tryEscapeTower())
+            {
+                stuck.free();
+                return WorkStuckTracker.Step.NONE;
+            }
             step = stuck.escalateTo(WorkStuckTracker.Step.TELEPORT);
         }
 
@@ -967,6 +1103,15 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     protected final void deferBlock(@Nullable final BlockPos worldPos)
     {
+        deferBlock(worldPos, true);
+    }
+
+    /**
+     * @param resetLadder whether the unstuck ladder starts again (a worker who gives up block after block because he is cut off keeps climbing it,
+     *                    so the teleport still comes).
+     */
+    protected final void deferBlock(@Nullable final BlockPos worldPos, final boolean resetLadder)
+    {
         if (worldPos != null)
         {
             final BlockPos pos = worldPos.immutable();
@@ -987,7 +1132,10 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         workFrom = null;
         gotoPos = null;
         resetWalkTarget();
-        stuck.progress();
+        if (resetLadder)
+        {
+            stuck.progress();
+        }
         toolWaitTicks = 0;
     }
 
@@ -1015,6 +1163,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         if (!deferredBlocks.isEmpty() && retryRounds < 1)
         {
             retryRounds++;
+            onRetryRound();
             retryBlocks.addAll(deferredBlocks);
             deferredBlocks.clear();
             workFrom = null;
@@ -1038,6 +1187,9 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         deferredBlocks.clear();
         retryBlocks.clear();
         abandonedBlocks.clear();
+        servedOutOfOrder.clear();
+        nearbyQueue.clear();
+        nearbyStage = null;
         retryRounds = 0;
         toolWaitTicks = 0;
         toolWaitTick = -1L;
@@ -1047,6 +1199,479 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         stuckLastPos = null;
         workBank = 0.0D;
         lastBankTick = -1L;
+    }
+
+    // ------------------------------------------------------------------ hooks of the scaffolding work (builders)
+
+    private java.util.Set<BlockPos> walkable = null;
+    private BlockPos walkableFrom = null;
+    private long walkableAt = -100L;
+    private static final int WALKABLE_RADIUS = 28;
+
+    /**
+     * The world changed around the worker (scaffolding went up or came down): the search has to be done again.
+     */
+    protected final void forgetWalkable()
+    {
+        walkable = null;
+    }
+
+    /**
+     * Whether the worker can walk (or climb) from where he is to a position, as far as a search of the standable spots around him can tell.
+     * Positions further away than the search goes count as reachable.
+     *
+     * @param feet the position.
+     * @return false if the position is cut off: inside a closed wall, on top of one, behind a drop.
+     */
+    protected final boolean canWalkTo(final BlockPos feet)
+    {
+        final long now = world.getGameTime();
+        final BlockPos here = worker.blockPosition();
+        if (walkable == null || !here.equals(walkableFrom) && now - walkableAt > 5 || now - walkableAt > 40)
+        {
+            walkable = StandSpots.reachableFrom(world, here, WALKABLE_RADIUS, 30000);
+            walkableFrom = here;
+            walkableAt = now;
+        }
+        return walkable.contains(feet) || Math.abs(feet.getX() - walkableFrom.getX()) >= WALKABLE_RADIUS || Math.abs(feet.getZ() - walkableFrom.getZ()) >= WALKABLE_RADIUS
+                 || walkable.size() >= 30000;
+    }
+
+    /**
+     * The work order the worker's scaffolding belongs to.
+     *
+     * @return the order, null if there is none.
+     */
+    @Nullable
+    protected IBuilderWorkOrder scaffoldOrder()
+    {
+        return null;
+    }
+
+    /**
+     * The structure the worker builds, for the places where scaffolding would be in the way of the building.
+     */
+    @Nullable
+    protected IStructureHandler scaffoldHandler()
+    {
+        return structurePlacer == null ? null : structurePlacer.getB();
+    }
+
+    /**
+     * Whether the stage that runs now or later removes the block at the position (the clear stage mines what stands in the volume of the
+     * structure): ground like that is no base for a tower.
+     */
+    protected final boolean willBeRemoved(final BlockPos pos)
+    {
+        final IStructureHandler handler = scaffoldHandler();
+        if (handler == null || structurePlacer == null)
+        {
+            return false;
+        }
+        final BuildingProgressStage stage = structurePlacer.getB().getStage();
+        if (stage != CLEAR && stage != CLEAR_NON_SOLIDS && stage != REMOVE)
+        {
+            return false;
+        }
+        final BlockPos local = handler.getStructurePosFromWorld(pos);
+        final var blueprint = handler.getBluePrint();
+        if (blueprint == null || local.getX() < 0 || local.getY() < 0 || local.getZ() < 0
+              || local.getX() >= blueprint.getSizeX() || local.getY() >= blueprint.getSizeY() || local.getZ() >= blueprint.getSizeZ())
+        {
+            return false;
+        }
+        final BlockState world = this.world.getBlockState(pos);
+        if (world.isAir() || world.getBlock() instanceof IBuilderUndestroyable || world.getBlock() == Blocks.BEDROCK)
+        {
+            return false;
+        }
+        final BlockState wanted = blueprint.getBlockState(local);
+        if (stage == REMOVE)
+        {
+            return wanted != null && !wanted.isAir();
+        }
+        if (stage == CLEAR_NON_SOLIDS)
+        {
+            return wanted != null && wanted.isAir();
+        }
+        // the clear stage mines everything in the volume that is not what the blueprint wants there (with fast clear)
+        return wanted == null || wanted != world;
+    }
+
+    /**
+     * What it costs to put scaffolding into a cell: the blocks of the structure go there later, so the scaffolding would have to come down
+     * first (high), the cells inside the volume of the structure are a little in the way (low).
+     *
+     * @param pos the cell.
+     * @return the cost.
+     */
+    protected int scaffoldPenalty(final BlockPos pos)
+    {
+        final IStructureHandler handler = scaffoldHandler();
+        if (handler == null)
+        {
+            return 0;
+        }
+        final BlockPos local = handler.getStructurePosFromWorld(pos);
+        final var blueprint = handler.getBluePrint();
+        if (blueprint == null || local.getX() < 0 || local.getY() < 0 || local.getZ() < 0
+              || local.getX() >= blueprint.getSizeX() || local.getY() >= blueprint.getSizeY() || local.getZ() >= blueprint.getSizeZ())
+        {
+            return 0;
+        }
+        final BlockState state = blueprint.getBlockState(local);
+        // (a structure void is a cell the blueprint leaves alone: nothing goes there)
+        return state == null || state.isAir() || state.is(Blocks.STRUCTURE_VOID) ? 2 : 40;
+    }
+
+    /**
+     * Gets the worker into a place where he reaches the block, for the scaffolding work.
+     *
+     * @param target     the block.
+     * @param ahead      the blocks that count when the spot is picked (the first is the target).
+     * @param inBlocks   whether the spot may be in the cell itself or on the scaffolding of the cells.
+     * @param accept     extra condition for the spot, or null.
+     * @return true once he reaches the block.
+     */
+    protected boolean walkIntoReachFor(final BlockPos target, final Supplier<List<BlockPos>> ahead, final boolean inBlocks, @Nullable final Predicate<BlockPos> accept)
+    {
+        return true;
+    }
+
+    protected void resetScaffoldWalk()
+    {
+    }
+
+    protected void resetReachWalk()
+    {
+    }
+
+    /**
+     * A tower is up: the worker works from its top.
+     *
+     * @param stand the spot on top of it.
+     */
+    protected void workFromScaffold(final BlockPos stand)
+    {
+        workFrom = stand;
+    }
+
+    /**
+     * The blocks of the next work, for the decision whether scaffolding is still of use.
+     */
+    protected List<BlockPos> peekWorkAhead(final int n)
+    {
+        return peekWork(n);
+    }
+
+    /**
+     * The scaffolding work of this AI step (puts a tower up or takes one down).
+     *
+     * @return true if the step went into it.
+     */
+    protected boolean scaffoldTick()
+    {
+        return false;
+    }
+
+    protected final boolean runScaffoldTick()
+    {
+        if (scaffoldTick())
+        {
+            stuck.free();
+            stuckLastTick = -1L;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Whether a position holds scaffolding that the worker put up: the stage leaves it alone until the scaffolding is down.
+     */
+    protected boolean isScaffoldHeld(final BlockPos worldPos)
+    {
+        return false;
+    }
+
+    /**
+     * Before a stage ends: scaffolding that is still up comes down first.
+     *
+     * @return true while there is scaffolding left (the stage waits).
+     */
+    protected boolean scaffoldBeforeStageEnd()
+    {
+        return false;
+    }
+
+    /**
+     * @return true once if positions of the structure were held back by scaffolding that came down: the stage has to look for them again.
+     */
+    protected boolean consumeScaffoldRescan()
+    {
+        return false;
+    }
+
+    /**
+     * The blocks that were given up on come again: whatever stopped the worker from trying (no scaffolding items) may be over.
+     */
+    protected void onRetryRound()
+    {
+    }
+
+    /**
+     * The structure is reset (done, cancelled, released).
+     */
+    protected void onStructureReset()
+    {
+    }
+
+    /**
+     * Whether this worker places and breaks only what he reaches (3D, from the eye). Builders do, with the setting on.
+     *
+     * @return false by default.
+     */
+    protected boolean usesPhysicalReach()
+    {
+        return false;
+    }
+
+    /**
+     * The block the worker has to reach for the walk he is asked for now (the walk to any other position is the usual one), set by the code
+     * that asks for the walk.
+     */
+    protected BlockPos reachTarget = null;
+
+    /**
+     * Whether the worker reaches a block from where he stands. Always true for workers without the physical reach.
+     *
+     * @param pos the block.
+     * @return true if he can place or break it right now.
+     */
+    protected boolean canReachNow(final BlockPos pos)
+    {
+        return true;
+    }
+
+    /**
+     * How many of the next blocks are looked at when a worker picks the spot to work from.
+     */
+    protected static final int REACH_LOOKAHEAD = 48;
+
+    /**
+     * The blocks the worker works on next and where something has to be done (not those that are what the blueprint wants already), in the
+     * order he works on them, without moving on.
+     *
+     * @param n how many at most.
+     * @return their world positions, empty if the stage does not iterate over blocks (water, entities) or nothing is left.
+     */
+    protected final List<BlockPos> peekWork(final int n)
+    {
+        if (structurePlacer == null || structurePlacer.getB().getStage() == null)
+        {
+            return List.of();
+        }
+        final StructurePlacer placer = structurePlacer.getA();
+        final BuildingStructureHandler<J, B> handler = structurePlacer.getB();
+        final BuildingProgressStage stage = handler.getStage();
+        final Supplier<AbstractBlueprintIterator.Result> iterate = stageIterator(stage, placer);
+        final Tuple<BlockPos, BuildingProgressStage> progress = getProgressPos();
+        if (iterate == null || progress == null)
+        {
+            return List.of();
+        }
+        final List<BlockPos> work = new ArrayList<>();
+        final BlockPos before = placer.getIterator().getProgressPos();
+        try
+        {
+            placer.getIterator().setProgressPos(progress.getA());
+            int guard = 0;
+            while (work.size() < n && guard++ < 8 * n + 256 && iterate.get() == AbstractBlueprintIterator.Result.NEW_BLOCK)
+            {
+                final BlockPos local = placer.getIterator().getProgressPos();
+                final BlockPos worldPos = handler.getProgressPosInWorld(local);
+                if (hasWorkAt(stage, handler, local, worldPos))
+                {
+                    work.add(worldPos);
+                }
+            }
+        }
+        finally
+        {
+            placer.getIterator().setProgressPos(before);
+        }
+        return work;
+    }
+
+    private boolean hasWorkAt(final BuildingProgressStage stage, final BuildingStructureHandler<J, B> handler, final BlockPos local, final BlockPos worldPos)
+    {
+        if (stage == CLEAR || stage == REMOVE)
+        {
+            return !world.getBlockState(worldPos).isAir();
+        }
+        final BlockState wanted = handler.getBluePrint().getBlockState(local);
+        if (wanted == null)
+        {
+            return false;
+        }
+        return !IPlacementHandler.doesWorldStateMatchBlueprintState(new BlockInfo(local, wanted, handler.getBluePrint().getTileEntityData(worldPos, local)), worldPos, handler);
+    }
+
+    /**
+     * The worker has found no place to reach the block from for a while, and building a tower is no way out (no scaffolding, no room): there is
+     * no use in waiting for the unstuck ladder to run its course.
+     *
+     * @param target the block.
+     * @return true if the block should be given up for now.
+     */
+    protected boolean cannotReachAtAll(final BlockPos target)
+    {
+        return false;
+    }
+
+    /**
+     * Whether scaffolding is no way out for the worker for now (switched off, no items, no room for a tower).
+     */
+    protected boolean scaffoldUnavailable()
+    {
+        return true;
+    }
+
+    /**
+     * The blocks that count when the worker picks the spot to work from: the target first, then what he works on after it.
+     *
+     * @param target the block he has to reach.
+     * @return the blocks, the target is the first.
+     */
+    protected List<BlockPos> workAhead(final BlockPos target)
+    {
+        // (the stages that take what is in reach in any order look further ahead than those that go block by block)
+        return workAhead(target, servesAnyOrder() ? REACH_LOOKAHEAD : 16);
+    }
+
+    /**
+     * @param n how many of the next blocks at most.
+     * @see #workAhead(BlockPos)
+     */
+    protected List<BlockPos> workAhead(final BlockPos target, final int n)
+    {
+        final List<BlockPos> ahead = peekWork(n);
+        if (ahead.isEmpty() || !ahead.get(0).equals(target))
+        {
+            final List<BlockPos> list = new ArrayList<>(ahead.size() + 1);
+            list.add(target);
+            for (final BlockPos pos : ahead)
+            {
+                if (!pos.equals(target))
+                {
+                    list.add(pos);
+                }
+            }
+            return list;
+        }
+        return ahead;
+    }
+
+    // ------------------------------------------------------------------ work out of order
+
+    /**
+     * Blocks the worker placed out of the order of the stage (they were in reach, the next block of the order was not). The stage skips them
+     * when its cursor comes to them.
+     */
+    private final Set<BlockPos> servedOutOfOrder = new HashSet<>();
+    private final java.util.ArrayDeque<BlockPos> nearbyQueue = new java.util.ArrayDeque<>();
+    private BlockPos nearbyCursor = null;
+    private BuildingProgressStage nearbyStage = null;
+    private long nearbyBuiltAt = -100L;
+
+    /**
+     * How many of the next blocks of a stage are looked at for work in reach.
+     */
+    protected static final int NEARBY_WINDOW = 96;
+
+    /**
+     * The stages in which the worker takes what he reaches before he moves on: the ones that place blocks (the order inside the stage does not
+     * matter for the result, the order of the stages does).
+     */
+    private static boolean servesNearby(@Nullable final BuildingProgressStage stage)
+    {
+        return stage == BUILD_SOLID || stage == WEAK_SOLID || stage == DECORATE;
+    }
+
+    /**
+     * Whether the worker takes what he reaches in any order in the current stage (the spot to work from is picked by how many blocks it
+     * reaches, not by how many in a row).
+     */
+    protected final boolean servesAnyOrder()
+    {
+        return usesPhysicalReach() && structurePlacer != null && servesNearby(structurePlacer.getB().getStage());
+    }
+
+    /**
+     * The next block (of those that come next in the stage) that the worker reaches from where he stands.
+     *
+     * @return the block, or null if there is none.
+     */
+    @Nullable
+    private BlockPos pollNearby(@Nullable final BuildingProgressStage stage)
+    {
+        if (!usesPhysicalReach() || !servesNearby(stage) || structurePlacer == null)
+        {
+            return null;
+        }
+        final Tuple<BlockPos, BuildingProgressStage> progress = getProgressPos();
+        final BlockPos cursor = progress == null ? NULL_POS : progress.getA();
+        final long now = world.getGameTime();
+        if (stage != nearbyStage || !cursor.equals(nearbyCursor) || (nearbyQueue.size() < NEARBY_WINDOW / 3 && now - nearbyBuiltAt > 20))
+        {
+            if (stage != nearbyStage)
+            {
+                servedOutOfOrder.clear();
+            }
+            nearbyStage = stage;
+            nearbyCursor = cursor.immutable();
+            nearbyBuiltAt = now;
+            nearbyQueue.clear();
+            nearbyQueue.addAll(peekWork(NEARBY_WINDOW));
+        }
+        BlockPos found = null;
+        final BuildingStructureHandler<J, B> handler = structurePlacer.getB();
+        for (final java.util.Iterator<BlockPos> it = nearbyQueue.iterator(); it.hasNext(); )
+        {
+            final BlockPos pos = it.next();
+            if (servedOutOfOrder.contains(pos))
+            {
+                it.remove();
+                continue;
+            }
+            if (canReachNow(pos))
+            {
+                it.remove();
+                if (hasWorkAt(stage, handler, handler.getStructurePosFromWorld(pos), pos))
+                {
+                    found = pos;
+                    break;
+                }
+            }
+        }
+        return found;
+    }
+
+    /**
+     * Places (or starts to break) one block out of the order of the stage.
+     */
+    private StructurePhasePlacementResult placeNearby(final StructurePlacer placer, final BlockPos worldPos)
+    {
+        final BlockPos local = structurePlacer.getB().getStructurePosFromWorld(worldPos);
+        final int[] calls = {0};
+        return placer.executeStructureStep(world, null, local, StructurePlacer.Operation.BLOCK_PLACEMENT, () ->
+        {
+            if (calls[0]++ == 0)
+            {
+                placer.getIterator().setProgressPos(local);
+                return AbstractBlueprintIterator.Result.NEW_BLOCK;
+            }
+            return AbstractBlueprintIterator.Result.AT_END;
+        }, false);
     }
 
     /**
@@ -1130,7 +1755,25 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     {
         final BlockPos[] area = workArea();
         BlockPos spot = null;
-        if (area != null)
+        if (usesPhysicalReach() && target.equals(reachTarget))
+        {
+            // the spot from which the block is in reach (and the blocks after it)
+            // only spots that connect to the ground by the hut: the top of a wall is no place to be put on (there is no way down from it)
+            final BlockPos home = StandSpots.nearest(world, building.getPosition(), 8, 4, 4, null);
+            final Set<BlockPos> connected = home == null ? null : StandSpots.reachableFrom(world, home, 40, 40000);
+            List<ReachSpots.Spot> spots = ReachSpots.best(world, workAhead(target), WorkerSettings.reach(), worker.getEyeHeight(), worker.blockPosition(),
+              connected == null ? null : p -> connected.contains(p), 1);
+            if (spots.isEmpty() && (scaffoldUnavailable() || retryBlocks.contains(target)))
+            {
+                // no tower is possible: the last resort is any spot from which the block is in reach
+                spots = ReachSpots.best(world, workAhead(target), WorkerSettings.reach(), worker.getEyeHeight(), worker.blockPosition(), null, 1);
+            }
+            if (!spots.isEmpty())
+            {
+                spot = spots.get(0).feet();
+            }
+        }
+        if (spot == null && area != null)
         {
             final int base = area[0].getY();
             spot = StandSpots.nearest(world, target, 16, 12, 12,
@@ -1145,6 +1788,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         {
             return;
         }
+        if (this instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder && com.minecolonies.core.entity.ai.workers.util.ReachAudit.isEnabled())
+        {
+            Log.getLogger().info("SCAFFOLD {} teleports from {} to {} for {}", worker.getName().getString(), worker.blockPosition(), spot, target);
+        }
+        teleports++;
         puffAt(worker.position());
         worker.getNavigation().stop();
         worker.snapTo(spot.getX() + 0.5D, spot.getY(), spot.getZ() + 0.5D);
@@ -1152,6 +1800,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         resetWalkTarget();
         workFrom = spot;
     }
+
+    /**
+     * How often a structure worker was put on a spot by the unstuck ladder (for the tests).
+     */
+    public static volatile int teleports = 0;
 
     private void puffAt(final Vec3 position)
     {
@@ -1168,7 +1821,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     private boolean tryMineInline()
     {
-        if (blockToMine == null || workFrom == null)
+        if (blockToMine == null || workFrom == null || !canReachNow(blockToMine))
         {
             return false;
         }
@@ -1342,14 +1995,26 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return IDLE;
         }
 
+        if (runScaffoldTick())
+        {
+            return getState();
+        }
+
         final BlockState worldState = world.getBlockState(blockToMine);
         if (worldState.getBlock() instanceof AirBlock || worldState.getBlock() == Blocks.WATER)
         {
             return BUILDING_STEP;
         }
 
+        reachTarget = usesPhysicalReach() ? blockToMine : null;
         if (!walkToConstructionSite(blockToMine))
         {
+            if (reachTarget != null && cannotReachAtAll(blockToMine))
+            {
+                deferBlock(blockToMine, false);
+                escalateStuck(blockToMine);
+                return BUILDING_STEP;
+            }
             if (escalateStuck(blockToMine) == WorkStuckTracker.Step.DEFER)
             {
                 deferBlock(blockToMine);
@@ -1792,6 +2457,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     public void resetCurrentStructure()
     {
+        onStructureReset();
         resetStuckState();
         workFrom = null;
         structurePlacer = null;

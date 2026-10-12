@@ -23,6 +23,8 @@ import com.minecolonies.core.colony.buildings.modules.settings.StringSetting;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingBuilder;
 import com.minecolonies.core.colony.workorders.collab.BuilderCollab;
 import com.minecolonies.core.colony.workorders.collab.CollabScheduler;
+import com.minecolonies.core.colony.workorders.scaffold.ScaffoldLedger;
+import com.minecolonies.core.colony.workorders.scaffold.ScaffoldSweeper;
 import com.minecolonies.core.util.AdvancementUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -52,6 +54,7 @@ public class WorkManager implements IWorkManager
      */
     private static final String TAG_WORK_ORDERS = "workOrders";
     private static final String TAG_NEW_SYSTEM  = "newsystem";
+    private static final String TAG_ORPHAN_SCAFFOLDS = "orphanScaffolds";
 
     //  Once a second
     //private static final int    WORK_ORDER_FULFILL_INCREMENT = 1 * 20;
@@ -66,6 +69,16 @@ public class WorkManager implements IWorkManager
      * Checks if there has been changes.
      */
     private              boolean                  dirty           = false;
+
+    /**
+     * Scaffolding of orders that ended and could not be taken down at once (the chunk was not loaded): the colony tick takes it down.
+     */
+    private final ScaffoldLedger orphanScaffolds = new ScaffoldLedger();
+
+    /**
+     * When a hut was first seen off the order it has scaffolding for (per order and hut), see {@link ScaffoldSweeper}.
+     */
+    private final Map<Long, Long> scaffoldInactive = new HashMap<>();
 
     /**
      * Constructor, saves reference to the colony.
@@ -116,6 +129,14 @@ public class WorkManager implements IWorkManager
                 {
                     abstractBuildingStructureBuilder.onWorkOrderCancellation(workOrder);
                 }
+            }
+
+            if (workOrder instanceof IBuilderWorkOrder scaffolded && !scaffolded.getScaffolds().isEmpty())
+            {
+                // the order ends: its scaffolding comes down now, what cannot (unloaded chunks) is left to the colony tick
+                ScaffoldSweeper.sweep(colony, scaffolded.getScaffolds(), null, Integer.MAX_VALUE);
+                orphanScaffolds.addAll(scaffolded.getScaffolds());
+                scaffolded.getScaffolds().clear();
             }
 
             dirty = true;
@@ -267,6 +288,11 @@ public class WorkManager implements IWorkManager
      */
     private void releaseClaim(final IServerWorkOrder order, @Nullable final IBuilding claimant)
     {
+        if (order instanceof IBuilderWorkOrder scaffolded && !scaffolded.getScaffolds().isEmpty())
+        {
+            // the builder who put the scaffolding up leaves the order: it comes down, the next builder starts with a clean site
+            ScaffoldSweeper.sweep(colony, scaffolded.getScaffolds(), null, Integer.MAX_VALUE);
+        }
         if (claimant instanceof AbstractBuildingStructureBuilder hut)
         {
             if (order instanceof IBuilderWorkOrder builderOrder && hut.hasWorkOrder() && hut.getWorkOrder() == order)
@@ -296,6 +322,12 @@ public class WorkManager implements IWorkManager
         }
         compound.put(TAG_WORK_ORDERS, list);
         compound.putBoolean(TAG_NEW_SYSTEM, true);
+        if (!orphanScaffolds.isEmpty())
+        {
+            final CompoundTag orphans = new CompoundTag();
+            orphanScaffolds.write(orphans);
+            compound.put(TAG_ORPHAN_SCAFFOLDS, orphans);
+        }
     }
 
     /**
@@ -307,6 +339,12 @@ public class WorkManager implements IWorkManager
     public void read(@NotNull final CompoundTag compound)
     {
         workOrders.clear();
+        orphanScaffolds.clear();
+        scaffoldInactive.clear();
+        if (compound.contains(TAG_ORPHAN_SCAFFOLDS))
+        {
+            orphanScaffolds.read(compound.getCompoundOrEmpty(TAG_ORPHAN_SCAFFOLDS));
+        }
 
         if (!compound.contains(TAG_NEW_SYSTEM))
         {
@@ -320,7 +358,14 @@ public class WorkManager implements IWorkManager
         {
             final CompoundTag orderCompound = list.getCompoundOrEmpty(i);
             @Nullable final IServerWorkOrder o = AbstractWorkOrder.createFromNBT(orderCompound, this);
-            if (o != null)
+            if (o == null)
+            {
+                // an order that cannot be read any more still has its scaffolding in the world
+                final ScaffoldLedger lost = new ScaffoldLedger();
+                lost.read(orderCompound);
+                orphanScaffolds.addAll(lost);
+            }
+            else
             {
                 addWorkOrder(o, true);
 
@@ -552,6 +597,21 @@ public class WorkManager implements IWorkManager
         {
             CollabScheduler.assign(this, this.colony);
         }
+
+        // scaffolding that no builder is going to take down any more
+        ScaffoldSweeper.tick(this.colony, workOrders.values(), orphanScaffolds, scaffoldInactive);
+        if (orphanScaffolds.consumeDirty())
+        {
+            dirty = true;
+        }
+    }
+
+    /**
+     * The scaffolding of orders that ended and still stands (for the colony tick to take down).
+     */
+    public ScaffoldLedger getOrphanScaffolds()
+    {
+        return orphanScaffolds;
     }
 
     private static boolean isBound(final AbstractBuildingStructureBuilder hut, final IServerWorkOrder order)

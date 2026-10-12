@@ -127,6 +127,13 @@ public interface IBuilderWorkOrder extends IServerWorkOrder
     WorkOrderCollab getCollab();
 
     /**
+     * The scaffolding the builders of this order have put up and not taken down yet.
+     *
+     * @return the ledger.
+     */
+    com.minecolonies.core.colony.workorders.scaffold.ScaffoldLedger getScaffolds();
+
+    /**
      * The project this order is a part of (e.g. a terraforming job that is built in sections); empty if none. Builders prefer
      * the next section of the project they worked on last.
      *

@@ -215,6 +215,7 @@ public abstract class AbstractEntityAIInteract<J extends AbstractJob<?, J>, B ex
         }
 
         triggerMinedBlock(blockToMine, curBlockState);
+        com.minecolonies.core.entity.ai.workers.util.ReachAudit.record(worker, blockToMine);
 
         if (blockBreakAction == null)
         {
