@@ -205,16 +205,6 @@ public class EntityNavigationUtils
      */
     public static <T extends Mob> int walkToBlock(final T entity, final BlockPos pos)
     {
-        return walkToBlock(entity, pos, false);
-    }
-
-    /**
-     * @param abortWhenNotReached whether the walk is over as soon as the path is known not to lead to the block (also for a block that is not the top of
-     *                            a tower of scaffolding): the walk to the end of such a path is a waste
-     * @see #walkToBlock(Mob, BlockPos)
-     */
-    public static <T extends Mob> int walkToBlock(final T entity, final BlockPos pos, final boolean abortWhenNotReached)
-    {
         if (entity.blockPosition().equals(pos) || (entity.blockPosition().equals(pos.below()) && entity.level().getBlockState(pos.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING)))
         {
             // (the path ends inside the top cell of a column of scaffolding, one below the spot on top of it)
@@ -233,10 +223,10 @@ public class EntityNavigationUtils
             return -1;
         }
         final var path = nav.getPathResult().getPath();
-        if ((abortWhenNotReached || entity.level().getBlockState(pos.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING)) && nav.getPathResult().isDone() && path != null
+        if (entity.level().getBlockState(pos.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) && nav.getPathResult().isDone() && path != null
               && path.getNodeCount() > 0 && !path.canReach())
         {
-            // the spot is the top of a tower of scaffolding (or the top of a wall), and the path is there and ends somewhere else: no walk to the end of a path
+            // the spot is the top of a tower of scaffolding, and the path is there and ends somewhere else: no walk to the end of a path
             // that does not lead to it (a builder who is told that a spot cannot be reached knows it before he walks all the way to the best he could do)
             final BlockPos end = path.getNode(path.getNodeCount() - 1).asBlockPos();
             if (!end.equals(pos) && !end.equals(pos.below()))

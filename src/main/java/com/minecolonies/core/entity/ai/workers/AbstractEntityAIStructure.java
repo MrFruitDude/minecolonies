@@ -1299,10 +1299,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
-     * Whether the block at the position is one of the structure that stands in the world already (the top of a wall is no place that a path leads to).
+     * Whether the block at the position is one of the structure that stands in the world already, and more than a floor above its base (the top of a
+     * wall: no place that a path leads to; the floor of the structure is where the builders work).
      *
      * @param pos the world position.
-     * @return true if the world has there what the blueprint wants, and it is no air.
+     * @return true if the world has there what the blueprint wants, it is no air, and it is at least two layers above the base of the structure.
      */
     protected final boolean isBuiltStructureBlock(final BlockPos pos)
     {
@@ -1313,7 +1314,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return false;
         }
         final BlockPos local = handler.getStructurePosFromWorld(pos);
-        if (local.getX() < 0 || local.getY() < 0 || local.getZ() < 0 || local.getX() >= blueprint.getSizeX() || local.getY() >= blueprint.getSizeY() || local.getZ() >= blueprint.getSizeZ())
+        if (local.getX() < 0 || local.getY() < 2 || local.getZ() < 0 || local.getX() >= blueprint.getSizeX() || local.getY() >= blueprint.getSizeY() || local.getZ() >= blueprint.getSizeZ())
         {
             return false;
         }

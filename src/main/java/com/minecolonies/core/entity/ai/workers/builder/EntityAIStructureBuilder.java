@@ -574,7 +574,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             workFrom = walk.spot;
         }
         // walk to the very spot (the usual walk stops a block and a half short, and that is a block below the top of a tower)
-        final int walked = EntityNavigationUtils.walkToBlock(worker, walk.spot, isBuiltStructureBlock(walk.spot.below()));
+        final int walked = EntityNavigationUtils.walkToBlock(worker, walk.spot);
         if (walked != 0)
         {
             scaffold.note("walk to " + walk.spot + " ended (" + walked + ") at " + worker.blockPosition() + " for " + target + " nav stuck=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n && n.isStuck())
