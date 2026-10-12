@@ -41,6 +41,12 @@ public class StandardDataStoreManager implements IDataStoreManager
     @Override
     public <T extends IDataStore> T get(final IToken<?> id, final TypeToken<T> type)
     {
+        // Asked for on nearly every step of the request system: no supplier is made unless the store has to be created.
+        final IDataStore existing = storeMap.get(id);
+        if (existing != null)
+        {
+            return (T) existing;
+        }
         return get(id, () -> StandardFactoryController.getInstance().getNewInstance(type));
     }
 
