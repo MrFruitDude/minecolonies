@@ -225,6 +225,21 @@ public final class WorkerEfficiencyGameTests
     }
 
     /**
+     * Pathfinding runs on worker threads and its results are picked up whenever they are ready, so under machine load (many tests at once) a path arrives
+     * later in ticks than on an idle machine, and the benchmarks of the builders swing with the load of the machine. Waiting here until the workers are idle
+     * (the callbacks run after the entities of the tick) makes every path arrive at the next tick, whatever else the machine does.
+     */
+    static void awaitPathing()
+    {
+        final java.util.concurrent.ThreadPoolExecutor pool = com.minecolonies.core.entity.pathfinding.Pathfinding.getExecutor();
+        final long deadline = System.nanoTime() + 200_000_000L;
+        while ((!pool.getQueue().isEmpty() || pool.getActiveCount() > 0) && System.nanoTime() < deadline)
+        {
+            java.util.concurrent.locks.LockSupport.parkNanos(20_000L);
+        }
+    }
+
+    /**
      * Runs {@code step} every tick (also holds the clock at noon and ticks the work manager once a second, like a running colony) until it returns
      * true or the budget is spent.
      */
@@ -234,6 +249,7 @@ public final class WorkerEfficiencyGameTests
         // a fresh Runnable per tick: the GameTest framework keys its callbacks by Runnable
         final Runnable[] next = new Runnable[1];
         next[0] = () -> {
+            awaitPathing();
             elapsed[0]++;
             if (elapsed[0] % 20 == 0)
             {
