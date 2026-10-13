@@ -1003,7 +1003,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         // half (the stage is scanned again for it), so nobody waits for the other at the end of the stage
         for (final BlockPos helper : collab.getAssistantHuts())
         {
-            collab.stealLeases(helper);
+            final int stolen = collab.stealLeases(helper);
+            if (stolen > 0)
+            {
+                takeCarryOfStolenFrom(helper, stolen);
+            }
         }
         return false;
     }
@@ -1018,6 +1022,39 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             collab.blockProcessed();
         }
         building.setWaitingFor(Map.of());
+    }
+
+    /**
+     * The lead took positions back from a helper: the materials that the helper took for them come with them (about an item for each position), so the lead does not
+     * run short while the helper keeps what he took for work that is not his any more.
+     */
+    private void takeCarryOfStolenFrom(final BlockPos helperHutPos, final int positions)
+    {
+        final IBuilding hut = building.getColony().getServerBuildingManager().getBuilding(helperHutPos);
+        if (!(hut instanceof AbstractBuildingStructureBuilder helperHut) || !building.getID().equals(helperHut.getCarryLead()))
+        {
+            return;
+        }
+        final ICitizenData helper = leadCitizen(helperHut);
+        if (helper == null)
+        {
+            return;
+        }
+        int left = positions;
+        for (final Map.Entry<ItemStorage, Integer> entry : helperHut.getCarry().entrySet())
+        {
+            if (left <= 0)
+            {
+                break;
+            }
+            final ItemStack kind = entry.getKey().getItemStack();
+            final int moved = ItemMover.move(helper.getInventory(), worker.getInventoryCitizen(), sameAs(kind), Math.min(left, entry.getValue()));
+            if (moved > 0)
+            {
+                helperHut.reduceCarry(Map.of(entry.getKey(), moved));
+                left -= moved;
+            }
+        }
     }
 
     /**
@@ -1338,7 +1375,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                                                                     - AssistReservations.heldByOthers(lead, building, k.getItemStack()))
                                                       + leadCarried(lead, k.getItemStack())
                                                       + InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), sameAs(k.getItemStack()))), room,
-              pos -> assistGaveUp.contains(pos) || collab.isInOthersTerritory(pos, building.getID()), worker.blockPosition());
+              pos -> assistGaveUp.contains(pos) || collab.isInOthersTerritory(pos, building.getID()), collab.getTotalBlocks() < CLUSTER_MIN_BLOCKS ? null : worker.blockPosition());
             if (plan.isEmpty())
             {
                 return waitAtTheSite();
@@ -1508,6 +1545,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         final int parts = 2 * (collab.getAssistantCount() + 1);
         return Math.max(1, Math.min(size, Math.max(MIN_SHARE, collab.getUnleasedStageRemaining() / parts)));
     }
+
+    /**
+     * A structure with fewer blocks than this is not leased as clusters: its next positions are close to each other anyway, and the walk to the nearest cluster
+     * costs more than it saves (a small ring was slower with a helper that picked clusters than with one that took the next positions).
+     */
+    private static final int CLUSTER_MIN_BLOCKS = 400;
 
     /** The smallest lease the stage hands out towards its end. */
     private static final int MIN_SHARE = 4;
