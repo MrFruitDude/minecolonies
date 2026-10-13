@@ -25,6 +25,22 @@ public final class BuilderCollab
     private static volatile Integer stayTicksOverride;
     private static volatile Integer leaseSizeOverride;
     private static volatile Integer leaseTicksOverride;
+    private static volatile Integer clusterMinOverride;
+    private static volatile Integer minOrderScoreOverride;
+    private static volatile Integer leaseCapFactorOverride;
+
+    /**
+     * The biggest lease is this many times the configured lease size.
+     */
+    private static final int LEASE_CAP_FACTOR = 8;
+
+    /**
+     * Only for tests: the factor of the biggest lease.
+     */
+    public static void overrideLeaseCapFactorForTests(final Integer factor)
+    {
+        leaseCapFactorOverride = factor;
+    }
 
     /**
      * Only for tests: overrides the config. Null values go back to the config.
@@ -45,6 +61,70 @@ public final class BuilderCollab
         stayTicksOverride = stayTicks;
         leaseSizeOverride = leaseSize;
         leaseTicksOverride = leaseTicks;
+    }
+
+    /**
+     * The helper score from which an order gets helpers (see {@link #worthAHelper}) when nothing else is configured.
+     */
+    public static final int DEFAULT_MIN_ORDER_SCORE = 600;
+
+    /**
+     * Only for tests: the helper score from which an order gets helpers; null for the config (or, in a test that switched the collaboration on by hand, none: the
+     * tests with small structures expect their helpers).
+     */
+    public static void overrideMinOrderScoreForTests(final Integer score)
+    {
+        minOrderScoreOverride = score;
+    }
+
+    /**
+     * The helper score an order needs to get helpers at all.
+     */
+    public static int minOrderScore()
+    {
+        final Integer override = minOrderScoreOverride;
+        if (override != null)
+        {
+            return override;
+        }
+        if (enabledOverride != null)
+        {
+            return 0;
+        }
+        return value(null, c -> c.builderCollaborationMinOrderScore.get(), DEFAULT_MIN_ORDER_SCORE);
+    }
+
+    /**
+     * Whether a second builder pays off for the structure. A helper starts late (he walks to the site and fetches materials first), takes his materials
+     * from the lead in trips, and when the structure is almost done the two get in each other's way; all that costs about as much as the second builder saves on a
+     * small structure. Measured with the scaffold benchmark (16 runs each, one builder against two): a 7 by 7 ring of 11 (264 blocks, 120 of them high) finishes
+     * in the same time with a helper (median -4 percent) but a third of the runs take 25 to 60 percent longer, a 30 by 6 wall of 3 (540 blocks, flat) is
+     * 5 percent slower with the helper and a tail of +30 percent, an 11 by 11 ring of 12 (480, 240 high) takes 30 percent less, a 9 by 9 ring of 16 (512, 320
+     * high) 30 percent less. Blocks that need a tower count three times: {@code blocks + 2 * high >= 600} puts the line between them.
+     *
+     * @param blocks the blocks to place.
+     * @param high   how many of them are out of reach from the ground.
+     */
+    public static boolean worthAHelper(final int blocks, final int high)
+    {
+        return blocks + 2 * high >= minOrderScore();
+    }
+
+    /**
+     * Only for tests: the number of blocks from which a structure is divided into parts for the builders.
+     */
+    public static void overrideClusterMinForTests(final Integer blocks)
+    {
+        clusterMinOverride = blocks;
+    }
+
+    /**
+     * Structures with at least this many blocks are divided into parts for the builders, and the helper leases clusters of positions.
+     */
+    public static int clusterMinBlocks()
+    {
+        final Integer override = clusterMinOverride;
+        return override != null ? override : 400;
     }
 
     /**
@@ -147,7 +227,8 @@ public final class BuilderCollab
 
     /**
      * How many positions a helper leases at once when he has to walk a distance to the hut of the lead for the materials: the configured size, more
-     * when the hut is far (a lease of a few blocks that takes longer to fetch than to place is no help), at most four times the configured size.
+     * when the hut is far (a lease of a few blocks that takes longer to fetch than to place is no help), at most eight times the configured size (the scaffold
+     * benchmark: four times left a helper a fifth of his time on the way to the hut, sixteen made the end of a stage wait for one big lease).
      *
      * @param base     the configured size.
      * @param distance the distance to the hut of the lead, in blocks.
@@ -156,7 +237,8 @@ public final class BuilderCollab
     public static int scaledLeaseSize(final int base, final double distance)
     {
         final int size = Math.max(1, base);
-        return (int) Math.min(4L * size, size + Math.round(2.0D * Math.max(0.0D, distance)));
+        final Integer override = leaseCapFactorOverride;
+        return (int) Math.min((long) (override != null ? override : LEASE_CAP_FACTOR) * size, size + Math.round(2.0D * Math.max(0.0D, distance)));
     }
 
     /**

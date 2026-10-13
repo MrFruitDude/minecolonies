@@ -119,6 +119,40 @@ public final class BuilderStageRules
     }
 
     /**
+     * How many blocks of the blueprint lie in the layers from the given one up (what a builder on the ground cannot reach, so it takes a tower), judged from
+     * the blueprint alone.
+     *
+     * @param blueprint      the blueprint.
+     * @param firstHighLayer the lowest layer that counts.
+     * @return the number of blocks that are no air.
+     */
+    public static int estimateHighBlocks(final Blueprint blueprint, final int firstHighLayer)
+    {
+        if (blueprint == null)
+        {
+            return 0;
+        }
+        final Block substitution = com.ldtteam.structurize.blocks.ModBlocks.blockSubstitution.get();
+        int count = 0;
+        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (int y = Math.max(0, firstHighLayer); y < blueprint.getSizeY(); y++)
+        {
+            for (int z = 0; z < blueprint.getSizeZ(); z++)
+            {
+                for (int x = 0; x < blueprint.getSizeX(); x++)
+                {
+                    final BlockState state = blueprint.getBlockState(pos.set(x, y, z));
+                    if (state != null && state.getBlock() != substitution && !(state.getBlock() instanceof AirBlock))
+                    {
+                        count++;
+                    }
+                }
+            }
+        }
+        return count;
+    }
+
+    /**
      * How many positions of the blueprint a stage works on, judged from the blueprint alone (the world is not read).
      * Used for the block counts of the progress display. Positions that already match the world are counted too; the
      * display makes up for them when a stage ends.

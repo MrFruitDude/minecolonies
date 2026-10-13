@@ -189,7 +189,8 @@ public final class CollabScheduler
     }
 
     /**
-     * Free builders join the order with the most work left per builder.
+     * Free builders join the order with the most work left per builder. A structure that is too small for a second builder to pay off gets none by itself
+     * ({@link BuilderCollab#worthAHelper}); the player's limit of helpers for the order, and a helper he pins, are his decision.
      */
     private static void recruit(final WorkManager manager, final Colony colony, final long now)
     {
@@ -229,7 +230,8 @@ public final class CollabScheduler
                     continue;
                 }
                 final int remaining = collab.getRemainingBlocks();
-                if (remaining < BuilderCollab.minRemaining() || collab.getAssistantCount() >= capFor(order))
+                if (remaining < BuilderCollab.minRemaining() || collab.getAssistantCount() >= capFor(order)
+                      || (collab.getMaxAssistantsSetting() < 0 && !BuilderCollab.worthAHelper(collab.getPlacementBlocks(), collab.getHighBlocks())))
                 {
                     continue;
                 }

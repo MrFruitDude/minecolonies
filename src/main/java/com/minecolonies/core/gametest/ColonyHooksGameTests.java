@@ -3,6 +3,16 @@ package com.minecolonies.core.gametest;
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.blocks.ModBlocks;
 import com.minecolonies.api.colony.ICitizenData;
+import com.minecolonies.api.colony.IColonyManager;
+import com.minecolonies.api.colony.buildings.modules.ICraftingBuildingModule;
+import com.minecolonies.api.colony.managers.interfaces.IStatisticsManager;
+import com.minecolonies.api.colony.requestsystem.requestable.Stack;
+import com.minecolonies.api.crafting.ItemStorage;
+import com.minecolonies.api.crafting.RecipeStorage;
+import com.minecolonies.api.util.InventoryUtils;
+import com.minecolonies.api.util.constant.StatisticsConstants;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildings.IBuilding;
@@ -185,6 +195,38 @@ public final class ColonyHooksGameTests
                 helper.runAfterDelay(1, () -> untilActive[0].run());
             };
             untilActive[0].run();
+        });
+    }
+
+    /**
+     * A real crafter (the sawmill worker) crafts a recipe for a request of the builder's hut: the inputs the crafting took from its inventory are recorded as
+     * {@code item_used} (beside {@code items_crafted_detail} for the output), and the output is not counted as used.
+     */
+    public static void crafterRecordsItsInputsAsUsed(final GameTestHelper helper)
+    {
+        crafterFixture(helper, "G0 crafter stats", (colony, worker) -> {
+            final IBuilding sawmill = worker.getWorkBuilding();
+            final IBuilding builder = placeProductionBuilding(helper, colony, ModBlocks.blockHutBuilder, new BlockPos(8, 1, 2), "fundamentals/builder1.blueprint");
+            final ICraftingBuildingModule craft = sawmill.getModule(BuildingModules.SAWMILL_CRAFT);
+            final RecipeStorage recipe = RecipeStorage.builder()
+              .withRecipeId(null)
+              .withInputs(List.of(new ItemStorage(new ItemStack(Items.OAK_LOG, 2))))
+              .withPrimaryOutput(new ItemStack(Items.OAK_PLANKS, 4))
+              .build();
+            helper.assertTrue(craft.addRecipe(IColonyManager.getInstance().getRecipeManager().checkOrAddRecipe(recipe)), "the sawmill rejected the recipe");
+            final ItemStack left = InventoryUtils.forceItemStackToItemHandler(sawmill.getItemHandlerCap(), new ItemStack(Items.OAK_LOG, 2), stack -> true);
+            helper.assertTrue(left.isEmpty(), "no room for the logs in the sawmill");
+            builder.createRequest(new Stack(new ItemStack(Items.OAK_PLANKS, 4), 4, 1), true);
+            final IStatisticsManager stats = sawmill.getModule(BuildingModules.STATS_MODULE).getBuildingStatisticsManager();
+            final String used = StatisticsConstants.ITEM_USED + ";" + new ItemStack(Items.OAK_LOG).getHoverName().getString();
+            final String madeOf = StatisticsConstants.ITEM_USED + ";" + new ItemStack(Items.OAK_PLANKS).getHoverName().getString();
+            helper.succeedWhen(() -> {
+                worker.setSaturation(20);
+                final int made = stats.getStatTotal(StatisticsConstants.ITEMS_CRAFTED_DETAIL + ";" + new ItemStack(Items.OAK_PLANKS).getHoverName().getString());
+                helper.assertTrue(made > 0, "the sawmill has not crafted yet: stats=" + stats.getStatTypes());
+                helper.assertTrue(stats.getStatTotal(used) == 2, "the two logs the recipe took are recorded as used: " + stats.getStatTotal(used) + " in " + stats.getStatTypes());
+                helper.assertTrue(stats.getStatTotal(madeOf) == 0, "the output is not an input: " + stats.getStatTotal(madeOf));
+            });
         });
     }
 

@@ -47,6 +47,7 @@ public class WorkOrderCollab
     private static final String TAG_COOLDOWNS      = "cooldowns";
     private static final String TAG_ASSISTANT_PIN  = "pin";
     private static final String TAG_MAX_ASSISTANTS = "maxAssistants";
+    private static final String TAG_HIGH_BLOCKS    = "highBlocks";
 
     /**
      * The order of the stages for the progress display. Stages that do not take part in the stage list of an order have
@@ -109,6 +110,12 @@ public class WorkOrderCollab
     // block counts for the display
     private final int[] stageTotals = new int[BuildingProgressStage.values().length];
     private int stageDone;
+
+    /**
+     * How many of the blocks to place lie so high above the base of the structure that a builder on the ground cannot reach them (they need a tower of
+     * scaffolding).
+     */
+    private int highBlocks;
 
     // leases and helpers
     private final Map<Long, Lease>       leases     = new LinkedHashMap<>();
@@ -222,6 +229,33 @@ public class WorkOrderCollab
     public boolean hasStageTotals()
     {
         return getTotalBlocks() > 0;
+    }
+
+    public void setHighBlocks(final int blocks)
+    {
+        highBlocks = Math.max(0, blocks);
+    }
+
+    public int getHighBlocks()
+    {
+        return highBlocks;
+    }
+
+    /**
+     * The blocks to place in the structure (the stages that put blocks into the world, not the clearing of what stood there).
+     */
+    public int getPlacementBlocks()
+    {
+        return stageTotals[BuildingProgressStage.BUILD_SOLID.ordinal()] + stageTotals[BuildingProgressStage.WEAK_SOLID.ordinal()] + stageTotals[BuildingProgressStage.DECORATE.ordinal()];
+    }
+
+    /**
+     * How much a helper has to gain from the structure: the blocks to place, and the blocks that need a tower count twice more (every builder puts up the
+     * towers for his own part, so a tall structure is where two builders work in parallel on what takes longest). See {@link BuilderCollab#worthAHelper}.
+     */
+    public int getHelperScore()
+    {
+        return getPlacementBlocks() + 2 * highBlocks;
     }
 
     public int getTotalBlocks()
@@ -824,6 +858,7 @@ public class WorkOrderCollab
         }
         tag.putIntArray(TAG_STAGE_TOTALS, stageTotals);
         tag.putInt(TAG_STAGE_DONE, stageDone);
+        tag.putInt(TAG_HIGH_BLOCKS, highBlocks);
 
         final ListTag leaseList = new ListTag();
         for (final Map.Entry<Long, Lease> entry : leases.entrySet())
@@ -885,6 +920,7 @@ public class WorkOrderCollab
         java.util.Arrays.fill(stageTotals, 0);
         System.arraycopy(totals, 0, stageTotals, 0, Math.min(totals.length, stageTotals.length));
         stageDone = tag.getIntOr(TAG_STAGE_DONE, 0);
+        highBlocks = tag.getIntOr(TAG_HIGH_BLOCKS, 0);
 
         leases.clear();
         final ListTag leaseList = tag.getListOrEmpty(TAG_LEASES);

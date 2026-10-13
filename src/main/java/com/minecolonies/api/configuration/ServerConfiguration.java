@@ -164,6 +164,7 @@ public class ServerConfiguration extends AbstractConfiguration
     public final IntValue     builderCollaborationMaxHelpers;
     public final IntValue     builderCollaborationBlocksPerHelper;
     public final IntValue     builderCollaborationMinRemaining;
+    public final IntValue     builderCollaborationMinOrderScore;
     public final IntValue     builderCollaborationStaySeconds;
     public final IntValue     builderCollaborationLeaseSize;
     public final IntValue     builderCollaborationLeaseSeconds;
@@ -354,6 +355,8 @@ public class ServerConfiguration extends AbstractConfiguration
         builderCollaborationMaxHelpers = defineInteger("collaborationMaxHelpers", 3, 1, 8);
         builderCollaborationBlocksPerHelper = defineInteger("collaborationBlocksPerHelper", 1500, 1, 1000000);
         builderCollaborationMinRemaining = defineInteger("collaborationMinRemaining", 64, 1, 1000000);
+        // A structure gets helpers when its blocks plus twice the blocks that need a tower (out of reach from the ground) reach this (0: every structure does).
+        builderCollaborationMinOrderScore = defineInteger("collaborationMinOrderScore", 600, 0, 1000000);
         builderCollaborationStaySeconds = defineInteger("collaborationStaySeconds", 120, 0, 3600);
         builderCollaborationLeaseSize = defineInteger("collaborationLeaseSize", 12, 1, 64);
         builderCollaborationLeaseSeconds = defineInteger("collaborationLeaseSeconds", 120, 10, 3600);

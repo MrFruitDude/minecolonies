@@ -206,6 +206,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             {
                 collab.setStageTotal(stage, BuilderStageRules.estimateBlocks(structure.getBluePrint(), stage));
             }
+            collab.setHighBlocks(BuilderStageRules.estimateHighBlocks(structure.getBluePrint(), BuildReach.maxHeightNextToWall(BuildReach.EYE_HEIGHT, WorkerSettings.reach()) + 1));
         }
     }
 
@@ -557,7 +558,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 }
                 else
                 {
-                    scaffold.note("no spot for " + target + " builder at " + worker.blockPosition());
+                    final List<ReachSpots.Spot> all = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(), null, 200, inBlocks, false);
+                    final long walkable = all.stream().filter(sp -> canWalkTo(sp.feet())).count();
+                    final long notBad = all.stream().filter(sp -> canWalkTo(sp.feet()) && !walk.bad.contains(sp.feet())).count();
+                    final long wayDown = all.stream().filter(sp -> canWalkTo(sp.feet()) && !walk.bad.contains(sp.feet()) && hasWayDown(sp.feet())).count();
+                    scaffold.note("no spot for " + target + " builder at " + worker.blockPosition() + " candidates=" + all.size() + " walkable=" + walkable + " notBad=" + notBad + " wayDown=" + wayDown
+                                    + " wallTopsAllowed=" + wallTopsAllowed + " bad=" + walk.bad + " first=" + (all.isEmpty() ? "-" : all.get(0).feet().toShortString()) + " ahead=" + ahead.get().size());
                 }
                 if (mayScaffold)
                 {
@@ -1331,7 +1337,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 batch.add(new LeaseAllocator.Planned(local, leased, LeaseAllocator.requirements(world, assistPlacer, assistHandler, local, leased)));
             }
         }
-        if (batch.isEmpty() && !collab.isTerritoryDissolved() && collab.getTotalBlocks() >= CLUSTER_MIN_BLOCKS)
+        if (batch.isEmpty() && !collab.isTerritoryDissolved() && collab.getTotalBlocks() >= BuilderCollab.clusterMinBlocks())
         {
             final List<BlockPos> participants = new ArrayList<>();
             participants.add(lead.getID());
@@ -1375,7 +1381,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                                                                     - AssistReservations.heldByOthers(lead, building, k.getItemStack()))
                                                       + leadCarried(lead, k.getItemStack())
                                                       + InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), sameAs(k.getItemStack()))), room,
-              pos -> assistGaveUp.contains(pos) || collab.isInOthersTerritory(pos, building.getID()), collab.getTotalBlocks() < CLUSTER_MIN_BLOCKS ? null : worker.blockPosition());
+              pos -> assistGaveUp.contains(pos) || collab.isInOthersTerritory(pos, building.getID()), collab.getTotalBlocks() < BuilderCollab.clusterMinBlocks() ? null : worker.blockPosition());
             if (plan.isEmpty())
             {
                 return waitAtTheSite();
@@ -1534,7 +1540,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
     /**
      * How many positions the helper leases at once: the configured size, more when the hut of the lead is far (every lease costs a walk to the hut and back,
-     * a lease of a few blocks that takes longer to fetch than to place is no help), at most four times the configured size.
+     * a lease of a few blocks that takes longer to fetch than to place is no help), at most eight times the configured size.
      */
     private int leaseSizeFor(final AbstractBuildingStructureBuilder lead)
     {
@@ -1551,8 +1557,6 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
      * anyway, and the walk to a part of one's own costs more than it saves (a small ring was slower with a helper that kept to a part than with one that took the
      * next positions).
      */
-    private static final int CLUSTER_MIN_BLOCKS = 400;
-
     /** The smallest lease the stage hands out towards its end. */
     private static final int MIN_SHARE = 4;
 
@@ -1796,7 +1800,51 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     /**
      * Places the leased positions.
      */
+    private boolean assistBurst  = false;
+    private boolean assistPlaced = false;
+    private int     assistBurstIndex = 0;
+
+    /**
+     * Places the leased positions, as many in one step as the time bank allows (like the lead does with the blocks he reaches from one spot): a helper
+     * that waits a delay after every block places a third of what the lead does in the same time.
+     */
     private IAIState assistWork()
+    {
+        final int max = getMaxPlacementsPerStep();
+        if (max <= 1 || !usesPhysicalReach())
+        {
+            return assistWorkOnce();
+        }
+        if (!earnWorkTime())
+        {
+            return getState();
+        }
+        IAIState next;
+        int placed = 0;
+        assistBurst = true;
+        try
+        {
+            do
+            {
+                assistBurstIndex = placed;
+                assistPlaced = false;
+                next = assistWorkOnce();
+                if (assistPlaced)
+                {
+                    placed++;
+                }
+            }
+            while (assistPlaced && next == ASSIST_WORK && hasWorkTime() && placed < max && !batch.isEmpty());
+        }
+        finally
+        {
+            assistBurst = false;
+        }
+        payWorkDebt();
+        return next;
+    }
+
+    private IAIState assistWorkOnce()
     {
         if (!assistStillValid())
         {
@@ -1884,9 +1932,20 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 return getState();
             default:
                 finishPosition(planned, lead, true);
-                worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
-                worker.queueSound(SoundEvents.BAMBOO_HIT, worker.blockPosition(), 10, 0, 0.5f, 0.1f);
-                setPlacementDelay();
+                if (!assistBurst || assistBurstIndex == 0)
+                {
+                    worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
+                    worker.queueSound(SoundEvents.BAMBOO_HIT, worker.blockPosition(), 10, 0, 0.5f, 0.1f);
+                }
+                if (assistBurst)
+                {
+                    spendWorkTime(placementTicks());
+                    assistPlaced = true;
+                }
+                else
+                {
+                    setPlacementDelay();
+                }
                 return getState();
         }
     }

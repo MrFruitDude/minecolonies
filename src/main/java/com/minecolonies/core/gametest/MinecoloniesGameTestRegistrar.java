@@ -125,6 +125,16 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             return;
         }
 
+        // (-Dminecolonies.gametest.only=crafterstats: the crafter statistics test alone)
+        if ("crafterstats".equals(System.getProperty("minecolonies.gametest.only")))
+        {
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, "crafter_records_inputs_as_used"),
+              info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::crafterRecordsItsInputsAsUsed),
+              isolatedColonyData(event, "crafter_records_inputs_as_used"));
+            return;
+        }
+
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_lifecycle"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::colonyLifecycle),
@@ -542,6 +552,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_provider_composes_with_worker_speed"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderComposesWithWorkerSpeed),
           isolatedColonyData(event, "pace_provider_composes_with_worker_speed"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "crafter_records_inputs_as_used"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::crafterRecordsItsInputsAsUsed),
+          isolatedColonyData(event, "crafter_records_inputs_as_used"));
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_default_provider_unchanged"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceDefaultProviderUnchanged),
@@ -986,7 +1000,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         final int reps = Integer.getInteger("minecolonies.gametest.reps", 3);
         for (int i = 1; i <= reps; i++)
         {
-            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy", "clear", "clear_legacy", "two", "two_solo", "twobig", "twobig_solo", "onebig", "onebig_legacy", "bridge", "wall", "wall_solo", "tower16", "tower16_solo"})
+            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy", "clear", "clear_legacy", "two", "two_solo", "twobig", "twobig_solo", "onebig", "onebig_legacy", "bridge", "wall", "wall_solo", "tower16", "tower16_solo", "mid", "mid_solo"})
             {
                 final String name = "scaffoldbench_" + base + "_" + i;
                 if (!nameWanted(name))
@@ -1013,6 +1027,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                     case "bridge" -> BuilderScaffoldGameTests::bridgeOverTrench;
                     case "wall" -> BuilderScaffoldGameTests::twoBuildersWall;
                     case "wall_solo" -> BuilderScaffoldGameTests::twoBuildersWallSolo;
+                    case "mid" -> BuilderScaffoldGameTests::twoBuildersMid;
+                    case "mid_solo" -> BuilderScaffoldGameTests::twoBuildersMidSolo;
                     case "tower16" -> BuilderScaffoldGameTests::twoBuildersTower16;
                     case "tower16_solo" -> BuilderScaffoldGameTests::twoBuildersTower16Solo;
                     default -> BuilderScaffoldGameTests::sealedRoofLegacy;
