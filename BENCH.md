@@ -12,6 +12,7 @@ tools/rs_bench.sh quick                    # ~75 s of game time (micro 100/1k + 
 tools/rs_bench.sh full                     # K=5: micro 100/1k/10k + fresh, busy, storm, unload; ~8 min of game time
 tools/rs_bench.sh full --reps 3 --only busy,storm      # subset (test-name words: micro, fresh, busy, storm, unload)
 tools/rs_bench.sh full --flags off         # RS reservation/smart-retry switches off (the player-fallback gate then fails: expected)
+tools/rs_bench.sh quick --breaks --only busy,storm   # it rains 300 ticks of every 3000: workers (couriers with a task among them) are sent to shelter; A/B with MINECOLONIES_RS_COURIER_FINISHES=false
 tools/rs_bench.sh full --jfr "/tmp/rs-%p.jfr" --only busy,storm   # JFR; then: python3 -I tools/rs_bench_jfr.py /tmp/rs-<game pid>.jfr
 python3 -I tools/rs_bench_report.py compare bench-results/<base>.json bench-results/<new>.json   # table, verdicts, score
 python3 -I tools/rs_bench_report.py show bench-results/<file>.json
@@ -66,7 +67,7 @@ After the work is done demand stops and the run drains (up to 4000 ticks) until 
 Per tick: server-thread CPU (minus the benchmark's own bookkeeping), the part inside the RS (probe overhead, calibrated per run, subtracted),
 allocated bytes. Per run: requests created, deliveries created / arrived, courier tasks (trips), courier distance walked (position
 deltas, teleports excluded), items delivered, player fallbacks, duplicate requests (open top-level requests with the same requester and item), stuck request trees (no change
-for 3000 ticks), request latency p50/p99 (first seen to gone), peak/mean open requests, view-sync bytes, per-scope and per-resolver breakdown.
+for 3000 ticks; the wait reasons COURIER_BUSY and AWAITING_DELIVERY count as one, because a queued delivery flips between them with the couriers' rhythm without moving: `stuckRootsStrict` keeps the old definition; `extra.stuckWhy` lists what the stuck trees were; the storm scenario has ~113 trees that wait for the scripted stock bursts by design), request latency p50/p99 (first seen to gone), peak/mean open requests, view-sync bytes, per-scope and per-resolver breakdown.
 
 ### Correctness gates (a failed gate marks the run INVALID and exits non-zero)
 
