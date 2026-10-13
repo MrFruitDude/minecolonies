@@ -26,6 +26,7 @@ public final class BuilderCollab
     private static volatile Integer leaseSizeOverride;
     private static volatile Integer leaseTicksOverride;
     private static volatile Integer clusterMinOverride;
+    private static volatile Integer minOrderScoreOverride;
     private static volatile Integer leaseCapFactorOverride;
 
     /**
@@ -60,6 +61,53 @@ public final class BuilderCollab
         stayTicksOverride = stayTicks;
         leaseSizeOverride = leaseSize;
         leaseTicksOverride = leaseTicks;
+    }
+
+    /**
+     * The helper score from which an order gets helpers (see {@link #worthAHelper}) when nothing else is configured.
+     */
+    public static final int DEFAULT_MIN_ORDER_SCORE = 600;
+
+    /**
+     * Only for tests: the helper score from which an order gets helpers; null for the config (or, in a test that switched the collaboration on by hand, none: the
+     * tests with small structures expect their helpers).
+     */
+    public static void overrideMinOrderScoreForTests(final Integer score)
+    {
+        minOrderScoreOverride = score;
+    }
+
+    /**
+     * The helper score an order needs to get helpers at all.
+     */
+    public static int minOrderScore()
+    {
+        final Integer override = minOrderScoreOverride;
+        if (override != null)
+        {
+            return override;
+        }
+        if (enabledOverride != null)
+        {
+            return 0;
+        }
+        return value(null, c -> c.builderCollaborationMinOrderScore.get(), DEFAULT_MIN_ORDER_SCORE);
+    }
+
+    /**
+     * Whether a second builder pays off for the structure. A helper starts late (he walks to the site and fetches materials first), takes his materials
+     * from the lead in trips, and when the structure is almost done the two get in each other's way; all that costs about as much as the second builder saves on a
+     * small structure. Measured with the scaffold benchmark (16 runs each, one builder against two): a 7 by 7 ring of 11 (264 blocks, 120 of them high) finishes
+     * in the same time with a helper (median -4 percent) but a third of the runs take 25 to 60 percent longer, a 30 by 6 wall of 3 (540 blocks, flat) is
+     * 5 percent slower with the helper and a tail of +30 percent, an 11 by 11 ring of 12 (480, 240 high) takes 30 percent less, a 9 by 9 ring of 16 (512, 320
+     * high) 30 percent less. Blocks that need a tower count three times: {@code blocks + 2 * high >= 600} puts the line between them.
+     *
+     * @param blocks the blocks to place.
+     * @param high   how many of them are out of reach from the ground.
+     */
+    public static boolean worthAHelper(final int blocks, final int high)
+    {
+        return blocks + 2 * high >= minOrderScore();
     }
 
     /**

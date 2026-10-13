@@ -229,7 +229,8 @@ public final class CollabScheduler
                     continue;
                 }
                 final int remaining = collab.getRemainingBlocks();
-                if (remaining < BuilderCollab.minRemaining() || collab.getAssistantCount() >= capFor(order))
+                if (remaining < BuilderCollab.minRemaining() || collab.getAssistantCount() >= capFor(order)
+                      || !BuilderCollab.worthAHelper(collab.getPlacementBlocks(), collab.getHighBlocks()))
                 {
                     continue;
                 }

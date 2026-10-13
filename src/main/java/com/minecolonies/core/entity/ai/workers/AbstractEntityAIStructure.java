@@ -1052,6 +1052,12 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         {
             return true;
         }
+        if (world.getBlockState(feet.below()).is(net.minecraft.tags.BlockTags.CLIMBABLE))
+        {
+            // the top of a tower of scaffolding: the way down is the tower itself (the planner counts it as a spot, so the walk must as well: a builder who comes
+            // down from it and has the next block in reach from the top of the same tower would otherwise find "no spot" for it, and a tower is no help)
+            return true;
+        }
         for (final net.minecraft.core.Direction dir : net.minecraft.core.Direction.Plane.HORIZONTAL)
         {
             final BlockPos near = feet.relative(dir);

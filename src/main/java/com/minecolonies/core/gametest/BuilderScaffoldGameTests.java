@@ -766,6 +766,17 @@ final class BuilderScaffoldGameTests
         twoBuilders(helper, "wall_solo", () -> longWall("wall_solo"), 40_000, false, WALL_SITE);
     }
 
+    /** A slim ring of 7 by 7, 16 high: 384 blocks, tall but under the 400 of the clusters. */
+    public static void twoBuildersMid(final GameTestHelper helper)
+    {
+        twoBuilders(helper, "mid", () -> shape("mid", 7, 16, 7, (x, y, z) -> x == 0 || z == 0 || x == 6 || z == 6), 40_000);
+    }
+
+    public static void twoBuildersMidSolo(final GameTestHelper helper)
+    {
+        twoBuilders(helper, "mid_solo", () -> shape("mid_solo", 7, 16, 7, (x, y, z) -> x == 0 || z == 0 || x == 6 || z == 6), 40_000, false);
+    }
+
     public static void twoBuildersTower16(final GameTestHelper helper)
     {
         twoBuilders(helper, "tower16", () -> squareTower("tower16"), 40_000);
@@ -794,6 +805,8 @@ final class BuilderScaffoldGameTests
         WorkerEfficiencyGameTests.scene(helper, "WSCAF " + name, live -> {
             BuilderCollab.overrideForTests(collaboration && !Boolean.getBoolean("minecolonies.gametest.nocollab"), 3, 40, 10, 100_000, Integer.getInteger("minecolonies.gametest.lease", 8), 2400);
             BuilderCollab.overrideClusterMinForTests(Integer.getInteger("minecolonies.gametest.clustermin"));
+            // (the benchmarks run with the helper gate of the config's default, -Dminecolonies.gametest.minorder=0 switches it off to see what a helper does anyway)
+            BuilderCollab.overrideMinOrderScoreForTests(Integer.getInteger("minecolonies.gametest.minorder", BuilderCollab.DEFAULT_MIN_ORDER_SCORE));
             BuilderCollab.overrideLeaseCapFactorForTests(Integer.getInteger("minecolonies.gametest.leasecap"));
             final BuildingBuilder other = live.colony.getServerBuildingManager().getBuildings().values().stream()
                                             .filter(b -> b instanceof BuildingBuilder && b != live.hut).map(b -> (BuildingBuilder) b).findFirst().orElseThrow();
@@ -874,6 +887,7 @@ final class BuilderScaffoldGameTests
                 helper.assertTrue(BuilderScaffolding.cellsPlaced > 0 || blueprint.getSizeY() <= 4, "no scaffolding");
                 BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
                 BuilderCollab.overrideClusterMinForTests(null);
+                BuilderCollab.overrideMinOrderScoreForTests(null);
                 BuilderCollab.overrideLeaseCapFactorForTests(null);
                 BuilderCollab.placementProbe = null;
                 WorkerSettings.clearOverrides();

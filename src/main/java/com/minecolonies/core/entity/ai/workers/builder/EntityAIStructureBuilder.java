@@ -206,6 +206,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             {
                 collab.setStageTotal(stage, BuilderStageRules.estimateBlocks(structure.getBluePrint(), stage));
             }
+            collab.setHighBlocks(BuilderStageRules.estimateHighBlocks(structure.getBluePrint(), BuildReach.maxHeightNextToWall(BuildReach.EYE_HEIGHT, WorkerSettings.reach()) + 1));
         }
     }
 
@@ -557,7 +558,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 }
                 else
                 {
-                    scaffold.note("no spot for " + target + " builder at " + worker.blockPosition());
+                    final List<ReachSpots.Spot> all = ReachSpots.best(world, ahead.get(), reach, worker.getEyeHeight(), worker.blockPosition(), null, 200, inBlocks, false);
+                    final long walkable = all.stream().filter(sp -> canWalkTo(sp.feet())).count();
+                    final long notBad = all.stream().filter(sp -> canWalkTo(sp.feet()) && !walk.bad.contains(sp.feet())).count();
+                    final long wayDown = all.stream().filter(sp -> canWalkTo(sp.feet()) && !walk.bad.contains(sp.feet()) && hasWayDown(sp.feet())).count();
+                    scaffold.note("no spot for " + target + " builder at " + worker.blockPosition() + " candidates=" + all.size() + " walkable=" + walkable + " notBad=" + notBad + " wayDown=" + wayDown
+                                    + " wallTopsAllowed=" + wallTopsAllowed + " bad=" + walk.bad + " first=" + (all.isEmpty() ? "-" : all.get(0).feet().toShortString()) + " ahead=" + ahead.get().size());
                 }
                 if (mayScaffold)
                 {

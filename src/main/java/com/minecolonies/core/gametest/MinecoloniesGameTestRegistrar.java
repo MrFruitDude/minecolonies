@@ -986,7 +986,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         final int reps = Integer.getInteger("minecolonies.gametest.reps", 3);
         for (int i = 1; i <= reps; i++)
         {
-            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy", "clear", "clear_legacy", "two", "two_solo", "twobig", "twobig_solo", "onebig", "onebig_legacy", "bridge", "wall", "wall_solo", "tower16", "tower16_solo"})
+            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy", "clear", "clear_legacy", "two", "two_solo", "twobig", "twobig_solo", "onebig", "onebig_legacy", "bridge", "wall", "wall_solo", "tower16", "tower16_solo", "mid", "mid_solo"})
             {
                 final String name = "scaffoldbench_" + base + "_" + i;
                 if (!nameWanted(name))
@@ -1013,6 +1013,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                     case "bridge" -> BuilderScaffoldGameTests::bridgeOverTrench;
                     case "wall" -> BuilderScaffoldGameTests::twoBuildersWall;
                     case "wall_solo" -> BuilderScaffoldGameTests::twoBuildersWallSolo;
+                    case "mid" -> BuilderScaffoldGameTests::twoBuildersMid;
+                    case "mid_solo" -> BuilderScaffoldGameTests::twoBuildersMidSolo;
                     case "tower16" -> BuilderScaffoldGameTests::twoBuildersTower16;
                     case "tower16_solo" -> BuilderScaffoldGameTests::twoBuildersTower16Solo;
                     default -> BuilderScaffoldGameTests::sealedRoofLegacy;
