@@ -796,6 +796,12 @@ final class BuilderScaffoldGameTests
                 if (TRACE_EVERY > 0 && tick % TRACE_EVERY == 0)
                 {
                     second.getEntity().ifPresent(e -> trace(e, name + "-2", tick, origin));
+                    final java.util.function.Predicate<ItemStack> block = stack -> stack.is(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem());
+                    Log.getLogger().info("TRACE {} items t={} lead(inv={} hut={}) helper(inv={} hut={} carry={}) scaffold(lead inv={} hut={}, helper inv={} hut={})", name, tick,
+                      InventoryUtils.getItemCountInItemHandler(live.citizen.getInventory(), block), InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), block),
+                      InventoryUtils.getItemCountInItemHandler(second.getInventory(), block), InventoryUtils.getItemCountInItemHandler(other.getItemHandlerCap(), block), other.getCarry().values(),
+                      InventoryUtils.getItemCountInItemHandler(live.citizen.getInventory(), s2 -> s2.is(Items.SCAFFOLDING)), InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), s2 -> s2.is(Items.SCAFFOLDING)),
+                      InventoryUtils.getItemCountInItemHandler(second.getInventory(), s2 -> s2.is(Items.SCAFFOLDING)), InventoryUtils.getItemCountInItemHandler(other.getItemHandlerCap(), s2 -> s2.is(Items.SCAFFOLDING)));
                 }
                 doneTick[0] = tick;
                 if (tick == 1)
@@ -814,8 +820,9 @@ final class BuilderScaffoldGameTests
                     Log.getLogger().info("WGAPS {} {} (count,ticks) <=2:{},{} <=5:{},{} <=12:{},{} <=40:{},{} >40:{},{}", name, e.getKey().equals(live.hut.getPosition()) ? "lead" : "second",
                       e.getValue()[0], e.getValue()[1], e.getValue()[2], e.getValue()[3], e.getValue()[4], e.getValue()[5], e.getValue()[6], e.getValue()[7], e.getValue()[8], e.getValue()[9]);
                 }
-                Log.getLogger().info("WBENCH RESULT " + name + " builders=2 blocksBy={} ticks={} towers={} cells={} placedBy={} maxScaffold={}", blocksBy.values(), doneTick[0], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced,
-                  BuilderScaffolding.placedBy.values(), watch.maxScaffold);
+                Log.getLogger().info("WBENCH RESULT " + name + " builders=2 blocksBy={} lead={} helper={} ticks={} towers={} cells={} placedBy(lead,helper)={},{} maxScaffold={}", blocksBy.values(), blocksBy.getOrDefault(live.hut.getPosition(), 0),
+                  blocksBy.getOrDefault(other.getPosition(), 0), doneTick[0], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced,
+                  BuilderScaffolding.placedBy.getOrDefault(live.hut.getPosition(), 0), BuilderScaffolding.placedBy.getOrDefault(other.getPosition(), 0), watch.maxScaffold);
                 helper.assertTrue(missing(live, blueprint, origin) == 0, "structure not complete: missing " + missing(live, blueprint, origin));
                 helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left: " + scaffoldInWorld(live, origin));
                 helper.assertTrue(ledgerSize(live) == 0 && ((WorkManager) live.colony.getWorkManager()).getOrphanScaffolds().isEmpty(), "ledger left");

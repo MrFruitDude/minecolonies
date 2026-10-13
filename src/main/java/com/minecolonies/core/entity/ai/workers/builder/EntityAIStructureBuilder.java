@@ -1024,13 +1024,15 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
      * The lead is short of materials that his helpers carry (they took them for positions that he has taken back since, or have not used yet): he takes
      * them back from the helpers' inventories (a walk to the hut and a request for what is in the pockets of a helper is the long way round).
      */
-    private void takeBackFromHelpers(final List<ItemStack> required)
+    private boolean takeBackFromHelpers(final List<ItemStack> required)
     {
         final WorkOrderCollab collab = leadCollab();
         if (collab == null || collab.getAssistantCount() == 0)
         {
-            return;
+            return false;
         }
+        boolean allThere = true;
+        boolean movedAny = false;
         for (final ItemStack stack : required)
         {
             if (stack.isEmpty())
@@ -1043,6 +1045,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 continue;
             }
             final ItemStorage key = new ItemStorage(stack.copyWithCount(1));
+            scaffold.note("lead is short of " + missing + " " + stack.getItem() + ", helpers carry " + collab.getAssistantHuts().stream().map(h -> building.getColony().getServerBuildingManager().getBuilding(h))
+                                                                                                   .map(h -> h instanceof AbstractBuildingStructureBuilder b ? b.getCarry().toString() + " lead=" + b.getCarryLead() : "-").toList());
             for (final BlockPos hutPos : collab.getAssistantHuts())
             {
                 final IBuilding hut = building.getColony().getServerBuildingManager().getBuilding(hutPos);
@@ -1061,19 +1065,26 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 {
                     helperHut.reduceCarry(Map.of(key, moved));
                     missing -= moved;
+                    movedAny = true;
                 }
                 if (missing <= 0)
                 {
                     break;
                 }
             }
+            allThere &= missing <= 0;
         }
+        return allThere && movedAny;
     }
 
     @Override
-    protected void onMissingItems(final List<ItemStack> required)
+    protected boolean onMissingItems(final List<ItemStack> required)
     {
-        takeBackFromHelpers(required);
+        if (takeBackFromHelpers(required))
+        {
+            // what the helpers carried is in the lead's inventory now: he goes on
+            return true;
+        }
         final Map<ItemStorage, Integer> waiting = new HashMap<>();
         for (final ItemStack stack : required)
         {
@@ -1083,6 +1094,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             }
         }
         building.setWaitingFor(waiting);
+        return false;
     }
 
     @Override
@@ -1359,8 +1371,55 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     /**
      * A helper with nothing to lease waits at the site, but not on a tower: the tower cannot come down under him, and the lead may be waiting for it.
      */
+    /**
+     * A helper with nothing to do hands what is left of the materials he took to the lead (who is working at the site and may run short of exactly that),
+     * instead of keeping it until he leaves.
+     *
+     * @return true while he is on his way to the lead.
+     */
+    private boolean handBackToLead()
+    {
+        if (!building.hasCarry() || assistOrder == null)
+        {
+            return false;
+        }
+        final AbstractBuildingStructureBuilder lead = leadOf(assistOrder);
+        final ICitizenData leadCitizen = lead == null ? null : leadCitizen(lead);
+        if (leadCitizen == null || leadCitizen.getEntity().isEmpty() || !lead.getID().equals(building.getCarryLead()))
+        {
+            return false;
+        }
+        if (Math.hypot(worker.getX() - leadCitizen.getEntity().get().getX(), worker.getZ() - leadCitizen.getEntity().get().getZ()) > 24.0D)
+        {
+            // (the lead is away at his hut for materials: no chase)
+            return false;
+        }
+        if (!walkToLeadForHandOver(leadCitizen.getEntity().get()))
+        {
+            return true;
+        }
+        for (final Map.Entry<ItemStorage, Integer> entry : building.getCarry().entrySet())
+        {
+            final ItemStack kind = entry.getKey().getItemStack();
+            final int have = InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), sameAs(kind));
+            final int moved = ItemMover.move(worker.getInventoryCitizen(), leadCitizen.getInventory(), sameAs(kind), Math.min(have, entry.getValue()));
+            building.reduceCarry(Map.of(entry.getKey(), Math.max(moved, have == 0 ? entry.getValue() : 0)));
+        }
+        return false;
+    }
+
     private IAIState waitAtTheSite()
     {
+        if (workFrom != null && batch.isEmpty() && !scaffold.busy())
+        {
+            // a walk to a spot for a position that is not his any more (the lead took it back, the tower is gone) must not go on: the path planner takes him to the
+            // nearest place it can find, which is wherever
+            resetWalkTarget();
+        }
+        if (handBackToLead())
+        {
+            return getState();
+        }
         // nothing to lease: the towers of this helper that nobody uses come down meanwhile (the lead takes his own down alone, and he has the most of the stage still)
         scaffold.setIdleHelper(true);
         if (runScaffoldTick())
@@ -1370,6 +1429,18 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         stepOffScaffolding();
         setDelay(40);
         return getState();
+    }
+
+    @Override
+    protected boolean servesAnyOrder()
+    {
+        if (assistOrder != null && !building.hasWorkOrder())
+        {
+            // a helper works on his leased positions in the order that suits his spots (what he reaches from where he stands first), like the lead does in the
+            // stages that place blocks
+            return usesPhysicalReach() && (batchStage == BuildingProgressStage.BUILD_SOLID || batchStage == BuildingProgressStage.WEAK_SOLID || batchStage == BuildingProgressStage.DECORATE);
+        }
+        return super.servesAnyOrder();
     }
 
     @Override

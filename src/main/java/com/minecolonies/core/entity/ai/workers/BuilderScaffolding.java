@@ -56,6 +56,9 @@ public final class BuilderScaffolding
     /** After that long without a tower being possible, the next try. */
     static final int DENY_TICKS = 3000;
 
+    /** After that long without a tower being possible while the towers of another builder stand: the next try. */
+    static final int OTHERS_DENY_TICKS = 200;
+
     /** How many of the next blocks the plan of a tower looks at: a tower is picked for what is left to build, not for the next layer. */
     static final int PLAN_LOOKAHEAD = 160;
 
@@ -396,7 +399,9 @@ public final class BuilderScaffolding
             log("no scaffolding possible for " + target + ": builder at " + ai.worker.getBlockX() + "," + ai.worker.getBlockY() + "," + ai.worker.getBlockZ() + " inv=" + inInventory() + " hut=" + inHut()
                   + " ledger=" + order.getScaffolds().size() + " stock=" + stock + " ahead=" + blocks.size() + " walkable=" + ai.canWalkTo(ai.worker.blockPosition()) + " below="
                   + ai.world.getBlockState(ai.worker.blockPosition().below()).getBlock());
-            deniedUntil = now + DENY_TICKS;
+            // (with the towers of another builder standing around, the place for a tower may come free any moment: a short denial)
+            final boolean othersStand = order.getScaffolds().all().stream().anyMatch(c -> !c.hut().equals(ai.building.getPosition()));
+            deniedUntil = now + (othersStand ? OTHERS_DENY_TICKS : DENY_TICKS);
             return false;
         }
 

@@ -196,9 +196,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      * The builder waits for materials.
      *
      * @param required what the position he cannot place needs.
+     * @return true if the missing items were found at once (the worker goes on without waiting for them).
      */
-    protected void onMissingItems(final List<ItemStack> required)
+    protected boolean onMissingItems(final List<ItemStack> required)
     {
+        return false;
     }
 
     /**
@@ -728,7 +730,10 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         if (result.getBlockResult().getResult() == BlockPlacementResult.Result.MISSING_ITEMS)
         {
             onStepBlocked(result.getBlockResult().getWorldPos());
-            onMissingItems(result.getBlockResult().getRequiredItems());
+            if (onMissingItems(result.getBlockResult().getRequiredItems()))
+            {
+                return getState();
+            }
             if (hasListOfResInInvOrRequest(this, result.getBlockResult().getRequiredItems(), result.getBlockResult().getRequiredItems().size() > 1) == RECALC)
             {
                 building.getWorkOrder().setRequested(false);
@@ -1696,7 +1701,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      * Whether the worker takes what he reaches in any order in the current stage (the spot to work from is picked by how many blocks it
      * reaches, not by how many in a row).
      */
-    protected final boolean servesAnyOrder()
+    protected boolean servesAnyOrder()
     {
         return usesPhysicalReach() && structurePlacer != null && servesNearby(structurePlacer.getB().getStage());
     }
