@@ -125,6 +125,16 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             return;
         }
 
+        // (-Dminecolonies.gametest.only=crafterstats: the crafter statistics test alone)
+        if ("crafterstats".equals(System.getProperty("minecolonies.gametest.only")))
+        {
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, "crafter_records_inputs_as_used"),
+              info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::crafterRecordsItsInputsAsUsed),
+              isolatedColonyData(event, "crafter_records_inputs_as_used"));
+            return;
+        }
+
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony_lifecycle"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::colonyLifecycle),
@@ -542,6 +552,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_provider_composes_with_worker_speed"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderComposesWithWorkerSpeed),
           isolatedColonyData(event, "pace_provider_composes_with_worker_speed"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "crafter_records_inputs_as_used"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::crafterRecordsItsInputsAsUsed),
+          isolatedColonyData(event, "crafter_records_inputs_as_used"));
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_default_provider_unchanged"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceDefaultProviderUnchanged),
