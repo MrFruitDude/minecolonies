@@ -57,6 +57,7 @@ import static com.minecolonies.api.util.constant.StatisticsConstants.ITEMS_CRAFT
 import static com.minecolonies.core.util.WorkerUtil.hasTooManyExternalItemsInInv;
 
 import static com.minecolonies.api.util.constant.StatisticsConstants.ITEMS_CRAFTED_DETAIL;
+import static com.minecolonies.api.util.constant.StatisticsConstants.ITEM_USED;
 
 /**
  * Abstract class for the principal crafting AIs.
@@ -147,6 +148,12 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
         }
 
         StatsUtil.trackStatByName(building, getCraftingStatName(), recipe.getPrimaryOutput().getHoverName(), recipe.getPrimaryOutput().getCount());
+
+        // The recipe's inputs were taken from the worker's inventory by the crafting action that calls this: count them as used, like the herders and the sifter count what they use.
+        for (final ItemStorage input : recipe.getCleanedInput())
+        {
+            StatsUtil.trackStatByStack(building, ITEM_USED, input.getItemStack(), input.getAmount());
+        }
     }
 
 
