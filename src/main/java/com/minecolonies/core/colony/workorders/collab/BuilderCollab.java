@@ -25,6 +25,21 @@ public final class BuilderCollab
     private static volatile Integer stayTicksOverride;
     private static volatile Integer leaseSizeOverride;
     private static volatile Integer leaseTicksOverride;
+    private static volatile Integer clusterMinOverride;
+    private static volatile Integer leaseCapFactorOverride;
+
+    /**
+     * The biggest lease is this many times the configured lease size.
+     */
+    private static final int LEASE_CAP_FACTOR = 4;
+
+    /**
+     * Only for tests: the factor of the biggest lease.
+     */
+    public static void overrideLeaseCapFactorForTests(final Integer factor)
+    {
+        leaseCapFactorOverride = factor;
+    }
 
     /**
      * Only for tests: overrides the config. Null values go back to the config.
@@ -45,6 +60,23 @@ public final class BuilderCollab
         stayTicksOverride = stayTicks;
         leaseSizeOverride = leaseSize;
         leaseTicksOverride = leaseTicks;
+    }
+
+    /**
+     * Only for tests: the number of blocks from which a structure is divided into parts for the builders.
+     */
+    public static void overrideClusterMinForTests(final Integer blocks)
+    {
+        clusterMinOverride = blocks;
+    }
+
+    /**
+     * Structures with at least this many blocks are divided into parts for the builders, and the helper leases clusters of positions.
+     */
+    public static int clusterMinBlocks()
+    {
+        final Integer override = clusterMinOverride;
+        return override != null ? override : 400;
     }
 
     /**
@@ -156,7 +188,8 @@ public final class BuilderCollab
     public static int scaledLeaseSize(final int base, final double distance)
     {
         final int size = Math.max(1, base);
-        return (int) Math.min(4L * size, size + Math.round(2.0D * Math.max(0.0D, distance)));
+        final Integer override = leaseCapFactorOverride;
+        return (int) Math.min((long) (override != null ? override : LEASE_CAP_FACTOR) * size, size + Math.round(2.0D * Math.max(0.0D, distance)));
     }
 
     /**

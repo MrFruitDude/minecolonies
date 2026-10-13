@@ -56,7 +56,10 @@ public final class BuilderScaffolding
     /** After that long without a tower being possible, the next try. */
     static final int DENY_TICKS = 3000;
 
-    /** After that long without a tower being possible while the towers of another builder stand: the next try. */
+    /** After that long without a tower being possible (no place for one, nothing to build it from, the builder stands where no tower can start): the next try. */
+    static final int NO_PLAN_DENY_TICKS = 600;
+
+    /** After that long without a tower being possible while towers of the order stand (the builder's own or another's): the next try. */
     static final int OTHERS_DENY_TICKS = 200;
 
     /** How many of the next blocks the plan of a tower looks at: a tower is picked for what is left to build, not for the next layer. */
@@ -175,6 +178,14 @@ public final class BuilderScaffolding
     public boolean denied()
     {
         return ai.world.getGameTime() < stockDeniedUntil;
+    }
+
+    /**
+     * Whether a tower was ruled out a short while ago for any reason (no items, no place for one, nothing that leads to the spot).
+     */
+    public boolean deniedAny()
+    {
+        return ai.world.getGameTime() < Math.max(deniedUntil, stockDeniedUntil);
     }
 
     public void clearDenial()
@@ -399,9 +410,10 @@ public final class BuilderScaffolding
             log("no scaffolding possible for " + target + ": builder at " + ai.worker.getBlockX() + "," + ai.worker.getBlockY() + "," + ai.worker.getBlockZ() + " inv=" + inInventory() + " hut=" + inHut()
                   + " ledger=" + order.getScaffolds().size() + " stock=" + stock + " ahead=" + blocks.size() + " walkable=" + ai.canWalkTo(ai.worker.blockPosition()) + " below="
                   + ai.world.getBlockState(ai.worker.blockPosition().below()).getBlock());
-            // (with the towers of another builder standing around, the place for a tower may come free any moment: a short denial)
-            final boolean othersStand = order.getScaffolds().all().stream().anyMatch(c -> !c.hut().equals(ai.building.getPosition()));
-            deniedUntil = now + (othersStand ? OTHERS_DENY_TICKS : DENY_TICKS);
+            // (with towers standing around, his own as well as another builder's, the place for a tower may come free any moment - he comes down from the tower he
+            // stood on, a tower is taken down: a short denial. A long one kept a lead on the ground for 3000 ticks while his own idle towers stood in his way.)
+            final boolean towersStand = !order.getScaffolds().isEmpty();
+            deniedUntil = now + (towersStand ? OTHERS_DENY_TICKS : NO_PLAN_DENY_TICKS);
             return false;
         }
 

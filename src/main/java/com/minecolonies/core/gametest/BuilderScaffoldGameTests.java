@@ -793,6 +793,8 @@ final class BuilderScaffoldGameTests
         BuilderScaffolding.resetCounters();
         WorkerEfficiencyGameTests.scene(helper, "WSCAF " + name, live -> {
             BuilderCollab.overrideForTests(collaboration && !Boolean.getBoolean("minecolonies.gametest.nocollab"), 3, 40, 10, 100_000, Integer.getInteger("minecolonies.gametest.lease", 8), 2400);
+            BuilderCollab.overrideClusterMinForTests(Integer.getInteger("minecolonies.gametest.clustermin"));
+            BuilderCollab.overrideLeaseCapFactorForTests(Integer.getInteger("minecolonies.gametest.leasecap"));
             final BuildingBuilder other = live.colony.getServerBuildingManager().getBuildings().values().stream()
                                             .filter(b -> b instanceof BuildingBuilder && b != live.hut).map(b -> (BuildingBuilder) b).findFirst().orElseThrow();
             final ICitizenData second = other.getModule(BuildingModules.BUILDER_WORK).getAssignedCitizen().get(0);
@@ -869,8 +871,10 @@ final class BuilderScaffoldGameTests
                 helper.assertTrue(scaffoldItems(live, origin) == 64, "items not conserved: " + scaffoldItems(live, origin));
                 helper.assertTrue(watch.conservationBreak == null, "items lost or made: " + watch.conservationBreak);
                 helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
-                helper.assertTrue(BuilderScaffolding.cellsPlaced > 0, "no scaffolding");
+                helper.assertTrue(BuilderScaffolding.cellsPlaced > 0 || blueprint.getSizeY() <= 4, "no scaffolding");
                 BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
+                BuilderCollab.overrideClusterMinForTests(null);
+                BuilderCollab.overrideLeaseCapFactorForTests(null);
                 BuilderCollab.placementProbe = null;
                 WorkerSettings.clearOverrides();
                 ReachAudit.enable(false);

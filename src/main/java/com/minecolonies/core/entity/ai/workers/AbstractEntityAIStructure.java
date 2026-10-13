@@ -435,6 +435,52 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     private boolean stepPlaced   = false;
 
     /**
+     * The time bank for work that is done outside of {@link #structureStep()} (the blocks a helper places from his lease): earns the time that passed.
+     *
+     * @return false while the bank is still negative (the blocks of the steps before are paid for).
+     */
+    protected final boolean earnWorkTime()
+    {
+        final long now = world.getGameTime();
+        final double pace = getWorkPace();
+        final double stepTicks = getTickRate() * pace;
+        workBank = lastBankTick < 0 ? stepTicks : Math.min(workBank + (now - lastBankTick) * pace, 3.0D * stepTicks);
+        lastBankTick = now;
+        return workBank > 0.0D;
+    }
+
+    /**
+     * Whether the bank holds time for another block.
+     */
+    protected final boolean hasWorkTime()
+    {
+        return workBank > 0.0D;
+    }
+
+    /**
+     * Pays for a block placed in a burst out of the bank.
+     */
+    protected final void spendWorkTime(final double ticks)
+    {
+        workBank -= ticks;
+    }
+
+    /**
+     * Ends a burst: waits for the debt of the blocks placed, less what the wait of the next step earns anyway.
+     */
+    protected final void payWorkDebt()
+    {
+        if (workBank < 0.0D)
+        {
+            final int wait = (int) Math.ceil(-workBank - getTickRate() * getWorkPace());
+            if (wait > 0)
+            {
+                setDelay(wait);
+            }
+        }
+    }
+
+    /**
      * Ticks of work the next block placed costs, at the worker's pace of 1.0.
      */
     protected final double placementTicks()
