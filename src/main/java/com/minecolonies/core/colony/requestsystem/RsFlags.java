@@ -24,6 +24,9 @@ public final class RsFlags
     private static volatile Boolean courierImmediateOverride;
 
     @Nullable
+    private static volatile Boolean courierFinishesOverride;
+
+    @Nullable
     private static volatile Boolean storageNetworkOverride;
 
     @Nullable
@@ -266,6 +269,43 @@ public final class RsFlags
     public static void overrideCourierImmediateNextTask(@Nullable final Boolean value)
     {
         courierImmediateOverride = value;
+    }
+
+    /**
+     * RS5: a courier that holds a task finishes the delivery before it goes to eat, sleep or hide from the rain.
+     *
+     * @return true when meals, sleep and rain shelter wait for the courier's current task (within the safety caps).
+     */
+    public static boolean courierFinishesDelivery()
+    {
+        final Boolean override = courierFinishesOverride;
+        if (override != null)
+        {
+            return override;
+        }
+        final Boolean env = fromEnvironment("MINECOLONIES_RS_COURIER_FINISHES");
+        if (env != null)
+        {
+            return env;
+        }
+        try
+        {
+            return MinecoloniesAPIProxy.getInstance().getConfig().getServer().courierFinishesDelivery.get();
+        }
+        catch (final RuntimeException | LinkageError e)
+        {
+            return false;
+        }
+    }
+
+    /**
+     * Forces the finish-the-delivery switch, for tests. Null returns to the config value.
+     *
+     * @param value the forced value.
+     */
+    public static void overrideCourierFinishesDelivery(@Nullable final Boolean value)
+    {
+        courierFinishesOverride = value;
     }
 
     /**

@@ -84,6 +84,13 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
     private final CourierWatchdog watchdog = new CourierWatchdog();
 
     /**
+     * The task at the head of the queue and the game time it was first seen there (not persisted: after a load the age starts again).
+     */
+    @Nullable
+    private IToken<?> headTask;
+    private long      headSince;
+
+    /**
      * Instantiates the job for the deliveryman.
      *
      * @param entity the citizen who becomes a deliveryman
@@ -242,6 +249,56 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         return true;
     }
 
+    private void trackHead(final IToken<?> head)
+    {
+        if (!head.equals(headTask))
+        {
+            headTask = head;
+            headSince = getColony().getWorld().getGameTime();
+        }
+    }
+
+    /**
+     * @return how many game ticks the courier has held the task at the head of its queue (0 without a task).
+     */
+    public long currentTaskAge()
+    {
+        final IToken<?> head = getTaskQueueFromDataStore().peekFirst();
+        if (head == null)
+        {
+            return 0L;
+        }
+        trackHead(head);
+        return getColony().getWorld().getGameTime() - headSince;
+    }
+
+    /**
+     * The courier is leaving (a meal, sleep, shelter from the rain) with tasks still in its queue: hands every one of them, and the deliveries batched
+     * with them, back to the request system, so that another courier can take them. The queue of a courier is the only place its tasks are kept; a
+     * task left there while the courier is away stands still for the whole break.
+     *
+     * @return how many tasks were handed back.
+     */
+    public int giveBackTasks()
+    {
+        int handedBack = 0;
+        final LinkedList<IToken<?>> queue = getTaskQueueFromDataStore();
+        while (!queue.isEmpty())
+        {
+            final IToken<?> head = queue.peekFirst();
+            final int before = queue.size();
+            giveUp(head, getColony().getRequestManager().getRequestForToken(head));
+            if (queue.size() >= before)
+            {
+                queue.remove(head);
+            }
+            handedBack += before - queue.size();
+        }
+        watchdog.reset();
+        headTask = null;
+        return handedBack;
+    }
+
     /**
      * Fails the task at the head of the queue and the deliveries batched with it, and takes them off the queue. Unlike
      * {@link #finishRequest}, which only finishes the deliveries the courier already started to gather, this also ends a task
@@ -396,6 +453,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         final IToken<?> currentRequest = getTaskQueueFromDataStore().peekFirst();
         if (currentRequest != null)
         {
+            trackHead(currentRequest);
             if (RsFlags.smartRetry() && watchTask(currentRequest))
             {
                 // Given up: the queue moved on.
