@@ -1552,11 +1552,6 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         return Math.max(1, Math.min(size, Math.max(MIN_SHARE, collab.getUnleasedStageRemaining() / parts)));
     }
 
-    /**
-     * A structure with fewer blocks than this is neither divided into parts for the builders nor leased as clusters: its next positions are close to each other
-     * anyway, and the walk to a part of one's own costs more than it saves (a small ring was slower with a helper that kept to a part than with one that took the
-     * next positions).
-     */
     /** The smallest lease the stage hands out towards its end. */
     private static final int MIN_SHARE = 4;
 

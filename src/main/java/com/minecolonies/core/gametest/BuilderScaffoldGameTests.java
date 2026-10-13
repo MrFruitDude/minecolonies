@@ -803,7 +803,7 @@ final class BuilderScaffoldGameTests
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
         WorkerEfficiencyGameTests.scene(helper, "WSCAF " + name, live -> {
-            BuilderCollab.overrideForTests(collaboration && !Boolean.getBoolean("minecolonies.gametest.nocollab"), 3, 40, 10, 100_000, Integer.getInteger("minecolonies.gametest.lease", 8), 2400);
+            BuilderCollab.overrideForTests(collaboration && !Boolean.getBoolean("minecolonies.gametest.nocollab"), 3, 40, Integer.getInteger("minecolonies.gametest.minremaining", 10), Integer.getInteger("minecolonies.gametest.stay", 100_000), Integer.getInteger("minecolonies.gametest.lease", 8), 2400);
             BuilderCollab.overrideClusterMinForTests(Integer.getInteger("minecolonies.gametest.clustermin"));
             // (the benchmarks run with the helper gate of the config's default, -Dminecolonies.gametest.minorder=0 switches it off to see what a helper does anyway)
             BuilderCollab.overrideMinOrderScoreForTests(Integer.getInteger("minecolonies.gametest.minorder", BuilderCollab.DEFAULT_MIN_ORDER_SCORE));

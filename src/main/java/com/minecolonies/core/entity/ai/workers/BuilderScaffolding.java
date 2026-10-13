@@ -180,14 +180,6 @@ public final class BuilderScaffolding
         return ai.world.getGameTime() < stockDeniedUntil;
     }
 
-    /**
-     * Whether a tower was ruled out a short while ago for any reason (no items, no place for one, nothing that leads to the spot).
-     */
-    public boolean deniedAny()
-    {
-        return ai.world.getGameTime() < Math.max(deniedUntil, stockDeniedUntil);
-    }
-
     public void clearDenial()
     {
         deniedUntil = 0L;

@@ -119,7 +119,11 @@ public final class BuilderCollab
     }
 
     /**
-     * Structures with at least this many blocks are divided into parts for the builders, and the helper leases clusters of positions.
+     * Structures with at least this many blocks are divided into parts for the builders, and the helper leases clusters of positions: below it the next positions
+     * are close to each other anyway, and the walk to a part of one's own costs more than it saves. Checked with the scaffold benchmark against parts for every
+     * structure and against none (16 runs each, two builders): the 11 by 11 ring of 12 (480) and the 9 by 9 ring of 16 (512) take 25 percent longer without parts,
+     * the 7 by 7 ring of 11 (264) and the wall of 540 take the same with or without them; so the line of 400 holds for those shapes (the helper gate
+     * {@link #worthAHelper} is what depends on the shape).
      */
     public static int clusterMinBlocks()
     {
