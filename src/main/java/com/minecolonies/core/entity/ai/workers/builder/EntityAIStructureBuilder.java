@@ -1331,7 +1331,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 batch.add(new LeaseAllocator.Planned(local, leased, LeaseAllocator.requirements(world, assistPlacer, assistHandler, local, leased)));
             }
         }
-        if (batch.isEmpty() && !collab.isTerritoryDissolved())
+        if (batch.isEmpty() && !collab.isTerritoryDissolved() && collab.getTotalBlocks() >= CLUSTER_MIN_BLOCKS)
         {
             final List<BlockPos> participants = new ArrayList<>();
             participants.add(lead.getID());
@@ -1547,8 +1547,9 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
 
     /**
-     * A structure with fewer blocks than this is not leased as clusters: its next positions are close to each other anyway, and the walk to the nearest cluster
-     * costs more than it saves (a small ring was slower with a helper that picked clusters than with one that took the next positions).
+     * A structure with fewer blocks than this is neither divided into parts for the builders nor leased as clusters: its next positions are close to each other
+     * anyway, and the walk to a part of one's own costs more than it saves (a small ring was slower with a helper that kept to a part than with one that took the
+     * next positions).
      */
     private static final int CLUSTER_MIN_BLOCKS = 400;
 
