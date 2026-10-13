@@ -741,12 +741,52 @@ final class BuilderScaffoldGameTests
         twoBuilders(helper, "twobig_solo", () -> shape("twobig_solo", 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10), 40_000, false);
     }
 
+    /** A long low wall, 30 long, 3 high and 6 thick, with two builders (540 blocks, in reach of the ground except for the top layer). */
+    static Blueprint longWall(final String name)
+    {
+        return shape(name, 30, 3, 6, (x, y, z) -> true);
+    }
+
+    /** A tall square tower: the ring of 9 by 9, 16 high (512 blocks). */
+    static Blueprint squareTower(final String name)
+    {
+        return shape(name, 9, 16, 9, (x, y, z) -> x == 0 || z == 0 || x == 8 || z == 8);
+    }
+
+    /** The wall is 30 long: it starts further to the west so all of it lies in the area that is loaded. */
+    static final BlockPos WALL_SITE = new BlockPos(4, 1, 14);
+
+    public static void twoBuildersWall(final GameTestHelper helper)
+    {
+        twoBuilders(helper, "wall", () -> longWall("wall"), 40_000, true, WALL_SITE);
+    }
+
+    public static void twoBuildersWallSolo(final GameTestHelper helper)
+    {
+        twoBuilders(helper, "wall_solo", () -> longWall("wall_solo"), 40_000, false, WALL_SITE);
+    }
+
+    public static void twoBuildersTower16(final GameTestHelper helper)
+    {
+        twoBuilders(helper, "tower16", () -> squareTower("tower16"), 40_000);
+    }
+
+    public static void twoBuildersTower16Solo(final GameTestHelper helper)
+    {
+        twoBuilders(helper, "tower16_solo", () -> squareTower("tower16_solo"), 40_000, false);
+    }
+
     static void twoBuilders(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final int maxTicks)
     {
         twoBuilders(helper, name, blueprintOf, maxTicks, true);
     }
 
     static void twoBuilders(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final int maxTicks, final boolean collaboration)
+    {
+        twoBuilders(helper, name, blueprintOf, maxTicks, collaboration, SITE);
+    }
+
+    static void twoBuilders(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final int maxTicks, final boolean collaboration, final BlockPos site)
     {
         WorkerSettings.overrideReachForTests(null, null, null, 16);
         ReachAudit.enable(true);
@@ -766,7 +806,7 @@ final class BuilderScaffoldGameTests
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
             live.stock(Items.SCAFFOLDING, 32);
             helper.assertTrue(InventoryUtils.forceItemStackToItemHandler(other.getItemHandlerCap(), new ItemStack(Items.SCAFFOLDING, 32), s -> true).isEmpty(), "no room in the second hut");
-            final WorkOrderDecoration order = live.orderFor(name, SITE, blueprint);
+            final WorkOrderDecoration order = live.orderFor(name, site, blueprint);
             final BlockPos origin = order.getLocation();
             final Watch watch = new Watch();
             final int[] doneTick = {0};
