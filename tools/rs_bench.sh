@@ -11,7 +11,7 @@
 #   --jfr FILE      record the JVMs of the run with Java Flight Recorder (profile settings); put %p in FILE (one file per JVM, the big one is the game)
 #   --out DIR       result directory (default bench-results/)
 #   --keep-raw      keep the per-test JSON files next to the merged result
-#   --breaks        the couriers get hungry and it rains now and then (RS_BENCH_BREAKS=1): the citizen AI wants to send couriers that hold a task to eat / shelter
+#   --breaks        it rains 300 ticks of every 3000 (RS_BENCH_BREAKS=1): the citizen AI wants to send couriers that hold a task to shelter
 #
 # Writes <out>/<git-sha>-<timestamp>.json (merged, with score) and prints the summary.
 # The GameTest server run is wrapped in the shared lock so it never overlaps another worker's GameTest run.

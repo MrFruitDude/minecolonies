@@ -22,8 +22,8 @@ import java.util.Set;
  * <li>{@code RS_BENCH_SEED=n}: seed of every random choice (default 117).</li>
  * <li>{@code RS_BENCH_FLAGS=on|off}: the RS reservation + smart-retry switches (default on, the shipped default).</li>
  * <li>{@code RS_BENCH_WORKERS=pinned|default}: pin worker speed (1.0) and walking (always walk) for the macro scenarios (default pinned).</li>
- * <li>{@code RS_BENCH_BREAKS=1}: the couriers get hungry (saturation 2 for 100 ticks every 1500 ticks) and it rains 300 ticks of every 3000, so the citizen AI wants to send
- * them to eat or to shelter while they hold a task (default off: midday, clear, everyone fed).</li>
+ * <li>{@code RS_BENCH_BREAKS=1}: it rains 300 ticks of every 3000, so the citizen AI wants to send the workers, couriers that hold a task among them, to shelter (default
+ * off: midday, clear). (Hunger is not simulated: a citizen whose saturation the harness restores in the middle of a meal stays in the eating state for good.)</li>
  * <li>{@code RS_BENCH_OUT=dir}: where the per-test JSON files go (default {@code rs-bench} in the run directory).</li>
  * <li>{@code RS_BENCH_ONLY_TESTS=a,b}: restrict to tests whose name contains one of the words.</li>
  * </ul>

@@ -458,8 +458,7 @@ public final class MacroRun
         {
             for (final ICitizenData citizen : citizens)
             {
-                // with breaks on a courier is hungry for the first 100 ticks of every 1500: the citizen AI then wants to send it to eat, task or no task
-                citizen.setSaturation(BenchEnv.breaks() && citizen.getJob() instanceof JobDeliveryman && tick % 1500 == 0 ? 2.0D : 20.0D);
+                citizen.setSaturation(20.0D);
                 // a sick citizen walks off to a hospital that does not exist and stops working for good
                 if (citizen.getCitizenDiseaseHandler().isSick())
                 {
