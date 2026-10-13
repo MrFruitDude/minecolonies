@@ -8,6 +8,7 @@ import com.minecolonies.api.util.Log;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
+import com.minecolonies.api.colony.requestsystem.request.WaitReason;
 import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
 import com.minecolonies.api.colony.requestsystem.requestable.Stack;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
@@ -181,8 +182,18 @@ public final class MacroRun
     private final Map<Integer, Vec3> lastPos = new HashMap<>();
     private double courierDistance;
     private int    courierTeleports;
-    private final Map<IToken<?>, long[]> rootFp = new HashMap<>();   // root -> {fingerprint, lastChange, firstSeen}
+    /** root -> {fingerprint, tick of its last change, first seen, strict fingerprint, tick of its last change}; see {@link #scanRequests}. */
+    private final Map<IToken<?>, long[]> rootFp = new HashMap<>();
     private final Set<IToken<?>> stuckRoots = new HashSet<>();
+    /** The trees unchanged for {@link #STUCK_TICKS} by the strict fingerprint (the old definition: a flip between "couriers busy" and "awaiting delivery" counts as a change). */
+    private final Set<IToken<?>> stuckRootsStrict = new HashSet<>();
+    /** What every stuck tree looked like when it was first flagged (type, state, wait reason, resolver of each member): description -> count. */
+    private final Map<String, Integer> stuckWhy = new java.util.TreeMap<>();
+    /** The tick every stuck tree was first flagged at, bucketed per 1000 ticks (a measure of when the waiting happens). */
+    private final Map<Long, Integer> stuckWhen = new java.util.TreeMap<>();
+    /** Root -> tick it was flagged, to learn how long a flagged tree then still takes. */
+    private final Map<IToken<?>, Long> stuckFlaggedAt = new HashMap<>();
+    private final List<Long> stuckRemaining = new ArrayList<>();
     private final List<Long> latencies = new ArrayList<>();
     private long maxOpenAge;
     private long dupMax;
@@ -602,6 +613,7 @@ public final class MacroRun
     {
         final Map<IToken<?>, IRequest<?>> all = rm.getRequestIdentitiesDataStore().getIdentities();
         final Map<IToken<?>, long[]> seen = new HashMap<>();
+        final Map<IToken<?>, List<IRequest<?>>> members = new HashMap<>();
         final Map<String, Integer> keys = new HashMap<>();
         int open = 0;
         for (final IRequest<?> request : all.values())
@@ -621,9 +633,17 @@ public final class MacroRun
                 root = parent.getId();
             }
             final IToken<?> resolver = rm.getRequestResolverRequestAssignmentDataStore().getAssignmentForValue(request.getId());
-            final long fp = (request.getState().ordinal() * 31L + request.getWaitReason().ordinal()) * 131L + request.getChildren().size() * 17L
-                              + (resolver == null ? 0 : resolver.hashCode());
-            seen.computeIfAbsent(root, r -> new long[] {0}) [0] += fp * 1_000_003L + request.getId().hashCode();
+            // A tree "changes" when a member's state, resolver or number of children does. The wait reason of a queued delivery flips between COURIER_BUSY (every
+            // courier holds a task) and AWAITING_DELIVERY (one is between two tasks) with the courier's rhythm, although the delivery has not moved in its queue:
+            // that flip is not progress, so the fingerprint treats the two as one reason. The strict fingerprint keeps them apart (the definition until now).
+            final WaitReason reason = request.getWaitReason() == WaitReason.COURIER_BUSY ? WaitReason.AWAITING_DELIVERY : request.getWaitReason();
+            final long base = request.getState().ordinal() * 31L * 131L + request.getChildren().size() * 17L + (resolver == null ? 0 : resolver.hashCode());
+            final long fp = base + reason.ordinal() * 131L;
+            final long fpStrict = base + request.getWaitReason().ordinal() * 131L;
+            final long[] sums = seen.computeIfAbsent(root, r -> new long[2]);
+            sums[0] += fp * 1_000_003L + request.getId().hashCode();
+            sums[1] += fpStrict * 1_000_003L + request.getId().hashCode();
+            members.computeIfAbsent(root, r -> new ArrayList<>()).add(request);
             if (!request.hasParent() && request.getRequest() instanceof IDeliverable deliverable)
             {
                 String key = null;
@@ -654,7 +674,7 @@ public final class MacroRun
             final long[] known = rootFp.get(e.getKey());
             if (known == null)
             {
-                rootFp.put(e.getKey(), new long[] {e.getValue()[0], tick, tick});
+                rootFp.put(e.getKey(), new long[] {e.getValue()[0], tick, tick, e.getValue()[1], tick});
             }
             else
             {
@@ -663,9 +683,23 @@ public final class MacroRun
                     known[0] = e.getValue()[0];
                     known[1] = tick;
                 }
-                else if (tick - known[1] >= STUCK_TICKS)
+                if (known[3] != e.getValue()[1])
                 {
-                    stuckRoots.add(e.getKey());
+                    known[3] = e.getValue()[1];
+                    known[4] = tick;
+                }
+                else if (tick - known[4] >= STUCK_TICKS)
+                {
+                    stuckRootsStrict.add(e.getKey());
+                }
+                if (tick - known[1] >= STUCK_TICKS && known[0] == e.getValue()[0])
+                {
+                    if (stuckRoots.add(e.getKey()))
+                    {
+                        stuckFlaggedAt.put(e.getKey(), tick);
+                        stuckWhen.merge(tick / 1000, 1, Integer::sum);
+                        stuckWhy.merge(describeTree(members.get(e.getKey())), 1, Integer::sum);
+                    }
                 }
                 maxOpenAge = Math.max(maxOpenAge, tick - known[2]);
             }
@@ -676,6 +710,11 @@ public final class MacroRun
             if (!seen.containsKey(e.getKey()))
             {
                 latencies.add(tick - e.getValue()[2]);
+                final Long flagged = stuckFlaggedAt.remove(e.getKey());
+                if (flagged != null)
+                {
+                    stuckRemaining.add(tick - flagged);
+                }
                 it.remove();
             }
         }
@@ -701,6 +740,37 @@ public final class MacroRun
             }
         }
         fellBackSeen = fellBack.size();
+    }
+
+    /**
+     * A sorted, short description of a request tree (type, state, wait reason and holder of every member), the key of the "why were these trees stuck" histogram.
+     */
+    private String describeTree(final List<IRequest<?>> tree)
+    {
+        if (tree == null)
+        {
+            return "?";
+        }
+        final List<String> parts = new ArrayList<>();
+        for (final IRequest<?> request : tree)
+        {
+            String holder = "none";
+            final IToken<?> resolver = rm.getRequestResolverRequestAssignmentDataStore().getAssignmentForValue(request.getId());
+            if (resolver != null)
+            {
+                try
+                {
+                    holder = rm.getResolverHandler().getResolver(resolver).getClass().getSimpleName();
+                }
+                catch (final RuntimeException ex)
+                {
+                    holder = "?";
+                }
+            }
+            parts.add((request.hasParent() ? "child " : "root ") + request.getRequest().getClass().getSimpleName() + " " + request.getState() + "/" + request.getWaitReason() + " @" + holder);
+        }
+        java.util.Collections.sort(parts);
+        return String.join(" | ", parts.size() > 6 ? parts.subList(0, 6) : parts) + (parts.size() > 6 ? " +" + (parts.size() - 6) : "");
     }
 
     // ------------------------------------------------------------------ gates
@@ -1256,7 +1326,20 @@ public final class MacroRun
         work.addProperty("duplicatesMax", dupMax);
         work.addProperty("duplicatesMean", dupScans == 0 ? 0 : (double) dupSum / dupScans);
         work.addProperty("stuckRoots", stuckRoots.size());
+        work.addProperty("stuckRootsStrict", stuckRootsStrict.size());
         work.addProperty("maxOpenAge", maxOpenAge);
+        {
+            final JsonObject why = new JsonObject();
+            stuckWhy.forEach(why::addProperty);
+            extra.add("stuckWhy", why);
+            final JsonObject when = new JsonObject();
+            stuckWhen.forEach((k, v) -> when.addProperty(String.valueOf(k * 1000), v));
+            extra.add("stuckWhenFlagged", when);
+            final long[] rem = stuckRemaining.stream().mapToLong(Long::longValue).toArray();
+            extra.addProperty("stuckRemainingP50", quantile(rem, rem.length, 0.5));
+            extra.addProperty("stuckRemainingMax", rem.length == 0 ? 0 : java.util.Arrays.stream(rem).max().getAsLong());
+            extra.addProperty("stuckStillOpenAtEnd", stuckFlaggedAt.size());
+        }
         final long[] lat = latencies.stream().mapToLong(Long::longValue).toArray();
         work.addProperty("requestsFinished", lat.length);
         work.addProperty("latencyP50", quantile(lat, lat.length, 0.5));

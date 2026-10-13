@@ -80,10 +80,10 @@ public final class RequestSyncGameTests
     static void register(final net.neoforged.neoforge.event.RegisterGameTestsEvent event)
     {
         final String[] names = {"reqsync_bytes_per_minute", "reqsync_client_equals_full", "reqsync_protocol_mismatch", "reqsync_citizen_view_patch", "reqsync_store_mutations",
-          "reqsync_quiet_stores_not_serialized"};
+          "reqsync_quiet_stores_not_serialized", "reqsync_quiet_retrying_resolver"};
         final java.util.List<java.util.function.Consumer<GameTestHelper>> bodies =
           List.of(RequestSyncGameTests::bytesPerMinute, RequestSyncGameTests::clientEqualsFull, RequestSyncGameTests::protocolMismatch, RequestSyncGameTests::citizenViewPatch,
-            RequestSyncGameTests::storeMutations, RequestSyncGameTests::quietStoresNotSerialized);
+            RequestSyncGameTests::storeMutations, RequestSyncGameTests::quietStoresNotSerialized, RequestSyncGameTests::quietRetryingResolver);
         for (int i = 0; i < names.length; i++)
         {
             final String name = names[i];
@@ -790,6 +790,54 @@ public final class RequestSyncGameTests
             helper.assertTrue(quietEntries == 0, "a snapshot of a manager that did not change serialized " + quietEntries + " request or resolver entries again");
             helper.assertTrue(oneStore == 1, "one changed store should be serialized once, not " + oneStore);
             helper.assertTrue(changedEntries >= 1 && changedEntries <= 12, "one new request changes a handful of entries, not " + changedEntries);
+            helper.succeed();
+        });
+    }
+
+    /**
+     * The retrying resolver's delays count down every request-system tick while anything waits; a client reads none of them, so the entry must not be
+     * serialized again for that. A changed attempt count is visible and is.
+     */
+    public static void quietRetryingResolver(final GameTestHelper helper)
+    {
+        final Fixture f = fixture(helper, "CA1 quiet retrying");
+        final RegistryAccess ra = f.level.registryAccess();
+        after(f, STEP_TICKS, () -> {
+            final StandardRequestManager rm = f.rm();
+            final var retrying = (com.minecolonies.core.colony.requestsystem.resolvers.StandardRetryingRequestResolver) rm.getRetryingRequestResolver();
+            final Map<IToken<?>, Integer> attempts = new HashMap<>();
+            final Map<IToken<?>, Integer> delays = new HashMap<>();
+            final List<IToken<?>> held = new ArrayList<>();
+            for (int i = 0; i < 6; i++)
+            {
+                final IToken<?> token = newToken();
+                held.add(token);
+                attempts.put(token, 1);
+                delays.put(token, 400);
+            }
+            retrying.updateData(attempts, delays);
+            // no game tick runs between the calls below: this is one tick of the test thread
+            RequestSystemViewSync.snapshot(rm, ra);
+            final long entries0 = RequestSystemViewSync.Stats.entries;
+            for (int i = 0; i < 4; i++)
+            {
+                retrying.tick();
+            }
+            retrying.expedite(held.get(0));
+            retrying.expedite(held.get(1));
+            // (the two expedited ones now retry on the next tick: not ticked here)
+            RequestSystemViewSync.snapshot(rm, ra);
+            final long countdown = RequestSystemViewSync.Stats.entries - entries0;
+
+            final long entries1 = RequestSystemViewSync.Stats.entries;
+            attempts.put(held.get(2), 2);
+            retrying.updateData(attempts, delays);
+            RequestSystemViewSync.snapshot(rm, ra);
+            final long changed = RequestSystemViewSync.Stats.entries - entries1;
+            f.close();
+            Log.getLogger().info("CA1 quiet retrying: after 4 countdown ticks and 2 wake-ups {} entries serialized again; after a changed attempt count {}", countdown, changed);
+            helper.assertTrue(countdown == 0, "the retrying resolver's countdown made the view sync serialize " + countdown + " entries again");
+            helper.assertTrue(changed == 1, "a changed attempt count should serialize the resolver's entry once, not " + changed + " entries");
             helper.succeed();
         });
     }

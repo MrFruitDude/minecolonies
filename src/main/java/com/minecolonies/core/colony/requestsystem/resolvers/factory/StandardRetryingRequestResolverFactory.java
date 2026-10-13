@@ -125,11 +125,9 @@ public class StandardRetryingRequestResolverFactory implements IFactory<IRequest
             packetBuffer.writeInt(value);
         });
 
-        packetBuffer.writeInt(input.getDelays().size());
-        input.getDelays().forEach((key, value) -> {
-            controller.serialize(packetBuffer, key);
-            packetBuffer.writeInt(value);
-        });
+        // The delays (request-system ticks until the next retry) are server-side state: they count down every tick, nothing on a client reads them, and
+        // sending them made the entry change in every view-sync snapshot while any request waited. The saved form (NBT) still has them.
+        packetBuffer.writeInt(0);
 
         controller.serialize(packetBuffer, input.getId());
         controller.serialize(packetBuffer, input.getLocation());

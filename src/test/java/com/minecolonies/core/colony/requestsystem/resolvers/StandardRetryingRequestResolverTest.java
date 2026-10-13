@@ -151,4 +151,69 @@ public class StandardRetryingRequestResolverTest
         resolver.tick();
         assertEquals("woken: retried on the next tick", List.of(waiting), retried);
     }
+
+    /**
+     * What a client can see of the resolver is the set of held requests and their attempts. The delays count down every tick, the client
+     * does not read them: a tick that only counts down, and an event that only brings a retry forward, must not move the view version (the
+     * view sync serializes the entry again whenever it moves), while the saved delays still count down.
+     */
+    @Test
+    public void countdownAndExpediteAreNoChangeOfTheClientView()
+    {
+        final IToken<?> waiting = RsTestSupport.token();
+        final IToken<?> other = RsTestSupport.token();
+        final IRequestManager manager = RsTestSupport.manager(new ArrayList<>(), new HashMap<>(), (token, blacklist) -> null);
+        final StandardRetryingRequestResolver resolver = new StandardRetryingRequestResolver(RsTestSupport.token(), null);
+        final Map<IToken<?>, Integer> attempts = new HashMap<>();
+        final Map<IToken<?>, Integer> delays = new HashMap<>();
+        attempts.put(waiting, 1);
+        delays.put(waiting, 40);
+        resolver.updateData(attempts, delays);
+        resolver.updateManager(manager);
+
+        final long version = resolver.viewVersion();
+        resolver.tick();
+        resolver.tick();
+        resolver.tick();
+        assertEquals("the delay still counts down (it is saved)", 37, (int) resolver.getDelays().get(waiting));
+        assertEquals("a tick that only counted down changed what the client sees", version, resolver.viewVersion());
+
+        resolver.expedite(waiting);
+        assertEquals("the retry is due next tick", 1, (int) resolver.getDelays().get(waiting));
+        assertEquals("bringing a retry forward changed what the client sees", version, resolver.viewVersion());
+
+        resolver.expedite(other);
+        assertEquals("a stranger changed nothing", version, resolver.viewVersion());
+    }
+
+    /**
+     * A retry that fails again raises the attempt count, a request that leaves is no longer held: both are visible to a client.
+     */
+    @Test
+    public void attemptsAndLeavingRequestsMoveTheClientView()
+    {
+        final IToken<?> waiting = RsTestSupport.token();
+        final IToken<?> otherResolver = RsTestSupport.token();
+        final StandardRetryingRequestResolver resolver = new StandardRetryingRequestResolver(RsTestSupport.token(), null);
+        final Map<IToken<?>, Integer> attempts = new HashMap<>();
+        final Map<IToken<?>, Integer> delays = new HashMap<>();
+        attempts.put(waiting, 1);
+        delays.put(waiting, 1);
+        resolver.updateData(attempts, delays);
+        // the retry ends up on this resolver again: one more attempt
+        final StandardRetryingRequestResolver[] self = {resolver};
+        resolver.updateManager(RsTestSupport.manager(new ArrayList<>(), new HashMap<>(), (token, blacklist) -> self[0].getId()));
+
+        final long before = resolver.viewVersion();
+        resolver.tick();
+        assertEquals("one more attempt", 2, (int) resolver.getAssignedRequests().get(waiting));
+        assertTrue("a new attempt is visible to a client", resolver.viewVersion() > before);
+
+        final long mid = resolver.viewVersion();
+        resolver.updateManager(RsTestSupport.manager(new ArrayList<>(), new HashMap<>(), (token, blacklist) -> otherResolver));
+        resolver.expedite(waiting);
+        resolver.tick();
+        assertTrue("the request left", resolver.getAssignedRequests().isEmpty());
+        assertTrue("a request that left is visible to a client", resolver.viewVersion() > mid);
+    }
 }
