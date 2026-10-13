@@ -1540,7 +1540,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
     /**
      * How many positions the helper leases at once: the configured size, more when the hut of the lead is far (every lease costs a walk to the hut and back,
-     * a lease of a few blocks that takes longer to fetch than to place is no help), at most four times the configured size.
+     * a lease of a few blocks that takes longer to fetch than to place is no help), at most eight times the configured size.
      */
     private int leaseSizeFor(final AbstractBuildingStructureBuilder lead)
     {

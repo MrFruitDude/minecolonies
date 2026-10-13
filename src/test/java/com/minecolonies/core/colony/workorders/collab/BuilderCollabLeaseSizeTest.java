@@ -18,17 +18,18 @@ public class BuilderCollabLeaseSizeTest
     }
 
     @Test
-    public void aFarHutGrowsTheLeaseUpToFourTimes()
+    public void aFarHutGrowsTheLeaseUpToEightTimes()
     {
-        assertEquals(32, BuilderCollab.scaledLeaseSize(8, 20.0D));
-        assertEquals(48, BuilderCollab.scaledLeaseSize(12, 500.0D));
+        assertEquals(48, BuilderCollab.scaledLeaseSize(8, 20.0D));
+        assertEquals(64, BuilderCollab.scaledLeaseSize(8, 500.0D));
+        assertEquals(96, BuilderCollab.scaledLeaseSize(12, 500.0D));
         assertEquals(16, BuilderCollab.scaledLeaseSize(8, 4.0D));
     }
 
     @Test
     public void neverBelowOneNorShrinkingWithDistance()
     {
-        assertEquals(4, BuilderCollab.scaledLeaseSize(0, 1000.0D));
+        assertEquals(8, BuilderCollab.scaledLeaseSize(0, 1000.0D));
         assertTrue(BuilderCollab.scaledLeaseSize(1, -5.0D) >= 1);
         int last = 0;
         for (int d = 0; d <= 40; d++)

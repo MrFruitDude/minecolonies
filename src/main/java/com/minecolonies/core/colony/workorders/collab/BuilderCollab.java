@@ -32,7 +32,7 @@ public final class BuilderCollab
     /**
      * The biggest lease is this many times the configured lease size.
      */
-    private static final int LEASE_CAP_FACTOR = 4;
+    private static final int LEASE_CAP_FACTOR = 8;
 
     /**
      * Only for tests: the factor of the biggest lease.
@@ -227,7 +227,8 @@ public final class BuilderCollab
 
     /**
      * How many positions a helper leases at once when he has to walk a distance to the hut of the lead for the materials: the configured size, more
-     * when the hut is far (a lease of a few blocks that takes longer to fetch than to place is no help), at most four times the configured size.
+     * when the hut is far (a lease of a few blocks that takes longer to fetch than to place is no help), at most eight times the configured size (the scaffold
+     * benchmark: four times left a helper a fifth of his time on the way to the hut, sixteen made the end of a stage wait for one big lease).
      *
      * @param base     the configured size.
      * @param distance the distance to the hut of the lead, in blocks.
