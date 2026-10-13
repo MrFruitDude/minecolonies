@@ -209,6 +209,13 @@ public class ServerConfiguration extends AbstractConfiguration
     public final BooleanValue courierImmediateNextTask;
 
     /**
+     * A courier that holds a task finishes that delivery before it goes to eat, sleep or hide from the rain (it would otherwise leave the task standing in
+     * its queue for the whole break, with whoever waits for it). Safety caps: a critically hungry courier, and one whose delivery has taken too long, goes
+     * anyway and hands the task back to the pool. Sickness and raids still interrupt at once. Off = the original behaviour.
+     */
+    public final BooleanValue courierFinishesDelivery;
+
+    /**
      * Global storage network: the colony's warehouses are one storage (one stock index, one courier pool, source and
      * drop-off chosen by estimated completion time).
      */
@@ -327,6 +334,7 @@ public class ServerConfiguration extends AbstractConfiguration
         smartRetry = defineBoolean("smartRetry", true);
         priorityClasses = defineBoolean("priorityClasses", true);
         courierImmediateNextTask = defineBoolean("courierImmediateNextTask", true);
+        courierFinishesDelivery = defineBoolean("courierFinishesDelivery", true);
         storageNetwork = defineBoolean("storageNetwork", true);
         storageServiceRange = defineInteger("storageServiceRange", 0, 0, 100000);
         storageItemCap = defineInteger("storageItemCap", 0, 0, 100000000);

@@ -75,6 +75,9 @@ the instrument on this machine is a few percent on the score and 10-40% on singl
 | 11 | per-store version counters in the view sync: every plain data store (the six "raw" ones) is serialized again only when its counter moved, and every resolver entry only when its `viewVersion()` moved (`Tracked` collections + store versions, resolver versions; branch `fix/rs-courier-sync`) | ACCEPTED | paired quick K=5 vs the code without it (courier switch off in the candidate, so only the sync and the leisure fix differ): viewSnapshot@100 -52.3%, @1000 -57.1%; viewSnapshot2 (the snapshot after 1% changed) @100 -49.4%, @1000 -60.2% (all BETTER p=0.008); micro-only repeat: @100 -85.2%, @1000 -61.8%, viewPerDirtyTick@100 -47.4% (BETTER). Macro: busy rsShare -17.7% (BETTER p=0.032), busy rsAlloc/tick 2925 -> 2288 (-21.8% BETTER), busy rsCpuP99 -23.1%; fresh rsCpu/tick 3817 -> 1583 ns (-58.5% BETTER), storm rsCpuP99 -30.4% (BETTER); busy rsCpu/tick -11.8% and storm -8.0% are noise at K=5. Save format identical (save bytes 101k / 1.31M unchanged), client view equal to the full payload (`reqsync_*`, 5 GameTests + `reqsync_store_mutations` + `reqsync_quiet_stores_not_serialized`, JUnit `TrackedCollectionsTest`). WORSE flags: viewDelta/viewFull@100 (+419% / +248%) in the first run, which the repeat did not reproduce (neither function was touched; 100-scale first-phase noise), ledgerReserve/Commit/Read +6..18% (change cannot touch them). Profile after: `sendRequestSystemPackets` 27-35% -> 18.6% of RS CPU. Gates OK. |
 | 12 | RS4: a courier decides on its next task at once after finishing one (`9f2697ce19`, cherry-picked; switch `requestSystem.courierImmediateNextTask`, default on, env `MINECOLONIES_RS_COURIER_IMMEDIATE`) | ACCEPTED by the user as a gameplay-timing change (not judged by the CPU verdict) | paired quick K=5, same code with the switch off, then on: storm ticksToCompletion 10.5k -> 7860 (-25.1% BETTER), storm latency p50 5560 -> 4270 (-23.2%), p99 -25.5%; busy latency p50 930 -> 700 (-24.7% BETTER), busy ticks -3.9% (noise, 6090 -> 5850; a busy repeat is limited by the builders' timing more than by the couriers); fresh unchanged. RS CPU per tick goes UP, as expected, because the same work is done in a shorter run: storm +39.6% / busy +32.6% per tick, busy alloc/tick +10.7%; the per-request costs fall (complete -29%, courierPick -56%, create -33% in storm: fewer waiting requests are re-evaluated). Gates OK, 0 hangs. Tests: `rs_courier_next_task_immediate` (the courier sits in the decision state 5 ticks between two tasks) and `rs_courier_next_task_delayed` (switch off: 100 ticks, the old timing); failing first (without the change: 100 ticks, the test failed). |
 | - | the courier leisure fix (below) | CORRECTNESS FIX, not judged by CPU | see "Closed: the stuck courier". |
+| 13 | the retrying resolver's countdown is no change of the client view: its view version moves only with the held requests and their attempts (delays are not sent, the saved NBT is unchanged; `235632698b`, branch `fix/rs-stuckroots`) | ACCEPTED | its entry was serialized again in every snapshot while anything waited, and the client reads no delay. Paired quick K=5 (code without it, then with): view bytes sent per run storm -33.3% (196k -> 130k, BETTER p=0.008), `viewDelta.bytes` @100 -8.1% / @1000 -10.0% / @10k -7.6% (BETTER p=0.004, deterministic), full payload bytes @1000 -4.5%; CPU of the view ops BETTER in the same pair (viewPerDirtyTick@1000 -44%, viewDelta@1000 -39.6%), but that base run was a quiet-machine/loaded-machine mismatch (its busy rsCpu 7.9k vs the usual 11k), so the CPU size is not claimed. Failing first: JUnit `countdownAndExpediteAreNoChangeOfTheClientView` and GameTest `reqsync_quiet_retrying_resolver` ("the retrying resolver's countdown made the view sync serialize 1 entries again"); `reqsync_*` (client view equals the full payload) green. |
+| 14 | the full payload is built only for a subscriber that gets it (`acb6be5134`): `ColonyPackageManager.sendRequestSystemPackets0` called `full(snapshot, seq)` as an ARGUMENT of `sendRequestSystem(..., fullTo)`, so the whole snapshot was written into a growing buffer in every dirty tick and dropped when `fullTo` was empty (found as `RequestSystemViewSync.writeStoreWhole` = 21% of RS allocation in a quick JFR of busy+storm; the profile showed `PlatformDependent.allocateUninitializedArray` 25% of RS allocation) | ACCEPTED | paired quick K=5 (base = without 13 and 14, alternated runs): rsAlloc/tick busy 2430 -> 1476 (-39.2%, again -42.3% and -42.7% against two more base runs), storm 3746 -> 2088 (-44.3%), fresh -30.8% (all BETTER p=0.008, allocation is load independent); storm rsCpu/tick -22.5% BETTER, rsCpuP99 -33.5% BETTER, fresh rsCpu -19.4% BETTER. Busy rsCpu read +48% WORSE in the first pair and noise (-3.3%, +2.6%) in two later alternating pairs: a load window (all scopes, also those the change cannot touch, ran 50-150% slower in that candidate run, and the base runs of the later pairs were as slow, 15.5-16.5k). Failing first: GameTest `reqsync_no_unsent_full_payloads` ("6 full payloads were written although nobody asked for one (6 messages sent)"); 0 after. |
+| - | courier finishes its delivery before it eats, sleeps or hides from the rain (`fd1673bf38`, switch `requestSystem.courierFinishesDelivery`, default on, env `MINECOLONIES_RS_COURIER_FINISHES`) | USER-APPROVED gameplay change, not judged by CPU | see "Courier finishes its delivery first". |
 
 ## Result (full mode, K=5, flags on, merged with `origin/integ/anno` ec2d32a508)
 
@@ -118,10 +121,53 @@ busy RS CPU/tick 13.6k -> 8.8k ns (-35.0% BETTER), busy rsAlloc/tick -23.8%, bus
 | storm ticks to completion | 23.2k | 18.1k | -21.8% BETTER (courier switch) |
 | storm / busy request latency p50 | 11.8k / 1910 | 9250 / 1640 | -21.9% / -14.1% BETTER |
 | storm RS CPU / tick | 12.4 us | 12.9 us (noise) | same work in a 22% shorter run |
-| storm `stuckRoots` (trees unchanged for 3000 ticks) | 113 | 237 | WORSE by the verdict rule; the switch off gives 113 again, so it comes with the courier switch; every storm repeat finishes (0 hangs), the scripted stock arrives in 5 bursts at fixed ticks and a faster courier leaves more requests waiting for the next burst; not investigated further |
+| storm `stuckRoots` (trees unchanged for 3000 ticks) | 113 | 237 | WORSE by the verdict rule; a metric artifact, explained in "Closed: storm `stuckRoots` doubled with the courier switch" below (the definition is fixed: 243 on, 254 off) |
 
 Micro @100/1000 WORSE flags that the changes cannot touch (complete +26%, stockEventInline +31..40%, ledgerRead +17.7%, save@1000 +12.8%, idleTick@1000 +3.5%): the usual load pattern of this machine
 (the same ops move +-20% between two runs of identical code; the paired quick runs above show them flat).
+
+## Closed: storm `stuckRoots` doubled with the courier switch (113 -> 237): a metric artifact
+
+What a "stuck root" is: `MacroRun.scanRequests` (every 10 ticks) fingerprints every request TREE (the top request and everything below it: state, wait reason, resolver, number of children
+of each member) and counts a tree whose fingerprint did not change for 3000 ticks. Nothing about the tree needs to be wrong for that: it only stood still.
+
+What the 113 are (same in every repeat, switch on or off; histogram `extra.stuckWhy` of the result JSON, new): 107 `Stack` requests + 6 `MinimumStack` requests `IN_PROGRESS/NO_SOURCE` at the retrying
+resolver, flagged at tick ~3000 and finishing 16000 ticks later. They ask for goods that the storm scenario brings in bursts at ticks 600 / 1500 / 2600 / 3800 / 5200 (and that nobody can craft):
+the goods of the 4th and 5th burst wait 3800 / 5200 ticks for their stock, by design of the scenario, then wait in the courier queue like everything else. Not a stuck request.
+
+What the other ~125 are (only with the switch on, 45-130 per repeat): a `Delivery` child `IN_PROGRESS/COURIER_BUSY` under a `FOLLOWUP_IN_PROGRESS/COURIER_BUSY` parent: deliveries queued for the 3 couriers
+(308 deliveries, 3 couriers, 18-23k ticks). `RequestWaitTracker.refreshCourierReasons` writes `COURIER_BUSY` when every courier of the warehouse holds a task and `AWAITING_DELIVERY` as soon as one is
+between two tasks. With the old timing every courier idles ~100 ticks after each task, so the reason of every queued delivery flipped between the two every few hundred ticks, and because the wait
+reason is part of the fingerprint every flip counted as a change that reset the 3000-tick clock: queued deliveries almost never reached "unchanged for 3000 ticks". With decide-at-once a courier is never
+between two tasks, the reason stays `COURIER_BUSY` for the whole queue wait and the clock runs out. Both modes have the same ~120-130 deliveries that sit 3000+ ticks in the courier queue; only the
+instrument saw them in one of them. In the same runs the switch on is the better system: storm p50 latency 9.1k vs 11.9k, `maxOpenAge` 18.0k vs 24.0k, remaining time of the flagged trees max 16k vs 21k,
+ticks to completion -22%.
+
+Check (full mode, 5 runs of storm per mode, same code): with the two courier reasons counted as one reason in the fingerprint `stuckRoots` is 239-244 with the switch on and 252-259 with it off (before: 237
+and 113). The old definition stays as `work.stuckRootsStrict` (236 vs 113 in these runs) so earlier results remain comparable. No change to the shipped code: nothing in the courier or the request
+system was found to be slower or to strand requests (0 hangs, `stuckRemainingMax` 16k vs 21k). `stuckRoots` is not part of the score.
+
+## Courier finishes its delivery first (user-approved gameplay change)
+
+Before: a courier that holds a task was still sent by the citizen AI to eat, to bed or into the rain shelter (leisure alone was deferred, see below); the task stayed in its queue, the only place it
+is kept, for the whole break while other couriers idled. Now (`requestSystem.courierFinishesDelivery`, default on): when the citizen AI wants one of those three breaks and the courier has a task in
+its queue (taken, on the way to the pickup or to the target), `EntityAIWorkDeliveryman.deferBreakForTask` says wait; the courier delivers, takes no new task (`decide()` holds for 60 ticks after a
+held-back break, so decide-at-once cannot chain tasks and starve the break) and the citizen AI sends it as soon as the queue is empty. Caps, checked when a break is due: saturation <= 1.0
+("critically hungry") or the head task held longer than 2400 ticks (`JobDeliveryman.currentTaskAge`): the courier goes and `JobDeliveryman.giveBackTasks` fails its tasks and the deliveries batched with them
+(the watchdog's `giveUp`), so the request system hands them to another courier; the items it carries are dumped when it comes back. A break already under way (SLEEP / EATING) is never interrupted by this.
+Sickness, mourning, raids and danger are not asked: they interrupt at once as before. Files: `CitizenAI` (three `&& !courierFinishesTaskFirst()`), `EntityAIWorkDeliveryman`, `JobDeliveryman`, `RsFlags`, `ServerConfiguration`.
+
+Tests (`RequestCourierGameTests`, failing first with the `CitizenAI` hook removed: all 5 of the new switch-on tests failed, "the courier left for its meal ... before the delivery was done" and, for the
+caps, "timeout ... holder GO_TO_HUT queue 1"): `rs_courier_finishes_delivery_before_meal` / `_sleep` / `_rain` (delivered at tick 315 / 310 / 335 after taking the task at ~60, the break began 5-10 ticks later),
+`rs_courier_critical_hunger_hands_task_back` (the hungry courier leaves with an empty queue, the other courier delivers at tick 335), `rs_courier_long_task_hands_back` (task held for 3000 ticks: the same),
+`rs_courier_finishes_delivery_off_leaves_at_once` (switch off: the courier is eating at tick 50, the task still in its queue, the old behaviour). The first run of the two-courier tests failed for a test
+reason (one hut = one courier slot); fixed with a second hut.
+
+Bench (`tools/rs_bench.sh quick --breaks`, new: it rains 300 ticks of every 3000, so every worker, couriers with a task among them, is sent to shelter; paired K=5, switch off then on, same code, 0 hangs both):
+storm ticks to completion 10.7k -> 8575 (-19.5% BETTER p=0.008), courier tasks -6.8%, latency p50 5100 -> 4760 (-6.7% BETTER), p99 10.4k -> 8570 (-17.8% BETTER), `stuckRoots` 51 -> 44 (-13.7%); busy
+ticks 7245 -> 7150 and p50 870 -> 860 are noise (the off run had one outlier repeat of 10385 ticks, the on runs 6950-7265). The default bench (clear midday, everyone fed) never asks for a break, so the
+default scores are unaffected by this change. Hunger could not be benchmarked: a harness that restores a citizen's saturation in the middle of a meal leaves the citizen in the eating state (`GO_TO_EAT_POS`) for good,
+which hung every repeat with the switch on or off (first attempt of `--breaks`, discarded); the GameTests cover hunger.
 
 ## Closed: the stuck courier was a courier on a leisure break
 
@@ -148,11 +194,27 @@ before: 1 of 19). `stuckRoots` (a request tree unchanged for 3000 ticks) stays i
 
 Found on the way: `MacroRun.recordCourierTrail` threw `NullPointerException` (`PathResult.getPathLength` on a path not computed yet) in 3 of 61 repeats of one run; the repeat was then reported as "tick failed". Guarded.
 
-Not changed (a gameplay decision, left to the owner): a courier that is sent to eat, sleep or hide from rain while it holds a task still strands that task for the duration. A guard that gives the task back to the pool when the owner's AI has not ticked for N ticks would cover those too.
+Meals, sleep and rain shelter with a task in hand were handled afterwards: see "Courier finishes its delivery first".
+
+## Result of the stuck-roots round (full mode, K=5; paired: base = the code without attempts 13 and 14, then `35c4c0255d`; adjacent runs)
+
+`bench-results/full/235632698b-20261013T055734Z.json` (base) and `bench-results/full/35c4c0255d-20261013T060231Z.json`: gates OK, 0 hangs, score 93.0 against the base (macro x0.961, micro x0.863).
+
+| | base | now | |
+|---|---|---|---|
+| RS alloc / tick busy / fresh / storm / unload | 4587 / 513 / 7068 / 396 B | 1845 / 337 / 4047 / 294 B | -59.8% / -34.2% / -42.7% / -25.8% BETTER |
+| fresh RS CPU / tick, p99 tick | 4704 ns, 60.5 us | 2115 ns, 19.4 us | -55.0% / -67.9% BETTER |
+| storm RS CPU p99 tick | 353 us | 300 us | -15.0% BETTER |
+| storm view bytes sent | 739 kB | 551 kB | -25.4% BETTER |
+| busy RS CPU / tick | 12.9 us | 12.1 us | -6.0% noise (p=0.056) |
+| view cost per dirty tick @100 / @1000 / @10k (bytes) | 867 / 4178 / 38.5k | 797 / 3759 / 35.5k | -8.1% / -10.0% / -7.6% BETTER |
+| view cost per dirty tick @100 / @1000 (time) | 46.1 us / 1.35 ms | 33.9 us / 0.95 ms | -26.5% / -29.9% BETTER (@10k -15.6%, p=0.008 but cv 14%: noise by the rule) |
+| ticks to completion, latency p50, `stuckRoots` | | | unchanged (storm `stuckRoots` 240 vs 241 with the new definition; 239 -> 169 by the strict one, noise) |
+| unload RS share of the server tick | 0.99% | 1.13% | +13.9% WORSE (p=0.032) with a 22% longer run (12.9k -> 15.8k ticks, cv 9-18%, "AI timing" noise of this scenario by BENCH.md); its alloc/tick is -25.8% BETTER; nothing the round changed adds CPU there |
 
 ## Remaining hot spots (busy / storm, share of RS CPU after the climb)
 
-1. `sendRequestSystemPackets` is 18.6% of RS CPU after attempt 11 (was 27-35%). What is left: the retrying resolver (its delays count down every request-system tick, so its entry changes at every snapshot while anything waits), the full payloads (`writeStoreWhole` is 18% of RS allocation), `StandardFactoryController.serialize` 2.9%, the per-request `modCount` scan of the whole request store and `writeDelta`'s walk over every entry.
+1. `sendRequestSystemPackets` is ~17% of RS CPU (quick JFR of busy+storm after attempts 13-14; was 27-35%). Attempts 13 (retrying resolver's countdown) and 14 (unsent full payloads) took the two items that were listed here. What is left: `StandardFactoryController.serialize` 2.4%, `identitySnap` 2.8% (the per-request `modCount` scan of the whole request store), `writeDelta`'s walk over every entry, and the full payload that goes out every 5 minutes with the entry cache dropped.
 2. `assign`: 41-44% inclusive, of which `canResolve` 17% (courier resolvers' storage-network checks, `WaitDiagnosis.recipeSupport` scanning every crafting module's recipes per starved request, `ArrayList.sort` of candidates).
 3. The retry ladder (`StandardRetryingRequestResolver.tick` -> `reassignRequest`, 12% of RS): real re-assignments; a bucketed due-time clock (attempt 1) was not faster.
 4. `EntityAIWorkDeliveryman.prepareDelivery/deliver` (9% of RS): item-handler walks per delivery.
@@ -173,3 +235,7 @@ On the branch `fix/rs-courier-sync` (all of the above merged with `origin/integ/
 `reqsync_store_mutations`, `reqsync_quiet_stores_not_serialized`). Failing first: the three courier tests and the quiet-stores test failed on the code without their change (leisure: "the courier
 took the task 1501 ticks ago and the delivery is not there: it is on a leisure break"; immediate: "waited 100 ticks before its next task"; quiet stores: "serialized 4 stores again"); the
 store-mutation test passes before and after (it guards the new cache).
+
+On `fix/rs-stuckroots` (all of the above, `origin/integ/anno` 99a894f286 had nothing newer): `./gradlew test runGameTestServer jar`: run 1 failed `worker_eff_bench_clear_l1` ("box not complete on tick 9205", the same builder-AI
+tick-budget test that failed on the machine under load before; not a request-system test), run 2: JUnit green and **All 294 required tests passed** (285 + `reqsync_quiet_retrying_resolver`, `reqsync_no_unsent_full_payloads`, the 6 new courier tests,
+the rest being tests of integ/anno added since).

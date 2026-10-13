@@ -305,7 +305,7 @@ def verdict(a, b, min_pct):
 KEY_MACRO = [
     "meter.rsCpuNsPerTick", "meter.rsShare", "meter.rsCpuP99", "meter.rsAllocBytesPerTick", "ticksToCompletion",
     "work.courierDistanceAtDone", "work.requestsCreatedAtDone", "work.deliveriesCreatedAtDone", "work.courierTasksAtDone",
-    "work.itemsDeliveredAtDone", "work.playerFallbacks" if False else "gates.playerFallbacks", "work.duplicatesMax", "work.stuckRoots",
+    "work.itemsDeliveredAtDone", "work.playerFallbacks" if False else "gates.playerFallbacks", "work.duplicatesMax", "work.stuckRoots", "work.stuckRootsStrict",
     "work.latencyP50", "work.latencyP99", "work.viewBytes", "work.openMax",
 ]
 

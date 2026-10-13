@@ -49,8 +49,11 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     private final HashMap<IToken<?>, Integer> assignedRequests = new HashMap<>();
 
     /**
-     * Counts every change of the two maps above, for the view sync ({@link #viewVersion()}). The maps are only changed in this class, and
-     * every change goes with a {@link #touch()}; what the getters hand out cannot be changed.
+     * Counts every change of what a client can see of this resolver ({@link #viewVersion()}): which requests it holds and how many attempts each
+     * had. The delays are not part of it: they count down every request-system tick, nothing on a client reads them (they are not sent, see the
+     * factory's wire serializer) and a version that moved with them made the view sync serialize this entry again in every snapshot while any request
+     * waited. The map of held requests is only changed in this class, and every change goes with a {@link #touch()}; what the getters hand out cannot
+     * be changed.
      */
     private long viewVersion;
 
@@ -155,7 +158,6 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
             return;
         }
         delays.put(request.getId(), getMaximalDelayBetweenRetriesInTicks());
-        touch();
     }
 
     /**
@@ -177,7 +179,6 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
         if (assignedRequests.containsKey(token))
         {
             delays.put(token, 1);
-            touch();
         }
     }
 
@@ -228,8 +229,7 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
     {
         manager.log("Starting reassignment.");
 
-        //Lets decrement all delays
-        touch();
+        //Lets decrement all delays (not a change of the client's view: no touch)
         getAllAssignedRequests().forEach(t -> {
             Integer current = delays.remove(t);
             delays.put(t, --current);
@@ -272,7 +272,6 @@ public class StandardRetryingRequestResolver implements IRetryingRequestResolver
             {
                 // Back here: wait twice as long before the next fallback retry (events still wake it sooner).
                 delays.put(t, backoff(currentAttempt));
-                touch();
             }
 
             return resultingResolver != null;

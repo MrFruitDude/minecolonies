@@ -81,6 +81,23 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     private static final int QUICK_DECISION_DELAY = 1;
 
     /**
+     * A courier keeps a meal, sleep or shelter from the rain waiting for its current task for at most this long (2 minutes); after that it goes and hands the
+     * task back to the request system.
+     */
+    public static final long FINISH_TASK_CAP = 2400L;
+
+    /**
+     * Below this saturation a courier does not wait for its task: it goes to eat and hands the task back.
+     */
+    public static final double CRITICAL_SATURATION = 1.0D;
+
+    /**
+     * Ticks a held-back break stays "pending": the citizen AI looks again every 10 ticks, so a break that was held back for the task that just ended is still
+     * pending when the courier decides on its next task, and the courier then takes no new task but leaves for the break.
+     */
+    private static final long BREAK_PENDING_TICKS = 60L;
+
+    /**
      * Wait a few ticks for the worker to decide what to pick up.
      */
     private static final int PICKUP_DELAY = 5;
@@ -175,6 +192,39 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     {
         return super.canTakeLeisure() && job.getTaskQueue().isEmpty();
     }
+
+    /**
+     * The citizen AI wants to send this courier to eat, sleep or hide from the rain: should it wait for the task the courier holds? With the
+     * {@code courierFinishesDelivery} switch on it waits while the courier holds a task, and sends the courier as soon as the task is done (the courier
+     * takes no new one meanwhile, see {@link #decide}). It does not wait when the courier is critically hungry or has held the task longer than
+     * {@link #FINISH_TASK_CAP}: then the courier goes at once and the task goes back to the request system, so another courier can take it and
+     * nothing stays in the queue of a courier that is away. Sickness, raids and danger never ask: they interrupt at once.
+     *
+     * @return true when the break has to wait.
+     */
+    public boolean deferBreakForTask()
+    {
+        if (!RsFlags.courierFinishesDelivery() || job.getTaskQueue().isEmpty())
+        {
+            return false;
+        }
+        final long age = job.currentTaskAge();
+        final double saturation = worker.getCitizenData().getSaturation();
+        if (saturation <= CRITICAL_SATURATION || age > FINISH_TASK_CAP)
+        {
+            final int handedBack = job.giveBackTasks();
+            Log.getLogger().info("Courier {} leaves its task ({}): {} task(s) back to the request system (held {} ticks, saturation {})", worker.getName(),
+              saturation <= CRITICAL_SATURATION ? "critically hungry" : "held too long", handedBack, age, saturation);
+            return false;
+        }
+        breakPendingAt = world.getGameTime();
+        return true;
+    }
+
+    /**
+     * Game time at which the citizen AI last held a break back for the courier's task.
+     */
+    private long breakPendingAt = Long.MIN_VALUE / 2;
 
     /**
      * Back to deciding after a task was finished. With the {@code courierImmediateNextTask} switch on the courier looks for its next task at once.
@@ -762,6 +812,11 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     private IAIState decide()
     {
         worker.getCitizenData().setVisibleStatus(VisibleCitizenStatus.WORKING);
+        if (job.getTaskQueue().isEmpty() && RsFlags.courierFinishesDelivery() && world.getGameTime() - breakPendingAt < BREAK_PENDING_TICKS)
+        {
+            // A meal, sleep or shelter from the rain was held back until this delivery was done: no new task, the citizen AI sends the courier within a few ticks.
+            return START_WORKING;
+        }
         final IRequest<? extends IDeliverymanRequestable> currentTask = job.getCurrentTask();
         if (currentTask == null)
         {

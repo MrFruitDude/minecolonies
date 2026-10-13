@@ -85,6 +85,10 @@ public final class RequestSystemViewSync
          * Request and resolver entries serialized.
          */
         public static long entries;
+        /**
+         * Full payloads written (one is only wanted by a new subscriber, a resync request or the periodic resync).
+         */
+        public static long fullPayloads;
 
         private Stats()
         {
@@ -411,6 +415,7 @@ public final class RequestSystemViewSync
      */
     public static void writeFull(@NotNull final RegistryFriendlyByteBuf buf, @NotNull final Snapshot snap, final int seq)
     {
+        Stats.fullPayloads++;
         buf.writeByte(MODE_FULL);
         buf.writeInt(seq);
         buf.writeByteArray(snap.header);

@@ -23,6 +23,7 @@ import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.AbstractJobGuard;
 import com.minecolonies.core.colony.jobs.JobPupil;
 import com.minecolonies.core.entity.ai.minimal.*;
+import com.minecolonies.core.entity.ai.workers.service.EntityAIWorkDeliveryman;
 import com.minecolonies.core.entity.citizen.EntityCitizen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -177,7 +178,7 @@ public class CitizenAI implements IStateAI
                 return CitizenAIState.SLEEP;
             }
 
-            if (citizen.getCitizenSleepHandler().shouldGoSleep())
+            if (citizen.getCitizenSleepHandler().shouldGoSleep() && !courierFinishesTaskFirst())
             {
                 citizen.getCitizenData().onGoSleep();
                 return CitizenAIState.SLEEP;
@@ -210,7 +211,7 @@ public class CitizenAI implements IStateAI
         }
 
         // Eating
-        if (shouldEat())
+        if (shouldEat() && !courierFinishesTaskFirst())
         {
             return CitizenAIState.EATING;
         }
@@ -231,7 +232,7 @@ public class CitizenAI implements IStateAI
         }
 
         // Raining
-        if (CompatibilityUtils.getWorldFromCitizen(citizen).isRaining() && !shouldWorkWhileRaining() && !WorldUtil.isNetherType(citizen.level()))
+        if (CompatibilityUtils.getWorldFromCitizen(citizen).isRaining() && !shouldWorkWhileRaining() && !WorldUtil.isNetherType(citizen.level()) && !courierFinishesTaskFirst())
         {
             citizen.setVisibleStatusIfNone(BAD_WEATHER);
             if (!citizen.getCitizenData().getColony().getRaiderManager().isRaided()
@@ -261,6 +262,22 @@ public class CitizenAI implements IStateAI
 
         citizen.setVisibleStatusIfNone(HOUSE);
         return CitizenAIState.IDLE;
+    }
+
+    /**
+     * A courier that holds a task finishes the delivery before it goes to eat, sleep or hide from the rain (see {@link EntityAIWorkDeliveryman#deferBreakForTask}).
+     * A break that is already under way is not interrupted. Asked only when one of those breaks is due.
+     *
+     * @return true when the break has to wait for the courier's task.
+     */
+    private boolean courierFinishesTaskFirst()
+    {
+        if (lastState == CitizenAIState.SLEEP || lastState == CitizenAIState.EATING)
+        {
+            return false;
+        }
+        final var job = citizen.getCitizenJobHandler().getColonyJob();
+        return job != null && job.getWorkerAI() instanceof EntityAIWorkDeliveryman courier && courier.deferBreakForTask();
     }
 
     /**
