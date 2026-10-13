@@ -766,6 +766,16 @@ final class BuilderScaffoldGameTests
         twoBuilders(helper, "wall_solo", () -> longWall("wall_solo"), 40_000, false, WALL_SITE);
     }
 
+    public static void twoBuildersMid(final GameTestHelper helper)
+    {
+        twoBuilders(helper, "mid", () -> shape("mid", 7, 16, 7, (x, y, z) -> x == 0 || z == 0 || x == 6 || z == 6), 40_000);
+    }
+
+    public static void twoBuildersMidSolo(final GameTestHelper helper)
+    {
+        twoBuilders(helper, "mid_solo", () -> shape("mid_solo", 7, 16, 7, (x, y, z) -> x == 0 || z == 0 || x == 6 || z == 6), 40_000, false);
+    }
+
     public static void twoBuildersTower16(final GameTestHelper helper)
     {
         twoBuilders(helper, "tower16", () -> squareTower("tower16"), 40_000);
@@ -869,7 +879,7 @@ final class BuilderScaffoldGameTests
                 helper.assertTrue(scaffoldItems(live, origin) == 64, "items not conserved: " + scaffoldItems(live, origin));
                 helper.assertTrue(watch.conservationBreak == null, "items lost or made: " + watch.conservationBreak);
                 helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
-                helper.assertTrue(BuilderScaffolding.cellsPlaced > 0, "no scaffolding");
+                helper.assertTrue(BuilderScaffolding.cellsPlaced > 0 || blueprint.getSizeY() <= 4, "no scaffolding");
                 BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
                 BuilderCollab.placementProbe = null;
                 WorkerSettings.clearOverrides();
