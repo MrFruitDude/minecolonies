@@ -1045,8 +1045,6 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 continue;
             }
             final ItemStorage key = new ItemStorage(stack.copyWithCount(1));
-            scaffold.note("lead is short of " + missing + " " + stack.getItem() + ", helpers carry " + collab.getAssistantHuts().stream().map(h -> building.getColony().getServerBuildingManager().getBuilding(h))
-                                                                                                   .map(h -> h instanceof AbstractBuildingStructureBuilder b ? b.getCarry().toString() + " lead=" + b.getCarryLead() : "-").toList());
             for (final BlockPos hutPos : collab.getAssistantHuts())
             {
                 final IBuilding hut = building.getColony().getServerBuildingManager().getBuilding(hutPos);
