@@ -398,7 +398,11 @@ public class ColonyPackageManager implements IColonyPackageManager
             {
                 seq = fromSeq;
             }
-            sendRequestSystem(full(snapshot, seq), fullTo);
+            if (!fullTo.isEmpty())
+            {
+                // Only built for someone who gets it: it was built (the whole snapshot written into a growing buffer) in every dirty tick, and thrown away unsent.
+                sendRequestSystem(full(snapshot, seq), fullTo);
+            }
         }
         requestSystemResync.clear();
         manager.setDirty(false);

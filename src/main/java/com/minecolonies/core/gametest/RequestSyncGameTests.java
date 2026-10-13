@@ -80,10 +80,10 @@ public final class RequestSyncGameTests
     static void register(final net.neoforged.neoforge.event.RegisterGameTestsEvent event)
     {
         final String[] names = {"reqsync_bytes_per_minute", "reqsync_client_equals_full", "reqsync_protocol_mismatch", "reqsync_citizen_view_patch", "reqsync_store_mutations",
-          "reqsync_quiet_stores_not_serialized", "reqsync_quiet_retrying_resolver"};
+          "reqsync_quiet_stores_not_serialized", "reqsync_quiet_retrying_resolver", "reqsync_no_unsent_full_payloads"};
         final java.util.List<java.util.function.Consumer<GameTestHelper>> bodies =
           List.of(RequestSyncGameTests::bytesPerMinute, RequestSyncGameTests::clientEqualsFull, RequestSyncGameTests::protocolMismatch, RequestSyncGameTests::citizenViewPatch,
-            RequestSyncGameTests::storeMutations, RequestSyncGameTests::quietStoresNotSerialized, RequestSyncGameTests::quietRetryingResolver);
+            RequestSyncGameTests::storeMutations, RequestSyncGameTests::quietStoresNotSerialized, RequestSyncGameTests::quietRetryingResolver, RequestSyncGameTests::noUnsentFullPayloads);
         for (int i = 0; i < names.length; i++)
         {
             final String name = names[i];
@@ -839,6 +839,40 @@ public final class RequestSyncGameTests
             helper.assertTrue(countdown == 0, "the retrying resolver's countdown made the view sync serialize " + countdown + " entries again");
             helper.assertTrue(changed == 1, "a changed attempt count should serialize the resolver's entry once, not " + changed + " entries");
             helper.succeed();
+        });
+    }
+
+    /**
+     * A full payload is wanted by a new subscriber, by a player that asked for a resync and by the periodic resync, and by nobody in an ordinary dirty tick:
+     * those only send a delta. The full payload (the whole snapshot written into a buffer) used to be built in every dirty tick and thrown away unsent.
+     */
+    public static void noUnsentFullPayloads(final GameTestHelper helper)
+    {
+        final Fixture f = fixture(helper, "CA1 no unsent full");
+        after(f, SETTLE_TICKS, () -> {
+            final long fulls0 = RequestSystemViewSync.Stats.fullPayloads;
+            final long since = f.now();
+            final List<Item> items = requestItems(6, 40);
+            final int[] next = {0};
+            final Runnable[] round = new Runnable[1];
+            round[0] = () -> {
+                if (next[0] == items.size())
+                {
+                    after(f, STEP_TICKS, () -> {
+                        final long fulls = RequestSystemViewSync.Stats.fullPayloads - fulls0;
+                        final long messages = f.since(since).stream().filter(s -> isRequestSystemMessage(s.msg())).count();
+                        f.close();
+                        Log.getLogger().info("CA1 no unsent full: {} request-system messages sent to the player, {} full payloads written", messages, fulls);
+                        helper.assertTrue(messages >= 3, "the changes should have been sent as deltas, only " + messages + " messages arrived");
+                        helper.assertTrue(fulls == 0, fulls + " full payloads were written although nobody asked for one (" + messages + " messages sent)");
+                        helper.succeed();
+                    });
+                    return;
+                }
+                f.request(items.get(next[0]++), 1);
+                after(f, STEP_TICKS, round[0]);
+            };
+            round[0].run();
         });
     }
 
