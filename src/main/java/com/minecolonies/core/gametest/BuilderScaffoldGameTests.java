@@ -366,6 +366,15 @@ final class BuilderScaffoldGameTests
     static void tallStructure(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final boolean physical, final int maxTicks, final boolean expectScaffold,
       final java.util.function.BiConsumer<WorkerEfficiencyGameTests.Live, BlockPos> beforeOrder, final Runnable extraChecks)
     {
+        tallStructure(helper, name, blueprintOf, physical, maxTicks, expectScaffold, beforeOrder, extraChecks, 32);
+    }
+
+    /**
+     * @param scaffoldStock the scaffolding items in the hut at the start (all of them are back in the end).
+     */
+    static void tallStructure(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final boolean physical, final int maxTicks, final boolean expectScaffold,
+      final java.util.function.BiConsumer<WorkerEfficiencyGameTests.Live, BlockPos> beforeOrder, final Runnable extraChecks, final int scaffoldStock)
+    {
         WorkerSettings.overrideReachForTests(null, physical, null, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
@@ -374,7 +383,10 @@ final class BuilderScaffoldGameTests
             live.giveTools();
             final Blueprint blueprint = blueprintOf.get();
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
-            live.stock(Items.SCAFFOLDING, 32);
+            if (scaffoldStock > 0)
+            {
+                live.stock(Items.SCAFFOLDING, scaffoldStock);
+            }
             if (beforeOrder != null)
             {
                 beforeOrder.accept(live, helper.absolutePos(SITE));
@@ -391,7 +403,7 @@ final class BuilderScaffoldGameTests
                 final Vec3 now = live.citizen.getEntity().map(e -> e.position()).orElse(last[0]);
                 walked[0] += Math.hypot(now.x - last[0].x, now.z - last[0].z);
                 last[0] = now;
-                watch(live, watch, origin, 32, tick);
+                watch(live, watch, origin, scaffoldStock, tick);
                 trace(live, name, tick, origin);
                 if (tick == 1)
                 {
@@ -411,7 +423,7 @@ final class BuilderScaffoldGameTests
                 helper.assertTrue(built(live, blueprint, origin), "structure not complete: missing " + missing(live, blueprint, origin));
                 helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left in the world: " + scaffoldInWorld(live, origin));
                 helper.assertTrue(ledgerSize(live) == 0 && ((WorkManager) live.colony.getWorkManager()).getOrphanScaffolds().isEmpty(), "the ledger is not empty: " + ledgerSize(live));
-                helper.assertTrue(scaffoldItems(live, origin) == 32, "scaffolding items not conserved: " + scaffoldItems(live, origin));
+                helper.assertTrue(scaffoldItems(live, origin) == scaffoldStock, "scaffolding items not conserved: " + scaffoldItems(live, origin));
                 helper.assertTrue(watch.conservationBreak == null, "scaffolding items were lost or made while building: " + watch.conservationBreak);
                 if (physical)
                 {
@@ -468,6 +480,21 @@ final class BuilderScaffoldGameTests
     {
         // the walls stand already (the builder is outside), the roof is left: its middle is out of reach from the ground
         tallStructure(helper, "sealed", () -> sealedBox("sealed"), true, 30_000, true, BuilderScaffoldGameTests::buildSealedWalls);
+    }
+
+    /**
+     * The same box with no scaffolding at all (none in the hut, none coming): the builder is outside the walls, the middle of the roof is out of reach from
+     * anywhere he can walk to. He gives the blocks up for later, and in the second round he is put on a spot that reaches them (inside the box), so the roof is
+     * built whole and no block is placed out of reach. (The flake of the worker_eff clear benchmarks, which build a box with the door blocked by dirt: the
+     * builder who ended up outside the box with the last roof block left abandoned it.)
+     */
+    public static void sealedRoofNoItems(final GameTestHelper helper)
+    {
+        final int teleports0 = com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.teleports;
+        tallStructure(helper, "sealed_noitems", () -> sealedBox("sealed_noitems"), true, 30_000, false, BuilderScaffoldGameTests::buildSealedWalls, () ->
+        {
+            helper.assertTrue(com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.teleports > teleports0, "the builder was never put on a spot that reaches the roof");
+        }, 0);
     }
 
     public static void sealedRoofLegacy(final GameTestHelper helper)
@@ -702,13 +729,30 @@ final class BuilderScaffoldGameTests
         twoBuilders(helper, "twobig", () -> shape("twobig", 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10), 25_000);
     }
 
+    /** The 7 by 7 ring with the second builder idle (collaboration off): what the one builder takes, for the benchmark. */
+    public static void twoBuildersSolo(final GameTestHelper helper)
+    {
+        twoBuilders(helper, "two_solo", () -> shape("two_solo", 7, 11, 7, (x, y, z) -> x == 0 || z == 0 || x == 6 || z == 6), 40_000, false);
+    }
+
+    /** The 11 by 11 ring with the second builder idle (collaboration off). */
+    public static void twoBuildersBigSolo(final GameTestHelper helper)
+    {
+        twoBuilders(helper, "twobig_solo", () -> shape("twobig_solo", 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10), 40_000, false);
+    }
+
     static void twoBuilders(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final int maxTicks)
+    {
+        twoBuilders(helper, name, blueprintOf, maxTicks, true);
+    }
+
+    static void twoBuilders(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final int maxTicks, final boolean collaboration)
     {
         WorkerSettings.overrideReachForTests(null, null, null, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
         WorkerEfficiencyGameTests.scene(helper, "WSCAF " + name, live -> {
-            BuilderCollab.overrideForTests(!Boolean.getBoolean("minecolonies.gametest.nocollab"), 3, 40, 10, 100_000, Integer.getInteger("minecolonies.gametest.lease", 8), 2400);
+            BuilderCollab.overrideForTests(collaboration && !Boolean.getBoolean("minecolonies.gametest.nocollab"), 3, 40, 10, 100_000, Integer.getInteger("minecolonies.gametest.lease", 8), 2400);
             final BuildingBuilder other = live.colony.getServerBuildingManager().getBuildings().values().stream()
                                             .filter(b -> b instanceof BuildingBuilder && b != live.hut).map(b -> (BuildingBuilder) b).findFirst().orElseThrow();
             final ICitizenData second = other.getModule(BuildingModules.BUILDER_WORK).getAssignedCitizen().get(0);

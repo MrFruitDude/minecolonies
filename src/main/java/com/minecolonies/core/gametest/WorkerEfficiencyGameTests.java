@@ -23,6 +23,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
@@ -257,6 +258,48 @@ public final class WorkerEfficiencyGameTests
 
     // ------------------------------------------------------------------ benchmark
 
+    /** The blocks of the box that are not what the blueprint wants (relative positions), for the failure message. */
+    private static String boxMissing(final Live live, final BlockPos origin)
+    {
+        final java.util.List<String> missing = new java.util.ArrayList<>();
+        for (int y = 0; y < HEIGHT; y++)
+        {
+            for (int x = 0; x < SIZE; x++)
+            {
+                for (int z = 0; z < SIZE; z++)
+                {
+                    final boolean floorOrRoof = y == 0 || y == HEIGHT - 1;
+                    final boolean wall = x == 0 || z == 0 || x == SIZE - 1 || z == SIZE - 1;
+                    final boolean door = x == SIZE / 2 && z == 0 && (y == 1 || y == 2);
+                    final BlockState state = live.level.getBlockState(origin.offset(x, y, z));
+                    if ((floorOrRoof || wall) && !door && !state.is(BUILD_BLOCK))
+                    {
+                        missing.add("(" + x + "," + y + "," + z + ")=" + state.getBlock().getDescriptionId().replace("block.minecraft.", ""));
+                    }
+                }
+            }
+        }
+        final java.util.List<String> other = new java.util.ArrayList<>();
+        for (int y = 0; y < HEIGHT; y++)
+        {
+            for (int x = 0; x < SIZE; x++)
+            {
+                for (int z = 0; z < SIZE; z++)
+                {
+                    final boolean floorOrRoof = y == 0 || y == HEIGHT - 1;
+                    final boolean wall = x == 0 || z == 0 || x == SIZE - 1 || z == SIZE - 1;
+                    final boolean wanted = (floorOrRoof || wall) && !(x == SIZE / 2 && z == 0 && (y == 1 || y == 2));
+                    final BlockState state = live.level.getBlockState(origin.offset(x, y, z));
+                    if (!wanted && !state.isAir())
+                    {
+                        other.add("(" + x + "," + y + "," + z + ")=" + state.getBlock().getDescriptionId().replace("block.minecraft.", ""));
+                    }
+                }
+            }
+        }
+        return missing.size() + " " + missing + " unwanted blocks: " + other;
+    }
+
     private static boolean boxBuilt(final Live live, final BlockPos origin)
     {
         for (int y = 0; y < HEIGHT; y++)
@@ -306,6 +349,10 @@ public final class WorkerEfficiencyGameTests
             final double[] walked = {0};
             final int[] doneTick = {0};
             final long paths0 = Pathfinding.Stats.submitted.get();
+            if (BuilderScaffoldGameTests.TRACE_EVERY > 0)
+            {
+                com.minecolonies.core.entity.ai.workers.util.ReachAudit.enable(true);
+            }
             everyTick(live, 38_000, tick -> {
                 final Vec3 now = live.citizen.getEntity().map(e -> e.position()).orElse(last[0]);
                 walked[0] += Math.hypot(now.x - last[0].x, now.z - last[0].z);
@@ -314,10 +361,15 @@ public final class WorkerEfficiencyGameTests
                 {
                     Log.getLogger().info("WBENCH {} t={} {}", name, tick, live.ai());
                 }
+                BuilderScaffoldGameTests.trace(live, name, tick, origin);
+                if (BuilderScaffoldGameTests.TRACE_EVERY > 0 && tick % (BuilderScaffoldGameTests.TRACE_EVERY * 5) == 0)
+                {
+                    Log.getLogger().info("TRACE {} {} t={} stage={} dirt={} wall={} order={}", name, live.citizen.getName(), tick, live.hut.getProgress() == null ? "-" : live.hut.getProgress().getB() + "@" + live.hut.getProgress().getA().toShortString(), countBlocks(live, origin, Blocks.DIRT, 5), countBlocks(live, origin, BUILD_BLOCK, 5), live.hut.getWorkOrder() == null ? "-" : live.hut.getWorkOrder().getID());
+                }
                 doneTick[0] = tick;
                 return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
             }, () -> {
-                helper.assertTrue(boxBuilt(live, origin), "box not complete");
+                helper.assertTrue(boxBuilt(live, origin), "box not complete: missing " + boxMissing(live, origin));
                 final int ticks = doneTick[0];
                 final int blocks = live.blocksInBox() + (terrain ? 2 * SIZE * SIZE : 0);
                 Log.getLogger().info("WBENCH RESULT {} skill={} terrain={} ticks={} blocks={} blocksPerMin={} walk={} paths={}", name, skill, terrain, ticks, blocks,

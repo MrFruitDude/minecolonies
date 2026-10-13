@@ -981,14 +981,31 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     protected boolean isPositionReserved(final BlockPos worldPos)
     {
         final WorkOrderCollab collab = leadCollab();
-        return collab != null && collab.isLeasedByOther(worldPos, building.getID());
+        return collab != null && (collab.isLeasedByOther(worldPos, building.getID()) || collab.isInOthersTerritory(worldPos, building.getID()));
     }
 
     @Override
     protected boolean canFinishStage()
     {
         final WorkOrderCollab collab = leadCollab();
-        return collab == null || collab.getOpenLeasesExcluding(building.getID()) == 0;
+        if (collab != null && collab.hasTerritory())
+        {
+            // the lead is through with his part: the parts are given up, and he scans the stage again for what is left in the others'
+            scaffold.note("lead has nothing left in his part: territory given up, remaining=" + collab.getUnleasedStageRemaining() + " leases=" + collab.getLeaseCount());
+            collab.dissolveTerritory();
+            return false;
+        }
+        if (collab == null || collab.getOpenLeasesExcluding(building.getID()) == 0)
+        {
+            return true;
+        }
+        // the lead has nothing left but what helpers have leased: they keep the position they work on and half of the rest, the lead takes the other
+        // half (the stage is scanned again for it), so nobody waits for the other at the end of the stage
+        for (final BlockPos helper : collab.getAssistantHuts())
+        {
+            collab.stealLeases(helper);
+        }
+        return false;
     }
 
     @Override
@@ -1003,9 +1020,60 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         building.setWaitingFor(Map.of());
     }
 
+    /**
+     * The lead is short of materials that his helpers carry (they took them for positions that he has taken back since, or have not used yet): he takes
+     * them back from the helpers' inventories (a walk to the hut and a request for what is in the pockets of a helper is the long way round).
+     */
+    private void takeBackFromHelpers(final List<ItemStack> required)
+    {
+        final WorkOrderCollab collab = leadCollab();
+        if (collab == null || collab.getAssistantCount() == 0)
+        {
+            return;
+        }
+        for (final ItemStack stack : required)
+        {
+            if (stack.isEmpty())
+            {
+                continue;
+            }
+            int missing = stack.getCount() - InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), sameAs(stack));
+            if (missing <= 0)
+            {
+                continue;
+            }
+            final ItemStorage key = new ItemStorage(stack.copyWithCount(1));
+            for (final BlockPos hutPos : collab.getAssistantHuts())
+            {
+                final IBuilding hut = building.getColony().getServerBuildingManager().getBuilding(hutPos);
+                if (!(hut instanceof AbstractBuildingStructureBuilder helperHut) || !building.getID().equals(helperHut.getCarryLead()))
+                {
+                    continue;
+                }
+                final ICitizenData helper = leadCitizen(helperHut);
+                final int carried = helperHut.getCarry().getOrDefault(key, 0);
+                if (helper == null || carried <= 0)
+                {
+                    continue;
+                }
+                final int moved = ItemMover.move(helper.getInventory(), worker.getInventoryCitizen(), sameAs(stack), Math.min(missing, carried));
+                if (moved > 0)
+                {
+                    helperHut.reduceCarry(Map.of(key, moved));
+                    missing -= moved;
+                }
+                if (missing <= 0)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
     @Override
     protected void onMissingItems(final List<ItemStack> required)
     {
+        takeBackFromHelpers(required);
         final Map<ItemStorage, Integer> waiting = new HashMap<>();
         for (final ItemStack stack : required)
         {
@@ -1216,26 +1284,58 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 batch.add(new LeaseAllocator.Planned(local, leased, LeaseAllocator.requirements(world, assistPlacer, assistHandler, local, leased)));
             }
         }
+        if (batch.isEmpty() && !collab.isTerritoryDissolved())
+        {
+            final List<BlockPos> participants = new ArrayList<>();
+            participants.add(lead.getID());
+            participants.addAll(collab.getAssistantHuts());
+            if (!collab.territoryCovers(participants))
+            {
+                // the lead and the helpers divide the rest of the stage between them
+                LeaseAllocator.divideStage(world, order, stage, assistHandler, assistPlacer, participants);
+                collab.setScanCursor(null);
+                collab.setScanExhausted(false);
+                scaffold.note("territory for " + participants.size() + " builders: " + collab.describeTerritory() + " remaining=" + collab.getUnleasedStageRemaining());
+            }
+        }
         if (batch.isEmpty())
         {
+            if (collab.isScanExhausted() && collab.hasTerritory())
+            {
+                // nothing left in the part of this helper: the parts are given up
+                scaffold.note("helper has nothing left in his part: territory given up, remaining=" + collab.getUnleasedStageRemaining() + " leases=" + collab.getLeaseCount());
+                collab.dissolveTerritory();
+            }
             if (collab.isScanExhausted())
             {
-                return waitAtTheSite();
+                if (collab.getUnleasedStageRemaining() > 2 * LEAD_BUFFER && now >= nextRescanAt)
+                {
+                    // the scan reached the end of the stage, but the lead has much of it left: the helper takes from what is left behind the scan (what
+                    // the lead has not come to), after the few positions the lead leaves for himself
+                    nextRescanAt = now + RESCAN_EVERY;
+                    collab.setScanCursor(null);
+                    collab.setScanExhausted(false);
+                }
+                else
+                {
+                    return waitAtTheSite();
+                }
             }
             final Map<ItemStorage, Integer> stockMemo = new HashMap<>();
             final int room = (int) Math.max(1, InventoryUtils.openSlotCount(worker.getInventoryCitizen()) - MIN_OPEN_SLOTS);
-            final List<LeaseAllocator.Planned> plan = LeaseAllocator.plan(world, order, stage, assistHandler, assistPlacer, leaseSizeFor(lead), LEAD_BUFFER,
+            final List<LeaseAllocator.Planned> plan = LeaseAllocator.plan(world, order, stage, assistHandler, assistPlacer, leaseSizeFor(lead), collab.hasTerritory() ? 0 : LEAD_BUFFER,
               key -> stockMemo.computeIfAbsent(key, k -> Math.max(0, InventoryUtils.getItemCountInItemHandler(lead.getItemHandlerCap(), sameAs(k.getItemStack()))
                                                                     - AssistReservations.heldByOthers(lead, building, k.getItemStack()))
                                                       + leadCarried(lead, k.getItemStack())
                                                       + InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), sameAs(k.getItemStack()))), room,
-              assistGaveUp::contains);
+              pos -> assistGaveUp.contains(pos) || collab.isInOthersTerritory(pos, building.getID()), worker.blockPosition());
             if (plan.isEmpty())
             {
                 return waitAtTheSite();
             }
             gatherFromLead = false;
             gatherSteps = 0;
+            scaffold.setIdleHelper(false);
             final long expiry = now + BuilderCollab.leaseTicks();
             for (final LeaseAllocator.Planned planned : plan)
             {
@@ -1261,9 +1361,31 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
      */
     private IAIState waitAtTheSite()
     {
+        // nothing to lease: the towers of this helper that nobody uses come down meanwhile (the lead takes his own down alone, and he has the most of the stage still)
+        scaffold.setIdleHelper(true);
+        if (runScaffoldTick())
+        {
+            return getState();
+        }
         stepOffScaffolding();
         setDelay(40);
         return getState();
+    }
+
+    @Override
+    protected List<BlockPos> leadWorkAhead(final int n)
+    {
+        if (assistOrder != null && !building.hasWorkOrder())
+        {
+            final AbstractBuildingStructureBuilder lead = leadOf(assistOrder);
+            final ICitizenData citizen = lead == null ? null : leadCitizen(lead);
+            if (citizen != null && citizen.getEntity().isPresent() && citizen.getEntity().get().getCitizenJobHandler().getWorkAI() instanceof EntityAIStructureBuilder leadAi)
+            {
+                return leadAi.peekWork(n);
+            }
+            return List.of();
+        }
+        return peekWorkAhead(n);
     }
 
     /**
@@ -1310,8 +1432,21 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
      */
     private int leaseSizeFor(final AbstractBuildingStructureBuilder lead)
     {
-        return BuilderCollab.scaledLeaseSize(BuilderCollab.leaseSize(), Math.sqrt(worker.blockPosition().distSqr(lead.getPosition())));
+        final int size = BuilderCollab.scaledLeaseSize(BuilderCollab.leaseSize(), Math.sqrt(worker.blockPosition().distSqr(lead.getPosition())));
+        // towards the end of the stage the leases get smaller (a share of what is left for each of the builders, twice over), so nobody works on a big
+        // lease while the others have nothing to do
+        final WorkOrderCollab collab = assistOrder.getCollab();
+        final int parts = 2 * (collab.getAssistantCount() + 1);
+        return Math.max(1, Math.min(size, Math.max(MIN_SHARE, collab.getUnleasedStageRemaining() / parts)));
     }
+
+    /** The smallest lease the stage hands out towards its end. */
+    private static final int MIN_SHARE = 4;
+
+    /** Ticks between two scans of a helper over the stage again. */
+    private static final long RESCAN_EVERY = 100L;
+
+    private long nextRescanAt = 0L;
 
     /**
      * Claims in the ledger the stock of the lead's hut that the batch needs and the helper does not have yet, as far as nobody else
@@ -1404,6 +1539,21 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
 
     /**
+     * Whether the lead carries all of the materials himself (he works at the site, the hut is a long walk away).
+     */
+    private boolean leadCarriesAll(final AbstractBuildingStructureBuilder lead, final Map<ItemStorage, Integer> missing)
+    {
+        for (final Map.Entry<ItemStorage, Integer> need : missing.entrySet())
+        {
+            if (leadCarried(lead, need.getKey().getItemStack()) < need.getValue())
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Whether the hut of the lead holds any of the materials (that are not claimed for others).
      */
     private boolean hutHoldsAnyOf(final AbstractBuildingStructureBuilder lead, final Map<ItemStorage, Integer> missing)
@@ -1455,10 +1605,14 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         checkTrapped();
         final AbstractBuildingStructureBuilder lead = leadOf(assistOrder);
         assistOrder.getCollab().renew(building.getID(), world.getGameTime() + BuilderCollab.leaseTicks());
-        final boolean giveUp = ++gatherSteps > MAX_GATHER_STEPS;
-        if (!giveUp && !gatherFromLead && !missingForBatch().isEmpty() && !hutHoldsAnyOf(lead, missingForBatch()))
+        if (pruneBatch(assistOrder.getCollab()) && batch.isEmpty())
         {
-            // nothing of it is in the hut (the lead took it all with him): no walk to the hut, the lead has it
+            return ASSIST_PLAN;
+        }
+        final boolean giveUp = ++gatherSteps > MAX_GATHER_STEPS;
+        if (!giveUp && !gatherFromLead && !missingForBatch().isEmpty() && (!hutHoldsAnyOf(lead, missingForBatch()) || leadCarriesAll(lead, missingForBatch())))
+        {
+            // nothing of it is in the hut (the lead took it all with him), or the lead has all of it with him at the site: no walk to the hut
             gatherFromLead = true;
         }
         if (!giveUp && !gatherFromLead && !missingForBatch().isEmpty())
@@ -1554,6 +1708,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return INVENTORY_FULL;
         }
+        if (pruneBatch(collab) && batch.isEmpty())
+        {
+            return ASSIST_PLAN;
+        }
 
         if (usesPhysicalReach() && batch.size() > 1 && !canReachNow(batch.get(0).world()))
         {
@@ -1569,6 +1727,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             }
         }
         final LeaseAllocator.Planned planned = batch.get(0);
+        final WorkOrderCollab.Assistant self = collab.getAssistant(building.getID());
+        if (self != null)
+        {
+            self.active = planned.world();
+        }
         final BlockState worldState = world.getBlockState(planned.world());
         if (batchStage == BuildingProgressStage.CLEAR ? (worldState.isAir() || !worldState.getFluidState().isEmpty())
               : worldState == assistHandler.getBluePrint().getBlockState(planned.local()))
@@ -1658,6 +1821,17 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         assistMine = null;
         finishPosition(planned, leadOf(assistOrder), true);
         return ASSIST_WORK;
+    }
+
+    /**
+     * Drops the positions of the batch that the lead took back (he had nothing left to do): they are not leased to this helper any more.
+     *
+     * @return true if something was dropped.
+     */
+    private boolean pruneBatch(final WorkOrderCollab collab)
+    {
+        final BlockPos me = building.getID();
+        return batch.removeIf(planned -> !collab.isLeasedTo(planned.world(), me));
     }
 
     private void finishPosition(final LeaseAllocator.Planned planned, final AbstractBuildingStructureBuilder lead, final boolean counted)

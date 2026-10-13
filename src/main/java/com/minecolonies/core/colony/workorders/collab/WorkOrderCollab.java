@@ -77,6 +77,11 @@ public class WorkOrderCollab
         public final long     since;
         public int            strikes;
         private boolean       pinned;
+        /**
+         * The position the helper works on right now (not saved): the lead does not take it back.
+         */
+        @Nullable
+        public BlockPos       active;
 
         Assistant(final BlockPos hut, final long since, final int strikes)
         {
@@ -122,6 +127,17 @@ public class WorkOrderCollab
     private BlockPos scanCursor;
     private boolean  scanExhausted;
     private boolean  rescan;
+
+    // territories of the builders (not saved: the helpers make them again): while the lead and his helpers work on the same stage, each works in a part
+    // of the structure of his own (slabs along one axis), so they put up their towers in different places and do not get in each other's way. When one of them has
+    // nothing left in his part, the parts are given up and everybody takes what is left.
+    private int                  territoryAxis;
+    private int[]                territoryBounds = new int[0];
+    @Nullable
+    private List<BlockPos>       territoryOwners;
+    @Nullable
+    private BlockPos             territoryLead;
+    private boolean              territoryDissolved;
 
     /**
      * The hut that led the order before the current one, whose delivered materials the current lead may take over.
@@ -179,6 +195,8 @@ public class WorkOrderCollab
             stageDone = 0;
             scanCursor = null;
             scanExhausted = false;
+            territoryOwners = null;
+            territoryDissolved = false;
             viewDirty = true;
         }
         return stageChanged;
@@ -297,6 +315,74 @@ public class WorkOrderCollab
     public int getLeaseCount()
     {
         return leases.size();
+    }
+
+    /**
+     * Whether the position is leased to the given hut (not as the lead's own mark).
+     */
+    public boolean isLeasedTo(final BlockPos worldPos, final BlockPos owner)
+    {
+        if (leases.isEmpty())
+        {
+            return false;
+        }
+        final Lease lease = leases.get(key(worldPos));
+        return lease != null && lease.owner().equals(owner) && !lease.transient_();
+    }
+
+    /**
+     * Blocks of the current stage that nobody has done or leased yet, as far as the totals tell.
+     */
+    public int getUnleasedStageRemaining()
+    {
+        final BuildingProgressStage stage = progressStage;
+        if (stage == null)
+        {
+            return 0;
+        }
+        int open = 0;
+        for (final Lease lease : leases.values())
+        {
+            if (!lease.transient_())
+            {
+                open++;
+            }
+        }
+        return Math.max(0, stageTotals[stage.ordinal()] - stageDone - open);
+    }
+
+    /**
+     * The lead has nothing left to do and takes back what a helper has leased and not begun on: every lease of the hut except the position it works on
+     * now, the half that the helper would have come to last (the leases are kept in the order he took them in).
+     *
+     * @param owner the helper's hut.
+     * @return how many leases were taken back.
+     */
+    public int stealLeases(final BlockPos owner)
+    {
+        final Assistant assistant = assistants.get(owner);
+        final long keep = assistant != null && assistant.active != null ? key(assistant.active) : Long.MIN_VALUE;
+        final List<Long> mine = new ArrayList<>();
+        for (final Map.Entry<Long, Lease> entry : leases.entrySet())
+        {
+            if (entry.getValue().owner().equals(owner) && !entry.getValue().transient_() && entry.getKey() != keep)
+            {
+                mine.add(entry.getKey());
+            }
+        }
+        if (mine.isEmpty())
+        {
+            return 0;
+        }
+        // half of them (rounded up): the helper has the rest, both work on what is left of the stage
+        final int take = (mine.size() + 1) / 2;
+        for (int i = 0; i < take; i++)
+        {
+            leases.remove(mine.get(mine.size() - 1 - i));
+        }
+        rescan = true;
+        viewDirty = true;
+        return take;
     }
 
     public int getLeaseCountOf(final BlockPos owner)
@@ -470,6 +556,103 @@ public class WorkOrderCollab
         rescan = true;
     }
 
+    // territories
+
+    /**
+     * Whether the builders work in parts of their own right now.
+     */
+    public boolean hasTerritory()
+    {
+        return territoryOwners != null && !territoryDissolved;
+    }
+
+    /**
+     * Whether the parts were given up in this stage (there are none again until the stage changes).
+     */
+    public boolean isTerritoryDissolved()
+    {
+        return territoryDissolved;
+    }
+
+    /**
+     * Whether the current parts are for exactly these builders.
+     *
+     * @param participants the huts of the lead and of his helpers.
+     */
+    public boolean territoryCovers(final List<BlockPos> participants)
+    {
+        return territoryOwners != null && territoryOwners.size() == participants.size() && territoryOwners.containsAll(participants);
+    }
+
+    /**
+     * Divides the structure into slabs along an axis, one for each builder.
+     *
+     * @param axis   0 for x, 1 for z.
+     * @param bounds the first coordinate of every slab but the first, ascending.
+     * @param owners the hut of the builder of each slab (one more than bounds).
+     * @param lead   the hut of the lead.
+     */
+    public void setTerritory(final int axis, final int[] bounds, final List<BlockPos> owners, final BlockPos lead)
+    {
+        territoryLead = lead;
+        territoryAxis = axis;
+        territoryBounds = bounds.clone();
+        territoryOwners = new ArrayList<>(owners);
+        territoryDissolved = false;
+    }
+
+    public String describeTerritory()
+    {
+        return territoryOwners == null ? "none" : "axis=" + (territoryAxis == 0 ? "x" : "z") + " bounds=" + java.util.Arrays.toString(territoryBounds) + " owners=" + territoryOwners.stream().map(BlockPos::toShortString).toList()
+                                                 + (territoryDissolved ? " dissolved" : "");
+    }
+
+    /**
+     * Gives the parts up for this stage: whoever has nothing left in his part takes what is left of the others'. Everybody scans the stage again.
+     */
+    public void dissolveTerritory()
+    {
+        if (!territoryDissolved)
+        {
+            territoryDissolved = true;
+            territoryOwners = null;
+            rescan = true;
+            viewDirty = true;
+        }
+    }
+
+    /**
+     * Nobody needs parts in this stage (it is too small to share that way).
+     */
+    public void skipTerritory()
+    {
+        territoryDissolved = true;
+        territoryOwners = null;
+    }
+
+    /**
+     * Whether the position lies in the part of a builder who still helps (or leads).
+     *
+     * @return true if the position is in the part of another builder than {@code me}.
+     */
+    public boolean isInOthersTerritory(final BlockPos worldPos, final BlockPos me)
+    {
+        final List<BlockPos> owners = territoryOwners;
+        if (owners == null || territoryDissolved)
+        {
+            return false;
+        }
+        final int coordinate = territoryAxis == 0 ? worldPos.getX() : worldPos.getZ();
+        int slab = 0;
+        while (slab < territoryBounds.length && coordinate >= territoryBounds[slab])
+        {
+            slab++;
+        }
+        final BlockPos owner = slab < owners.size() ? owners.get(slab) : null;
+        // (the part of a helper who left is nobody's: it is left to whoever comes to it)
+        return owner != null && !owner.equals(me) && (owner.equals(territoryLead) || assistants.containsKey(owner));
+    }
+
     // scan cursor of the helpers
 
     @Nullable
@@ -526,6 +709,7 @@ public class WorkOrderCollab
         if (!assistants.containsKey(hut))
         {
             assistants.put(hut, new Assistant(hut, now, 0));
+            territoryOwners = null;
             viewDirty = true;
         }
     }
@@ -537,6 +721,7 @@ public class WorkOrderCollab
     {
         if (assistants.remove(hut) != null)
         {
+            territoryOwners = null;
             viewDirty = true;
         }
         releaseAll(hut);

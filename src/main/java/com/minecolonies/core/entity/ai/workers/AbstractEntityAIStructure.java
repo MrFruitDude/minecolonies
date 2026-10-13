@@ -569,6 +569,14 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             final BlockPos target = blockToMine != null ? blockToMine : worldPos;
             if (reachTarget != null && cannotReachAtAll(target))
             {
+                if (retryBlocks.contains(target) && reachTeleported.add(target.immutable()) && teleportToReach(target))
+                {
+                    // the second round (the first one gave the block up for later): no tower came, and the block is out of reach from everywhere he can walk to - but
+                    // there is a spot that reaches it (the inside of a box that he built the walls of from outside, with no door), and the unstuck ladder puts him
+                    // there, as it does for any block that he cannot get to
+                    Log.getLogger().debug("{} is put on a spot that reaches {}", worker.getName().getString(), target);
+                    return getState();
+                }
                 Log.getLogger().debug("{} gives up {}: no place to reach it from", worker.getName().getString(), target);
                 deferBlock(target, false);
                 escalateStuck(target);
@@ -1187,6 +1195,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         deferredBlocks.clear();
         retryBlocks.clear();
         abandonedBlocks.clear();
+        reachTeleported.clear();
         servedOutOfOrder.clear();
         nearbyQueue.clear();
         nearbyStage = null;
@@ -1386,6 +1395,15 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     protected List<BlockPos> peekWorkAhead(final int n)
     {
         return peekWork(n);
+    }
+
+    /**
+     * The blocks the lead of the structure works on next (for a helper who decides whether a tower is still of use: the lead's blocks count, his own
+     * leased ones are done with the towers he made).
+     */
+    protected List<BlockPos> leadWorkAhead(final int n)
+    {
+        return peekWorkAhead(n);
     }
 
     /**
@@ -1876,6 +1894,41 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         puffAt(worker.position());
         resetWalkTarget();
         workFrom = spot;
+    }
+
+    /**
+     * Blocks that the worker was put on a spot for (once for each block in a structure).
+     */
+    private final Set<BlockPos> reachTeleported = new HashSet<>();
+
+    /**
+     * Puts the worker on a spot from which the block is in reach, wherever it is (also where no path leads: the inside of a closed box, the top of a wall).
+     *
+     * @param target the block.
+     * @return true if there was such a spot.
+     */
+    private boolean teleportToReach(final BlockPos target)
+    {
+        final List<ReachSpots.Spot> spots = ReachSpots.best(world, workAhead(target), WorkerSettings.reach(), worker.getEyeHeight(), worker.blockPosition(),
+          p -> hasWayDown(p) || !isBuiltStructureBlock(p.below()), 1);
+        if (spots.isEmpty())
+        {
+            return false;
+        }
+        final BlockPos spot = spots.get(0).feet();
+        if (this instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder && com.minecolonies.core.entity.ai.workers.util.ReachAudit.isEnabled())
+        {
+            Log.getLogger().info("SCAFFOLD {} is put on the spot {} that reaches {} (from {})", worker.getName().getString(), spot, target, worker.blockPosition());
+        }
+        teleports++;
+        puffAt(worker.position());
+        worker.getNavigation().stop();
+        worker.snapTo(spot.getX() + 0.5D, spot.getY(), spot.getZ() + 0.5D);
+        puffAt(worker.position());
+        resetWalkTarget();
+        workFrom = spot;
+        stuck.progress();
+        return true;
     }
 
     /**

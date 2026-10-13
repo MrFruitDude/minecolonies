@@ -986,7 +986,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         final int reps = Integer.getInteger("minecolonies.gametest.reps", 3);
         for (int i = 1; i <= reps; i++)
         {
-            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy", "clear", "clear_legacy", "two", "twobig", "onebig", "onebig_legacy", "bridge"})
+            for (final String base : new String[] {"tall8", "tall14", "overhang", "sealed", "tall8_legacy", "tall14_legacy", "overhang_legacy", "sealed_legacy", "clear", "clear_legacy", "two", "two_solo", "twobig", "twobig_solo", "onebig", "onebig_legacy", "bridge"})
             {
                 final String name = "scaffoldbench_" + base + "_" + i;
                 if (!nameWanted(name))
@@ -1008,6 +1008,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                     case "onebig_legacy" -> BuilderScaffoldGameTests::oneBuilderBigLegacy;
                     case "two" -> BuilderScaffoldGameTests::twoBuilders;
                     case "twobig" -> BuilderScaffoldGameTests::twoBuildersBig;
+                    case "two_solo" -> BuilderScaffoldGameTests::twoBuildersSolo;
+                    case "twobig_solo" -> BuilderScaffoldGameTests::twoBuildersBigSolo;
                     case "bridge" -> BuilderScaffoldGameTests::bridgeOverTrench;
                     default -> BuilderScaffoldGameTests::sealedRoofLegacy;
                 };
@@ -1026,7 +1028,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     {
         for (final String name : new String[] {"scaffold_reach_box_l40", "scaffold_reach_box_l1", "scaffold_reach_clear_l40", "scaffold_legacy_box_l40", "scaffold_legacy_box_l1",
           "scaffold_tall_wall8", "scaffold_tall_tower14", "scaffold_sealed_roof", "scaffold_overhang", "scaffold_tall_tower14_legacy", "scaffold_tall_wall8_legacy",
-          "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held", "scaffold_bridge", "scaffold_overhang_legacy", "scaffold_sealed_legacy", "scaffold_two_builders_big", "scaffold_escape_pit", "scaffold_supply_delivery", "scaffold_supply_crafters", "scaffold_clear_ledge", "scaffold_climb_arm_twice", "scaffold_probe_arm", "scaffold_probe_descend", "scaffold_probe_wall5", "scaffold_probe_top1", "scaffold_probe_top3", "scaffold_probe_top8", "scaffold_probe_inside5", "scaffold_stock_arrives"})
+          "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held", "scaffold_bridge", "scaffold_overhang_legacy", "scaffold_sealed_legacy", "scaffold_two_builders_big", "scaffold_escape_pit", "scaffold_supply_delivery", "scaffold_supply_crafters", "scaffold_clear_ledge", "scaffold_climb_arm_twice", "scaffold_probe_arm", "scaffold_probe_descend", "scaffold_probe_wall5", "scaffold_probe_top1", "scaffold_probe_top3", "scaffold_probe_top8", "scaffold_probe_inside5", "scaffold_stock_arrives", "scaffold_sealed_no_items"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -1038,6 +1040,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_tall_wall8" -> BuilderScaffoldGameTests::tallWall8;
                 case "scaffold_tall_tower14" -> BuilderScaffoldGameTests::tallTower14;
                 case "scaffold_sealed_roof" -> BuilderScaffoldGameTests::sealedRoof;
+                case "scaffold_sealed_no_items" -> BuilderScaffoldGameTests::sealedRoofNoItems;
                 case "scaffold_overhang" -> BuilderScaffoldGameTests::overhangSlab;
                 case "scaffold_tall_tower14_legacy" -> BuilderScaffoldGameTests::tallTower14Legacy;
                 case "scaffold_tall_wall8_legacy" -> BuilderScaffoldGameTests::tallWall8Legacy;

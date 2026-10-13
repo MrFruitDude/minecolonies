@@ -62,6 +62,9 @@ public final class BuilderScaffolding
     /** Ticks a tower has to be of no use before it comes down. */
     static final int IDLE_GRACE = 1200;
 
+    /** Ticks a tower of a helper without work has to be of no use before it comes down. */
+    static final int HELPER_IDLE_GRACE = 60;
+
     /** A tower comes down in the middle of the stage only if the builder is this close to it (blocks). */
     static final double DISMANTLE_NEAR = 12.0D;
 
@@ -88,6 +91,8 @@ public final class BuilderScaffolding
     private List<BlockPos>       cellsToTakeDown = new ArrayList<>();
     private boolean              needsRescan = false;
     private boolean              takeDownAll = false;
+    /** A helper with nothing to lease: his towers come down after a short while, wherever he stands. */
+    private boolean              idleHelper = false;
     private final Map<BlockPos, Long> idleSince = new HashMap<>();
 
     // for the tests and the logs
@@ -859,7 +864,7 @@ public final class BuilderScaffolding
             idleSince.clear();
             return false;
         }
-        final List<BlockPos> ahead = ai.peekWorkAhead(ai.servesAnyOrder() ? 48 : 4);
+        final List<BlockPos> ahead = idleHelper ? ai.leadWorkAhead(48) : ai.peekWorkAhead(ai.servesAnyOrder() ? 48 : 4);
         final double eye = ai.worker.getEyeHeight();
         final double usable = Math.max(1.0D, WorkerSettings.reach() - ReachSpots.MARGIN);
         final BlockPos feet = ai.worker.blockPosition();
@@ -872,12 +877,12 @@ public final class BuilderScaffolding
                 continue;
             }
             final long since = idleSince.computeIfAbsent(anchor, k -> now);
-            if (now - since < IDLE_GRACE)
+            if (now - since < (idleHelper ? HELPER_IDLE_GRACE : IDLE_GRACE))
             {
                 continue;
             }
-            // only when he is close, on the ground, and not on his way somewhere else with this tower
-            if (!elevatedOn(tower, feet) && nearTower(tower, feet))
+            // only when he is close, on the ground, and not on his way somewhere else with this tower (a helper who has nothing else to do takes the walk)
+            if (!elevatedOn(tower, feet) && (idleHelper || nearTower(tower, feet)))
             {
                 idleSince.remove(anchor);
                 return startTakeDown(ledger, tower, now);
@@ -995,6 +1000,14 @@ public final class BuilderScaffolding
     /**
      * Asks for the whole scaffolding of this builder to come down (the stage ends, the structure is done).
      */
+    /**
+     * A helper who has nothing to lease takes down the towers of his that the lead does not use, sooner than the others, and from wherever he is.
+     */
+    public void setIdleHelper(final boolean idle)
+    {
+        idleHelper = idle;
+    }
+
     public void requestTakeDownAll()
     {
         takeDownAll = true;
@@ -1167,6 +1180,7 @@ public final class BuilderScaffolding
         phase = Phase.IDLE;
         cellsToTakeDown = new ArrayList<>();
         takeDownAll = false;
+        idleHelper = false;
         needsRescan = false;
         idleSince.clear();
         deniedUntil = 0L;

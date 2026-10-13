@@ -142,4 +142,83 @@ public class WorkOrderCollabTest
         assertTrue(r.isOnCooldown(new BlockPos(30, 64, 30), 1000));
         assertNull(new WorkOrderCollab().getPreviousLead());
     }
+
+    @Test
+    public void theLeadTakesBackHalfOfWhatAHelperHasNotBegunOn()
+    {
+        final WorkOrderCollab c = new WorkOrderCollab();
+        c.addAssistant(HELPER, 0);
+        for (int i = 0; i < 5; i++)
+        {
+            c.lease(CELL.east(i), HELPER, 100, false);
+        }
+        c.getAssistant(HELPER).active = CELL.east(0);
+        // four are not begun on: two come back, the ones the helper would have come to last
+        assertEquals(2, c.stealLeases(HELPER));
+        assertTrue(c.isLeasedTo(CELL.east(0), HELPER));
+        assertTrue(c.isLeasedTo(CELL.east(1), HELPER));
+        assertTrue(c.isLeasedTo(CELL.east(2), HELPER));
+        assertFalse(c.isLeasedTo(CELL.east(3), HELPER));
+        assertFalse(c.isLeasedTo(CELL.east(4), HELPER));
+        assertTrue("the lead scans the stage again for them", c.isRescanRequested());
+        // the position he works on is never taken
+        assertEquals(1, c.stealLeases(HELPER));
+        assertEquals(1, c.stealLeases(HELPER));
+        assertEquals(0, c.stealLeases(HELPER));
+        assertTrue(c.isLeasedTo(CELL.east(0), HELPER));
+    }
+
+    @Test
+    public void theLeadsOwnMarkIsNoLeaseOfAHelper()
+    {
+        final WorkOrderCollab c = new WorkOrderCollab();
+        c.setLeadPending(LEAD, CELL);
+        assertFalse(c.isLeasedTo(CELL, LEAD));
+    }
+
+    @Test
+    public void builderTerritoriesKeepTheLeadOutOfTheHelpersPartAndAreGivenUpOnce()
+    {
+        final WorkOrderCollab c = new WorkOrderCollab();
+        c.setProgress(null, BuildingProgressStage.BUILD_SOLID);
+        c.addAssistant(HELPER, 0);
+        c.setTerritory(0, new int[] {100}, java.util.List.of(LEAD, HELPER), LEAD);
+        assertTrue(c.hasTerritory());
+        assertTrue(c.territoryCovers(java.util.List.of(LEAD, HELPER)));
+        // slab 0 (x < 100) is the lead's, slab 1 the helper's
+        assertFalse(c.isInOthersTerritory(new BlockPos(99, 70, 0), LEAD));
+        assertTrue(c.isInOthersTerritory(new BlockPos(100, 70, 0), LEAD));
+        assertTrue(c.isInOthersTerritory(new BlockPos(99, 70, 0), HELPER));
+        assertFalse(c.isInOthersTerritory(new BlockPos(100, 70, 0), HELPER));
+        // a helper who left has no part any more
+        c.removeAssistant(HELPER, 0);
+        assertFalse(c.hasTerritory());
+        assertFalse(c.isInOthersTerritory(new BlockPos(100, 70, 0), LEAD));
+        // given up: not made again in this stage, made again in the next
+        c.addAssistant(HELPER, 0);
+        c.setTerritory(0, new int[] {100}, java.util.List.of(LEAD, HELPER), LEAD);
+        c.consumeRescan();
+        c.dissolveTerritory();
+        assertFalse(c.hasTerritory());
+        assertTrue(c.isTerritoryDissolved());
+        assertTrue("everybody scans the stage again", c.consumeRescan());
+        assertFalse(c.isInOthersTerritory(new BlockPos(100, 70, 0), LEAD));
+        c.setProgress(null, BuildingProgressStage.WEAK_SOLID);
+        assertFalse(c.isTerritoryDissolved());
+    }
+
+    @Test
+    public void theUnleasedRestOfAStageIsWhatNobodyHasDoneOrTaken()
+    {
+        final WorkOrderCollab c = new WorkOrderCollab();
+        c.setProgress(null, BuildingProgressStage.BUILD_SOLID);
+        final int[] totals = new int[BuildingProgressStage.values().length];
+        totals[BuildingProgressStage.BUILD_SOLID.ordinal()] = 100;
+        c.setStageTotals(totals);
+        assertEquals(100, c.getUnleasedStageRemaining());
+        c.lease(CELL, HELPER, 100, false);
+        c.lease(CELL.above(), HELPER, 100, false);
+        c.blockProcessed();
+        assertEquals(97, c.getUnleasedStageRemaining());
+    }
 }
