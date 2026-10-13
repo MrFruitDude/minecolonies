@@ -118,10 +118,31 @@ busy RS CPU/tick 13.6k -> 8.8k ns (-35.0% BETTER), busy rsAlloc/tick -23.8%, bus
 | storm ticks to completion | 23.2k | 18.1k | -21.8% BETTER (courier switch) |
 | storm / busy request latency p50 | 11.8k / 1910 | 9250 / 1640 | -21.9% / -14.1% BETTER |
 | storm RS CPU / tick | 12.4 us | 12.9 us (noise) | same work in a 22% shorter run |
-| storm `stuckRoots` (trees unchanged for 3000 ticks) | 113 | 237 | WORSE by the verdict rule; the switch off gives 113 again, so it comes with the courier switch; every storm repeat finishes (0 hangs), the scripted stock arrives in 5 bursts at fixed ticks and a faster courier leaves more requests waiting for the next burst; not investigated further |
+| storm `stuckRoots` (trees unchanged for 3000 ticks) | 113 | 237 | WORSE by the verdict rule; a metric artifact, explained in "Closed: storm `stuckRoots` doubled with the courier switch" below (the definition is fixed: 243 on, 254 off) |
 
 Micro @100/1000 WORSE flags that the changes cannot touch (complete +26%, stockEventInline +31..40%, ledgerRead +17.7%, save@1000 +12.8%, idleTick@1000 +3.5%): the usual load pattern of this machine
 (the same ops move +-20% between two runs of identical code; the paired quick runs above show them flat).
+
+## Closed: storm `stuckRoots` doubled with the courier switch (113 -> 237): a metric artifact
+
+What a "stuck root" is: `MacroRun.scanRequests` (every 10 ticks) fingerprints every request TREE (the top request and everything below it: state, wait reason, resolver, number of children
+of each member) and counts a tree whose fingerprint did not change for 3000 ticks. Nothing about the tree needs to be wrong for that: it only stood still.
+
+What the 113 are (same in every repeat, switch on or off; histogram `extra.stuckWhy` of the result JSON, new): 107 `Stack` requests + 6 `MinimumStack` requests `IN_PROGRESS/NO_SOURCE` at the retrying
+resolver, flagged at tick ~3000 and finishing 16000 ticks later. They ask for goods that the storm scenario brings in bursts at ticks 600 / 1500 / 2600 / 3800 / 5200 (and that nobody can craft):
+the goods of the 4th and 5th burst wait 3800 / 5200 ticks for their stock, by design of the scenario, then wait in the courier queue like everything else. Not a stuck request.
+
+What the other ~125 are (only with the switch on, 45-130 per repeat): a `Delivery` child `IN_PROGRESS/COURIER_BUSY` under a `FOLLOWUP_IN_PROGRESS/COURIER_BUSY` parent: deliveries queued for the 3 couriers
+(308 deliveries, 3 couriers, 18-23k ticks). `RequestWaitTracker.refreshCourierReasons` writes `COURIER_BUSY` when every courier of the warehouse holds a task and `AWAITING_DELIVERY` as soon as one is
+between two tasks. With the old timing every courier idles ~100 ticks after each task, so the reason of every queued delivery flipped between the two every few hundred ticks, and because the wait
+reason is part of the fingerprint every flip counted as a change that reset the 3000-tick clock: queued deliveries almost never reached "unchanged for 3000 ticks". With decide-at-once a courier is never
+between two tasks, the reason stays `COURIER_BUSY` for the whole queue wait and the clock runs out. Both modes have the same ~120-130 deliveries that sit 3000+ ticks in the courier queue; only the
+instrument saw them in one of them. In the same runs the switch on is the better system: storm p50 latency 9.1k vs 11.9k, `maxOpenAge` 18.0k vs 24.0k, remaining time of the flagged trees max 16k vs 21k,
+ticks to completion -22%.
+
+Check (full mode, 5 runs of storm per mode, same code): with the two courier reasons counted as one reason in the fingerprint `stuckRoots` is 239-244 with the switch on and 252-259 with it off (before: 237
+and 113). The old definition stays as `work.stuckRootsStrict` (236 vs 113 in these runs) so earlier results remain comparable. No change to the shipped code: nothing in the courier or the request
+system was found to be slower or to strand requests (0 hangs, `stuckRemainingMax` 16k vs 21k). `stuckRoots` is not part of the score.
 
 ## Closed: the stuck courier was a courier on a leisure break
 

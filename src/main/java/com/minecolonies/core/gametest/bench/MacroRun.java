@@ -449,15 +449,17 @@ public final class MacroRun
             level.getServer().clockManager().setTotalTicks(level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
             // ... and never rain: couriers do not work in the rain, and a long run reaches the first rain by chance
             final var weather = level.getWeatherData();
-            weather.setRaining(false);
+            final boolean rain = BenchEnv.breaks() && tick % 3000 < 300;
+            weather.setRaining(rain);
             weather.setThundering(false);
-            weather.setClearWeatherTime(1_000_000);
+            weather.setClearWeatherTime(rain ? 0 : 1_000_000);
         }
         if (tick % 100 == 0)
         {
             for (final ICitizenData citizen : citizens)
             {
-                citizen.setSaturation(20.0D);
+                // with breaks on a courier is hungry for the first 100 ticks of every 1500: the citizen AI then wants to send it to eat, task or no task
+                citizen.setSaturation(BenchEnv.breaks() && citizen.getJob() instanceof JobDeliveryman && tick % 1500 == 0 ? 2.0D : 20.0D);
                 // a sick citizen walks off to a hospital that does not exist and stops working for good
                 if (citizen.getCitizenDiseaseHandler().isSick())
                 {
@@ -1325,6 +1327,7 @@ public final class MacroRun
         work.addProperty("openMean", openScans == 0 ? 0 : (double) openSum / openScans);
         work.addProperty("duplicatesMax", dupMax);
         work.addProperty("duplicatesMean", dupScans == 0 ? 0 : (double) dupSum / dupScans);
+        work.addProperty("breaks", BenchEnv.breaks() ? 1 : 0);
         work.addProperty("stuckRoots", stuckRoots.size());
         work.addProperty("stuckRootsStrict", stuckRootsStrict.size());
         work.addProperty("maxOpenAge", maxOpenAge);
