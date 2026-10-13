@@ -1,0 +1,6049 @@
+{
+ "schema": 1,
+ "sha": "235632698b",
+ "timestamp": "2026-10-13T01:38:25Z",
+ "mode": "quick",
+ "reps": 3,
+ "flags": "on",
+ "seed": 117,
+ "serverExit": 0,
+ "warmupRuns": 4,
+ "gates": {
+  "ok": true,
+  "failures": [],
+  "hangs": [],
+  "runs": 10
+ },
+ "micro": {},
+ "macro": {
+  "busy": {
+   "byResolver.BuildingRequestResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     14336.0,
+     4328.0,
+     10072.0
+    ],
+    "mean": 9578.666666666666,
+    "median": 10072.0,
+    "sd": 5022.20562435802,
+    "cv": 0.5243115559950606,
+    "min": 4328.0,
+    "max": 14336.0
+   },
+   "byResolver.BuildingRequestResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     6.0,
+     1.0,
+     5.0
+    ],
+    "mean": 4.0,
+    "median": 5.0,
+    "sd": 2.6457513110645907,
+    "cv": 0.6614378277661477,
+    "min": 1.0,
+    "max": 6.0
+   },
+   "byResolver.BuildingRequestResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     215172.0,
+     39440.0,
+     171869.0
+    ],
+    "mean": 142160.33333333334,
+    "median": 171869.0,
+    "sd": 91555.38002942991,
+    "cv": 0.6440290190847652,
+    "min": 39440.0,
+    "max": 215172.0
+   },
+   "byResolver.BuildingRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     17240.0,
+     16352.0,
+     17152.0
+    ],
+    "mean": 16914.666666666668,
+    "median": 17152.0,
+    "sd": 489.26611709102986,
+    "cv": 0.02892555477047709,
+    "min": 16352.0,
+    "max": 17240.0
+   },
+   "byResolver.BuildingRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     2112.0,
+     2002.0,
+     2112.0
+    ],
+    "mean": 2075.3333333333335,
+    "median": 2112.0,
+    "sd": 63.50852961085884,
+    "cv": 0.030601604374008433,
+    "min": 2002.0,
+    "max": 2112.0
+   },
+   "byResolver.BuildingRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     1052538.0,
+     982032.0,
+     929443.0
+    ],
+    "mean": 988004.3333333334,
+    "median": 982032.0,
+    "sd": 61764.44228140762,
+    "cv": 0.06251434350801527,
+    "min": 929443.0,
+    "max": 1052538.0
+   },
+   "byResolver.DeliveryRequestResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     4704.0,
+     3192.0,
+     1992.0
+    ],
+    "mean": 3296.0,
+    "median": 3192.0,
+    "sd": 1358.9878586654113,
+    "cv": 0.4123142775077097,
+    "min": 1992.0,
+    "max": 4704.0
+   },
+   "byResolver.DeliveryRequestResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     84.0,
+     81.0,
+     83.0
+    ],
+    "mean": 82.66666666666667,
+    "median": 83.0,
+    "sd": 1.5275252316519468,
+    "cv": 0.01847812780224129,
+    "min": 81.0,
+    "max": 84.0
+   },
+   "byResolver.DeliveryRequestResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     194344.0,
+     131403.0,
+     172265.0
+    ],
+    "mean": 166004.0,
+    "median": 172265.0,
+    "sd": 31934.189530971347,
+    "cv": 0.1923700003070489,
+    "min": 131403.0,
+    "max": 194344.0
+   },
+   "byResolver.DeliveryRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     5312.0,
+     2496.0,
+     0.0
+    ],
+    "mean": 2602.6666666666665,
+    "median": 2496.0,
+    "sd": 2657.60594019003,
+    "cv": 1.021108839724653,
+    "min": 0.0,
+    "max": 5312.0
+   },
+   "byResolver.DeliveryRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     166.0,
+     162.0,
+     164.0
+    ],
+    "mean": 164.0,
+    "median": 164.0,
+    "sd": 2.0,
+    "cv": 0.012195121951219513,
+    "min": 162.0,
+    "max": 166.0
+   },
+   "byResolver.DeliveryRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     446818.0,
+     374270.0,
+     334508.0
+    ],
+    "mean": 385198.6666666667,
+    "median": 374270.0,
+    "sd": 56947.0002838897,
+    "cv": 0.14783799948396245,
+    "min": 334508.0,
+    "max": 446818.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     12520.0,
+     12520.0,
+     12520.0
+    ],
+    "mean": 12520.0,
+    "median": 12520.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 12520.0,
+    "max": 12520.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     2.0,
+     2.0,
+     2.0
+    ],
+    "mean": 2.0,
+    "median": 2.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 2.0,
+    "max": 2.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     60716.0,
+     78954.0,
+     59027.0
+    ],
+    "mean": 66232.33333333333,
+    "median": 60716.0,
+    "sd": 11049.605528403868,
+    "cv": 0.16683098680509323,
+    "min": 59027.0,
+    "max": 78954.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     40.0,
+     40.0,
+     40.0
+    ],
+    "mean": 40.0,
+    "median": 40.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 40.0,
+    "max": 40.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     3589.0,
+     3335.0,
+     3456.0
+    ],
+    "mean": 3460.0,
+    "median": 3456.0,
+    "sd": 127.04723531033645,
+    "cv": 0.03671885413593539,
+    "min": 3335.0,
+    "max": 3589.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     8400.0,
+     8400.0,
+     8400.0
+    ],
+    "mean": 8400.0,
+    "median": 8400.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 8400.0,
+    "max": 8400.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     2.0,
+     2.0,
+     2.0
+    ],
+    "mean": 2.0,
+    "median": 2.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 2.0,
+    "max": 2.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     45747.0,
+     42156.0,
+     59283.0
+    ],
+    "mean": 49062.0,
+    "median": 45747.0,
+    "sd": 9031.912920306528,
+    "cv": 0.18409182096748047,
+    "min": 42156.0,
+    "max": 59283.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     3744.0,
+     3328.0,
+     3744.0
+    ],
+    "mean": 3605.3333333333335,
+    "median": 3744.0,
+    "sd": 240.17771198288432,
+    "cv": 0.06661733875264912,
+    "min": 3328.0,
+    "max": 3744.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     580.0,
+     540.0,
+     580.0
+    ],
+    "mean": 566.6666666666666,
+    "median": 580.0,
+    "sd": 23.09401076758503,
+    "cv": 0.04075413664867947,
+    "min": 540.0,
+    "max": 580.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     69226.0,
+     146852.0,
+     69755.0
+    ],
+    "mean": 95277.66666666667,
+    "median": 69755.0,
+    "sd": 44665.46601495761,
+    "cv": 0.46879260982767146,
+    "min": 69226.0,
+    "max": 146852.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     58632.0,
+     58464.0,
+     58544.0
+    ],
+    "mean": 58546.666666666664,
+    "median": 58544.0,
+    "sd": 84.03174003513989,
+    "cv": 0.0014352950358996793,
+    "min": 58464.0,
+    "max": 58632.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     9.0,
+     9.0,
+     9.0
+    ],
+    "mean": 9.0,
+    "median": 9.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 9.0,
+    "max": 9.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     735780.0,
+     797297.0,
+     619220.0
+    ],
+    "mean": 717432.3333333334,
+    "median": 735780.0,
+    "sd": 90445.18857481217,
+    "cv": 0.1260679012814851,
+    "min": 619220.0,
+    "max": 797297.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     144.0,
+     144.0,
+     144.0
+    ],
+    "mean": 144.0,
+    "median": 144.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 144.0,
+    "max": 144.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     16053.0,
+     19669.0,
+     22541.0
+    ],
+    "mean": 19421.0,
+    "median": 19669.0,
+    "sd": 3251.1019670259498,
+    "cv": 0.16740136795355284,
+    "min": 16053.0,
+    "max": 22541.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     37632.0,
+     37632.0,
+     37632.0
+    ],
+    "mean": 37632.0,
+    "median": 37632.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 37632.0,
+    "max": 37632.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     9.0,
+     9.0,
+     9.0
+    ],
+    "mean": 9.0,
+    "median": 9.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 9.0,
+    "max": 9.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     324227.0,
+     446139.0,
+     453308.0
+    ],
+    "mean": 407891.3333333333,
+    "median": 446139.0,
+    "sd": 72544.04968247454,
+    "cv": 0.1778514122612915,
+    "min": 324227.0,
+    "max": 453308.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     51536.0,
+     48272.0,
+     51536.0
+    ],
+    "mean": 50448.0,
+    "median": 51536.0,
+    "sd": 1884.4712786349385,
+    "cv": 0.03735472721683592,
+    "min": 48272.0,
+    "max": 51536.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     464.0,
+     432.0,
+     464.0
+    ],
+    "mean": 453.3333333333333,
+    "median": 464.0,
+    "sd": 18.475208614068023,
+    "cv": 0.04075413664867947,
+    "min": 432.0,
+    "max": 464.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     280033.0,
+     293307.0,
+     315212.0
+    ],
+    "mean": 296184.0,
+    "median": 293307.0,
+    "sd": 17765.088150639727,
+    "cv": 0.05997990489236329,
+    "min": 280033.0,
+    "max": 315212.0
+   },
+   "byResolver.StandardRetryingRequestResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "byResolver.StandardRetryingRequestResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     18.0,
+     16.0,
+     18.0
+    ],
+    "mean": 17.333333333333332,
+    "median": 18.0,
+    "sd": 1.1547005383792515,
+    "cv": 0.06661733875264912,
+    "min": 16.0,
+    "max": 18.0
+   },
+   "byResolver.StandardRetryingRequestResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     6177.0,
+     4668.0,
+     5857.0
+    ],
+    "mean": 5567.333333333333,
+    "median": 5857.0,
+    "sd": 795.1102648899292,
+    "cv": 0.1428170754801693,
+    "min": 4668.0,
+    "max": 6177.0
+   },
+   "byResolver.StandardRetryingRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     15944.0,
+     15048.0,
+     17096.0
+    ],
+    "mean": 16029.333333333334,
+    "median": 15944.0,
+    "sd": 1026.6632034573622,
+    "cv": 0.06404902699991862,
+    "min": 15048.0,
+    "max": 17096.0
+   },
+   "byResolver.StandardRetryingRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     18.0,
+     16.0,
+     18.0
+    ],
+    "mean": 17.333333333333332,
+    "median": 18.0,
+    "sd": 1.1547005383792515,
+    "cv": 0.06661733875264912,
+    "min": 16.0,
+    "max": 18.0
+   },
+   "byResolver.StandardRetryingRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     149359.0,
+     118385.0,
+     170907.0
+    ],
+    "mean": 146217.0,
+    "median": 149359.0,
+    "sd": 26401.59548209161,
+    "cv": 0.18056447254485872,
+    "min": 118385.0,
+    "max": 170907.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     458880.0,
+     439280.0,
+     446960.0
+    ],
+    "mean": 448373.3333333333,
+    "median": 446960.0,
+    "sd": 9876.139596691277,
+    "cv": 0.0220265989577687,
+    "min": 439280.0,
+    "max": 458880.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     64.0,
+     64.0,
+     64.0
+    ],
+    "mean": 64.0,
+    "median": 64.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 64.0,
+    "max": 64.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     3875440.0,
+     3853029.0,
+     3881896.0
+    ],
+    "mean": 3870121.6666666665,
+    "median": 3875440.0,
+    "sd": 15150.558548559631,
+    "cv": 0.0039147499364299825,
+    "min": 3853029.0,
+    "max": 3881896.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     136304.0,
+     127648.0,
+     122912.0
+    ],
+    "mean": 128954.66666666667,
+    "median": 127648.0,
+    "sd": 6790.946129467773,
+    "cv": 0.05266149961847915,
+    "min": 122912.0,
+    "max": 136304.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     186.0,
+     182.0,
+     186.0
+    ],
+    "mean": 184.66666666666666,
+    "median": 186.0,
+    "sd": 2.309401076758503,
+    "cv": 0.012505782004107418,
+    "min": 182.0,
+    "max": 186.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     3122003.0,
+     2946589.0,
+     2947433.0
+    ],
+    "mean": 3005341.6666666665,
+    "median": 2947433.0,
+    "sd": 101032.559629722,
+    "cv": 0.03361766176215861,
+    "min": 2946589.0,
+    "max": 3122003.0
+   },
+   "byResolver.WarehouseRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "byResolver.WarehouseRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     186.0,
+     182.0,
+     186.0
+    ],
+    "mean": 184.66666666666666,
+    "median": 186.0,
+    "sd": 2.309401076758503,
+    "cv": 0.012505782004107418,
+    "min": 182.0,
+    "max": 186.0
+   },
+   "byResolver.WarehouseRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     317980.0,
+     424058.0,
+     353800.0
+    ],
+    "mean": 365279.3333333333,
+    "median": 353800.0,
+    "sd": 53962.64301656595,
+    "cv": 0.14772980043555511,
+    "min": 317980.0,
+    "max": 424058.0
+   },
+   "extra.probePairCoarseNs": {
+    "n": 3,
+    "values": [
+     1454.337495,
+     1444.418335,
+     1466.306775
+    ],
+    "mean": 1455.0208683333333,
+    "median": 1454.337495,
+    "sd": 10.960209885897841,
+    "cv": 0.007532682262112372,
+    "min": 1444.418335,
+    "max": 1466.306775
+   },
+   "extra.probePairFineNs": {
+    "n": 3,
+    "values": [
+     90.58462,
+     88.14365,
+     90.292875
+    ],
+    "mean": 89.673715,
+    "median": 90.292875,
+    "sd": 1.3330802543076719,
+    "cv": 0.014865897485207029,
+    "min": 88.14365,
+    "max": 90.58462
+   },
+   "extra.saveLoadRequests@final@6480": {
+    "n": 1,
+    "values": [
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "extra.saveLoadRequests@final@6600": {
+    "n": 1,
+    "values": [
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "extra.saveLoadRequests@final@6700": {
+    "n": 1,
+    "values": [
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "extra.saveLoadRequests@midrun@600": {
+    "n": 3,
+    "values": [
+     42.0,
+     40.0,
+     42.0
+    ],
+    "mean": 41.333333333333336,
+    "median": 42.0,
+    "sd": 1.1547005383792515,
+    "cv": 0.027936303347885116,
+    "min": 40.0,
+    "max": 42.0
+   },
+   "extra.stuckRemainingMax": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "extra.stuckRemainingP50": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "extra.stuckStillOpenAtEnd": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "gates.completedInBudget": {
+    "n": 3,
+    "values": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mean": 1.0,
+    "median": 1.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "gates.conservationChecks": {
+    "n": 3,
+    "values": [
+     325.0,
+     336.0,
+     331.0
+    ],
+    "mean": 330.6666666666667,
+    "median": 331.0,
+    "sd": 5.507570547286102,
+    "cv": 0.01665595931638942,
+    "min": 325.0,
+    "max": 336.0
+   },
+   "gates.conservationMaxDrift": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "gates.drained": {
+    "n": 3,
+    "values": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mean": 1.0,
+    "median": 1.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "gates.incomplete": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "gates.ledgerLeftoverClaims": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "gates.ledgerOrphans": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "gates.playerFallbacks": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "gates.saveLoadIdentical": {
+    "n": 3,
+    "values": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mean": 1.0,
+    "median": 1.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "gates.unexpectedPlayerFallbacks": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "meter.allocBytesPerTick": {
+    "n": 3,
+    "values": [
+     76486.45925925925,
+     77540.37731343284,
+     77279.18181818182
+    ],
+    "mean": 77102.00613029131,
+    "median": 77279.18181818182,
+    "sd": 548.8435428360868,
+    "cv": 0.00711840807239983,
+    "min": 76486.45925925925,
+    "max": 77540.37731343284
+   },
+   "meter.harnessCpuNsPerTick": {
+    "n": 3,
+    "values": [
+     14275.339969135803,
+     14581.792537313433,
+     14332.954242424243
+    ],
+    "mean": 14396.695582957827,
+    "median": 14332.954242424243,
+    "sd": 162.86654968233958,
+    "cv": 0.011312773041831476,
+    "min": 14275.339969135803,
+    "max": 14581.792537313433
+   },
+   "meter.probeOverheadNsPerTick": {
+    "n": 3,
+    "values": [
+     989.7337962962963,
+     974.6156716417911,
+     997.7363636363636
+    ],
+    "mean": 987.3619438581503,
+    "median": 989.7337962962963,
+    "sd": 11.741416548620828,
+    "cv": 0.01189170457870884,
+    "min": 974.6156716417911,
+    "max": 997.7363636363636
+   },
+   "meter.rsAllocBytesPerTick": {
+    "n": 3,
+    "values": [
+     2593.385185185185,
+     2451.5868656716416,
+     2506.110303030303
+    ],
+    "mean": 2517.02745129571,
+    "median": 2506.110303030303,
+    "sd": 71.52677085471493,
+    "cv": 0.028417159621320194,
+    "min": 2451.5868656716416,
+    "max": 2593.385185185185
+   },
+   "meter.rsCpuMax": {
+    "n": 3,
+    "values": [
+     1986302.0,
+     2533702.0,
+     1476676.0
+    ],
+    "mean": 1998893.3333333333,
+    "median": 1986302.0,
+    "sd": 528625.4793569199,
+    "cv": 0.2644590736992402,
+    "min": 1476676.0,
+    "max": 2533702.0
+   },
+   "meter.rsCpuNsPerTick": {
+    "n": 3,
+    "values": [
+     11974.050925925925,
+     11630.087164179104,
+     11594.641212121212
+    ],
+    "mean": 11732.926434075414,
+    "median": 11630.087164179104,
+    "sd": 209.5706785477112,
+    "cv": 0.017861756802553915,
+    "min": 11594.641212121212,
+    "max": 11974.050925925925
+   },
+   "meter.rsCpuNsTotal": {
+    "n": 3,
+    "values": [
+     77591850.0,
+     77921584.0,
+     76524632.0
+    ],
+    "mean": 77346022.0,
+    "median": 77591850.0,
+    "sd": 730200.1621226881,
+    "cv": 0.009440694469363766,
+    "min": 76524632.0,
+    "max": 77921584.0
+   },
+   "meter.rsCpuP50": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "meter.rsCpuP99": {
+    "n": 3,
+    "values": [
+     286956.0,
+     299861.0,
+     289809.0
+    ],
+    "mean": 292208.6666666667,
+    "median": 289809.0,
+    "sd": 6778.905245932659,
+    "cv": 0.02319885075026063,
+    "min": 286956.0,
+    "max": 299861.0
+   },
+   "meter.rsShare": {
+    "n": 3,
+    "values": [
+     0.03839240998281342,
+     0.03603291244056987,
+     0.03737477085077137
+    ],
+    "mean": 0.037266697758051553,
+    "median": 0.03737477085077137,
+    "sd": 0.001183455536972496,
+    "cv": 0.03175638326357499,
+    "min": 0.03603291244056987,
+    "max": 0.03839240998281342
+   },
+   "meter.serverCpuNsPerTick": {
+    "n": 3,
+    "values": [
+     311885.88919753087,
+     322762.8958208955,
+     310226.4160606061
+    ],
+    "mean": 314958.40035967744,
+    "median": 311885.88919753087,
+    "sd": 6809.631034510846,
+    "cv": 0.021620731584661202,
+    "min": 310226.4160606061,
+    "max": 322762.8958208955
+   },
+   "meter.serverCpuP50": {
+    "n": 3,
+    "values": [
+     195662.0,
+     202512.0,
+     195403.0
+    ],
+    "mean": 197859.0,
+    "median": 195662.0,
+    "sd": 4031.696541159813,
+    "cv": 0.020376614362550165,
+    "min": 195403.0,
+    "max": 202512.0
+   },
+   "meter.serverCpuP99": {
+    "n": 3,
+    "values": [
+     4861255.0,
+     4989648.0,
+     4777011.0
+    ],
+    "mean": 4875971.333333333,
+    "median": 4861255.0,
+    "sd": 107079.64929123243,
+    "cv": 0.021960680646173975,
+    "min": 4777011.0,
+    "max": 4989648.0
+   },
+   "meter.ticks": {
+    "n": 3,
+    "values": [
+     6480.0,
+     6700.0,
+     6600.0
+    ],
+    "mean": 6593.333333333333,
+    "median": 6600.0,
+    "sd": 110.15141094572203,
+    "cv": 0.016706482954356224,
+    "min": 6480.0,
+    "max": 6700.0
+   },
+   "meter.ticksWithRs": {
+    "n": 3,
+    "values": [
+     2068.0,
+     2127.0,
+     2108.0
+    ],
+    "mean": 2101.0,
+    "median": 2108.0,
+    "sd": 30.116440692751194,
+    "cv": 0.014334336360186195,
+    "min": 2068.0,
+    "max": 2127.0
+   },
+   "scopes.assign.calls": {
+    "n": 3,
+    "values": [
+     190.0,
+     183.0,
+     189.0
+    ],
+    "mean": 187.33333333333334,
+    "median": 189.0,
+    "sd": 3.7859388972001824,
+    "cv": 0.02020963824128211,
+    "min": 183.0,
+    "max": 190.0
+   },
+   "scopes.assign.inclAllocB": {
+    "n": 3,
+    "values": [
+     4861704.0,
+     4665672.0,
+     4763096.0
+    ],
+    "mean": 4763490.666666667,
+    "median": 4763096.0,
+    "sd": 98016.59592810461,
+    "cv": 0.020576632303279684,
+    "min": 4665672.0,
+    "max": 4861704.0
+   },
+   "scopes.assign.inclCpuNs": {
+    "n": 3,
+    "values": [
+     40177391.0,
+     38955025.0,
+     37447557.0
+    ],
+    "mean": 38859991.0,
+    "median": 38955025.0,
+    "sd": 1367396.0701844948,
+    "cv": 0.03518776085626203,
+    "min": 37447557.0,
+    "max": 40177391.0
+   },
+   "scopes.assign.p50Ns": {
+    "n": 3,
+    "values": [
+     163840.0,
+     131072.0,
+     163840.0
+    ],
+    "mean": 152917.33333333334,
+    "median": 163840.0,
+    "sd": 18918.613620805656,
+    "cv": 0.12371791482634836,
+    "min": 131072.0,
+    "max": 163840.0
+   },
+   "scopes.assign.p99Ns": {
+    "n": 3,
+    "values": [
+     1048576.0,
+     917504.0,
+     917504.0
+    ],
+    "mean": 961194.6666666666,
+    "median": 917504.0,
+    "sd": 75674.45448322262,
+    "cv": 0.0787295821622217,
+    "min": 917504.0,
+    "max": 1048576.0
+   },
+   "scopes.assign.selfCpuNs": {
+    "n": 3,
+    "values": [
+     13270170.0,
+     12879579.0,
+     12821333.0
+    ],
+    "mean": 12990360.666666666,
+    "median": 12879579.0,
+    "sd": 244065.76243777687,
+    "cv": 0.018788220643022706,
+    "min": 12821333.0,
+    "max": 13270170.0
+   },
+   "scopes.attempt.calls": {
+    "n": 3,
+    "values": [
+     194.0,
+     184.0,
+     192.0
+    ],
+    "mean": 190.0,
+    "median": 192.0,
+    "sd": 5.291502622129181,
+    "cv": 0.0278500138006799,
+    "min": 184.0,
+    "max": 194.0
+   },
+   "scopes.attempt.inclAllocB": {
+    "n": 3,
+    "values": [
+     595104.0,
+     563816.0,
+     576120.0
+    ],
+    "mean": 578346.6666666666,
+    "median": 576120.0,
+    "sd": 15762.400494002597,
+    "cv": 0.027254242831293685,
+    "min": 563816.0,
+    "max": 595104.0
+   },
+   "scopes.attempt.inclCpuNs": {
+    "n": 3,
+    "values": [
+     5457603.0,
+     5393086.0,
+     5422725.0
+    ],
+    "mean": 5424471.333333333,
+    "median": 5422725.0,
+    "sd": 32293.93259318743,
+    "cv": 0.005953378791909448,
+    "min": 5393086.0,
+    "max": 5457603.0
+   },
+   "scopes.attempt.p50Ns": {
+    "n": 3,
+    "values": [
+     4096.0,
+     3072.0,
+     2560.0
+    ],
+    "mean": 3242.6666666666665,
+    "median": 3072.0,
+    "sd": 782.0929186057967,
+    "cv": 0.24118819447136003,
+    "min": 2560.0,
+    "max": 4096.0
+   },
+   "scopes.attempt.p99Ns": {
+    "n": 3,
+    "values": [
+     196608.0,
+     196608.0,
+     163840.0
+    ],
+    "mean": 185685.33333333334,
+    "median": 196608.0,
+    "sd": 18918.613620805656,
+    "cv": 0.10188534162169866,
+    "min": 163840.0,
+    "max": 196608.0
+   },
+   "scopes.attempt.selfCpuNs": {
+    "n": 3,
+    "values": [
+     4958724.0,
+     4972748.0,
+     5079163.0
+    ],
+    "mean": 5003545.0,
+    "median": 4972748.0,
+    "sd": 65861.44233920178,
+    "cv": 0.013162955932084507,
+    "min": 4958724.0,
+    "max": 5079163.0
+   },
+   "scopes.canResolve.calls": {
+    "n": 3,
+    "values": [
+     3896.0,
+     3700.0,
+     3894.0
+    ],
+    "mean": 3830.0,
+    "median": 3894.0,
+    "sd": 112.58774356030055,
+    "cv": 0.02939627769198448,
+    "min": 3700.0,
+    "max": 3896.0
+   },
+   "scopes.canResolve.inclAllocB": {
+    "n": 3,
+    "values": [
+     230080.0,
+     213144.0,
+     212440.0
+    ],
+    "mean": 218554.66666666666,
+    "median": 213144.0,
+    "sd": 9987.436374432296,
+    "cv": 0.04569765782976783,
+    "min": 212440.0,
+    "max": 230080.0
+   },
+   "scopes.canResolve.inclCpuNs": {
+    "n": 3,
+    "values": [
+     5457599.0,
+     5308497.0,
+     5147055.0
+    ],
+    "mean": 5304383.666666667,
+    "median": 5308497.0,
+    "sd": 155312.85721836853,
+    "cv": 0.029280094913641273,
+    "min": 5147055.0,
+    "max": 5457599.0
+   },
+   "scopes.canResolve.p50Ns": {
+    "n": 3,
+    "values": [
+     128.0,
+     128.0,
+     128.0
+    ],
+    "mean": 128.0,
+    "median": 128.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 128.0,
+    "max": 128.0
+   },
+   "scopes.canResolve.p99Ns": {
+    "n": 3,
+    "values": [
+     40960.0,
+     40960.0,
+     32768.0
+    ],
+    "mean": 38229.333333333336,
+    "median": 40960.0,
+    "sd": 4729.653405201414,
+    "cv": 0.12371791482634836,
+    "min": 32768.0,
+    "max": 40960.0
+   },
+   "scopes.canResolve.selfCpuNs": {
+    "n": 3,
+    "values": [
+     5299858.0,
+     5140019.0,
+     4992038.0
+    ],
+    "mean": 5143971.666666667,
+    "median": 5140019.0,
+    "sd": 153948.0619570553,
+    "cv": 0.029927859625403966,
+    "min": 4992038.0,
+    "max": 5299858.0
+   },
+   "scopes.colonyUpdate.calls": {
+    "n": 3,
+    "values": [
+     28.0,
+     28.0,
+     28.0
+    ],
+    "mean": 28.0,
+    "median": 28.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 28.0,
+    "max": 28.0
+   },
+   "scopes.colonyUpdate.inclAllocB": {
+    "n": 3,
+    "values": [
+     19264.0,
+     19440.0,
+     18848.0
+    ],
+    "mean": 19184.0,
+    "median": 19264.0,
+    "sd": 304.0,
+    "cv": 0.0158465387823186,
+    "min": 18848.0,
+    "max": 19440.0
+   },
+   "scopes.colonyUpdate.inclCpuNs": {
+    "n": 3,
+    "values": [
+     283577.0,
+     258135.0,
+     319104.0
+    ],
+    "mean": 286938.6666666667,
+    "median": 283577.0,
+    "sd": 30623.199413734244,
+    "cv": 0.10672385067331779,
+    "min": 258135.0,
+    "max": 319104.0
+   },
+   "scopes.colonyUpdate.p50Ns": {
+    "n": 3,
+    "values": [
+     5120.0,
+     5120.0,
+     4096.0
+    ],
+    "mean": 4778.666666666667,
+    "median": 5120.0,
+    "sd": 591.2066756501767,
+    "cv": 0.12371791482634836,
+    "min": 4096.0,
+    "max": 5120.0
+   },
+   "scopes.colonyUpdate.p99Ns": {
+    "n": 3,
+    "values": [
+     57344.0,
+     40960.0,
+     114688.0
+    ],
+    "mean": 70997.33333333333,
+    "median": 57344.0,
+    "sd": 38713.88161026137,
+    "cv": 0.5452864184137626,
+    "min": 40960.0,
+    "max": 114688.0
+   },
+   "scopes.colonyUpdate.selfCpuNs": {
+    "n": 3,
+    "values": [
+     283577.0,
+     258135.0,
+     319104.0
+    ],
+    "mean": 286938.6666666667,
+    "median": 283577.0,
+    "sd": 30623.199413734244,
+    "cv": 0.10672385067331779,
+    "min": 258135.0,
+    "max": 319104.0
+   },
+   "scopes.courierDone.calls": {
+    "n": 3,
+    "values": [
+     71.0,
+     71.0,
+     71.0
+    ],
+    "mean": 71.0,
+    "median": 71.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 71.0,
+    "max": 71.0
+   },
+   "scopes.courierDone.inclAllocB": {
+    "n": 3,
+    "values": [
+     687432.0,
+     668560.0,
+     668080.0
+    ],
+    "mean": 674690.6666666666,
+    "median": 668560.0,
+    "sd": 11036.928075027641,
+    "cv": 0.016358501192192235,
+    "min": 668080.0,
+    "max": 687432.0
+   },
+   "scopes.courierDone.inclCpuNs": {
+    "n": 3,
+    "values": [
+     5941792.0,
+     5883938.0,
+     6093182.0
+    ],
+    "mean": 5972970.666666667,
+    "median": 5941792.0,
+    "sd": 108050.19585976387,
+    "cv": 0.018089858780448925,
+    "min": 5883938.0,
+    "max": 6093182.0
+   },
+   "scopes.courierDone.p50Ns": {
+    "n": 3,
+    "values": [
+     81920.0,
+     81920.0,
+     81920.0
+    ],
+    "mean": 81920.0,
+    "median": 81920.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 81920.0,
+    "max": 81920.0
+   },
+   "scopes.courierDone.p99Ns": {
+    "n": 3,
+    "values": [
+     327680.0,
+     393216.0,
+     327680.0
+    ],
+    "mean": 349525.3333333333,
+    "median": 327680.0,
+    "sd": 37837.22724161131,
+    "cv": 0.10825317547305482,
+    "min": 327680.0,
+    "max": 393216.0
+   },
+   "scopes.courierDone.selfCpuNs": {
+    "n": 3,
+    "values": [
+     737522.0,
+     790059.0,
+     760511.0
+    ],
+    "mean": 762697.3333333334,
+    "median": 760511.0,
+    "sd": 26336.649983119216,
+    "cv": 0.034530932300518354,
+    "min": 737522.0,
+    "max": 790059.0
+   },
+   "scopes.courierPick.calls": {
+    "n": 3,
+    "values": [
+     3815.0,
+     3996.0,
+     3893.0
+    ],
+    "mean": 3901.3333333333335,
+    "median": 3893.0,
+    "sd": 90.78729720249046,
+    "cv": 0.023270838312326673,
+    "min": 3815.0,
+    "max": 3996.0
+   },
+   "scopes.courierPick.inclAllocB": {
+    "n": 3,
+    "values": [
+     147528.0,
+     145744.0,
+     144824.0
+    ],
+    "mean": 146032.0,
+    "median": 145744.0,
+    "sd": 1374.8134418894806,
+    "cv": 0.009414466979083219,
+    "min": 144824.0,
+    "max": 147528.0
+   },
+   "scopes.courierPick.inclCpuNs": {
+    "n": 3,
+    "values": [
+     10456193.0,
+     10525158.0,
+     10442441.0
+    ],
+    "mean": 10474597.333333334,
+    "median": 10456193.0,
+    "sd": 44323.41521513582,
+    "cv": 0.004231514950372872,
+    "min": 10442441.0,
+    "max": 10525158.0
+   },
+   "scopes.courierPick.p50Ns": {
+    "n": 3,
+    "values": [
+     1792.0,
+     1792.0,
+     1792.0
+    ],
+    "mean": 1792.0,
+    "median": 1792.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1792.0,
+    "max": 1792.0
+   },
+   "scopes.courierPick.p99Ns": {
+    "n": 3,
+    "values": [
+     32768.0,
+     28672.0,
+     32768.0
+    ],
+    "mean": 31402.666666666668,
+    "median": 32768.0,
+    "sd": 2364.826702600707,
+    "cv": 0.07530655685082074,
+    "min": 28672.0,
+    "max": 32768.0
+   },
+   "scopes.courierPick.selfCpuNs": {
+    "n": 3,
+    "values": [
+     10456193.0,
+     10525158.0,
+     10442441.0
+    ],
+    "mean": 10474597.333333334,
+    "median": 10456193.0,
+    "sd": 44323.41521513582,
+    "cv": 0.004231514950372872,
+    "min": 10442441.0,
+    "max": 10525158.0
+   },
+   "scopes.create.calls": {
+    "n": 3,
+    "values": [
+     172.0,
+     167.0,
+     171.0
+    ],
+    "mean": 170.0,
+    "median": 171.0,
+    "sd": 2.6457513110645907,
+    "cv": 0.015563243006262299,
+    "min": 167.0,
+    "max": 172.0
+   },
+   "scopes.create.inclAllocB": {
+    "n": 3,
+    "values": [
+     593256.0,
+     576216.0,
+     589648.0
+    ],
+    "mean": 586373.3333333334,
+    "median": 589648.0,
+    "sd": 8979.586924426609,
+    "cv": 0.015313770961207777,
+    "min": 576216.0,
+    "max": 593256.0
+   },
+   "scopes.create.inclCpuNs": {
+    "n": 3,
+    "values": [
+     5038726.0,
+     3896395.0,
+     4038425.0
+    ],
+    "mean": 4324515.333333333,
+    "median": 4038425.0,
+    "sd": 622587.9757193624,
+    "cv": 0.14396711023787076,
+    "min": 3896395.0,
+    "max": 5038726.0
+   },
+   "scopes.create.p50Ns": {
+    "n": 3,
+    "values": [
+     24576.0,
+     24576.0,
+     24576.0
+    ],
+    "mean": 24576.0,
+    "median": 24576.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 24576.0,
+    "max": 24576.0
+   },
+   "scopes.create.p99Ns": {
+    "n": 3,
+    "values": [
+     131072.0,
+     114688.0,
+     114688.0
+    ],
+    "mean": 120149.33333333333,
+    "median": 114688.0,
+    "sd": 9459.306810402828,
+    "cv": 0.0787295821622217,
+    "min": 114688.0,
+    "max": 131072.0
+   },
+   "scopes.create.selfCpuNs": {
+    "n": 3,
+    "values": [
+     5038726.0,
+     3896395.0,
+     4038425.0
+    ],
+    "mean": 4324515.333333333,
+    "median": 4038425.0,
+    "sd": 622587.9757193624,
+    "cv": 0.14396711023787076,
+    "min": 3896395.0,
+    "max": 5038726.0
+   },
+   "scopes.ledgerRead.calls": {
+    "n": 3,
+    "values": [
+     2798.0,
+     3254.0,
+     3322.0
+    ],
+    "mean": 3124.6666666666665,
+    "median": 3254.0,
+    "sd": 284.9374200299661,
+    "cv": 0.09118970131106234,
+    "min": 2798.0,
+    "max": 3322.0
+   },
+   "scopes.ledgerRead.inclAllocB": {
+    "n": 3,
+    "values": [
+     15520.0,
+     17440.0,
+     15904.0
+    ],
+    "mean": 16288.0,
+    "median": 15904.0,
+    "sd": 1015.9685034488028,
+    "cv": 0.06237527648875263,
+    "min": 15520.0,
+    "max": 17440.0
+   },
+   "scopes.ledgerRead.inclCpuNs": {
+    "n": 3,
+    "values": [
+     397881.0,
+     396340.0,
+     378101.0
+    ],
+    "mean": 390774.0,
+    "median": 396340.0,
+    "sd": 11002.152834786471,
+    "cv": 0.028154771900859504,
+    "min": 378101.0,
+    "max": 397881.0
+   },
+   "scopes.ledgerRead.p50Ns": {
+    "n": 3,
+    "values": [
+     40.0,
+     40.0,
+     40.0
+    ],
+    "mean": 40.0,
+    "median": 40.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 40.0,
+    "max": 40.0
+   },
+   "scopes.ledgerRead.p99Ns": {
+    "n": 3,
+    "values": [
+     2048.0,
+     1792.0,
+     1792.0
+    ],
+    "mean": 1877.3333333333333,
+    "median": 1792.0,
+    "sd": 147.8016689125442,
+    "cv": 0.0787295821622217,
+    "min": 1792.0,
+    "max": 2048.0
+   },
+   "scopes.ledgerRead.selfCpuNs": {
+    "n": 3,
+    "values": [
+     397881.0,
+     396340.0,
+     378101.0
+    ],
+    "mean": 390774.0,
+    "median": 396340.0,
+    "sd": 11002.152834786471,
+    "cv": 0.028154771900859504,
+    "min": 378101.0,
+    "max": 397881.0
+   },
+   "scopes.ledgerWrite.calls": {
+    "n": 3,
+    "values": [
+     897.0,
+     872.0,
+     889.0
+    ],
+    "mean": 886.0,
+    "median": 889.0,
+    "sd": 12.767145334803704,
+    "cv": 0.014409870581042556,
+    "min": 872.0,
+    "max": 897.0
+   },
+   "scopes.ledgerWrite.inclAllocB": {
+    "n": 3,
+    "values": [
+     167760.0,
+     134560.0,
+     137744.0
+    ],
+    "mean": 146688.0,
+    "median": 137744.0,
+    "sd": 18318.19729121837,
+    "cv": 0.12487863554768196,
+    "min": 134560.0,
+    "max": 167760.0
+   },
+   "scopes.ledgerWrite.inclCpuNs": {
+    "n": 3,
+    "values": [
+     2072246.0,
+     1476724.0,
+     1506808.0
+    ],
+    "mean": 1685259.3333333333,
+    "median": 1506808.0,
+    "sd": 335477.67719675973,
+    "cv": 0.19906590668939167,
+    "min": 1476724.0,
+    "max": 2072246.0
+   },
+   "scopes.ledgerWrite.p50Ns": {
+    "n": 3,
+    "values": [
+     1536.0,
+     1280.0,
+     1280.0
+    ],
+    "mean": 1365.3333333333333,
+    "median": 1280.0,
+    "sd": 147.8016689125442,
+    "cv": 0.10825317547305482,
+    "min": 1280.0,
+    "max": 1536.0
+   },
+   "scopes.ledgerWrite.p99Ns": {
+    "n": 3,
+    "values": [
+     16384.0,
+     10240.0,
+     8192.0
+    ],
+    "mean": 11605.333333333334,
+    "median": 10240.0,
+    "sd": 4263.25196690664,
+    "cv": 0.36735282343519987,
+    "min": 8192.0,
+    "max": 16384.0
+   },
+   "scopes.ledgerWrite.selfCpuNs": {
+    "n": 3,
+    "values": [
+     2072246.0,
+     1476724.0,
+     1506808.0
+    ],
+    "mean": 1685259.3333333333,
+    "median": 1506808.0,
+    "sd": 335477.67719675973,
+    "cv": 0.19906590668939167,
+    "min": 1476724.0,
+    "max": 2072246.0
+   },
+   "scopes.mgrTick.calls": {
+    "n": 3,
+    "values": [
+     584.0,
+     603.0,
+     594.0
+    ],
+    "mean": 593.6666666666666,
+    "median": 594.0,
+    "sd": 9.504384952922168,
+    "cv": 0.016009632149784674,
+    "min": 584.0,
+    "max": 603.0
+   },
+   "scopes.mgrTick.inclAllocB": {
+    "n": 3,
+    "values": [
+     1118928.0,
+     1096224.0,
+     1116768.0
+    ],
+    "mean": 1110640.0,
+    "median": 1116768.0,
+    "sd": 12531.248620947556,
+    "cv": 0.01128290771172257,
+    "min": 1096224.0,
+    "max": 1118928.0
+   },
+   "scopes.mgrTick.inclCpuNs": {
+    "n": 3,
+    "values": [
+     10446487.0,
+     10578259.0,
+     10572045.0
+    ],
+    "mean": 10532263.666666666,
+    "median": 10572045.0,
+    "sd": 74349.7199546396,
+    "cv": 0.0070592345869527956,
+    "min": 10446487.0,
+    "max": 10578259.0
+   },
+   "scopes.mgrTick.p50Ns": {
+    "n": 3,
+    "values": [
+     10240.0,
+     10240.0,
+     10240.0
+    ],
+    "mean": 10240.0,
+    "median": 10240.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 10240.0,
+    "max": 10240.0
+   },
+   "scopes.mgrTick.p99Ns": {
+    "n": 3,
+    "values": [
+     393216.0,
+     114688.0,
+     458752.0
+    ],
+    "mean": 322218.6666666667,
+    "median": 393216.0,
+    "sd": 182689.5591689173,
+    "cv": 0.5669738536839909,
+    "min": 114688.0,
+    "max": 458752.0
+   },
+   "scopes.mgrTick.selfCpuNs": {
+    "n": 3,
+    "values": [
+     2352380.0,
+     2327094.0,
+     2363331.0
+    ],
+    "mean": 2347601.6666666665,
+    "median": 2352380.0,
+    "sd": 18585.058362387063,
+    "cv": 0.00791661491226311,
+    "min": 2327094.0,
+    "max": 2363331.0
+   },
+   "scopes.reeval.calls": {
+    "n": 3,
+    "values": [
+     584.0,
+     603.0,
+     594.0
+    ],
+    "mean": 593.6666666666666,
+    "median": 594.0,
+    "sd": 9.504384952922168,
+    "cv": 0.016009632149784674,
+    "min": 584.0,
+    "max": 603.0
+   },
+   "scopes.reeval.inclAllocB": {
+    "n": 3,
+    "values": [
+     1113568.0,
+     1090160.0,
+     1111472.0
+    ],
+    "mean": 1105066.6666666667,
+    "median": 1111472.0,
+    "sd": 12952.020588824484,
+    "cv": 0.011720578476856132,
+    "min": 1090160.0,
+    "max": 1113568.0
+   },
+   "scopes.reeval.inclCpuNs": {
+    "n": 3,
+    "values": [
+     8011834.0,
+     8151372.0,
+     8101672.0
+    ],
+    "mean": 8088292.666666667,
+    "median": 8101672.0,
+    "sd": 70724.59459999282,
+    "cv": 0.008744069671398243,
+    "min": 8011834.0,
+    "max": 8151372.0
+   },
+   "scopes.reeval.p50Ns": {
+    "n": 3,
+    "values": [
+     5120.0,
+     5120.0,
+     6144.0
+    ],
+    "mean": 5461.333333333333,
+    "median": 5120.0,
+    "sd": 591.2066756501767,
+    "cv": 0.10825317547305482,
+    "min": 5120.0,
+    "max": 6144.0
+   },
+   "scopes.reeval.p99Ns": {
+    "n": 3,
+    "values": [
+     393216.0,
+     114688.0,
+     458752.0
+    ],
+    "mean": 322218.6666666667,
+    "median": 393216.0,
+    "sd": 182689.5591689173,
+    "cv": 0.5669738536839909,
+    "min": 114688.0,
+    "max": 458752.0
+   },
+   "scopes.reeval.selfCpuNs": {
+    "n": 3,
+    "values": [
+     4513112.0,
+     4641412.0,
+     4347251.0
+    ],
+    "mean": 4500591.666666667,
+    "median": 4513112.0,
+    "sd": 147479.63432397484,
+    "cv": 0.03276894356274819,
+    "min": 4347251.0,
+    "max": 4641412.0
+   },
+   "scopes.save.calls": {
+    "n": 3,
+    "values": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mean": 1.0,
+    "median": 1.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "scopes.save.inclAllocB": {
+    "n": 3,
+    "values": [
+     809752.0,
+     762896.0,
+     767440.0
+    ],
+    "mean": 780029.3333333334,
+    "median": 767440.0,
+    "sd": 25840.659227917025,
+    "cv": 0.033127804460238705,
+    "min": 762896.0,
+    "max": 809752.0
+   },
+   "scopes.save.inclCpuNs": {
+    "n": 3,
+    "values": [
+     721971.0,
+     764476.0,
+     1239978.0
+    ],
+    "mean": 908808.3333333334,
+    "median": 764476.0,
+    "sd": 287587.6907072577,
+    "cv": 0.31644482137662805,
+    "min": 721971.0,
+    "max": 1239978.0
+   },
+   "scopes.save.p50Ns": {
+    "n": 3,
+    "values": [
+     786432.0,
+     786432.0,
+     1310720.0
+    ],
+    "mean": 961194.6666666666,
+    "median": 786432.0,
+    "sd": 302697.8179328905,
+    "cv": 0.3149183286488868,
+    "min": 786432.0,
+    "max": 1310720.0
+   },
+   "scopes.save.p99Ns": {
+    "n": 3,
+    "values": [
+     786432.0,
+     786432.0,
+     1310720.0
+    ],
+    "mean": 961194.6666666666,
+    "median": 786432.0,
+    "sd": 302697.8179328905,
+    "cv": 0.3149183286488868,
+    "min": 786432.0,
+    "max": 1310720.0
+   },
+   "scopes.save.selfCpuNs": {
+    "n": 3,
+    "values": [
+     721971.0,
+     764476.0,
+     1239978.0
+    ],
+    "mean": 908808.3333333334,
+    "median": 764476.0,
+    "sd": 287587.6907072577,
+    "cv": 0.31644482137662805,
+    "min": 721971.0,
+    "max": 1239978.0
+   },
+   "scopes.snapshot.calls": {
+    "n": 3,
+    "values": [
+     129.0,
+     129.0,
+     129.0
+    ],
+    "mean": 129.0,
+    "median": 129.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 129.0,
+    "max": 129.0
+   },
+   "scopes.snapshot.inclAllocB": {
+    "n": 3,
+    "values": [
+     2128568.0,
+     2124496.0,
+     2083000.0
+    ],
+    "mean": 2112021.3333333335,
+    "median": 2124496.0,
+    "sd": 25215.543566089018,
+    "cv": 0.011939057228315094,
+    "min": 2083000.0,
+    "max": 2128568.0
+   },
+   "scopes.snapshot.inclCpuNs": {
+    "n": 3,
+    "values": [
+     15453245.0,
+     16681611.0,
+     15535336.0
+    ],
+    "mean": 15890064.0,
+    "median": 15535336.0,
+    "sd": 686727.5463944926,
+    "cv": 0.04321741853239185,
+    "min": 15453245.0,
+    "max": 16681611.0
+   },
+   "scopes.snapshot.p50Ns": {
+    "n": 3,
+    "values": [
+     114688.0,
+     114688.0,
+     114688.0
+    ],
+    "mean": 114688.0,
+    "median": 114688.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 114688.0,
+    "max": 114688.0
+   },
+   "scopes.snapshot.p99Ns": {
+    "n": 3,
+    "values": [
+     327680.0,
+     524288.0,
+     327680.0
+    ],
+    "mean": 393216.0,
+    "median": 327680.0,
+    "sd": 113511.68172483394,
+    "cv": 0.28867513459481287,
+    "min": 327680.0,
+    "max": 524288.0
+   },
+   "scopes.snapshot.selfCpuNs": {
+    "n": 3,
+    "values": [
+     15453245.0,
+     16681611.0,
+     15535336.0
+    ],
+    "mean": 15890064.0,
+    "median": 15535336.0,
+    "sd": 686727.5463944926,
+    "cv": 0.04321741853239185,
+    "min": 15453245.0,
+    "max": 16681611.0
+   },
+   "scopes.stateChange.calls": {
+    "n": 3,
+    "values": [
+     536.0,
+     519.0,
+     533.0
+    ],
+    "mean": 529.3333333333334,
+    "median": 533.0,
+    "sd": 9.073771725877465,
+    "cv": 0.017141886132010325,
+    "min": 519.0,
+    "max": 536.0
+   },
+   "scopes.stateChange.inclAllocB": {
+    "n": 3,
+    "values": [
+     3147136.0,
+     3024016.0,
+     3054496.0
+    ],
+    "mean": 3075216.0,
+    "median": 3054496.0,
+    "sd": 64121.93384482411,
+    "cv": 0.020851196743521143,
+    "min": 3024016.0,
+    "max": 3147136.0
+   },
+   "scopes.stateChange.inclCpuNs": {
+    "n": 3,
+    "values": [
+     25307842.0,
+     24250931.0,
+     24363688.0
+    ],
+    "mean": 24640820.333333332,
+    "median": 24363688.0,
+    "sd": 580402.4148074621,
+    "cv": 0.023554508614403225,
+    "min": 24250931.0,
+    "max": 25307842.0
+   },
+   "scopes.stateChange.p50Ns": {
+    "n": 3,
+    "values": [
+     28672.0,
+     32768.0,
+     32768.0
+    ],
+    "mean": 31402.666666666668,
+    "median": 32768.0,
+    "sd": 2364.826702600707,
+    "cv": 0.07530655685082074,
+    "min": 28672.0,
+    "max": 32768.0
+   },
+   "scopes.stateChange.p99Ns": {
+    "n": 3,
+    "values": [
+     327680.0,
+     327680.0,
+     229376.0
+    ],
+    "mean": 294912.0,
+    "median": 327680.0,
+    "sd": 56755.84086241697,
+    "cv": 0.19245008972987523,
+    "min": 229376.0,
+    "max": 327680.0
+   },
+   "scopes.stateChange.selfCpuNs": {
+    "n": 3,
+    "values": [
+     8885126.0,
+     9251527.0,
+     9369552.0
+    ],
+    "mean": 9168735.0,
+    "median": 9251527.0,
+    "sd": 252602.5016047941,
+    "cv": 0.027550420162082784,
+    "min": 8885126.0,
+    "max": 9369552.0
+   },
+   "scopes.stockEvent.calls": {
+    "n": 3,
+    "values": [
+     209.0,
+     220.0,
+     214.0
+    ],
+    "mean": 214.33333333333334,
+    "median": 214.0,
+    "sd": 5.507570547286102,
+    "cv": 0.02569628560164589,
+    "min": 209.0,
+    "max": 220.0
+   },
+   "scopes.stockEvent.inclAllocB": {
+    "n": 3,
+    "values": [
+     7112.0,
+     7400.0,
+     7232.0
+    ],
+    "mean": 7248.0,
+    "median": 7232.0,
+    "sd": 144.665130560201,
+    "cv": 0.019959317130270555,
+    "min": 7112.0,
+    "max": 7400.0
+   },
+   "scopes.stockEvent.inclCpuNs": {
+    "n": 3,
+    "values": [
+     370679.0,
+     419326.0,
+     390090.0
+    ],
+    "mean": 393365.0,
+    "median": 390090.0,
+    "sd": 24488.300696455033,
+    "cv": 0.06225337967652189,
+    "min": 370679.0,
+    "max": 419326.0
+   },
+   "scopes.stockEvent.p50Ns": {
+    "n": 3,
+    "values": [
+     1792.0,
+     1792.0,
+     1792.0
+    ],
+    "mean": 1792.0,
+    "median": 1792.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1792.0,
+    "max": 1792.0
+   },
+   "scopes.stockEvent.p99Ns": {
+    "n": 3,
+    "values": [
+     7168.0,
+     10240.0,
+     8192.0
+    ],
+    "mean": 8533.333333333334,
+    "median": 8192.0,
+    "sd": 1564.1858372115935,
+    "cv": 0.1833030277982336,
+    "min": 7168.0,
+    "max": 10240.0
+   },
+   "scopes.stockEvent.selfCpuNs": {
+    "n": 3,
+    "values": [
+     370679.0,
+     419326.0,
+     390090.0
+    ],
+    "mean": 393365.0,
+    "median": 390090.0,
+    "sd": 24488.300696455033,
+    "cv": 0.06225337967652189,
+    "min": 370679.0,
+    "max": 419326.0
+   },
+   "scopes.viewSync.calls": {
+    "n": 3,
+    "values": [
+     321.0,
+     332.0,
+     327.0
+    ],
+    "mean": 326.6666666666667,
+    "median": 327.0,
+    "sd": 5.507570547286102,
+    "cv": 0.016859909838630924,
+    "min": 321.0,
+    "max": 332.0
+   },
+   "scopes.viewSync.inclAllocB": {
+    "n": 3,
+    "values": [
+     10705000.0,
+     10575352.0,
+     10580248.0
+    ],
+    "mean": 10620200.0,
+    "median": 10580248.0,
+    "sd": 73479.74349438082,
+    "cv": 0.006918866263759705,
+    "min": 10575352.0,
+    "max": 10705000.0
+   },
+   "scopes.viewSync.inclCpuNs": {
+    "n": 3,
+    "values": [
+     24645862.0,
+     26712517.0,
+     25061566.0
+    ],
+    "mean": 25473315.0,
+    "median": 25061566.0,
+    "sd": 1093123.3468858856,
+    "cv": 0.042912488888308634,
+    "min": 24645862.0,
+    "max": 26712517.0
+   },
+   "scopes.viewSync.p50Ns": {
+    "n": 3,
+    "values": [
+     6144.0,
+     6144.0,
+     6144.0
+    ],
+    "mean": 6144.0,
+    "median": 6144.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 6144.0,
+    "max": 6144.0
+   },
+   "scopes.viewSync.p99Ns": {
+    "n": 3,
+    "values": [
+     327680.0,
+     524288.0,
+     393216.0
+    ],
+    "mean": 415061.3333333333,
+    "median": 393216.0,
+    "sd": 100107.89358154198,
+    "cv": 0.24118819447136003,
+    "min": 327680.0,
+    "max": 524288.0
+   },
+   "scopes.viewSync.selfCpuNs": {
+    "n": 3,
+    "values": [
+     9192617.0,
+     10030906.0,
+     9526230.0
+    ],
+    "mean": 9583251.0,
+    "median": 9526230.0,
+    "sd": 422043.43107196916,
+    "cv": 0.04403969290504539,
+    "min": 9192617.0,
+    "max": 10030906.0
+   },
+   "ticksRun": {
+    "n": 3,
+    "values": [
+     6480.0,
+     6700.0,
+     6600.0
+    ],
+    "mean": 6593.333333333333,
+    "median": 6600.0,
+    "sd": 110.15141094572203,
+    "cv": 0.016706482954356224,
+    "min": 6480.0,
+    "max": 6700.0
+   },
+   "ticksToCompletion": {
+    "n": 3,
+    "values": [
+     5485.0,
+     5820.0,
+     5650.0
+    ],
+    "mean": 5651.666666666667,
+    "median": 5650.0,
+    "sd": 167.5062187900298,
+    "cv": 0.029638375486292504,
+    "min": 5485.0,
+    "max": 5820.0
+   },
+   "ticksToQuiesce": {
+    "n": 3,
+    "values": [
+     6080.0,
+     6300.0,
+     6200.0
+    ],
+    "mean": 6193.333333333333,
+    "median": 6200.0,
+    "sd": 110.15141094572203,
+    "cv": 0.01778548077702724,
+    "min": 6080.0,
+    "max": 6300.0
+   },
+   "work.courierDistance": {
+    "n": 3,
+    "values": [
+     7358.142775793169,
+     7537.8843195638,
+     7516.886150130969
+    ],
+    "mean": 7470.971081829312,
+    "median": 7516.886150130969,
+    "sd": 98.2746191146106,
+    "cv": 0.013154196159804633,
+    "min": 7358.142775793169,
+    "max": 7537.8843195638
+   },
+   "work.courierDistanceAtDone": {
+    "n": 3,
+    "values": [
+     6636.9876084614025,
+     7047.682545725153,
+     6811.259145895366
+    ],
+    "mean": 6831.976433360641,
+    "median": 6811.259145895366,
+    "sd": 206.12978283949704,
+    "cv": 0.030171325216076902,
+    "min": 6636.9876084614025,
+    "max": 7047.682545725153
+   },
+   "work.courierTasks": {
+    "n": 3,
+    "values": [
+     71.0,
+     71.0,
+     71.0
+    ],
+    "mean": 71.0,
+    "median": 71.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 71.0,
+    "max": 71.0
+   },
+   "work.courierTasksAtDone": {
+    "n": 3,
+    "values": [
+     63.0,
+     67.0,
+     64.0
+    ],
+    "mean": 64.66666666666667,
+    "median": 64.0,
+    "sd": 2.0816659994661326,
+    "cv": 0.0321907113319505,
+    "min": 63.0,
+    "max": 67.0
+   },
+   "work.courierTeleports": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.deliveriesArrived": {
+    "n": 3,
+    "values": [
+     83.0,
+     81.0,
+     82.0
+    ],
+    "mean": 82.0,
+    "median": 82.0,
+    "sd": 1.0,
+    "cv": 0.012195121951219513,
+    "min": 81.0,
+    "max": 83.0
+   },
+   "work.deliveriesCreated": {
+    "n": 3,
+    "values": [
+     83.0,
+     81.0,
+     82.0
+    ],
+    "mean": 82.0,
+    "median": 82.0,
+    "sd": 1.0,
+    "cv": 0.012195121951219513,
+    "min": 81.0,
+    "max": 83.0
+   },
+   "work.deliveriesCreatedAtDone": {
+    "n": 3,
+    "values": [
+     83.0,
+     81.0,
+     82.0
+    ],
+    "mean": 82.0,
+    "median": 82.0,
+    "sd": 1.0,
+    "cv": 0.012195121951219513,
+    "min": 81.0,
+    "max": 83.0
+   },
+   "work.duplicatesMax": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.duplicatesMean": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.itemsDelivered": {
+    "n": 3,
+    "values": [
+     315.0,
+     322.0,
+     322.0
+    ],
+    "mean": 319.6666666666667,
+    "median": 322.0,
+    "sd": 4.041451884327381,
+    "cv": 0.012642706624590345,
+    "min": 315.0,
+    "max": 322.0
+   },
+   "work.itemsDeliveredAtDone": {
+    "n": 3,
+    "values": [
+     279.0,
+     297.0,
+     287.0
+    ],
+    "mean": 287.6666666666667,
+    "median": 287.0,
+    "sd": 9.018499505645789,
+    "cv": 0.031350519718351524,
+    "min": 279.0,
+    "max": 297.0
+   },
+   "work.latencyMean": {
+    "n": 3,
+    "values": [
+     878.3076923076923,
+     932.5,
+     880.0
+    ],
+    "mean": 896.9358974358975,
+    "median": 880.0,
+    "sd": 30.811037303600582,
+    "cv": 0.03435143736768836,
+    "min": 878.3076923076923,
+    "max": 932.5
+   },
+   "work.latencyP50": {
+    "n": 3,
+    "values": [
+     710.0,
+     720.0,
+     710.0
+    ],
+    "mean": 713.3333333333334,
+    "median": 710.0,
+    "sd": 5.773502691896257,
+    "cv": 0.008093695362471388,
+    "min": 710.0,
+    "max": 720.0
+   },
+   "work.latencyP99": {
+    "n": 3,
+    "values": [
+     3760.0,
+     3980.0,
+     3600.0
+    ],
+    "mean": 3780.0,
+    "median": 3760.0,
+    "sd": 190.78784028338913,
+    "cv": 0.05047297361994421,
+    "min": 3600.0,
+    "max": 3980.0
+   },
+   "work.maxOpenAge": {
+    "n": 3,
+    "values": [
+     3750.0,
+     3970.0,
+     3590.0
+    ],
+    "mean": 3770.0,
+    "median": 3750.0,
+    "sd": 190.78784028338913,
+    "cv": 0.050606854186575366,
+    "min": 3590.0,
+    "max": 3970.0
+   },
+   "work.openMax": {
+    "n": 3,
+    "values": [
+     53.0,
+     51.0,
+     51.0
+    ],
+    "mean": 51.666666666666664,
+    "median": 51.0,
+    "sd": 1.1547005383792515,
+    "cv": 0.022349042678308093,
+    "min": 51.0,
+    "max": 53.0
+   },
+   "work.openMean": {
+    "n": 3,
+    "values": [
+     20.419753086419753,
+     20.817910447761193,
+     20.171212121212122
+    ],
+    "mean": 20.469625218464355,
+    "median": 20.419753086419753,
+    "sd": 0.3262209428536862,
+    "cv": 0.015936830272760584,
+    "min": 20.171212121212122,
+    "max": 20.817910447761193
+   },
+   "work.requestsCreated": {
+    "n": 3,
+    "values": [
+     172.0,
+     167.0,
+     171.0
+    ],
+    "mean": 170.0,
+    "median": 171.0,
+    "sd": 2.6457513110645907,
+    "cv": 0.015563243006262299,
+    "min": 167.0,
+    "max": 172.0
+   },
+   "work.requestsCreatedAtDone": {
+    "n": 3,
+    "values": [
+     172.0,
+     167.0,
+     171.0
+    ],
+    "mean": 170.0,
+    "median": 171.0,
+    "sd": 2.6457513110645907,
+    "cv": 0.015563243006262299,
+    "min": 167.0,
+    "max": 172.0
+   },
+   "work.requestsFinished": {
+    "n": 3,
+    "values": [
+     65.0,
+     64.0,
+     65.0
+    ],
+    "mean": 64.66666666666667,
+    "median": 65.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.008928096946231326,
+    "min": 64.0,
+    "max": 65.0
+   },
+   "work.sicknessCures": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.stuckRoots": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.stuckRootsStrict": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.unloadCycles": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.viewBytes": {
+    "n": 3,
+    "values": [
+     101531.0,
+     100869.0,
+     102337.0
+    ],
+    "mean": 101579.0,
+    "median": 101531.0,
+    "sd": 735.176169363507,
+    "cv": 0.007237481855142372,
+    "min": 100869.0,
+    "max": 102337.0
+   },
+   "work.viewMessages": {
+    "n": 3,
+    "values": [
+     129.0,
+     129.0,
+     129.0
+    ],
+    "mean": 129.0,
+    "median": 129.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 129.0,
+    "max": 129.0
+   }
+  },
+  "storm": {
+   "byResolver.BuildingRequestResolver.attempt.allocB": {
+    "n": 1,
+    "values": [
+     2000.0
+    ],
+    "mean": 2000.0,
+    "median": 2000.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 2000.0,
+    "max": 2000.0
+   },
+   "byResolver.BuildingRequestResolver.attempt.calls": {
+    "n": 1,
+    "values": [
+     2.0
+    ],
+    "mean": 2.0,
+    "median": 2.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 2.0,
+    "max": 2.0
+   },
+   "byResolver.BuildingRequestResolver.attempt.cpuNs": {
+    "n": 1,
+    "values": [
+     52735.0
+    ],
+    "mean": 52735.0,
+    "median": 52735.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 52735.0,
+    "max": 52735.0
+   },
+   "byResolver.BuildingRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     115696.0,
+     70552.0,
+     69472.0
+    ],
+    "mean": 85240.0,
+    "median": 70552.0,
+    "sd": 26381.19694024515,
+    "cv": 0.3094931597870149,
+    "min": 69472.0,
+    "max": 115696.0
+   },
+   "byResolver.BuildingRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     5970.0,
+     5985.0,
+     5970.0
+    ],
+    "mean": 5975.0,
+    "median": 5970.0,
+    "sd": 8.660254037844387,
+    "cv": 0.0014494149017312782,
+    "min": 5970.0,
+    "max": 5985.0
+   },
+   "byResolver.BuildingRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     2910752.0,
+     1792189.0,
+     1614314.0
+    ],
+    "mean": 2105751.6666666665,
+    "median": 1792189.0,
+    "sd": 702800.8476135564,
+    "cv": 0.33375295802380456,
+    "min": 1614314.0,
+    "max": 2910752.0
+   },
+   "byResolver.DeliveryRequestResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     5656.0,
+     5600.0,
+     5656.0
+    ],
+    "mean": 5637.333333333333,
+    "median": 5656.0,
+    "sd": 32.331615074619044,
+    "cv": 0.005735267574731383,
+    "min": 5600.0,
+    "max": 5656.0
+   },
+   "byResolver.DeliveryRequestResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     101.0,
+     100.0,
+     101.0
+    ],
+    "mean": 100.66666666666667,
+    "median": 101.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.005735267574731381,
+    "min": 100.0,
+    "max": 101.0
+   },
+   "byResolver.DeliveryRequestResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     214440.0,
+     184474.0,
+     148428.0
+    ],
+    "mean": 182447.33333333334,
+    "median": 184474.0,
+    "sd": 33052.63331919763,
+    "cv": 0.18116260027111547,
+    "min": 148428.0,
+    "max": 214440.0
+   },
+   "byResolver.DeliveryRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     6208.0,
+     5568.0,
+     3232.0
+    ],
+    "mean": 5002.666666666667,
+    "median": 5568.0,
+    "sd": 1566.475449323523,
+    "cv": 0.31312808821765514,
+    "min": 3232.0,
+    "max": 6208.0
+   },
+   "byResolver.DeliveryRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     101.0,
+     100.0,
+     101.0
+    ],
+    "mean": 100.66666666666667,
+    "median": 101.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.005735267574731381,
+    "min": 100.0,
+    "max": 101.0
+   },
+   "byResolver.DeliveryRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     834322.0,
+     926772.0,
+     715523.0
+    ],
+    "mean": 825539.0,
+    "median": 834322.0,
+    "sd": 105898.0208360855,
+    "cv": 0.1282774294564951,
+    "min": 715523.0,
+    "max": 926772.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     12520.0,
+     12520.0,
+     12520.0
+    ],
+    "mean": 12520.0,
+    "median": 12520.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 12520.0,
+    "max": 12520.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     2.0,
+     2.0,
+     2.0
+    ],
+    "mean": 2.0,
+    "median": 2.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 2.0,
+    "max": 2.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     940889.0,
+     298739.0,
+     116825.0
+    ],
+    "mean": 452151.0,
+    "median": 298739.0,
+    "sd": 432922.39527656685,
+    "cv": 0.9574730461208022,
+    "min": 116825.0,
+    "max": 940889.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     28.0,
+     28.0,
+     28.0
+    ],
+    "mean": 28.0,
+    "median": 28.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 28.0,
+    "max": 28.0
+   },
+   "byResolver.PrivateWorkerCraftingProductionResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     17573.0,
+     5615.0,
+     2889.0
+    ],
+    "mean": 8692.333333333334,
+    "median": 5615.0,
+    "sd": 7810.726556046712,
+    "cv": 0.8985765106469354,
+    "min": 2889.0,
+    "max": 17573.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     8400.0,
+     8400.0,
+     8400.0
+    ],
+    "mean": 8400.0,
+    "median": 8400.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 8400.0,
+    "max": 8400.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     2.0,
+     2.0,
+     2.0
+    ],
+    "mean": 2.0,
+    "median": 2.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 2.0,
+    "max": 2.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     59507.0,
+     135184.0,
+     57830.0
+    ],
+    "mean": 84173.66666666667,
+    "median": 59507.0,
+    "sd": 44184.20150159255,
+    "cv": 0.5249171534437834,
+    "min": 57830.0,
+    "max": 135184.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     11584.0,
+     11408.0,
+     11584.0
+    ],
+    "mean": 11525.333333333334,
+    "median": 11584.0,
+    "sd": 101.61364737737414,
+    "cv": 0.008816547377722188,
+    "min": 11408.0,
+    "max": 11584.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     4270.0,
+     4256.0,
+     4270.0
+    ],
+    "mean": 4265.333333333333,
+    "median": 4270.0,
+    "sd": 8.082903768654761,
+    "cv": 0.001895022765392645,
+    "min": 4256.0,
+    "max": 4270.0
+   },
+   "byResolver.PrivateWorkerCraftingRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     348601.0,
+     289229.0,
+     325931.0
+    ],
+    "mean": 321253.6666666667,
+    "median": 325931.0,
+    "sd": 29961.08611738455,
+    "cv": 0.0932630168186445,
+    "min": 289229.0,
+    "max": 348601.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     47888.0,
+     45320.0,
+     47888.0
+    ],
+    "mean": 47032.0,
+    "median": 47888.0,
+    "sd": 1482.6354912789589,
+    "cv": 0.031523972854204774,
+    "min": 45320.0,
+    "max": 47888.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     8.0,
+     7.0,
+     8.0
+    ],
+    "mean": 7.666666666666667,
+    "median": 8.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.07530655685082074,
+    "min": 7.0,
+    "max": 8.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     847746.0,
+     1115860.0,
+     692294.0
+    ],
+    "mean": 885300.0,
+    "median": 847746.0,
+    "sd": 214265.6441803025,
+    "cv": 0.24202602979815035,
+    "min": 692294.0,
+    "max": 1115860.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     112.0,
+     98.0,
+     112.0
+    ],
+    "mean": 107.33333333333333,
+    "median": 112.0,
+    "sd": 8.082903768654761,
+    "cv": 0.07530655685082076,
+    "min": 98.0,
+    "max": 112.0
+   },
+   "byResolver.PublicWorkerCraftingProductionResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     16245.0,
+     18074.0,
+     15399.0
+    ],
+    "mean": 16572.666666666668,
+    "median": 16245.0,
+    "sd": 1367.2711264900365,
+    "cv": 0.08250157648075364,
+    "min": 15399.0,
+    "max": 18074.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     33440.0,
+     29248.0,
+     33440.0
+    ],
+    "mean": 32042.666666666668,
+    "median": 33440.0,
+    "sd": 2420.252328442911,
+    "cv": 0.07553217569624598,
+    "min": 29248.0,
+    "max": 33440.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     8.0,
+     7.0,
+     8.0
+    ],
+    "mean": 7.666666666666667,
+    "median": 8.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.07530655685082074,
+    "min": 7.0,
+    "max": 8.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     563823.0,
+     417371.0,
+     439868.0
+    ],
+    "mean": 473687.3333333333,
+    "median": 439868.0,
+    "sd": 78866.07354454343,
+    "cv": 0.16649394652283311,
+    "min": 417371.0,
+    "max": 563823.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     467408.0,
+     465488.0,
+     467408.0
+    ],
+    "mean": 466768.0,
+    "median": 467408.0,
+    "sd": 1108.5125168440816,
+    "cv": 0.002374868278982453,
+    "min": 465488.0,
+    "max": 467408.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     4270.0,
+     4256.0,
+     4270.0
+    ],
+    "mean": 4265.333333333333,
+    "median": 4270.0,
+    "sd": 8.082903768654761,
+    "cv": 0.001895022765392645,
+    "min": 4256.0,
+    "max": 4270.0
+   },
+   "byResolver.PublicWorkerCraftingRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     1603728.0,
+     1580547.0,
+     1704923.0
+    ],
+    "mean": 1629732.6666666667,
+    "median": 1603728.0,
+    "sd": 66140.2249794581,
+    "cv": 0.040583481163653894,
+    "min": 1580547.0,
+    "max": 1704923.0
+   },
+   "byResolver.StandardRetryingRequestResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "byResolver.StandardRetryingRequestResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     295.0,
+     295.0,
+     295.0
+    ],
+    "mean": 295.0,
+    "median": 295.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 295.0,
+    "max": 295.0
+   },
+   "byResolver.StandardRetryingRequestResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     77999.0,
+     60774.0,
+     72586.0
+    ],
+    "mean": 70453.0,
+    "median": 72586.0,
+    "sd": 8808.372324101656,
+    "cv": 0.12502480127321272,
+    "min": 60774.0,
+    "max": 77999.0
+   },
+   "byResolver.StandardRetryingRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     659488.0,
+     651896.0,
+     651032.0
+    ],
+    "mean": 654138.6666666666,
+    "median": 651896.0,
+    "sd": 4652.75717541044,
+    "cv": 0.007112799491153415,
+    "min": 651032.0,
+    "max": 659488.0
+   },
+   "byResolver.StandardRetryingRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     295.0,
+     295.0,
+     295.0
+    ],
+    "mean": 295.0,
+    "median": 295.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 295.0,
+    "max": 295.0
+   },
+   "byResolver.StandardRetryingRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     3720792.0,
+     2645951.0,
+     2675068.0
+    ],
+    "mean": 3013937.0,
+    "median": 2675068.0,
+    "sd": 612327.4803493634,
+    "cv": 0.20316532175336227,
+    "min": 2645951.0,
+    "max": 3720792.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.attempt.allocB": {
+    "n": 3,
+    "values": [
+     521560.0,
+     459576.0,
+     438800.0
+    ],
+    "mean": 473312.0,
+    "median": 459576.0,
+    "sd": 43055.92493490298,
+    "cv": 0.09096732162907971,
+    "min": 438800.0,
+    "max": 521560.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.attempt.calls": {
+    "n": 3,
+    "values": [
+     93.0,
+     93.0,
+     93.0
+    ],
+    "mean": 93.0,
+    "median": 93.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 93.0,
+    "max": 93.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.attempt.cpuNs": {
+    "n": 3,
+    "values": [
+     6837294.0,
+     5163034.0,
+     4335934.0
+    ],
+    "mean": 5445420.666666667,
+    "median": 5163034.0,
+    "sd": 1274365.3850184935,
+    "cv": 0.234025149391916,
+    "min": 4335934.0,
+    "max": 6837294.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     340952.0,
+     331056.0,
+     309112.0
+    ],
+    "mean": 327040.0,
+    "median": 331056.0,
+    "sd": 16295.477654858725,
+    "cv": 0.049827169932909504,
+    "min": 309112.0,
+    "max": 340952.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     398.0,
+     397.0,
+     398.0
+    ],
+    "mean": 397.6666666666667,
+    "median": 398.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.001451844767450861,
+    "min": 397.0,
+    "max": 398.0
+   },
+   "byResolver.WarehouseConcreteRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     5377179.0,
+     4486090.0,
+     4178978.0
+    ],
+    "mean": 4680749.0,
+    "median": 4486090.0,
+    "sd": 622366.8562921712,
+    "cv": 0.13296309122582117,
+    "min": 4178978.0,
+    "max": 5377179.0
+   },
+   "byResolver.WarehouseRequestResolver.canResolve.allocB": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "byResolver.WarehouseRequestResolver.canResolve.calls": {
+    "n": 3,
+    "values": [
+     398.0,
+     397.0,
+     398.0
+    ],
+    "mean": 397.6666666666667,
+    "median": 398.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.001451844767450861,
+    "min": 397.0,
+    "max": 398.0
+   },
+   "byResolver.WarehouseRequestResolver.canResolve.cpuNs": {
+    "n": 3,
+    "values": [
+     460089.0,
+     761483.0,
+     394585.0
+    ],
+    "mean": 538719.0,
+    "median": 460089.0,
+    "sd": 195679.69561505353,
+    "cv": 0.3632314724653363,
+    "min": 394585.0,
+    "max": 761483.0
+   },
+   "extra.probePairCoarseNs": {
+    "n": 3,
+    "values": [
+     1481.469165,
+     1462.25217,
+     1442.974435
+    ],
+    "mean": 1462.2319233333335,
+    "median": 1462.25217,
+    "sd": 19.247372986692397,
+    "cv": 0.013163009697405385,
+    "min": 1442.974435,
+    "max": 1481.469165
+   },
+   "extra.probePairFineNs": {
+    "n": 3,
+    "values": [
+     92.17775,
+     89.663995,
+     89.04184
+    ],
+    "mean": 90.29452833333333,
+    "median": 89.663995,
+    "sd": 1.660319877420718,
+    "cv": 0.01838782380358025,
+    "min": 89.04184,
+    "max": 92.17775
+   },
+   "extra.saveLoadRequests@final@8361": {
+    "n": 1,
+    "values": [
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "extra.saveLoadRequests@final@8536": {
+    "n": 1,
+    "values": [
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "extra.saveLoadRequests@final@9056": {
+    "n": 1,
+    "values": [
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "extra.saveLoadRequests@midrun@600": {
+    "n": 3,
+    "values": [
+     116.0,
+     116.0,
+     116.0
+    ],
+    "mean": 116.0,
+    "median": 116.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 116.0,
+    "max": 116.0
+   },
+   "extra.stuckRemainingMax": {
+    "n": 3,
+    "values": [
+     5050.0,
+     4820.0,
+     4950.0
+    ],
+    "mean": 4940.0,
+    "median": 4950.0,
+    "sd": 115.32562594670796,
+    "cv": 0.02334526841026477,
+    "min": 4820.0,
+    "max": 5050.0
+   },
+   "extra.stuckRemainingP50": {
+    "n": 3,
+    "values": [
+     3420.0,
+     3090.0,
+     3440.0
+    ],
+    "mean": 3316.6666666666665,
+    "median": 3420.0,
+    "sd": 196.5536398374076,
+    "cv": 0.05926240397107767,
+    "min": 3090.0,
+    "max": 3440.0
+   },
+   "extra.stuckStillOpenAtEnd": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "extra.stuckWhenFlagged.3000": {
+    "n": 3,
+    "values": [
+     39.0,
+     41.0,
+     39.0
+    ],
+    "mean": 39.666666666666664,
+    "median": 39.0,
+    "sd": 1.1547005383792515,
+    "cv": 0.02911009760619962,
+    "min": 39.0,
+    "max": 41.0
+   },
+   "extra.stuckWhenFlagged.5000": {
+    "n": 1,
+    "values": [
+     1.0
+    ],
+    "mean": 1.0,
+    "median": 1.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "extra.stuckWhenFlagged.6000": {
+    "n": 1,
+    "values": [
+     1.0
+    ],
+    "mean": 1.0,
+    "median": 1.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "extra.stuckWhy.child Delivery IN_PROGRESS/COURIER_BUSY @DeliveryRequestResolver | root Stack FOLLOWUP_IN_PROGRESS/COURIER_BUSY @WarehouseConcreteRequestResolver": {
+    "n": 1,
+    "values": [
+     1.0
+    ],
+    "mean": 1.0,
+    "median": 1.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "extra.stuckWhy.child PublicCrafting IN_PROGRESS/NONE @PublicWorkerCraftingProductionResolver | root Stack IN_PROGRESS/AWAITING_CRAFT @PublicWorkerCraftingRequestResolver": {
+    "n": 2,
+    "values": [
+     1.0,
+     2.0
+    ],
+    "mean": 1.5,
+    "median": 1.5,
+    "sd": 0.7071067811865476,
+    "cv": 0.47140452079103173,
+    "min": 1.0,
+    "max": 2.0
+   },
+   "extra.stuckWhy.root MinimumStack IN_PROGRESS/NO_SOURCE @StandardRetryingRequestResolver": {
+    "n": 3,
+    "values": [
+     4.0,
+     4.0,
+     4.0
+    ],
+    "mean": 4.0,
+    "median": 4.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 4.0,
+    "max": 4.0
+   },
+   "extra.stuckWhy.root Stack IN_PROGRESS/NO_SOURCE @StandardRetryingRequestResolver": {
+    "n": 3,
+    "values": [
+     35.0,
+     35.0,
+     35.0
+    ],
+    "mean": 35.0,
+    "median": 35.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 35.0,
+    "max": 35.0
+   },
+   "gates.completedInBudget": {
+    "n": 3,
+    "values": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mean": 1.0,
+    "median": 1.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "gates.conservationChecks": {
+    "n": 3,
+    "values": [
+     427.0,
+     453.0,
+     419.0
+    ],
+    "mean": 433.0,
+    "median": 427.0,
+    "sd": 17.776388834631177,
+    "cv": 0.04105401578436761,
+    "min": 419.0,
+    "max": 453.0
+   },
+   "gates.conservationMaxDrift": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "gates.drained": {
+    "n": 3,
+    "values": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mean": 1.0,
+    "median": 1.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "gates.incomplete": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "gates.ledgerLeftoverClaims": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "gates.ledgerOrphans": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "gates.playerFallbacks": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "gates.saveLoadIdentical": {
+    "n": 3,
+    "values": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mean": 1.0,
+    "median": 1.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "gates.unexpectedPlayerFallbacks": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "meter.allocBytesPerTick": {
+    "n": 3,
+    "values": [
+     46116.756326148075,
+     45605.21024734982,
+     46696.24781724674
+    ],
+    "mean": 46139.404796914874,
+    "median": 46116.756326148075,
+    "sd": 545.8712848764783,
+    "cv": 0.011830913018474354,
+    "min": 45605.21024734982,
+    "max": 46696.24781724674
+   },
+   "meter.harnessCpuNsPerTick": {
+    "n": 3,
+    "values": [
+     18736.569821930647,
+     17373.705057420495,
+     19494.48654467169
+    ],
+    "mean": 18534.920474674276,
+    "median": 18736.569821930647,
+    "sd": 1074.6745431076042,
+    "cv": 0.057981071166505235,
+    "min": 17373.705057420495,
+    "max": 19494.48654467169
+   },
+   "meter.probeOverheadNsPerTick": {
+    "n": 3,
+    "values": [
+     894.1455014058107,
+     844.0876766784452,
+     881.3018777658175
+    ],
+    "mean": 873.1783519500244,
+    "median": 881.3018777658175,
+    "sd": 25.998850125896027,
+    "cv": 0.029774959569066423,
+    "min": 844.0876766784452,
+    "max": 894.1455014058107
+   },
+   "meter.rsAllocBytesPerTick": {
+    "n": 3,
+    "values": [
+     3323.0065604498595,
+     3008.6810954063603,
+     3372.0320535821074
+    ],
+    "mean": 3234.573236479442,
+    "median": 3323.0065604498595,
+    "sd": 197.15810734826744,
+    "cv": 0.060953360129467116,
+    "min": 3008.6810954063603,
+    "max": 3372.0320535821074
+   },
+   "meter.rsCpuMax": {
+    "n": 3,
+    "values": [
+     6652140.0,
+     5032207.0,
+     4992791.0
+    ],
+    "mean": 5559046.0,
+    "median": 5032207.0,
+    "sd": 946852.2983501704,
+    "cv": 0.17032640103179042,
+    "min": 4992791.0,
+    "max": 6652140.0
+   },
+   "meter.rsCpuNsPerTick": {
+    "n": 3,
+    "values": [
+     17819.360238987818,
+     14417.865613957598,
+     14635.461188853007
+    ],
+    "mean": 15624.229013932809,
+    "median": 14635.461188853007,
+    "sd": 1904.1501463808331,
+    "cv": 0.12187162289306046,
+    "min": 14417.865613957598,
+    "max": 17819.360238987818
+   },
+   "meter.rsCpuNsTotal": {
+    "n": 3,
+    "values": [
+     152106059.0,
+     130568191.0,
+     122367091.0
+    ],
+    "mean": 135013780.33333334,
+    "median": 130568191.0,
+    "sd": 15359817.798943494,
+    "cv": 0.11376481542122506,
+    "min": 122367091.0,
+    "max": 152106059.0
+   },
+   "meter.rsCpuP50": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "meter.rsCpuP99": {
+    "n": 3,
+    "values": [
+     324227.0,
+     267050.0,
+     270571.0
+    ],
+    "mean": 287282.6666666667,
+    "median": 270571.0,
+    "sd": 32043.130064544777,
+    "cv": 0.11153868221964236,
+    "min": 267050.0,
+    "max": 324227.0
+   },
+   "meter.rsShare": {
+    "n": 3,
+    "values": [
+     0.0695404585671874,
+     0.0634396709656389,
+     0.06439555403936215
+    ],
+    "mean": 0.06579189452406281,
+    "median": 0.06439555403936215,
+    "sd": 0.003281345364589426,
+    "cv": 0.04987461431725914,
+    "min": 0.0634396709656389,
+    "max": 0.0695404585671874
+   },
+   "meter.serverCpuNsPerTick": {
+    "n": 3,
+    "values": [
+     256244.50292877227,
+     227268.92170936396,
+     227274.40437746682
+    ],
+    "mean": 236929.27633853434,
+    "median": 227274.40437746682,
+    "sd": 16727.47713162651,
+    "cv": 0.07060114051809115,
+    "min": 227268.92170936396,
+    "max": 256244.50292877227
+   },
+   "meter.serverCpuP50": {
+    "n": 3,
+    "values": [
+     157356.0,
+     140877.0,
+     141711.0
+    ],
+    "mean": 146648.0,
+    "median": 141711.0,
+    "sd": 9282.770976384152,
+    "cv": 0.06329967661600672,
+    "min": 140877.0,
+    "max": 157356.0
+   },
+   "meter.serverCpuP99": {
+    "n": 3,
+    "values": [
+     1568860.0,
+     1377696.0,
+     1197712.0
+    ],
+    "mean": 1381422.6666666667,
+    "median": 1377696.0,
+    "sd": 185602.06224429008,
+    "cv": 0.13435573827099748,
+    "min": 1197712.0,
+    "max": 1568860.0
+   },
+   "meter.ticks": {
+    "n": 3,
+    "values": [
+     8536.0,
+     9056.0,
+     8361.0
+    ],
+    "mean": 8651.0,
+    "median": 8536.0,
+    "sd": 361.4899721984,
+    "cv": 0.041785917489122644,
+    "min": 8361.0,
+    "max": 9056.0
+   },
+   "meter.ticksWithRs": {
+    "n": 3,
+    "values": [
+     2371.0,
+     2505.0,
+     2305.0
+    ],
+    "mean": 2393.6666666666665,
+    "median": 2371.0,
+    "sd": 101.90845565179238,
+    "cv": 0.04257420511842044,
+    "min": 2305.0,
+    "max": 2505.0
+   },
+   "scopes.assign.calls": {
+    "n": 3,
+    "values": [
+     509.0,
+     508.0,
+     509.0
+    ],
+    "mean": 508.6666666666667,
+    "median": 509.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.0011350267415261319,
+    "min": 508.0,
+    "max": 509.0
+   },
+   "scopes.assign.inclAllocB": {
+    "n": 3,
+    "values": [
+     9947312.0,
+     9738808.0,
+     9657392.0
+    ],
+    "mean": 9781170.666666666,
+    "median": 9738808.0,
+    "sd": 149530.42581806998,
+    "cv": 0.015287579668521272,
+    "min": 9657392.0,
+    "max": 9947312.0
+   },
+   "scopes.assign.inclCpuNs": {
+    "n": 3,
+    "values": [
+     80499501.0,
+     70574984.0,
+     65291097.0
+    ],
+    "mean": 72121860.66666667,
+    "median": 70574984.0,
+    "sd": 7721302.262132492,
+    "cv": 0.10705911066020414,
+    "min": 65291097.0,
+    "max": 80499501.0
+   },
+   "scopes.assign.p50Ns": {
+    "n": 3,
+    "values": [
+     81920.0,
+     65536.0,
+     65536.0
+    ],
+    "mean": 70997.33333333333,
+    "median": 65536.0,
+    "sd": 9459.306810402828,
+    "cv": 0.13323467750529824,
+    "min": 65536.0,
+    "max": 81920.0
+   },
+   "scopes.assign.p99Ns": {
+    "n": 3,
+    "values": [
+     1310720.0,
+     1048576.0,
+     917504.0
+    ],
+    "mean": 1092266.6666666667,
+    "median": 1048576.0,
+    "sd": 200215.78716308397,
+    "cv": 0.1833030277982336,
+    "min": 917504.0,
+    "max": 1310720.0
+   },
+   "scopes.assign.selfCpuNs": {
+    "n": 3,
+    "values": [
+     29517874.0,
+     26146093.0,
+     26680363.0
+    ],
+    "mean": 27448110.0,
+    "median": 26680363.0,
+    "sd": 1812264.7074853608,
+    "cv": 0.06602511821343476,
+    "min": 26146093.0,
+    "max": 29517874.0
+   },
+   "scopes.attempt.calls": {
+    "n": 3,
+    "values": [
+     509.0,
+     508.0,
+     509.0
+    ],
+    "mean": 508.6666666666667,
+    "median": 509.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.0011350267415261319,
+    "min": 508.0,
+    "max": 509.0
+   },
+   "scopes.attempt.inclAllocB": {
+    "n": 3,
+    "values": [
+     629464.0,
+     562664.0,
+     546704.0
+    ],
+    "mean": 579610.6666666666,
+    "median": 562664.0,
+    "sd": 43905.541032235706,
+    "cv": 0.07575005699038614,
+    "min": 546704.0,
+    "max": 629464.0
+   },
+   "scopes.attempt.inclCpuNs": {
+    "n": 3,
+    "values": [
+     9541698.0,
+     7428171.0,
+     5863765.0
+    ],
+    "mean": 7611211.333333333,
+    "median": 7428171.0,
+    "sd": 1845785.906014653,
+    "cv": 0.24250882352077463,
+    "min": 5863765.0,
+    "max": 9541698.0
+   },
+   "scopes.attempt.p50Ns": {
+    "n": 3,
+    "values": [
+     384.0,
+     256.0,
+     320.0
+    ],
+    "mean": 320.0,
+    "median": 320.0,
+    "sd": 64.0,
+    "cv": 0.2,
+    "min": 256.0,
+    "max": 384.0
+   },
+   "scopes.attempt.p99Ns": {
+    "n": 3,
+    "values": [
+     196608.0,
+     229376.0,
+     163840.0
+    ],
+    "mean": 196608.0,
+    "median": 196608.0,
+    "sd": 32768.0,
+    "cv": 0.16666666666666666,
+    "min": 163840.0,
+    "max": 229376.0
+   },
+   "scopes.attempt.selfCpuNs": {
+    "n": 3,
+    "values": [
+     8749493.0,
+     6880463.0,
+     5393218.0
+    ],
+    "mean": 7007724.666666667,
+    "median": 6880463.0,
+    "sd": 1681752.6922108177,
+    "cv": 0.23998555482785106,
+    "min": 5393218.0,
+    "max": 8749493.0
+   },
+   "scopes.canResolve.calls": {
+    "n": 3,
+    "values": [
+     15842.0,
+     15812.0,
+     15842.0
+    ],
+    "mean": 15832.0,
+    "median": 15842.0,
+    "sd": 17.320508075688775,
+    "cv": 0.0010940189537448695,
+    "min": 15812.0,
+    "max": 15842.0
+   },
+   "scopes.canResolve.inclAllocB": {
+    "n": 3,
+    "values": [
+     1601336.0,
+     1535968.0,
+     1511840.0
+    ],
+    "mean": 1549714.6666666667,
+    "median": 1535968.0,
+    "sd": 46304.55309506111,
+    "cv": 0.029879405603522566,
+    "min": 1511840.0,
+    "max": 1601336.0
+   },
+   "scopes.canResolve.inclCpuNs": {
+    "n": 3,
+    "values": [
+     15289281.0,
+     12505950.0,
+     11627610.0
+    ],
+    "mean": 13140947.0,
+    "median": 12505950.0,
+    "sd": 1911641.8389873663,
+    "cv": 0.14547215196799487,
+    "min": 11627610.0,
+    "max": 15289281.0
+   },
+   "scopes.canResolve.p50Ns": {
+    "n": 3,
+    "values": [
+     80.0,
+     80.0,
+     80.0
+    ],
+    "mean": 80.0,
+    "median": 80.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 80.0,
+    "max": 80.0
+   },
+   "scopes.canResolve.p99Ns": {
+    "n": 3,
+    "values": [
+     14336.0,
+     12288.0,
+     12288.0
+    ],
+    "mean": 12970.666666666666,
+    "median": 12288.0,
+    "sd": 1182.4133513003535,
+    "cv": 0.09116056881941459,
+    "min": 12288.0,
+    "max": 14336.0
+   },
+   "scopes.canResolve.selfCpuNs": {
+    "n": 3,
+    "values": [
+     14719711.0,
+     11984931.0,
+     11258644.0
+    ],
+    "mean": 12654428.666666666,
+    "median": 11984931.0,
+    "sd": 1825079.8719169344,
+    "cv": 0.14422459677886693,
+    "min": 11258644.0,
+    "max": 14719711.0
+   },
+   "scopes.colonyUpdate.calls": {
+    "n": 3,
+    "values": [
+     2.0,
+     2.0,
+     2.0
+    ],
+    "mean": 2.0,
+    "median": 2.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 2.0,
+    "max": 2.0
+   },
+   "scopes.colonyUpdate.inclAllocB": {
+    "n": 3,
+    "values": [
+     2624.0,
+     2624.0,
+     2624.0
+    ],
+    "mean": 2624.0,
+    "median": 2624.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 2624.0,
+    "max": 2624.0
+   },
+   "scopes.colonyUpdate.inclCpuNs": {
+    "n": 3,
+    "values": [
+     153991.0,
+     107729.0,
+     122136.0
+    ],
+    "mean": 127952.0,
+    "median": 122136.0,
+    "sd": 23673.03430065525,
+    "cv": 0.18501496108427576,
+    "min": 107729.0,
+    "max": 153991.0
+   },
+   "scopes.colonyUpdate.p50Ns": {
+    "n": 3,
+    "values": [
+     40960.0,
+     20480.0,
+     20480.0
+    ],
+    "mean": 27306.666666666668,
+    "median": 20480.0,
+    "sd": 11824.133513003535,
+    "cv": 0.4330127018922193,
+    "min": 20480.0,
+    "max": 40960.0
+   },
+   "scopes.colonyUpdate.p99Ns": {
+    "n": 3,
+    "values": [
+     114688.0,
+     98304.0,
+     114688.0
+    ],
+    "mean": 109226.66666666667,
+    "median": 114688.0,
+    "sd": 9459.306810402828,
+    "cv": 0.08660254037844385,
+    "min": 98304.0,
+    "max": 114688.0
+   },
+   "scopes.colonyUpdate.selfCpuNs": {
+    "n": 3,
+    "values": [
+     153991.0,
+     107729.0,
+     122136.0
+    ],
+    "mean": 127952.0,
+    "median": 122136.0,
+    "sd": 23673.03430065525,
+    "cv": 0.18501496108427576,
+    "min": 107729.0,
+    "max": 153991.0
+   },
+   "scopes.courierDone.calls": {
+    "n": 3,
+    "values": [
+     57.0,
+     57.0,
+     57.0
+    ],
+    "mean": 57.0,
+    "median": 57.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 57.0,
+    "max": 57.0
+   },
+   "scopes.courierDone.inclAllocB": {
+    "n": 3,
+    "values": [
+     883784.0,
+     847312.0,
+     858128.0
+    ],
+    "mean": 863074.6666666666,
+    "median": 858128.0,
+    "sd": 18732.427214147487,
+    "cv": 0.021704295048417,
+    "min": 847312.0,
+    "max": 883784.0
+   },
+   "scopes.courierDone.inclCpuNs": {
+    "n": 3,
+    "values": [
+     11849337.0,
+     10285553.0,
+     8962028.0
+    ],
+    "mean": 10365639.333333334,
+    "median": 10285553.0,
+    "sd": 1445319.57745003,
+    "cv": 0.13943371276697228,
+    "min": 8962028.0,
+    "max": 11849337.0
+   },
+   "scopes.courierDone.p50Ns": {
+    "n": 3,
+    "values": [
+     196608.0,
+     163840.0,
+     163840.0
+    ],
+    "mean": 174762.66666666666,
+    "median": 163840.0,
+    "sd": 18918.613620805656,
+    "cv": 0.10825317547305482,
+    "min": 163840.0,
+    "max": 196608.0
+   },
+   "scopes.courierDone.p99Ns": {
+    "n": 3,
+    "values": [
+     1048576.0,
+     917504.0,
+     655360.0
+    ],
+    "mean": 873813.3333333334,
+    "median": 917504.0,
+    "sd": 200215.78716308397,
+    "cv": 0.229128784747792,
+    "min": 655360.0,
+    "max": 1048576.0
+   },
+   "scopes.courierDone.selfCpuNs": {
+    "n": 3,
+    "values": [
+     2688044.0,
+     2496954.0,
+     2037492.0
+    ],
+    "mean": 2407496.6666666665,
+    "median": 2496954.0,
+    "sd": 334374.695575687,
+    "cv": 0.13888895474096344,
+    "min": 2037492.0,
+    "max": 2688044.0
+   },
+   "scopes.courierPick.calls": {
+    "n": 3,
+    "values": [
+     1927.0,
+     1939.0,
+     1903.0
+    ],
+    "mean": 1923.0,
+    "median": 1927.0,
+    "sd": 18.33030277982336,
+    "cv": 0.009532138731057389,
+    "min": 1903.0,
+    "max": 1939.0
+   },
+   "scopes.courierPick.inclAllocB": {
+    "n": 3,
+    "values": [
+     258176.0,
+     185064.0,
+     183864.0
+    ],
+    "mean": 209034.66666666666,
+    "median": 185064.0,
+    "sd": 42561.87238989062,
+    "cv": 0.20361154955106625,
+    "min": 183864.0,
+    "max": 258176.0
+   },
+   "scopes.courierPick.inclCpuNs": {
+    "n": 3,
+    "values": [
+     13406103.0,
+     9457091.0,
+     8437598.0
+    ],
+    "mean": 10433597.333333334,
+    "median": 9457091.0,
+    "sd": 2624249.2160685374,
+    "cv": 0.2515191196505702,
+    "min": 8437598.0,
+    "max": 13406103.0
+   },
+   "scopes.courierPick.p50Ns": {
+    "n": 3,
+    "values": [
+     4096.0,
+     2560.0,
+     2560.0
+    ],
+    "mean": 3072.0,
+    "median": 2560.0,
+    "sd": 886.8100134752651,
+    "cv": 0.28867513459481287,
+    "min": 2560.0,
+    "max": 4096.0
+   },
+   "scopes.courierPick.p99Ns": {
+    "n": 3,
+    "values": [
+     98304.0,
+     81920.0,
+     81920.0
+    ],
+    "mean": 87381.33333333333,
+    "median": 81920.0,
+    "sd": 9459.306810402828,
+    "cv": 0.10825317547305482,
+    "min": 81920.0,
+    "max": 98304.0
+   },
+   "scopes.courierPick.selfCpuNs": {
+    "n": 3,
+    "values": [
+     13406103.0,
+     9457091.0,
+     8437598.0
+    ],
+    "mean": 10433597.333333334,
+    "median": 9457091.0,
+    "sd": 2624249.2160685374,
+    "cv": 0.2515191196505702,
+    "min": 8437598.0,
+    "max": 13406103.0
+   },
+   "scopes.create.calls": {
+    "n": 3,
+    "values": [
+     140.0,
+     139.0,
+     140.0
+    ],
+    "mean": 139.66666666666666,
+    "median": 140.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.004133772810426915,
+    "min": 139.0,
+    "max": 140.0
+   },
+   "scopes.create.inclAllocB": {
+    "n": 3,
+    "values": [
+     497368.0,
+     493600.0,
+     497368.0
+    ],
+    "mean": 496112.0,
+    "median": 497368.0,
+    "sd": 2175.45581430651,
+    "cv": 0.004385009462191018,
+    "min": 493600.0,
+    "max": 497368.0
+   },
+   "scopes.create.inclCpuNs": {
+    "n": 3,
+    "values": [
+     4688066.0,
+     3264356.0,
+     2987261.0
+    ],
+    "mean": 3646561.0,
+    "median": 3264356.0,
+    "sd": 912548.5787206071,
+    "cv": 0.25024909187604627,
+    "min": 2987261.0,
+    "max": 4688066.0
+   },
+   "scopes.create.p50Ns": {
+    "n": 3,
+    "values": [
+     24576.0,
+     20480.0,
+     16384.0
+    ],
+    "mean": 20480.0,
+    "median": 20480.0,
+    "sd": 4096.0,
+    "cv": 0.2,
+    "min": 16384.0,
+    "max": 24576.0
+   },
+   "scopes.create.p99Ns": {
+    "n": 3,
+    "values": [
+     196608.0,
+     131072.0,
+     98304.0
+    ],
+    "mean": 141994.66666666666,
+    "median": 131072.0,
+    "sd": 50053.94679077099,
+    "cv": 0.35250582268891084,
+    "min": 98304.0,
+    "max": 196608.0
+   },
+   "scopes.create.selfCpuNs": {
+    "n": 3,
+    "values": [
+     4688066.0,
+     3264356.0,
+     2987261.0
+    ],
+    "mean": 3646561.0,
+    "median": 3264356.0,
+    "sd": 912548.5787206071,
+    "cv": 0.25024909187604627,
+    "min": 2987261.0,
+    "max": 4688066.0
+   },
+   "scopes.ledgerRead.calls": {
+    "n": 3,
+    "values": [
+     869.0,
+     884.0,
+     861.0
+    ],
+    "mean": 871.3333333333334,
+    "median": 869.0,
+    "sd": 11.67618659209133,
+    "cv": 0.013400367167664112,
+    "min": 861.0,
+    "max": 884.0
+   },
+   "scopes.ledgerRead.inclAllocB": {
+    "n": 3,
+    "values": [
+     37824.0,
+     26928.0,
+     13184.0
+    ],
+    "mean": 25978.666666666668,
+    "median": 26928.0,
+    "sd": 12347.401562002158,
+    "cv": 0.47529004164964167,
+    "min": 13184.0,
+    "max": 37824.0
+   },
+   "scopes.ledgerRead.inclCpuNs": {
+    "n": 3,
+    "values": [
+     1006927.0,
+     893280.0,
+     641732.0
+    ],
+    "mean": 847313.0,
+    "median": 893280.0,
+    "sd": 186886.5185694249,
+    "cv": 0.22056373331864954,
+    "min": 641732.0,
+    "max": 1006927.0
+   },
+   "scopes.ledgerRead.p50Ns": {
+    "n": 3,
+    "values": [
+     896.0,
+     640.0,
+     640.0
+    ],
+    "mean": 725.3333333333334,
+    "median": 640.0,
+    "sd": 147.8016689125442,
+    "cv": 0.2037706832433973,
+    "min": 640.0,
+    "max": 896.0
+   },
+   "scopes.ledgerRead.p99Ns": {
+    "n": 3,
+    "values": [
+     8192.0,
+     8192.0,
+     6144.0
+    ],
+    "mean": 7509.333333333333,
+    "median": 8192.0,
+    "sd": 1182.4133513003535,
+    "cv": 0.1574591643244434,
+    "min": 6144.0,
+    "max": 8192.0
+   },
+   "scopes.ledgerRead.selfCpuNs": {
+    "n": 3,
+    "values": [
+     1006927.0,
+     893280.0,
+     641732.0
+    ],
+    "mean": 847313.0,
+    "median": 893280.0,
+    "sd": 186886.5185694249,
+    "cv": 0.22056373331864954,
+    "min": 641732.0,
+    "max": 1006927.0
+   },
+   "scopes.ledgerWrite.calls": {
+    "n": 3,
+    "values": [
+     1141.0,
+     1136.0,
+     1141.0
+    ],
+    "mean": 1139.3333333333333,
+    "median": 1141.0,
+    "sd": 2.8867513459481287,
+    "cv": 0.0025337197302060816,
+    "min": 1136.0,
+    "max": 1141.0
+   },
+   "scopes.ledgerWrite.inclAllocB": {
+    "n": 3,
+    "values": [
+     212784.0,
+     211872.0,
+     212856.0
+    ],
+    "mean": 212504.0,
+    "median": 212784.0,
+    "sd": 548.5107109255024,
+    "cv": 0.0025811782880581185,
+    "min": 211872.0,
+    "max": 212856.0
+   },
+   "scopes.ledgerWrite.inclCpuNs": {
+    "n": 3,
+    "values": [
+     2683778.0,
+     2432389.0,
+     2501379.0
+    ],
+    "mean": 2539182.0,
+    "median": 2501379.0,
+    "sd": 129888.05733014872,
+    "cv": 0.051153504290022814,
+    "min": 2432389.0,
+    "max": 2683778.0
+   },
+   "scopes.ledgerWrite.p50Ns": {
+    "n": 3,
+    "values": [
+     1280.0,
+     1280.0,
+     1024.0
+    ],
+    "mean": 1194.6666666666667,
+    "median": 1280.0,
+    "sd": 147.8016689125442,
+    "cv": 0.12371791482634836,
+    "min": 1024.0,
+    "max": 1280.0
+   },
+   "scopes.ledgerWrite.p99Ns": {
+    "n": 3,
+    "values": [
+     14336.0,
+     14336.0,
+     12288.0
+    ],
+    "mean": 13653.333333333334,
+    "median": 14336.0,
+    "sd": 1182.4133513003535,
+    "cv": 0.08660254037844385,
+    "min": 12288.0,
+    "max": 14336.0
+   },
+   "scopes.ledgerWrite.selfCpuNs": {
+    "n": 3,
+    "values": [
+     2683778.0,
+     2432389.0,
+     2501379.0
+    ],
+    "mean": 2539182.0,
+    "median": 2501379.0,
+    "sd": 129888.05733014872,
+    "cv": 0.051153504290022814,
+    "min": 2432389.0,
+    "max": 2683778.0
+   },
+   "scopes.mgrTick.calls": {
+    "n": 3,
+    "values": [
+     768.0,
+     815.0,
+     753.0
+    ],
+    "mean": 778.6666666666666,
+    "median": 768.0,
+    "sd": 32.34707611722168,
+    "cv": 0.04154162172588401,
+    "min": 753.0,
+    "max": 815.0
+   },
+   "scopes.mgrTick.inclAllocB": {
+    "n": 3,
+    "values": [
+     10056064.0,
+     9889464.0,
+     9813568.0
+    ],
+    "mean": 9919698.666666666,
+    "median": 9889464.0,
+    "sd": 124043.05222515823,
+    "cv": 0.012504719789723274,
+    "min": 9813568.0,
+    "max": 10056064.0
+   },
+   "scopes.mgrTick.inclCpuNs": {
+    "n": 3,
+    "values": [
+     81473083.0,
+     71114180.0,
+     70150992.0
+    ],
+    "mean": 74246085.0,
+    "median": 71114180.0,
+    "sd": 6277265.156884724,
+    "cv": 0.08454674959473923,
+    "min": 70150992.0,
+    "max": 81473083.0
+   },
+   "scopes.mgrTick.p50Ns": {
+    "n": 3,
+    "values": [
+     28672.0,
+     24576.0,
+     28672.0
+    ],
+    "mean": 27306.666666666668,
+    "median": 28672.0,
+    "sd": 2364.826702600707,
+    "cv": 0.08660254037844385,
+    "min": 24576.0,
+    "max": 28672.0
+   },
+   "scopes.mgrTick.p99Ns": {
+    "n": 3,
+    "values": [
+     3145728.0,
+     2097152.0,
+     2621440.0
+    ],
+    "mean": 2621440.0,
+    "median": 2621440.0,
+    "sd": 524288.0,
+    "cv": 0.2,
+    "min": 2097152.0,
+    "max": 3145728.0
+   },
+   "scopes.mgrTick.selfCpuNs": {
+    "n": 3,
+    "values": [
+     3063003.0,
+     3073182.0,
+     2986873.0
+    ],
+    "mean": 3041019.3333333335,
+    "median": 3063003.0,
+    "sd": 47167.48954877006,
+    "cv": 0.015510420809153047,
+    "min": 2986873.0,
+    "max": 3073182.0
+   },
+   "scopes.reeval.calls": {
+    "n": 3,
+    "values": [
+     768.0,
+     815.0,
+     753.0
+    ],
+    "mean": 778.6666666666666,
+    "median": 768.0,
+    "sd": 32.34707611722168,
+    "cv": 0.04154162172588401,
+    "min": 753.0,
+    "max": 815.0
+   },
+   "scopes.reeval.inclAllocB": {
+    "n": 3,
+    "values": [
+     10044456.0,
+     9879408.0,
+     9801960.0
+    ],
+    "mean": 9908608.0,
+    "median": 9879408.0,
+    "sd": 123857.0042589437,
+    "cv": 0.012499939876412883,
+    "min": 9801960.0,
+    "max": 10044456.0
+   },
+   "scopes.reeval.inclCpuNs": {
+    "n": 3,
+    "values": [
+     78215260.0,
+     67875498.0,
+     67010290.0
+    ],
+    "mean": 71033682.66666667,
+    "median": 67875498.0,
+    "sd": 6234455.546942438,
+    "cv": 0.08776759577844644,
+    "min": 67010290.0,
+    "max": 78215260.0
+   },
+   "scopes.reeval.p50Ns": {
+    "n": 3,
+    "values": [
+     28672.0,
+     24576.0,
+     24576.0
+    ],
+    "mean": 25941.333333333332,
+    "median": 24576.0,
+    "sd": 2364.826702600707,
+    "cv": 0.09116056881941459,
+    "min": 24576.0,
+    "max": 28672.0
+   },
+   "scopes.reeval.p99Ns": {
+    "n": 3,
+    "values": [
+     3145728.0,
+     2097152.0,
+     2621440.0
+    ],
+    "mean": 2621440.0,
+    "median": 2621440.0,
+    "sd": 524288.0,
+    "cv": 0.2,
+    "min": 2097152.0,
+    "max": 3145728.0
+   },
+   "scopes.reeval.selfCpuNs": {
+    "n": 3,
+    "values": [
+     25049698.0,
+     23514956.0,
+     22252579.0
+    ],
+    "mean": 23605744.333333332,
+    "median": 23514956.0,
+    "sd": 1400767.8487680724,
+    "cv": 0.059340126241648236,
+    "min": 22252579.0,
+    "max": 25049698.0
+   },
+   "scopes.save.calls": {
+    "n": 3,
+    "values": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "mean": 1.0,
+    "median": 1.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "scopes.save.inclAllocB": {
+    "n": 3,
+    "values": [
+     1410952.0,
+     875360.0,
+     1213088.0
+    ],
+    "mean": 1166466.6666666667,
+    "median": 1213088.0,
+    "sd": 270822.56028132763,
+    "cv": 0.23217342425672483,
+    "min": 875360.0,
+    "max": 1410952.0
+   },
+   "scopes.save.inclCpuNs": {
+    "n": 3,
+    "values": [
+     1330908.0,
+     661124.0,
+     878271.0
+    ],
+    "mean": 956767.6666666666,
+    "median": 878271.0,
+    "sd": 341722.0312949303,
+    "cv": 0.3571630221216335,
+    "min": 661124.0,
+    "max": 1330908.0
+   },
+   "scopes.save.p50Ns": {
+    "n": 3,
+    "values": [
+     1572864.0,
+     786432.0,
+     917504.0
+    ],
+    "mean": 1092266.6666666667,
+    "median": 917504.0,
+    "sd": 421337.53084828955,
+    "cv": 0.38574603043971817,
+    "min": 786432.0,
+    "max": 1572864.0
+   },
+   "scopes.save.p99Ns": {
+    "n": 3,
+    "values": [
+     1572864.0,
+     786432.0,
+     917504.0
+    ],
+    "mean": 1092266.6666666667,
+    "median": 917504.0,
+    "sd": 421337.53084828955,
+    "cv": 0.38574603043971817,
+    "min": 786432.0,
+    "max": 1572864.0
+   },
+   "scopes.save.selfCpuNs": {
+    "n": 3,
+    "values": [
+     1330908.0,
+     661124.0,
+     878271.0
+    ],
+    "mean": 956767.6666666666,
+    "median": 878271.0,
+    "sd": 341722.0312949303,
+    "cv": 0.3571630221216335,
+    "min": 661124.0,
+    "max": 1330908.0
+   },
+   "scopes.snapshot.calls": {
+    "n": 3,
+    "values": [
+     95.0,
+     101.0,
+     98.0
+    ],
+    "mean": 98.0,
+    "median": 98.0,
+    "sd": 3.0,
+    "cv": 0.030612244897959183,
+    "min": 95.0,
+    "max": 101.0
+   },
+   "scopes.snapshot.inclAllocB": {
+    "n": 3,
+    "values": [
+     2610072.0,
+     2608520.0,
+     2640888.0
+    ],
+    "mean": 2619826.6666666665,
+    "median": 2610072.0,
+    "sd": 18256.14957578222,
+    "cv": 0.006968457038804942,
+    "min": 2608520.0,
+    "max": 2640888.0
+   },
+   "scopes.snapshot.inclCpuNs": {
+    "n": 3,
+    "values": [
+     21988207.0,
+     21215602.0,
+     18665051.0
+    ],
+    "mean": 20622953.333333332,
+    "median": 21215602.0,
+    "sd": 1739041.6273512067,
+    "cv": 0.08432553762997444,
+    "min": 18665051.0,
+    "max": 21988207.0
+   },
+   "scopes.snapshot.p50Ns": {
+    "n": 3,
+    "values": [
+     229376.0,
+     196608.0,
+     196608.0
+    ],
+    "mean": 207530.66666666666,
+    "median": 196608.0,
+    "sd": 18918.613620805656,
+    "cv": 0.09116056881941459,
+    "min": 196608.0,
+    "max": 229376.0
+   },
+   "scopes.snapshot.p99Ns": {
+    "n": 3,
+    "values": [
+     655360.0,
+     524288.0,
+     655360.0
+    ],
+    "mean": 611669.3333333334,
+    "median": 655360.0,
+    "sd": 75674.45448322262,
+    "cv": 0.12371791482634836,
+    "min": 524288.0,
+    "max": 655360.0
+   },
+   "scopes.snapshot.selfCpuNs": {
+    "n": 3,
+    "values": [
+     21988207.0,
+     21215602.0,
+     18665051.0
+    ],
+    "mean": 20622953.333333332,
+    "median": 21215602.0,
+    "sd": 1739041.6273512067,
+    "cv": 0.08432553762997444,
+    "min": 18665051.0,
+    "max": 21988207.0
+   },
+   "scopes.stateChange.calls": {
+    "n": 3,
+    "values": [
+     1023.0,
+     1020.0,
+     1023.0
+    ],
+    "mean": 1022.0,
+    "median": 1023.0,
+    "sd": 1.7320508075688772,
+    "cv": 0.00169476595652532,
+    "min": 1020.0,
+    "max": 1023.0
+   },
+   "scopes.stateChange.inclAllocB": {
+    "n": 3,
+    "values": [
+     4201960.0,
+     4075632.0,
+     4108952.0
+    ],
+    "mean": 4128848.0,
+    "median": 4108952.0,
+    "sd": 65471.97116323901,
+    "cv": 0.01585720064367567,
+    "min": 4075632.0,
+    "max": 4201960.0
+   },
+   "scopes.stateChange.inclCpuNs": {
+    "n": 3,
+    "values": [
+     44863693.0,
+     36828802.0,
+     34615592.0
+    ],
+    "mean": 38769362.333333336,
+    "median": 36828802.0,
+    "sd": 5392608.305081163,
+    "cv": 0.13909458346815975,
+    "min": 34615592.0,
+    "max": 44863693.0
+   },
+   "scopes.stateChange.p50Ns": {
+    "n": 3,
+    "values": [
+     12288.0,
+     10240.0,
+     10240.0
+    ],
+    "mean": 10922.666666666666,
+    "median": 10240.0,
+    "sd": 1182.4133513003535,
+    "cv": 0.10825317547305482,
+    "min": 10240.0,
+    "max": 12288.0
+   },
+   "scopes.stateChange.p99Ns": {
+    "n": 3,
+    "values": [
+     327680.0,
+     327680.0,
+     262144.0
+    ],
+    "mean": 305834.6666666667,
+    "median": 327680.0,
+    "sd": 37837.22724161131,
+    "cv": 0.12371791482634836,
+    "min": 262144.0,
+    "max": 327680.0
+   },
+   "scopes.stateChange.selfCpuNs": {
+    "n": 3,
+    "values": [
+     17641472.0,
+     14757672.0,
+     14060473.0
+    ],
+    "mean": 15486539.0,
+    "median": 14757672.0,
+    "sd": 1898505.6721714055,
+    "cv": 0.12259070100630008,
+    "min": 14060473.0,
+    "max": 17641472.0
+   },
+   "scopes.stockEvent.calls": {
+    "n": 3,
+    "values": [
+     140.0,
+     144.0,
+     139.0
+    ],
+    "mean": 141.0,
+    "median": 140.0,
+    "sd": 2.6457513110645907,
+    "cv": 0.01876419369549355,
+    "min": 139.0,
+    "max": 144.0
+   },
+   "scopes.stockEvent.inclAllocB": {
+    "n": 3,
+    "values": [
+     17936.0,
+     18032.0,
+     17912.0
+    ],
+    "mean": 17960.0,
+    "median": 17936.0,
+    "sd": 63.49803146555018,
+    "cv": 0.0035355251372800765,
+    "min": 17912.0,
+    "max": 18032.0
+   },
+   "scopes.stockEvent.inclCpuNs": {
+    "n": 3,
+    "values": [
+     397725.0,
+     392408.0,
+     403339.0
+    ],
+    "mean": 397824.0,
+    "median": 397725.0,
+    "sd": 5466.172426844949,
+    "cv": 0.013740177633438277,
+    "min": 392408.0,
+    "max": 403339.0
+   },
+   "scopes.stockEvent.p50Ns": {
+    "n": 3,
+    "values": [
+     2048.0,
+     2048.0,
+     2560.0
+    ],
+    "mean": 2218.6666666666665,
+    "median": 2048.0,
+    "sd": 295.6033378250884,
+    "cv": 0.13323467750529824,
+    "min": 2048.0,
+    "max": 2560.0
+   },
+   "scopes.stockEvent.p99Ns": {
+    "n": 3,
+    "values": [
+     12288.0,
+     10240.0,
+     10240.0
+    ],
+    "mean": 10922.666666666666,
+    "median": 10240.0,
+    "sd": 1182.4133513003535,
+    "cv": 0.10825317547305482,
+    "min": 10240.0,
+    "max": 12288.0
+   },
+   "scopes.stockEvent.selfCpuNs": {
+    "n": 3,
+    "values": [
+     397725.0,
+     392408.0,
+     403339.0
+    ],
+    "mean": 397824.0,
+    "median": 397725.0,
+    "sd": 5466.172426844949,
+    "cv": 0.013740177633438277,
+    "min": 392408.0,
+    "max": 403339.0
+   },
+   "scopes.viewSync.calls": {
+    "n": 3,
+    "values": [
+     422.0,
+     448.0,
+     414.0
+    ],
+    "mean": 428.0,
+    "median": 422.0,
+    "sd": 17.776388834631177,
+    "cv": 0.04153361877250275,
+    "min": 414.0,
+    "max": 448.0
+   },
+   "scopes.viewSync.inclAllocB": {
+    "n": 3,
+    "values": [
+     14703904.0,
+     14403712.0,
+     15091608.0
+    ],
+    "mean": 14733074.666666666,
+    "median": 14703904.0,
+    "sd": 344874.50260831596,
+    "cv": 0.023408182637436076,
+    "min": 14403712.0,
+    "max": 15091608.0
+   },
+   "scopes.viewSync.inclCpuNs": {
+    "n": 3,
+    "values": [
+     35629804.0,
+     32498193.0,
+     29127592.0
+    ],
+    "mean": 32418529.666666668,
+    "median": 32498193.0,
+    "sd": 3251837.9277332276,
+    "cv": 0.10030800166353095,
+    "min": 29127592.0,
+    "max": 35629804.0
+   },
+   "scopes.viewSync.p50Ns": {
+    "n": 3,
+    "values": [
+     5120.0,
+     5120.0,
+     6144.0
+    ],
+    "mean": 5461.333333333333,
+    "median": 5120.0,
+    "sd": 591.2066756501767,
+    "cv": 0.10825317547305482,
+    "min": 5120.0,
+    "max": 6144.0
+   },
+   "scopes.viewSync.p99Ns": {
+    "n": 3,
+    "values": [
+     655360.0,
+     655360.0,
+     524288.0
+    ],
+    "mean": 611669.3333333334,
+    "median": 655360.0,
+    "sd": 75674.45448322262,
+    "cv": 0.12371791482634836,
+    "min": 524288.0,
+    "max": 655360.0
+   },
+   "scopes.viewSync.selfCpuNs": {
+    "n": 3,
+    "values": [
+     13641597.0,
+     11282591.0,
+     10462541.0
+    ],
+    "mean": 11795576.333333334,
+    "median": 11282591.0,
+    "sd": 1650443.796966541,
+    "cv": 0.13992057279155762,
+    "min": 10462541.0,
+    "max": 13641597.0
+   },
+   "ticksRun": {
+    "n": 3,
+    "values": [
+     8536.0,
+     9056.0,
+     8361.0
+    ],
+    "mean": 8651.0,
+    "median": 8536.0,
+    "sd": 361.4899721984,
+    "cv": 0.041785917489122644,
+    "min": 8361.0,
+    "max": 9056.0
+   },
+   "ticksToCompletion": {
+    "n": 3,
+    "values": [
+     8135.0,
+     8655.0,
+     7960.0
+    ],
+    "mean": 8250.0,
+    "median": 8135.0,
+    "sd": 361.4899721984,
+    "cv": 0.043816966327078787,
+    "min": 7960.0,
+    "max": 8655.0
+   },
+   "ticksToQuiesce": {
+    "n": 3,
+    "values": [
+     8136.0,
+     8656.0,
+     7961.0
+    ],
+    "mean": 8251.0,
+    "median": 8136.0,
+    "sd": 361.4899721984,
+    "cv": 0.04381165582334262,
+    "min": 7961.0,
+    "max": 8656.0
+   },
+   "work.courierDistance": {
+    "n": 3,
+    "values": [
+     2927.3888772659275,
+     2974.9888201563263,
+     2916.180611150798
+    ],
+    "mean": 2939.5194361910176,
+    "median": 2927.3888772659275,
+    "sd": 31.22441683179652,
+    "cv": 0.010622286230655656,
+    "min": 2916.180611150798,
+    "max": 2974.9888201563263
+   },
+   "work.courierDistanceAtDone": {
+    "n": 3,
+    "values": [
+     2895.011189284556,
+     2974.9888201563263,
+     2867.4909643573574
+    ],
+    "mean": 2912.49699126608,
+    "median": 2895.011189284556,
+    "sd": 55.84140223478251,
+    "cv": 0.01917303344938664,
+    "min": 2867.4909643573574,
+    "max": 2974.9888201563263
+   },
+   "work.courierTasks": {
+    "n": 3,
+    "values": [
+     57.0,
+     57.0,
+     57.0
+    ],
+    "mean": 57.0,
+    "median": 57.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 57.0,
+    "max": 57.0
+   },
+   "work.courierTasksAtDone": {
+    "n": 3,
+    "values": [
+     57.0,
+     57.0,
+     57.0
+    ],
+    "mean": 57.0,
+    "median": 57.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 57.0,
+    "max": 57.0
+   },
+   "work.courierTeleports": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.deliveriesArrived": {
+    "n": 3,
+    "values": [
+     101.0,
+     100.0,
+     101.0
+    ],
+    "mean": 100.66666666666667,
+    "median": 101.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.005735267574731381,
+    "min": 100.0,
+    "max": 101.0
+   },
+   "work.deliveriesCreated": {
+    "n": 3,
+    "values": [
+     101.0,
+     100.0,
+     101.0
+    ],
+    "mean": 100.66666666666667,
+    "median": 101.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.005735267574731381,
+    "min": 100.0,
+    "max": 101.0
+   },
+   "work.deliveriesCreatedAtDone": {
+    "n": 3,
+    "values": [
+     101.0,
+     100.0,
+     101.0
+    ],
+    "mean": 100.66666666666667,
+    "median": 101.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.005735267574731381,
+    "min": 100.0,
+    "max": 101.0
+   },
+   "work.duplicatesMax": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.duplicatesMean": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.itemsDelivered": {
+    "n": 3,
+    "values": [
+     418.0,
+     418.0,
+     418.0
+    ],
+    "mean": 418.0,
+    "median": 418.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 418.0,
+    "max": 418.0
+   },
+   "work.itemsDeliveredAtDone": {
+    "n": 3,
+    "values": [
+     418.0,
+     418.0,
+     418.0
+    ],
+    "mean": 418.0,
+    "median": 418.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 418.0,
+    "max": 418.0
+   },
+   "work.latencyMean": {
+    "n": 3,
+    "values": [
+     4143.076923076923,
+     3987.2380952380954,
+     4143.365384615385
+    ],
+    "mean": 4091.2268009768013,
+    "median": 4143.076923076923,
+    "sd": 90.05697637286697,
+    "cv": 0.022012218034787367,
+    "min": 3987.2380952380954,
+    "max": 4143.365384615385
+   },
+   "work.latencyP50": {
+    "n": 3,
+    "values": [
+     4240.0,
+     4040.0,
+     4310.0
+    ],
+    "mean": 4196.666666666667,
+    "median": 4240.0,
+    "sd": 140.118997046558,
+    "cv": 0.03338816450672549,
+    "min": 4040.0,
+    "max": 4310.0
+   },
+   "work.latencyP99": {
+    "n": 3,
+    "values": [
+     8050.0,
+     7820.0,
+     7950.0
+    ],
+    "mean": 7940.0,
+    "median": 7950.0,
+    "sd": 115.32562594670796,
+    "cv": 0.014524638028552639,
+    "min": 7820.0,
+    "max": 8050.0
+   },
+   "work.maxOpenAge": {
+    "n": 3,
+    "values": [
+     8040.0,
+     7810.0,
+     7940.0
+    ],
+    "mean": 7930.0,
+    "median": 7940.0,
+    "sd": 115.32562594670796,
+    "cv": 0.014542954091640348,
+    "min": 7810.0,
+    "max": 8040.0
+   },
+   "work.openMax": {
+    "n": 3,
+    "values": [
+     129.0,
+     129.0,
+     129.0
+    ],
+    "mean": 129.0,
+    "median": 129.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 129.0,
+    "max": 129.0
+   },
+   "work.openMean": {
+    "n": 3,
+    "values": [
+     69.936694021102,
+     63.12154696132597,
+     71.42703349282297
+    ],
+    "mean": 68.16175815841699,
+    "median": 69.936694021102,
+    "sd": 4.428100565558961,
+    "cv": 0.0649645884319396,
+    "min": 63.12154696132597,
+    "max": 71.42703349282297
+   },
+   "work.requestsCreated": {
+    "n": 3,
+    "values": [
+     140.0,
+     139.0,
+     140.0
+    ],
+    "mean": 139.66666666666666,
+    "median": 140.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.004133772810426915,
+    "min": 139.0,
+    "max": 140.0
+   },
+   "work.requestsCreatedAtDone": {
+    "n": 3,
+    "values": [
+     140.0,
+     139.0,
+     140.0
+    ],
+    "mean": 139.66666666666666,
+    "median": 140.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.004133772810426915,
+    "min": 139.0,
+    "max": 140.0
+   },
+   "work.requestsFinished": {
+    "n": 3,
+    "values": [
+     104.0,
+     105.0,
+     104.0
+    ],
+    "mean": 104.33333333333333,
+    "median": 104.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.0055337086503797995,
+    "min": 104.0,
+    "max": 105.0
+   },
+   "work.sicknessCures": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.stuckRoots": {
+    "n": 3,
+    "values": [
+     40.0,
+     41.0,
+     40.0
+    ],
+    "mean": 40.333333333333336,
+    "median": 40.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.014314469484040306,
+    "min": 40.0,
+    "max": 41.0
+   },
+   "work.stuckRootsStrict": {
+    "n": 3,
+    "values": [
+     40.0,
+     41.0,
+     40.0
+    ],
+    "mean": 40.333333333333336,
+    "median": 40.0,
+    "sd": 0.5773502691896257,
+    "cv": 0.014314469484040306,
+    "min": 40.0,
+    "max": 41.0
+   },
+   "work.unloadCycles": {
+    "n": 3,
+    "values": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "mean": 0.0,
+    "median": 0.0,
+    "sd": 0.0,
+    "cv": 0.0,
+    "min": 0.0,
+    "max": 0.0
+   },
+   "work.viewBytes": {
+    "n": 3,
+    "values": [
+     129696.0,
+     127386.0,
+     130997.0
+    ],
+    "mean": 129359.66666666667,
+    "median": 129696.0,
+    "sd": 1828.8439882432108,
+    "cv": 0.014137667755095309,
+    "min": 127386.0,
+    "max": 130997.0
+   },
+   "work.viewMessages": {
+    "n": 3,
+    "values": [
+     95.0,
+     101.0,
+     98.0
+    ],
+    "mean": 98.0,
+    "median": 98.0,
+    "sd": 3.0,
+    "cv": 0.030612244897959183,
+    "min": 95.0,
+    "max": 101.0
+   }
+  }
+ },
+ "score": {
+  "components": {
+   "macro": {
+    "busy": {
+     "meter.rsCpuNsPerTick": 11630.087164179104,
+     "ticksToCompletion": 5650.0,
+     "work.courierDistanceAtDone": 6811.259145895366,
+     "work.requestsCreatedAtDone": 171.0
+    },
+    "storm": {
+     "meter.rsCpuNsPerTick": 14635.461188853007,
+     "ticksToCompletion": 8135.0,
+     "work.courierDistanceAtDone": 2895.011189284556,
+     "work.requestsCreatedAtDone": 140.0
+    }
+   },
+   "micro": {}
+  },
+  "reference": "8808fb5475",
+  "perScenario": {
+   "busy": {
+    "ratio": 0.789136062624173,
+    "parts": {
+     "meter.rsCpuNsPerTick": 0.5577877073053229,
+     "ticksToCompletion": 0.9127625201938611,
+     "work.courierDistanceAtDone": 1.0779949126518422,
+     "work.requestsCreatedAtDone": 1.089171974522293
+    }
+   },
+   "storm": {
+    "ratio": 0.924570055743019,
+    "parts": {
+     "meter.rsCpuNsPerTick": 0.9763464873060339,
+     "ticksToCompletion": 0.7795879252515573,
+     "work.courierDistanceAtDone": 1.0248864537660098,
+     "work.requestsCreatedAtDone": 1.0144927536231885
+    }
+   }
+  },
+  "macroRatio": 0.8541730348174532,
+  "microRatio": 1.0,
+  "value": 89.55340433452196,
+  "valid": true
+ }
+}
