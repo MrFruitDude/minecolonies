@@ -235,3 +235,7 @@ On the branch `fix/rs-courier-sync` (all of the above merged with `origin/integ/
 `reqsync_store_mutations`, `reqsync_quiet_stores_not_serialized`). Failing first: the three courier tests and the quiet-stores test failed on the code without their change (leisure: "the courier
 took the task 1501 ticks ago and the delivery is not there: it is on a leisure break"; immediate: "waited 100 ticks before its next task"; quiet stores: "serialized 4 stores again"); the
 store-mutation test passes before and after (it guards the new cache).
+
+On `fix/rs-stuckroots` (all of the above, `origin/integ/anno` 99a894f286 had nothing newer): `./gradlew test runGameTestServer jar`: run 1 failed `worker_eff_bench_clear_l1` ("box not complete on tick 9205", the same builder-AI
+tick-budget test that failed on the machine under load before; not a request-system test), run 2: JUnit green and **All 294 required tests passed** (285 + `reqsync_quiet_retrying_resolver`, `reqsync_no_unsent_full_payloads`, the 6 new courier tests,
+the rest being tests of integ/anno added since).
