@@ -40,4 +40,36 @@
         <text id="desc" label="$(com.minecolonies.coremod.gui.townhall.idlehelperscap)" pos="0 3" size="110 11" color="black"/>
         <input id="trigger" size="26 16" pos="120 0"/>
     </view>
+    <view id="labour" size="148 16" pos="270 100" tooltip="$(com.minecolonies.coremod.gui.townhall.labour.tooltip)">
+        <text id="desc" label="$(com.minecolonies.coremod.gui.townhall.labour)" pos="0 3" size="148 11" color="black"/>
+        <button id="trigger" size="29 16" pos="120 0" label="$(com.minecolonies.coremod.gui.townhall.off)" color="black"
+                     source="minecolonies:textures/gui/builderhut/builder_button_very_small.png"/>
+    </view>
+
+    <view id="labourshare" size="148 16" pos="270 120" tooltip="$(com.minecolonies.coremod.gui.townhall.labourshare.tooltip)">
+        <text id="desc" label="$(com.minecolonies.coremod.gui.townhall.labourshare)" pos="0 3" size="110 11" color="black"/>
+        <input id="trigger" size="26 16" pos="120 0"/>
+    </view>
+
+    <view id="labourcap" size="148 16" pos="270 140" tooltip="$(com.minecolonies.coremod.gui.townhall.labourcap.tooltip)">
+        <text id="desc" label="$(com.minecolonies.coremod.gui.townhall.labourcap)" pos="0 3" size="110 11" color="black"/>
+        <input id="trigger" size="26 16" pos="120 0"/>
+    </view>
+
+    <view id="labourperrequest" size="148 16" pos="270 160" tooltip="$(com.minecolonies.coremod.gui.townhall.labourperrequest.tooltip)">
+        <text id="desc" label="$(com.minecolonies.coremod.gui.townhall.labourperrequest)" pos="0 3" size="110 11" color="black"/>
+        <input id="trigger" size="26 16" pos="120 0"/>
+    </view>
+
+    <view id="labourstockpile" size="148 16" pos="270 180" tooltip="$(com.minecolonies.coremod.gui.townhall.labourstockpile.tooltip)">
+        <text id="desc" label="$(com.minecolonies.coremod.gui.townhall.labourstockpile)" pos="0 3" size="148 11" color="black"/>
+        <button id="trigger" size="29 16" pos="120 0" label="$(com.minecolonies.coremod.gui.townhall.off)" color="black"
+                     source="minecolonies:textures/gui/builderhut/builder_button_very_small.png"/>
+    </view>
+
+    <view id="labourselfsupply" size="148 16" pos="270 200" tooltip="$(com.minecolonies.coremod.gui.townhall.labourselfsupply.tooltip)">
+        <text id="desc" label="$(com.minecolonies.coremod.gui.townhall.labourselfsupply)" pos="0 3" size="148 11" color="black"/>
+        <button id="trigger" size="29 16" pos="120 0" label="$(com.minecolonies.coremod.gui.townhall.off)" color="black"
+                     source="minecolonies:textures/gui/builderhut/builder_button_very_small.png"/>
+    </view>
 </window>

@@ -118,6 +118,14 @@ public final class LabourSession implements IIdleTaskSession
     }
 
     /**
+     * @return whether the session is over (it ended, successfully or not; the owner stops it).
+     */
+    public boolean isEnded()
+    {
+        return ended;
+    }
+
+    /**
      * @return a name of what he does now (for the views and the logs).
      */
     public String phaseName()
@@ -128,7 +136,20 @@ public final class LabourSession implements IIdleTaskSession
     @Override
     public boolean isValid()
     {
-        if (ended || !board.alive(claim) || !LabourSettings.enabled(colony))
+        if (ended || !board.alive(claim))
+        {
+            return false;
+        }
+        if (claim.source() == LabourClaim.Source.SELF)
+        {
+            // the idle builder: his own build only, a few minutes at a time
+            if (!LabourSettings.worldEnabled() || !LabourSettings.selfSupply(colony) || colony.getWorld() == null
+                  || colony.getWorld().getGameTime() - claim.created() > LabourSettings.supplyMaxTicks())
+            {
+                return false;
+            }
+        }
+        else if (!LabourSettings.enabled(colony))
         {
             return false;
         }
@@ -148,6 +169,10 @@ public final class LabourSession implements IIdleTaskSession
             case DELIVER, UNLOAD, END -> "com.minecolonies.coremod.labour.task.deliver";
             default -> "com.minecolonies.coremod.labour.task.plan";
         };
+        if (claim.source() == LabourClaim.Source.SELF)
+        {
+            return Component.translatable("com.minecolonies.coremod.labour.task.builder", claim.amount(), what);
+        }
         return Component.translatable(key, claim.amount(), what);
     }
 
@@ -265,7 +290,8 @@ public final class LabourSession implements IIdleTaskSession
     public void tick()
     {
         final AbstractEntityCitizen worker = citizen.getEntity().orElse(null);
-        if (worker == null || worker.level().isClientSide() || ended || citizen.getJob() != null || !(worker.level() instanceof ServerLevel level))
+        if (worker == null || worker.level().isClientSide() || ended || (claim.source() != LabourClaim.Source.SELF && citizen.getJob() != null)
+              || !(worker.level() instanceof ServerLevel level))
         {
             return;
         }
@@ -873,7 +899,7 @@ public final class LabourSession implements IIdleTaskSession
                 surplus.add(stack);
             }
         }
-        final IWareHouse warehouse = surplus.isEmpty() ? null
+        final IWareHouse warehouse = surplus.isEmpty() || claim.source() == LabourClaim.Source.SELF ? null
                                        : board.sites().warehouses().stream().min(Comparator.comparingDouble(w -> w.getID().distSqr(worker.blockPosition()))).orElse(null);
         if (warehouse == null)
         {

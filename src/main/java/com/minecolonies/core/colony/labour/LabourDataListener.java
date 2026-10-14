@@ -68,7 +68,8 @@ public class LabourDataListener extends SimpleJsonResourceReloadListener<JsonEle
      */
     public static List<StockpileGoal> stockpile()
     {
-        return stockpile;
+        final List<StockpileGoal> forced = stockpileOverride;
+        return forced != null ? forced : stockpile;
     }
 
     /**
@@ -78,6 +79,16 @@ public class LabourDataListener extends SimpleJsonResourceReloadListener<JsonEle
     {
         return generation;
     }
+
+    /**
+     * Only for tests: the stock goals (null for the data).
+     */
+    public static void overrideStockpileForTests(final List<StockpileGoal> goals)
+    {
+        stockpileOverride = goals;
+    }
+
+    private static volatile List<StockpileGoal> stockpileOverride;
 
     private static Map<String, List<String>> defaultCoverage()
     {

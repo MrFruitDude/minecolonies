@@ -40,6 +40,18 @@ public class WindowSettings extends AbstractWindowTownHall
           .setupHandler(BuildingTownHall.IDLE_HELPERS, window.findPaneByID("idlehelpers"), moduleView, buildingView, WindowSettings.this);
         moduleView.getSetting(BuildingTownHall.IDLE_HELPERS_PER_BUILDER)
           .setupHandler(BuildingTownHall.IDLE_HELPERS_PER_BUILDER, window.findPaneByID("idlehelperscap"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR)
+          .setupHandler(BuildingTownHall.LABOUR, window.findPaneByID("labour"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_SHARE)
+          .setupHandler(BuildingTownHall.LABOUR_SHARE, window.findPaneByID("labourshare"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_CAP)
+          .setupHandler(BuildingTownHall.LABOUR_CAP, window.findPaneByID("labourcap"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_PER_REQUEST)
+          .setupHandler(BuildingTownHall.LABOUR_PER_REQUEST, window.findPaneByID("labourperrequest"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_STOCKPILE)
+          .setupHandler(BuildingTownHall.LABOUR_STOCKPILE, window.findPaneByID("labourstockpile"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_SELF_SUPPLY)
+          .setupHandler(BuildingTownHall.LABOUR_SELF_SUPPLY, window.findPaneByID("labourselfsupply"), moduleView, buildingView, WindowSettings.this);
     }
 
     /**
@@ -68,6 +80,18 @@ public class WindowSettings extends AbstractWindowTownHall
           .render(BuildingTownHall.IDLE_HELPERS, window.findPaneByID("idlehelpers"), moduleView, buildingView, WindowSettings.this);
         moduleView.getSetting(BuildingTownHall.IDLE_HELPERS_PER_BUILDER)
           .render(BuildingTownHall.IDLE_HELPERS_PER_BUILDER, window.findPaneByID("idlehelperscap"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR)
+          .render(BuildingTownHall.LABOUR, window.findPaneByID("labour"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_SHARE)
+          .render(BuildingTownHall.LABOUR_SHARE, window.findPaneByID("labourshare"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_CAP)
+          .render(BuildingTownHall.LABOUR_CAP, window.findPaneByID("labourcap"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_PER_REQUEST)
+          .render(BuildingTownHall.LABOUR_PER_REQUEST, window.findPaneByID("labourperrequest"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_STOCKPILE)
+          .render(BuildingTownHall.LABOUR_STOCKPILE, window.findPaneByID("labourstockpile"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_SELF_SUPPLY)
+          .render(BuildingTownHall.LABOUR_SELF_SUPPLY, window.findPaneByID("labourselfsupply"), moduleView, buildingView, WindowSettings.this);
     }
 
     @Override

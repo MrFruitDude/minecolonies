@@ -34,6 +34,7 @@ public final class LabourRules
     public static final TagKey<Item>  SMELT_BASIC   = item("labour/smelt_basic");
     public static final TagKey<Item>  SMELT_IRON    = item("labour/smelt_iron");
     public static final TagKey<Item>  LOOSE         = item("labour/loose");
+    public static final TagKey<Item>  SELF_SUPPLY   = item("labour/self_supply");
     public static final TagKey<Block> GATHER_SURFACE = block("labour/gather_surface");
     public static final TagKey<Block> GATHER_STONE   = block("labour/gather_stone");
 
@@ -76,6 +77,15 @@ public final class LabourRules
             case BASIC -> stack.is(SMELT_BASIC);
             case IRON -> stack.is(SMELT_BASIC) || stack.is(SMELT_IRON);
         };
+    }
+
+    /**
+     * @return whether an idle builder may fetch the item himself for his own build (logs, planks, sticks, cobblestone, sand, dirt, gravel).
+     */
+    public static boolean selfSupplyItem(final Item item)
+    {
+        final ItemStack stack = new ItemStack(item);
+        return stack.is(SELF_SUPPLY) && !stack.is(NEVER);
     }
 
     /**

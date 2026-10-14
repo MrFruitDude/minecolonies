@@ -118,6 +118,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 ToolDurabilityGameTests.register(event);
             }
+            if (only.contains("labour"))
+            {
+                registerLabour(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -1106,6 +1110,42 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),
               name.equals("idle_helper_faster") ? longIsolatedColonyData(event, name, 60_000) : isolatedColonyData(event, name));
+        }
+    }
+
+    /**
+     * The labourers: unemployed citizens gather and craft what no building serves. Run on their own with {@code MINECOLONIES_GAMETEST_ONLY=labour}.
+     */
+    private void registerLabour(final RegisterGameTestsEvent event)
+    {
+        for (final String name : new String[] {"labour_crafts_wooden_tools", "labour_covered_left_alone", "labour_stops_on_job", "labour_setting_off", "labour_colonies_isolated",
+          "labour_builder_self_supply", "labour_stone_tools", "labour_withdraw_covered", "labour_stockpile", "labour_charcoal", "labour_furnace_taken", "labour_natural_trees",
+          "labour_coverage", "labour_ledger_sweep", "labour_caps", "labour_retrying_held", "labour_night"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "labour_crafts_wooden_tools" -> LabourGameTests::craftsWoodenTools;
+                case "labour_covered_left_alone" -> LabourGameTests::coveredIsLeftAlone;
+                case "labour_stops_on_job" -> LabourGameTests::stopsWhenGivenAJob;
+                case "labour_setting_off" -> LabourGameTests::settingOff;
+                case "labour_builder_self_supply" -> LabourGameTests::builderFetchesOwnBasics;
+                case "labour_stone_tools" -> LabourGameTests::stoneToolsNeedAWoodenPickaxe;
+                case "labour_withdraw_covered" -> LabourGameTests::coveredGoodsComeFromTheWarehouseOnly;
+                case "labour_stockpile" -> LabourGameTests::stockpileFillsAndStops;
+                case "labour_charcoal" -> LabourGameTests::charcoalAtAFurnace;
+                case "labour_furnace_taken" -> LabourGameTests::furnaceWithThingsInItIsLeftAlone;
+                case "labour_natural_trees" -> LabourGameTests::naturalTreesOnly;
+                case "labour_coverage" -> LabourGameTests::coverageRules;
+                case "labour_ledger_sweep" -> LabourGameTests::ledgerSweepsOrphanedLabourClaims;
+                case "labour_caps" -> LabourGameTests::capsAndExclusiveClaims;
+                case "labour_retrying_held" -> LabourGameTests::retryingHeldRequestIsServed;
+                case "labour_night" -> LabourGameTests::nightEndsTheWork;
+                default -> LabourGameTests::coloniesAreIsolated;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              longIsolatedColonyData(event, name, 20_000));
         }
     }
 

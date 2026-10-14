@@ -387,6 +387,8 @@ public final class LabourPlanner<K>
         {
             return new Do<>(new Craft<>(recipe, times));
         }
+        // what he holds of the output already counts toward the target: it is not burnt as fuel
+        work.merge(recipe.output(), -have.getOrDefault(recipe.output(), 0), (a, b) -> Math.max(0, a + b));
         // fuel: what he holds first, then what can be had, in the order of the colony
         final List<K> fuels = new ArrayList<>(env.fuels());
         fuels.sort((a, b) -> Integer.compare(work.getOrDefault(b, 0) > 0 ? 1 : 0, work.getOrDefault(a, 0) > 0 ? 1 : 0));

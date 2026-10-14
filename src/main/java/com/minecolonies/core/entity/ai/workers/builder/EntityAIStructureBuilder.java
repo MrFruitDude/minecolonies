@@ -81,6 +81,7 @@ import static com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState.*
 import static com.minecolonies.api.util.constant.CitizenConstants.MIN_OPEN_SLOTS;
 import static com.minecolonies.core.colony.buildings.workerbuildings.BuildingMiner.FILL_BLOCK;
 import static com.minecolonies.core.entity.ai.workers.builder.BuilderAssistState.*;
+import static com.minecolonies.core.entity.ai.workers.builder.BuilderSupplyState.*;
 import static com.minecolonies.api.util.constant.TranslationConstants.COM_MINECOLONIES_COREMOD_ENTITY_BUILDER_MANUAL_SUFFIX;
 
 /**
@@ -127,7 +128,66 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
           new AITarget(ASSIST_GATHER, this::assistGather, 20),
           new AITarget(ASSIST_WORK, this::assistWork, STANDARD_DELAY),
           new AITarget(ASSIST_MINE, this::assistMine, 10),
-          new AITarget(ASSIST_RETURN, this::assistReturn, 20));
+          new AITarget(ASSIST_RETURN, this::assistReturn, 20),
+          new com.minecolonies.api.entity.ai.statemachine.AIEventTarget(com.minecolonies.api.entity.ai.statemachine.states.AIBlockingEventType.AI_BLOCKING, this::wantsToSupply,
+            SUPPLY_PLAN, 100),
+          new AITarget(SUPPLY_PLAN, this::supplyPlan, 20),
+          new AITarget(SUPPLY_RUN, this::supplyRun, 10));
+    }
+
+    /**
+     * The labourer's session that fetches basic materials for the builder's own build (LABOURERS.md 6); null when he does not.
+     */
+    private com.minecolonies.core.colony.labour.LabourSession supply;
+
+    /**
+     * Whether the builder, who leads or has an active order, waits for basic materials of his own build that no building makes: one of the requests of his own hut has
+     * waited at the player or the retrying resolver for the grace time, and the basics are on the self-supply list. Asked every 100 ticks.
+     */
+    private boolean wantsToSupply()
+    {
+        if (supply != null || !building.hasWorkOrder() || !(building.getColony() instanceof com.minecolonies.core.colony.Colony colony) || colony.getWorld() == null
+              || !com.minecolonies.core.colony.labour.LabourSettings.worldEnabled() || worker.getCitizenData() == null)
+        {
+            return false;
+        }
+        final var state = getState();
+        if (state == ASSIST_PLAN || state == ASSIST_GATHER || state == ASSIST_WORK || state == ASSIST_MINE || state == ASSIST_RETURN || state == SUPPLY_PLAN || state == SUPPLY_RUN)
+        {
+            return false;
+        }
+        return colony.getLabourBoard().selfSupplyWanted(building.getID(), building.getWorkOrder() == null ? 0 : building.getWorkOrder().getID());
+    }
+
+    private IAIState supplyPlan()
+    {
+        if (!(building.getColony() instanceof com.minecolonies.core.colony.Colony colony) || worker.getCitizenData() == null)
+        {
+            return START_WORKING;
+        }
+        final var claim = colony.getLabourBoard().claimForBuilder(worker.getCitizenData(), building.getID(), building.getWorkOrder() == null ? 0 : building.getWorkOrder().getID());
+        if (claim == null)
+        {
+            return START_WORKING;
+        }
+        supply = new com.minecolonies.core.colony.labour.LabourSession("builder_supply", colony, worker.getCitizenData(), colony.getLabourBoard(), claim);
+        return SUPPLY_RUN;
+    }
+
+    private IAIState supplyRun()
+    {
+        if (supply == null)
+        {
+            return START_WORKING;
+        }
+        if (!supply.isValid() || supply.isEnded() || !(building.getColony() instanceof com.minecolonies.core.colony.Colony))
+        {
+            supply.stop(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID);
+            supply = null;
+            return START_WORKING;
+        }
+        supply.tick();
+        return SUPPLY_RUN;
     }
 
     @Override

@@ -109,6 +109,9 @@ public final class LabourBoard
     private final Set<BlockPos> takenFurnaces = new HashSet<>();
     private final Set<Integer>  takenEntities = new HashSet<>();
 
+    private final Map<IToken<?>, Long>           firstSeen   = new HashMap<>();
+    private final Map<Integer, Integer>          selfEpisodes = new HashMap<>();
+
     private List<Candidate> candidates = List.of();
     private long            builtAt    = Long.MIN_VALUE / 2;
     private boolean         seenSweep;
@@ -544,6 +547,84 @@ public final class LabourBoard
     }
 
     /**
+     * @param request a request token.
+     * @return the game time at which the request was first seen waiting for labour.
+     */
+    public long waitingSince(final IToken<?> request)
+    {
+        return firstSeen.computeIfAbsent(request, k -> now());
+    }
+
+    private Candidate selfCandidate(final BlockPos hut, final int orderId, final long now)
+    {
+        if (!LabourSettings.worldEnabled() || !LabourSettings.selfSupply(colony) || selfEpisodes.getOrDefault(orderId, 0) >= 3)
+        {
+            return null;
+        }
+        for (final Candidate candidate : candidates())
+        {
+            if (candidate.hut().equals(hut) && candidate.importance() == RequestImportance.URGENT && claimsOn(candidate.token()) == 0 && stillWaiting(candidate.token())
+                  && now >= notBefore.getOrDefault(candidate.token(), 0L) && now - waitingSince(candidate.token()) >= LabourSettings.supplyGraceTicks())
+            {
+                for (final Item item : candidate.targets())
+                {
+                    if (LabourRules.selfSupplyItem(item))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @param hut     the hut of a builder with an active order.
+     * @param orderId his order.
+     * @return whether one of the hut's own requests is blocked on basics that the builder may fetch himself (cheap; makes no claim).
+     */
+    public boolean selfSupplyWanted(final BlockPos hut, final int orderId)
+    {
+        return selfCandidate(hut, orderId, now()) != null;
+    }
+
+    /**
+     * The idle builder blocked on basic materials for his own build: a claim for one request of his own hut, with the goods he may fetch himself.
+     *
+     * @return the claim, or null when none of his requests qualifies (they are not blocked long enough, are covered, have no plan, or he had enough episodes).
+     */
+    @Nullable
+    public LabourClaim claimForBuilder(final ICitizenData builder, final BlockPos hut, final int orderId)
+    {
+        final long now = now();
+        if (byCitizen.containsKey(builder.getId()))
+        {
+            return null;
+        }
+        final Candidate candidate = selfCandidate(hut, orderId, now);
+        if (candidate == null)
+        {
+            return null;
+        }
+        final List<Item> own = new ArrayList<>();
+        for (final Item item : candidate.targets())
+        {
+            if (LabourRules.selfSupplyItem(item))
+            {
+                own.add(item);
+            }
+        }
+        final Candidate restricted = new Candidate(candidate.token(), candidate.hut(), candidate.deliverable(), own, candidate.importance(), candidate.since(), candidate.count(),
+          candidate.minimum());
+        final LabourClaim claim = tryClaim(builder, restricted, LabourClaim.Source.SELF, new LabourEnv(colony, this), LabourSession.inventoryOf(builder), now);
+        if (claim != null)
+        {
+            selfEpisodes.merge(orderId, 1, Integer::sum);
+        }
+        return claim;
+    }
+
+    /**
      * Makes a claim for one request, if a plan exists.
      *
      * @return the claim, or null when the request cannot be served by hand now (it is put on back-off and shows why).
@@ -901,6 +982,7 @@ public final class LabourBoard
                 ledger.sweepStaleLabour(this::holds, now, 400L);
             }
             notBefore.keySet().removeIf(token -> !stillWaiting(token));
+            firstSeen.keySet().removeIf(token -> !stillWaiting(token));
             failures.keySet().removeIf(token -> !stillWaiting(token));
             blockedWhy.keySet().removeIf(token -> !stillWaiting(token));
             delivered.keySet().removeIf(token -> !stillWaiting(token) && !pendingWake.containsKey(token));
