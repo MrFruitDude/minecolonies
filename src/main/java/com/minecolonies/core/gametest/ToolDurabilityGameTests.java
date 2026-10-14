@@ -35,7 +35,6 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -46,7 +45,6 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -65,7 +63,7 @@ import static com.minecolonies.core.gametest.MinecoloniesGameTests.placeProducti
 
 /**
  * Citizens' tools wear exactly like the same tool in the hands of a player doing the same action: the reference is the vanilla code itself
- * (a connected survival player breaking the same blocks with {@code ServerPlayerGameMode#destroyBlock}, or attacking with {@code Player#attack}).
+ * (a connected survival player wearing the tool for the same blocks with {@code ItemStack#mineBlock}, the call of {@code ServerPlayerGameMode#destroyBlock}, or attacking with {@code Player#attack}).
  * The only things that make a citizen's tool last longer are enchantments (Unbreaking) and the colony research "Citizen Tools +X% Durability".
  * Tests are named {@code minecolonies:tooldur_*}; a development run of just these: {@code MINECOLONIES_GAMETEST_ONLY=tooldur}.
  */
@@ -123,13 +121,11 @@ public final class ToolDurabilityGameTests
      * A connected player in survival mode with the abilities of one: the mock player the other tests use takes the default game mode of the GameTest server
      * (creative) when it joins, and a creative player's tools do not wear.
      */
-    private static ServerPlayer makeConnectedSurvivalPlayer(final GameTestHelper helper, final IColony colony)
+    private static ServerPlayer makeConnectedSurvivalPlayer(final GameTestHelper helper)
     {
         final ServerPlayer player = MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
         player.gameMode.changeGameModeForPlayer(GameType.SURVIVAL);
         helper.assertTrue(!player.hasInfiniteMaterials(), "fixture: the mock player still has infinite materials");
-        // the colony protects its blocks from players who are not members: an officer may break them
-        colony.getPermissions().addPlayer(player.getUUID(), player.getGameProfile().name(), colony.getPermissions().getRankOfficer());
         return player;
     }
 
@@ -179,14 +175,6 @@ public final class ToolDurabilityGameTests
         return stack.isEmpty() ? original.getMaxDamage() : stack.getDamageValue();
     }
 
-    private static void clearDrops(final ServerLevel level, final BlockPos around)
-    {
-        for (final ItemEntity drop : level.getEntitiesOfClass(ItemEntity.class, new AABB(around).inflate(6.0D)))
-        {
-            drop.discard();
-        }
-    }
-
     /**
      * The wear a citizen's tool takes from breaking the block {@code n} times the way the work AIs break it ({@code breakBlockWithToolInHand}).
      */
@@ -208,7 +196,7 @@ public final class ToolDurabilityGameTests
     }
 
     /**
-     * The wear the same tool takes in the hand of a player who breaks the block {@code n} times (vanilla: {@code ServerPlayerGameMode#destroyBlock}).
+     * The wear the same tool takes in the hand of a player who breaks the block {@code n} times (vanilla: {@code ItemStack#mineBlock} from {@code ServerPlayerGameMode#destroyBlock}).
      */
     private static int playerBreaks(final ServerPlayer player, final ServerLevel level, final ItemStack tool, final BlockState state, final int n, final BlockPos pos)
     {
@@ -217,12 +205,11 @@ public final class ToolDurabilityGameTests
         for (int i = 0; i < n; i++)
         {
             level.setBlock(pos, state, 2);
-            if (!player.gameMode.destroyBlock(pos))
-            {
-                throw new IllegalStateException("fixture: the player could not break " + state + " at " + pos.toShortString() + " (protected by the colony?)");
-            }
+            // exactly the call that wears the tool in ServerPlayerGameMode#destroyBlock (line "itemStack.mineBlock(level, state, pos, player)"). destroyBlock
+            // itself also asks the block break event, which the colony protection of any colony nearby in the shared test world may cancel
+            player.getMainHandItem().mineBlock(level, state, pos, player);
+            level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
         }
-        clearDrops(level, pos);
         final int wear = wearOf(player.getMainHandItem(), tool);
         player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
         return wear;
@@ -242,7 +229,7 @@ public final class ToolDurabilityGameTests
     {
         withCitizen(helper, "rules", (colony, citizen) -> {
             final ServerLevel level = helper.getLevel();
-            final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
+            final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
             final BlockPos pos = minePos(helper);
             final List<Case> cases = List.of(
               new Case("iron pickaxe on stone", new ItemStack(Items.IRON_PICKAXE), Blocks.STONE.defaultBlockState(), 30, 30),
@@ -292,7 +279,7 @@ public final class ToolDurabilityGameTests
     {
         withCitizen(helper, "unbreaking", (colony, citizen) -> {
             final ServerLevel level = helper.getLevel();
-            final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
+            final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
             final ItemStack pickaxe = new ItemStack(Items.NETHERITE_PICKAXE);
             pickaxe.enchant(Utils.getRegistryValue(Enchantments.UNBREAKING, level), 3);
             final int n = 400;
@@ -352,7 +339,7 @@ public final class ToolDurabilityGameTests
     {
         withCitizen(helper, "hooks", (colony, citizen) -> {
             final ServerLevel level = helper.getLevel();
-            final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
+            final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
             final ProbeTool probe = PROBE.get();
             probe.damageHooks = 0;
             probe.mineCalls = 0;
@@ -444,7 +431,7 @@ public final class ToolDurabilityGameTests
             final AbstractEntityCitizen citizen = worker.getEntity().get();
             final AbstractEntityAIBasic<?, ?> ai = workAi(worker);
             helper.assertTrue(ai instanceof AbstractEntityAIInteract<?, ?>, name + " worker has no interacting AI: " + ai);
-            final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
+            final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
             final int n = 20;
             final BlockPos pos = minePos(helper);
             level.setBlock(pos.below(), Blocks.GRASS_BLOCK.defaultBlockState(), 2);
@@ -593,7 +580,7 @@ public final class ToolDurabilityGameTests
               {
                   throw new IllegalStateException(e);
               }
-              final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
+              final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
               final BlockPos anchor = guard.blockPosition();
               final List<String> failures = new ArrayList<>();
               for (final Item weapon : List.of(Items.IRON_SWORD, Items.DIAMOND_SWORD, Items.IRON_AXE))
@@ -660,7 +647,7 @@ public final class ToolDurabilityGameTests
           (colony, worker) -> {
               final ServerLevel level = helper.getLevel();
               final EntityCitizen guard = (EntityCitizen) worker.getEntity().get();
-              final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
+              final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
               guard.getInventoryCitizen().setStackInSlot(1, new ItemStack(Items.SHIELD));
               CitizenItemUtils.setHeldItem(guard, InteractionHand.OFF_HAND, 1);
               guard.setYRot(0.0F);
