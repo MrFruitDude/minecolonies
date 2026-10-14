@@ -23,11 +23,17 @@ public final class LabourEnv implements LabourPlanner.Env<Item>
     private final LabourBoard  board;
     private final ServerLevel  level;
     private final List<Item>   fuels = LabourRules.fuels();
+    private final boolean      withdraw;
     private Set<Item> surfaceDrops;
     private Set<Item> stoneDrops;
 
-    public LabourEnv(final Colony colony, final LabourBoard board)
+    /**
+     * @param withdraw whether the labourer may take stock out of the warehouses for goods a specialist covers (requests and the builders' own builds may; the stock goals never
+     *                 do: they only keep up what nobody makes, they do not take from what somebody does)
+     */
+    public LabourEnv(final Colony colony, final LabourBoard board, final boolean withdraw)
     {
+        this.withdraw = withdraw;
         this.colony = colony;
         this.board = board;
         this.level = (ServerLevel) colony.getWorld();
@@ -135,7 +141,7 @@ public final class LabourEnv implements LabourPlanner.Env<Item>
     @Override
     public int withdrawable(final Item item)
     {
-        return board.stock(item);
+        return withdraw ? board.stock(item) : 0;
     }
 
     @Override

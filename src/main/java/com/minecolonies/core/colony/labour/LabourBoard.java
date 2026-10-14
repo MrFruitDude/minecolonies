@@ -258,6 +258,27 @@ public final class LabourBoard
         return colony.getDimension().identifier() + "/" + colony.getID();
     }
 
+    /**
+     * A manager flags a crafting table or furnace of the colony (exclude, prefer) or clears the flag.
+     *
+     * @param pos  the block.
+     * @param flag the flag, null to clear it.
+     * @return false when the block is no table or furnace of this colony's claim (nothing changed).
+     */
+    public boolean flagTable(final BlockPos pos, @Nullable final LabourData.TableFlag flag)
+    {
+        if (!sites.allTables().contains(pos) && !sites.allFurnaces().contains(pos))
+        {
+            return false;
+        }
+        if (colony.getLabourData().setFlag(pos, flag))
+        {
+            colony.markDirty();
+            sites.invalidate();
+        }
+        return true;
+    }
+
     // ------------------------------------------------------------------ caps
 
     /**
@@ -508,7 +529,7 @@ public final class LabourBoard
             return null;
         }
         final Map<Item, Integer> inventory = LabourSession.inventoryOf(citizen);
-        final LabourEnv env = new LabourEnv(colony, this);
+        final LabourEnv env = new LabourEnv(colony, this, true);
         if (requests)
         {
             int tries = 0;
@@ -536,7 +557,7 @@ public final class LabourBoard
         }
         if (stockpile && LabourSettings.stockpile(colony) && !urgentOnly)
         {
-            final LabourClaim claim = offerStockpile(citizen, env, inventory, now);
+            final LabourClaim claim = offerStockpile(citizen, new LabourEnv(colony, this, false), inventory, now);
             if (claim != null)
             {
                 return claim;
@@ -616,7 +637,7 @@ public final class LabourBoard
         }
         final Candidate restricted = new Candidate(candidate.token(), candidate.hut(), candidate.deliverable(), own, candidate.importance(), candidate.since(), candidate.count(),
           candidate.minimum());
-        final LabourClaim claim = tryClaim(builder, restricted, LabourClaim.Source.SELF, new LabourEnv(colony, this), LabourSession.inventoryOf(builder), now);
+        final LabourClaim claim = tryClaim(builder, restricted, LabourClaim.Source.SELF, new LabourEnv(colony, this, true), LabourSession.inventoryOf(builder), now);
         if (claim != null)
         {
             selfEpisodes.merge(orderId, 1, Integer::sum);
@@ -669,6 +690,10 @@ public final class LabourBoard
             return null;
         }
         final LabourClaim claim = new LabourClaim(source, candidate.token(), null, citizen.getId(), chosen, lot, candidate.hut(), now, now + LabourSettings.leaseTicks());
+        if (coverage.covered(chosen))
+        {
+            LabourStats.CLAIMS_ON_COVERED.incrementAndGet();
+        }
         register(claim);
         final ReservationLedger ledger = RsFlags.reservations() ? RsAccess.ledger(colony.getRequestManager()) : null;
         if (ledger != null)
@@ -748,6 +773,7 @@ public final class LabourBoard
     private void register(final LabourClaim claim)
     {
         byCitizen.put(claim.citizenId(), claim);
+        LabourStats.CLAIMS.incrementAndGet();
         count(1);
     }
 
@@ -783,6 +809,7 @@ public final class LabourBoard
             return;
         }
         byCitizen.remove(claim.citizenId());
+        (success ? LabourStats.CLAIMS_OK : LabourStats.CLAIMS_FAILED).incrementAndGet();
         count(-1);
         final long now = now();
         final ReservationLedger ledger = RsAccess.ledger(colony.getRequestManager());
@@ -889,6 +916,7 @@ public final class LabourBoard
         {
             return;
         }
+        LabourStats.HANDED_IN.addAndGet(n);
         final int total = delivered.merge(request, n, Integer::sum);
         final Candidate candidate = candidate(request);
         if (candidate == null)
@@ -942,6 +970,7 @@ public final class LabourBoard
                 final ICitizenData citizen = colony.getCitizenManager().getCivilian(claim.citizenId());
                 if (now > claim.leaseUntil() || citizen == null || citizen.getEntity().isEmpty())
                 {
+                    LabourStats.CLAIMS_EXPIRED.incrementAndGet();
                     release(claim, false, true);
                     continue;
                 }

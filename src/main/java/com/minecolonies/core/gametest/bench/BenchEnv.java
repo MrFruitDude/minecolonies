@@ -24,6 +24,8 @@ import java.util.Set;
  * <li>{@code RS_BENCH_WORKERS=pinned|default}: pin worker speed (1.0) and walking (always walk) for the macro scenarios (default pinned).</li>
  * <li>{@code RS_BENCH_BREAKS=1}: it rains 300 ticks of every 3000, so the citizen AI wants to send the workers, couriers that hold a task among them, to shelter (default
  * off: midday, clear). (Hunger is not simulated: a citizen whose saturation the harness restores in the middle of a meal stays in the eating state for good.)</li>
+ * <li>{@code RS_BENCH_LABOUR=on}: the inert gate: the macro scenarios run with the labourers ON and six jobless citizens added; their chains cover every good, so nothing may be claimed
+ * (default off: labour is off in every scenario but {@code early}).</li>
  * <li>{@code RS_BENCH_OUT=dir}: where the per-test JSON files go (default {@code rs-bench} in the run directory).</li>
  * <li>{@code RS_BENCH_ONLY_TESTS=a,b}: restrict to tests whose name contains one of the words.</li>
  * </ul>
@@ -84,6 +86,14 @@ public final class BenchEnv
     public static boolean breaks()
     {
         return "1".equals(get("RS_BENCH_BREAKS", "0"));
+    }
+
+    /**
+     * @return true to run the macro scenarios with the labourers on and jobless citizens present (the inert gate).
+     */
+    public static boolean labourInert()
+    {
+        return "on".equalsIgnoreCase(get("RS_BENCH_LABOUR", "off"));
     }
 
     public static Path outDir()

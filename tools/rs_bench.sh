@@ -11,6 +11,7 @@
 #   --jfr FILE      record the JVMs of the run with Java Flight Recorder (profile settings); put %p in FILE (one file per JVM, the big one is the game)
 #   --out DIR       result directory (default bench-results/)
 #   --keep-raw      keep the per-test JSON files next to the merged result
+#   --labour on     the inert gate: the macro scenarios run with the labourers ON and six jobless citizens added; no labour claim may be made (default off: labour runs only in `early`)
 #   --breaks        it rains 300 ticks of every 3000 (RS_BENCH_BREAKS=1): the citizen AI wants to send couriers that hold a task to shelter
 #
 # Writes <out>/<git-sha>-<timestamp>.json (merged, with score) and prints the summary.
@@ -21,7 +22,7 @@ cd "$here"
 
 mode="${1:-quick}"
 case "$mode" in quick|full) shift ;; *) mode=quick ;; esac
-reps=""; only=""; flags=on; seed=117; jfr=""; out="$here/bench-results"; keep=0; breaks=0
+reps=""; only=""; flags=on; seed=117; jfr=""; out="$here/bench-results"; keep=0; breaks=0; labour=off
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --reps) reps="$2"; shift 2 ;;
@@ -32,6 +33,7 @@ while [[ $# -gt 0 ]]; do
     --out) out="$2"; shift 2 ;;
     --keep-raw) keep=1; shift ;;
     --breaks) breaks=1; shift ;;
+    --labour) labour="$2"; shift 2 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -43,7 +45,7 @@ stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 raw="$here/bench-tmp/$sha$dirty-$stamp"
 mkdir -p "$raw" "$out"
 
-export RS_BENCH_BREAKS="$breaks" RS_BENCH_ONLY=1 RS_BENCH_MODE="$mode" RS_BENCH_REPS="$reps" RS_BENCH_FLAGS="$flags" RS_BENCH_SEED="$seed" RS_BENCH_OUT="$raw"
+export RS_BENCH_LABOUR="$labour" RS_BENCH_BREAKS="$breaks" RS_BENCH_ONLY=1 RS_BENCH_MODE="$mode" RS_BENCH_REPS="$reps" RS_BENCH_FLAGS="$flags" RS_BENCH_SEED="$seed" RS_BENCH_OUT="$raw"
 [[ -n "$only" ]] && export RS_BENCH_ONLY_TESTS="$only"
 
 gradle_args=(--no-daemon --offline -Dmaven.repo.local=/mnt/data/mc-mod-ports/rs-maven -x neoFormJoined26.3-1DownloadAssets runGameTestServer)

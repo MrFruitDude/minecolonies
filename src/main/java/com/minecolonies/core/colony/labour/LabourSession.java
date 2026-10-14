@@ -344,7 +344,7 @@ public final class LabourSession implements IIdleTaskSession
             end(false);
             return;
         }
-        final LabourEnv env = new LabourEnv(colony, board);
+        final LabourEnv env = new LabourEnv(colony, board, claim.source() != LabourClaim.Source.STOCKPILE);
         final LabourPlanner.Result<Item> result = LabourPlanner.next(env, claim.target(), claim.amount(), inventoryOf(citizen));
         if (result instanceof LabourPlanner.Done<Item>)
         {
@@ -548,6 +548,7 @@ public final class LabourSession implements IIdleTaskSession
         workUntil = 0L;
         for (final ItemStack drop : BlockPosUtil.getBlockDrops(level, pos, 0, tool, worker))
         {
+            LabourStats.gathered(drop);
             keep(worker, drop);
         }
         CitizenItemUtils.breakBlockWearingToolOf(worker, pos, toolSlot < 0 ? null : worker, toolSlot);

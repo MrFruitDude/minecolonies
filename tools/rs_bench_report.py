@@ -15,7 +15,7 @@ SCORE (lower is better, 100 = the reference run the score reference file was mad
                               ticksToCompletion (0.30) game ticks until the scenario's work is done
                               courierDistance (0.15)   blocks the couriers walked until then
                               requestsCreated (0.15)   requests created until then
-  MACRO = exp( sum_s v_s * ln R_s )     scenario weights v: fresh 1, busy 2, storm 2, unload 1 (normalised over those present)
+  MACRO = exp( sum_s v_s * ln R_s )     scenario weights v: fresh 1, busy 2, storm 2, unload 1, early 1 (normalised over those present in the reference)
   MICRO = geometric mean over the micro operation costs (CPU ns per operation at 1k and 10k open requests, plus the bytes of
           one view delta and of one save) of  x / ref
   SCORE = 100 * MACRO^0.7 * MICRO^0.3
@@ -37,7 +37,7 @@ MACRO_COMPONENTS = [
     ("work.courierDistanceAtDone", 0.15),
     ("work.requestsCreatedAtDone", 0.15),
 ]
-SCENARIO_WEIGHTS = {"fresh": 1.0, "busy": 2.0, "storm": 2.0, "unload": 1.0}
+SCENARIO_WEIGHTS = {"fresh": 1.0, "busy": 2.0, "storm": 2.0, "unload": 1.0, "early": 1.0}
 MICRO_OPS = [
     ("create", "cpuNs"),
     ("assign", "cpuNs"),
@@ -210,6 +210,9 @@ def score(result, ref):
     macro_logs, wsum = 0.0, 0.0
     per_scenario = {}
     for scenario, values in comp["macro"].items():
+        if scenario not in use_ref["macro"] and ref:
+            # a scenario the reference does not know yet (the labourers' `early`) is measured and shown but not part of the composite: the score stays comparable
+            continue
         r = use_ref["macro"].get(scenario, values)
         logs, w_total = 0.0, 0.0
         parts = {}

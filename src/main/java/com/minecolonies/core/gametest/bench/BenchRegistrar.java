@@ -54,6 +54,8 @@ public final class BenchRegistrar
         macro(event, "fresh", reps, () -> Scenarios.fresh(quick));
         macro(event, "busy", reps, () -> Scenarios.busy(quick));
         macro(event, "storm", reps, () -> Scenarios.storm(quick));
+        // the labourers' early game: no warehouse, no couriers, no gatherer or crafter huts; the jobless gather and craft what the builder asks for
+        macro(event, "early", reps, () -> Scenarios.early(quick));
         if (!quick)
         {
             macro(event, "unload", reps, () -> Scenarios.unload(false));

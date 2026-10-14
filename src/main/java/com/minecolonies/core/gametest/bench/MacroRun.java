@@ -100,6 +100,15 @@ public final class MacroRun
         }
 
         /**
+         * @return true if the scenario runs with the labourers ON (jobless citizens gather and craft what no building makes); every other scenario runs with labour off, so
+         * its numbers stay what they were before the labourers existed.
+         */
+        default boolean labour()
+        {
+            return false;
+        }
+
+        /**
          * @return the tick budget after which the run fails.
          */
         int budget();
@@ -259,6 +268,16 @@ public final class MacroRun
         RsFlags.overrideSmartRetry(flags);
         RsStats.reset();
         StandardToken.seedForBenchmark(seed);
+        // labour is off in every scenario but the ones that exercise it (or the inert gate), so the old scenarios measure what they always measured
+        final boolean labourOn = scenario.labour() || BenchEnv.labourInert();
+        com.minecolonies.core.colony.labour.LabourSettings.override("worldEnabled", labourOn);
+        if (labourOn && !scenario.labour())
+        {
+            // the inert gate: the scenarios' tool requests are scripted goods nobody can make (their supplier is a script); stone tools are not the basic tier here
+            com.minecolonies.core.colony.labour.LabourSettings.override("stoneTools", false);
+        }
+        com.minecolonies.core.colony.labour.LabourStats.reset();
+        com.minecolonies.core.colony.labour.LabourStats.gatherProbe = labourOn ? stack -> injectedUnits += ItemUnits.units(stack) : null;
         if (BenchEnv.pinWorkers())
         {
             // 1.0 speed and real walking: the pace the request system is judged at does not move with the worker-efficiency settings
@@ -286,6 +305,21 @@ public final class MacroRun
             {
                 abort("staffing failed: " + t, t);
                 return;
+            }
+            if (BenchEnv.labourInert())
+            {
+                // the inert gate: six jobless citizens, and still nothing may be claimed (a building covers every good the scenario asks for)
+                for (int i = 0; i < 6; i++)
+                {
+                    final ICitizenData jobless = BenchBridge.spawnCitizen(helper, colony, new BlockPos(Scenarios.TOWN_HALL.getX() - 6 + 2 * i, 1, Scenarios.TOWN_HALL.getZ() - 8), false);
+                    for (final com.minecolonies.api.entity.citizen.Skill skill : com.minecolonies.api.entity.citizen.Skill.values())
+                    {
+                        final var data = jobless.getCitizenSkillHandler().getSkills().get(skill);
+                        data.setLevel(8);
+                        data.setExperience(0);
+                    }
+                    citizens.add(jobless);
+                }
             }
             // Let the new workers settle before the clock starts, so every run starts from the same state.
             helper.runAfterDelay(100, () -> {
@@ -322,6 +356,8 @@ public final class MacroRun
     private void abort(final String message, final Throwable t)
     {
         com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
+        com.minecolonies.core.colony.labour.LabourSettings.clearOverrides();
+        com.minecolonies.core.colony.labour.LabourStats.gatherProbe = null;
         RsProbe.stop();
         StandardToken.seedForBenchmark(null);
         if (t != null)
@@ -1353,6 +1389,24 @@ public final class MacroRun
             out.addProperty("stallTrail", stallTrail.toString());
             Log.getLogger().info("RS_BENCH_STALL_TRAIL {}{}", testName, stallTrail);
         }
+        final JsonObject labourStats = new JsonObject();
+        labourStats.addProperty("claims", com.minecolonies.core.colony.labour.LabourStats.CLAIMS.get());
+        labourStats.addProperty("claimsOk", com.minecolonies.core.colony.labour.LabourStats.CLAIMS_OK.get());
+        labourStats.addProperty("claimsFailed", com.minecolonies.core.colony.labour.LabourStats.CLAIMS_FAILED.get());
+        labourStats.addProperty("claimsExpired", com.minecolonies.core.colony.labour.LabourStats.CLAIMS_EXPIRED.get());
+        labourStats.addProperty("claimsOnCovered", com.minecolonies.core.colony.labour.LabourStats.CLAIMS_ON_COVERED.get());
+        labourStats.addProperty("handedIn", com.minecolonies.core.colony.labour.LabourStats.HANDED_IN.get());
+        labourStats.addProperty("gathered", com.minecolonies.core.colony.labour.LabourStats.GATHERED.get());
+        extra.add("labour", labourStats);
+        gates.addProperty("labourClaimsOnCovered", com.minecolonies.core.colony.labour.LabourStats.CLAIMS_ON_COVERED.get());
+        if (com.minecolonies.core.colony.labour.LabourStats.CLAIMS_ON_COVERED.get() != 0)
+        {
+            errors.add(com.minecolonies.core.colony.labour.LabourStats.CLAIMS_ON_COVERED.get() + " labour claims were made on goods a specialist covers");
+        }
+        if (BenchEnv.labourInert() && !scenario.labour() && com.minecolonies.core.colony.labour.LabourStats.CLAIMS.get() != 0)
+        {
+            errors.add("the inert gate: " + com.minecolonies.core.colony.labour.LabourStats.CLAIMS.get() + " labour claims in a colony whose chains cover every good it asks for");
+        }
         out.add("gates", gates);
         out.add("extra", extra);
         final JsonArray errs = new JsonArray();
@@ -1366,6 +1420,8 @@ public final class MacroRun
         RsProbe.stop();
         StandardToken.seedForBenchmark(null);
         com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
+        com.minecolonies.core.colony.labour.LabourSettings.clearOverrides();
+        com.minecolonies.core.colony.labour.LabourStats.gatherProbe = null;
         BenchEnv.write(testName, out);
         harnessCpuTotal += end.cpuNs();
         done.accept(errors.isEmpty() ? null : "macro bench " + testName + " gates failed: " + errors);

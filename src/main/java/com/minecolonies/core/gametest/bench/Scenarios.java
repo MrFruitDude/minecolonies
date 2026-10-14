@@ -253,6 +253,134 @@ public final class Scenarios
         };
     }
 
+    // ------------------------------------------------------------------ e) the labourers' early game
+
+    /**
+     * An oak tree a labourer may fell (natural: dirt below, leaves that nobody placed). Not counted by the item accounting until it is felled.
+     */
+    static void tree(final MacroRun r, final int x, final int z, final int height)
+    {
+        r.helper.setBlock(new BlockPos(x, 0, z), Blocks.DIRT.defaultBlockState());
+        for (int y = 1; y <= height; y++)
+        {
+            r.helper.setBlock(new BlockPos(x, y, z), Blocks.OAK_LOG.defaultBlockState());
+        }
+        final net.minecraft.world.level.block.state.BlockState leaves = Blocks.OAK_LEAVES.defaultBlockState()
+                                                                          .setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, false)
+                                                                          .setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
+        for (int y = height - 1; y <= height; y++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dz = -1; dz <= 1; dz++)
+                {
+                    if (dx != 0 || dz != 0)
+                    {
+                        r.helper.setBlock(new BlockPos(x + dx, y, z + dz), leaves);
+                    }
+                }
+            }
+        }
+        r.helper.setBlock(new BlockPos(x, height + 1, z), leaves);
+    }
+
+    /**
+     * The early game of a colony that has nothing but a town hall and a builder: no warehouse, no courier, no sawmill, no gatherer hut. Four jobless citizens, trees on the plot.
+     * The builder's huts ask for oak planks (and his hut for sticks); nothing in the colony can make them, so the requests wait at the player resolver until a labourer
+     * (a jobless citizen, or the builder himself for his own build) fells a tree, makes planks and sticks in his pockets and puts them into the hut. Measures the time until all huts
+     * stand. The planks and sticks are the goods that "fall back to the player" here: the gate is that none stays that way (the run drains).
+     */
+    public static MacroRun.Scenario early(final boolean quick)
+    {
+        return new MacroRun.Scenario()
+        {
+            private final List<Integer> orders = new ArrayList<>();
+            private final List<Consumer> consumers = new ArrayList<>();
+            private IBuilding builder;
+            private boolean demand = true;
+
+            @Override
+            public void setup(final MacroRun r)
+            {
+                r.found("rsb-early", TOWN_HALL, X0, X1, Z0, Z1);
+                builder = r.place(ModBlocks.blockHutBuilder, 42, 44, "fundamentals/builder1.blueprint");
+                // the trees: 20 logs for 60 planks, far enough from the town hall (the nearest few stay) and within the labourers' reach
+                final int trees = quick ? 4 : 8;
+                for (int i = 0; i < trees; i++)
+                {
+                    tree(r, 72 + 5 * (i % 4), 24 + 6 * (i / 4), 5);
+                }
+            }
+
+            @Override
+            public void staff(final MacroRun r)
+            {
+                r.hire(builder, () -> builder.getModule(BuildingModules.BUILDER_WORK));
+                for (int i = 0; i < 4; i++)
+                {
+                    final ICitizenData jobless = com.minecolonies.core.gametest.BenchBridge.spawnCitizen(r.helper, r.colony, new BlockPos(TOWN_HALL.getX() - 6 + 3 * i, 1, TOWN_HALL.getZ() - 8), false);
+                    for (final com.minecolonies.api.entity.citizen.Skill skill : com.minecolonies.api.entity.citizen.Skill.values())
+                    {
+                        final var data = jobless.getCitizenSkillHandler().getSkills().get(skill);
+                        data.setLevel(8);
+                        data.setExperience(0);
+                    }
+                    r.citizens.add(jobless);
+                }
+            }
+
+            @Override
+            public void begin(final MacroRun r)
+            {
+                final int huts = quick ? 2 : 4;
+                for (int k = 0; k < huts; k++)
+                {
+                    orders.add(order(r, "hut" + k, 12, 62 + 3 * k, hutBlocks(6 + 2 * k, 0, 0, 0), 0));
+                }
+                consumers.add(new Consumer(builder, Items.STICK, 4, 4, 300, 0, false));
+            }
+
+            @Override
+            public void onTick(final MacroRun r, final long tick)
+            {
+                for (final Consumer c : consumers)
+                {
+                    c.tick(r, tick, demand);
+                }
+            }
+
+            @Override
+            public void stopDemand(final MacroRun r)
+            {
+                demand = false;
+            }
+
+            @Override
+            public boolean done(final MacroRun r, final long tick)
+            {
+                return tick > 60 && allBuilt(r, orders);
+            }
+
+            @Override
+            public boolean labour()
+            {
+                return true;
+            }
+
+            @Override
+            public Set<String> unproducible()
+            {
+                return Set.of("oak_planks", "stick");
+            }
+
+            @Override
+            public int budget()
+            {
+                return 40_000;
+            }
+        };
+    }
+
     // ------------------------------------------------------------------ scripted consumers
 
     /**

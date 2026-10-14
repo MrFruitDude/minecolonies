@@ -76,6 +76,8 @@ public final class LabourSites
 
     private List<BlockPos> tables      = List.of();
     private List<BlockPos> furnaces    = List.of();
+    private List<BlockPos> allTables   = List.of();
+    private List<BlockPos> allFurnaces = List.of();
     private long           postsAt     = Long.MIN_VALUE / 2;
 
     private List<BoundingBox> boxes   = List.of();
@@ -549,21 +551,33 @@ public final class LabourSites
         }
         final List<BlockPos> foundTables = new ArrayList<>();
         final List<BlockPos> foundFurnaces = new ArrayList<>();
+        final List<BlockPos> everyTable = new ArrayList<>();
+        final List<BlockPos> everyFurnace = new ArrayList<>();
         final int range = LabourSettings.postRange();
         scan(range, state -> state.is(Blocks.CRAFTING_TABLE), pos -> {
-            if (usablePost(pos))
+            if (ownedBy(pos))
             {
-                foundTables.add(pos);
+                everyTable.add(pos);
+                if (usablePost(pos))
+                {
+                    foundTables.add(pos);
+                }
             }
         });
         scan(range, state -> state.is(Blocks.FURNACE), pos -> {
-            if (usablePost(pos))
+            if (ownedBy(pos))
             {
-                foundFurnaces.add(pos);
+                everyFurnace.add(pos);
+                if (usablePost(pos))
+                {
+                    foundFurnaces.add(pos);
+                }
             }
         });
         tables = foundTables;
         furnaces = foundFurnaces;
+        allTables = everyTable;
+        allFurnaces = everyFurnace;
         postsAt = now;
     }
 
@@ -578,7 +592,25 @@ public final class LabourSites
         {
             return false;
         }
-        return ownedBy(pos);
+        return true;
+    }
+
+    /**
+     * @return every crafting table in the colony's claim within the post range, flagged or not (the flags are the managers' to change).
+     */
+    public List<BlockPos> allTables()
+    {
+        scanPosts();
+        return allTables;
+    }
+
+    /**
+     * @return every furnace in the colony's claim within the post range.
+     */
+    public List<BlockPos> allFurnaces()
+    {
+        scanPosts();
+        return allFurnaces;
     }
 
     public boolean hasTable()
