@@ -120,6 +120,11 @@ public final class BuilderHelperSession implements IIdleTaskSession
      */
     private static final long SPOT_BUDGET = 400L;
 
+    /**
+     * Ticks without a position done after which the one he is on goes back to the lead (the watchdog against a lease that goes nowhere).
+     */
+    private static final long STUCK_TICKS = 900L;
+
     private final Colony       colony;
     private final ICitizenData citizen;
     private final BlockPos     key;
@@ -152,8 +157,15 @@ public final class BuilderHelperSession implements IIdleTaskSession
     private final Set<BlockPos> badSpots = new HashSet<>();
 
     // work time
-    private double bank     = 0.0D;
-    private long   lastBank = -1L;
+    private double bank        = 0.0D;
+    private long   lastBank    = -1L;
+    /**
+     * What the block he waits to afford costs: the bank can hold that much, however slow the helper is or however long the block takes.
+     */
+    private double pendingCost = 0.0D;
+
+    // the position he works on first, and when he last finished one: a lease that goes nowhere (a spot he never reaches, a block he cannot break) is given back
+    private long progressTick = 0L;
 
     BuilderHelperSession(final IColony colony, final ICitizenData citizen, final IBuilderWorkOrder order)
     {
@@ -199,6 +211,16 @@ public final class BuilderHelperSession implements IIdleTaskSession
     public Map<ItemStorage, Integer> carry()
     {
         return carry;
+    }
+
+    /**
+     * What he is up to, for the logs of the tests.
+     */
+    public String debug()
+    {
+        return "phase=" + phase + " batch=" + batch.size() + " head=" + (batch.isEmpty() ? "-" : batch.get(0).world().toShortString()) + " mining=" + (mining == null ? "-" : mining.toShortString())
+                 + " spot=" + (spot == null ? "-" : spot.toShortString()) + " bad=" + badSpots.size() + " bank=" + String.format("%.1f", bank) + " pending=" + String.format("%.1f", pendingCost)
+                 + " gaveUp=" + gaveUp.size() + " nextStep=" + nextStep + " progress=" + progressTick;
     }
 
     /**
@@ -317,7 +339,7 @@ public final class BuilderHelperSession implements IIdleTaskSession
     private void earnWorkTime(final long now, final AbstractBuildingStructureBuilder lead)
     {
         final double pace = leadPace(lead) * IdleCitizenSettings.helperSpeed();
-        final double cap = Math.max(20.0D, 3.0D * leadPlaceTicks(lead));
+        final double cap = Math.max(Math.max(20.0D, 3.0D * leadPlaceTicks(lead)), 1.5D * pendingCost);
         bank = lastBank < 0 ? 0.0D : Math.min(cap, bank + (now - lastBank) * pace);
         lastBank = now;
     }
@@ -409,6 +431,7 @@ public final class BuilderHelperSession implements IIdleTaskSession
                 collab.lease(planned.world(), key, expiry, false);
             }
             batch.addAll(plan);
+            progressTick = now;
         }
         for (final LeaseAllocator.Planned planned : batch)
         {
@@ -748,6 +771,13 @@ public final class BuilderHelperSession implements IIdleTaskSession
             phase = Phase.PLAN;
             return;
         }
+        if (now - progressTick > STUCK_TICKS)
+        {
+            // nothing placed or broken for a long while: the first position goes back to the lead and he does not take it again
+            giveUpPosition(batch.get(0).world(), collab);
+            progressTick = now;
+            return;
+        }
         final double cost = leadPlaceTicks(lead);
         int placedHere = 0;
         while (!batch.isEmpty() && placedHere < MAX_PER_STEP)
@@ -764,12 +794,14 @@ public final class BuilderHelperSession implements IIdleTaskSession
                 finishPosition(planned, lead, collab, now, false);
                 continue;
             }
+            pendingCost = cost;
             if (bank < cost)
             {
                 // he is slower than a builder: waits for the time the block takes
                 waitTicks(now, 5);
                 return;
             }
+            pendingCost = 0.0D;
             if (!inReach(worker, world, planned.world(), collab))
             {
                 return;
@@ -814,6 +846,12 @@ public final class BuilderHelperSession implements IIdleTaskSession
             phase = batch.isEmpty() ? Phase.PLAN : Phase.WORK;
             return;
         }
+        if (now - progressTick > STUCK_TICKS)
+        {
+            giveUpPosition(batch.get(0).world(), collab);
+            progressTick = now;
+            return;
+        }
         final LeaseAllocator.Planned planned = batch.get(0);
         final BlockState state = world.getBlockState(mining);
         if (state.isAir() || !state.getFluidState().isEmpty() || state.getBlock() == Blocks.BEDROCK
@@ -836,11 +874,13 @@ public final class BuilderHelperSession implements IIdleTaskSession
         final ICitizenData toolOwner = leadCitizen(lead);
         final ItemStack tool = toolSlot < 0 || toolOwner == null ? ItemStack.EMPTY : toolOwner.getInventory().getStackInSlot(toolSlot);
         final double cost = leadBreakTicks(lead, state, mining, tool);
+        pendingCost = cost;
         if (bank < cost)
         {
             waitTicks(now, 5);
             return;
         }
+        pendingCost = 0.0D;
         bank -= cost;
         if (!IColonyManager.getInstance().getCompatibilityManager().isOre(state))
         {
@@ -909,6 +949,7 @@ public final class BuilderHelperSession implements IIdleTaskSession
         batch.remove(planned);
         collab.renew(key, now + BuilderCollab.leaseTicks());
         spot = null;
+        progressTick = now;
     }
 
     // ------------------------------------------------------------------ reach
@@ -971,8 +1012,10 @@ public final class BuilderHelperSession implements IIdleTaskSession
             spot = spots.get(0).feet();
             spotSince = now;
         }
-        if (EntityNavigationUtils.walkToBlock(worker, spot) == -1)
+        final int walked = EntityNavigationUtils.walkToBlock(worker, spot);
+        if (walked != 0)
         {
+            // the walk ended (-1) or he stands in the spot (1) and the block is still out of reach: this spot does not work
             badSpots.add(spot);
             spot = null;
         }

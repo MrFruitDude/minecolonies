@@ -343,7 +343,8 @@ final class IdleHelperGameTests
         for (final ICitizenData citizen : site.idle)
         {
             final IIdleTaskSession session = IdleCitizenArbiter.sessionOf(citizen);
-            sb.append("[idle ").append(citizen.getId()).append(" job=").append(citizen.getJob()).append(" session=").append(session == null ? "none" : session.getTaskId()).append(" ai=")
+            sb.append("[idle ").append(citizen.getId()).append(" job=").append(citizen.getJob()).append(" session=").append(session == null ? "none" : session.getTaskId())
+              .append(session instanceof com.minecolonies.core.entity.ai.idle.BuilderHelperSession s ? " {" + s.debug() + "}" : "").append(" ai=")
               .append(citizen.getEntity().map(e -> e instanceof EntityCitizen ec ? String.valueOf(ec.getCitizenAI().getState()) : "?").orElse("-")).append(" at=")
               .append(citizen.getEntity().map(e -> e.blockPosition().toShortString()).orElse("-")).append(" sat=").append(citizen.getSaturation()).append("] ");
         }
