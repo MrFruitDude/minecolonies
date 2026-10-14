@@ -184,6 +184,7 @@ public final class LabourSession implements IIdleTaskSession
             return;
         }
         stopped = true;
+        LabourStats.log("session of citizen {} stops: {} (phase {}, ended {}, ok {})", citizen.getId(), reason, phase, ended, ok);
         cleanup();
         board.release(claim, ok, !ok && reason == IdleStopReason.TASK_INVALID);
         final AbstractEntityCitizen worker = citizen.getEntity().orElse(null);
@@ -333,6 +334,7 @@ public final class LabourSession implements IIdleTaskSession
 
     private void go(final Phase next, final long now)
     {
+        LabourStats.log("citizen {} phase {} -> {}", citizen.getId(), phase, next);
         phase = next;
         actionStart = now;
     }
@@ -353,11 +355,13 @@ public final class LabourSession implements IIdleTaskSession
         }
         if (result instanceof LabourPlanner.Blocked<Item> blocked)
         {
+            LabourStats.log("citizen {} is blocked: {} {}", citizen.getId(), blocked.why(), blocked.item());
             board.planFailed(claim, blocked.why());
             end(false);
             return;
         }
         action = ((LabourPlanner.Do<Item>) result).action();
+        LabourStats.log("citizen {} does {}", citizen.getId(), action);
         board.heartbeat(claim);
         if (action instanceof LabourPlanner.Gather<Item>)
         {
@@ -385,8 +389,9 @@ public final class LabourSession implements IIdleTaskSession
     {
         final LabourPlanner.Gather<Item> g = (LabourPlanner.Gather<Item>) action;
         final Item item = g.gather().item();
-        if (count(item) >= g.until())
+        if (count(item) >= g.until() && tree == null)
         {
+            // (a tree that was started is felled to the last log: a trunk left standing in the air is no tree for anybody)
             cleanup();
             go(Phase.THINK, now);
             return;
@@ -753,6 +758,7 @@ public final class LabourSession implements IIdleTaskSession
             post = board.sites().furnace(worker.blockPosition(), board.takenFurnaces());
             if (post == null)
             {
+                LabourStats.log("no furnace found from {}", worker.blockPosition());
                 board.planFailed(claim, LabourPlanner.Why.NO_FURNACE);
                 end(false);
                 return;
@@ -772,6 +778,7 @@ public final class LabourSession implements IIdleTaskSession
         if (!furnace.getItem(0).isEmpty() || !furnace.getItem(1).isEmpty() || !furnace.getItem(2).isEmpty())
         {
             // somebody's work is in it: not touched
+            LabourStats.log("furnace {} is in use: {} / {} / {}", post, furnace.getItem(0), furnace.getItem(1), furnace.getItem(2));
             board.sites().invalidate();
             releasePost();
             board.planFailed(claim, LabourPlanner.Why.NO_FURNACE);

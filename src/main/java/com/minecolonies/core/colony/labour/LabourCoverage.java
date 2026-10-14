@@ -51,7 +51,11 @@ public final class LabourCoverage
      */
     public void invalidate()
     {
-        cache.clear();
+        // the answers are asked again, what was covered a moment ago stays covered for the grace
+        for (final Entry entry : cache.values())
+        {
+            entry.at = Long.MIN_VALUE / 2;
+        }
     }
 
     /**
@@ -71,7 +75,7 @@ public final class LabourCoverage
             generation = LabourDataListener.generation();
         }
         Entry entry = cache.get(item);
-        if (entry == null || now - entry.at >= TTL || now < entry.at)
+        if (entry == null || now - entry.at >= TTL)
         {
             final Entry fresh = new Entry();
             fresh.raw = raw(item);

@@ -25,6 +25,17 @@ public final class LabourStats
     /** Only for tests and the benchmark: told every stack that comes out of the world into a labourer's hands. */
     public static volatile Consumer<ItemStack> gatherProbe;
 
+    /** Only for tests: log the life of claims and sessions. */
+    public static volatile boolean debug;
+
+    public static void log(final String message, final Object... args)
+    {
+        if (debug)
+        {
+            com.minecolonies.api.util.Log.getLogger().info("LABOUR " + message, args);
+        }
+    }
+
     private LabourStats()
     {
     }

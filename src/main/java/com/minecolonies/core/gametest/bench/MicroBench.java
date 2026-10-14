@@ -126,6 +126,7 @@ public final class MicroBench
         steps.add(this::phaseIdle2);
         steps.add(this::phaseStock);
         steps.add(this::phaseCourier);
+        steps.add(this::phaseLabour);
         steps.add(this::phaseComplete);
         steps.add(this::phaseCancel);
         steps.add(this::phaseLedger);
@@ -455,6 +456,50 @@ public final class MicroBench
         ops.add("courierPick", stats(a, b, RsProbe.COURIER_PICK, 0));
         ops.add("courierPickTotal", wallStats(mark, picks));
         info.addProperty("courierPicksWithTask", got);
+    }
+
+    /**
+     * The labourers' board with the scale's open requests waiting (LABOURERS.md 8.3): a rebuild of its candidate list, which reads every request waiting at the player and the
+     * retrying resolver and asks the coverage rules about each of the whitelisted goods, and an offer to a jobless citizen who finds nothing to do. Wall time of the server
+     * thread, reported but not part of the score (it is not request-system work).
+     */
+    private void phaseLabour()
+    {
+        if (!(fx.colony instanceof com.minecolonies.core.colony.Colony colony))
+        {
+            return;
+        }
+        com.minecolonies.core.colony.labour.LabourSettings.override("worldEnabled", true);
+        try
+        {
+            final var board = colony.getLabourBoard();
+            final ICitizenData jobless = colony.getCitizenManager().createAndRegisterCivilianData();
+            final int rounds = 5;
+            final ThreadCost.Mark mark = ThreadCost.mark();
+            int candidates = 0;
+            for (int i = 0; i < rounds; i++)
+            {
+                board.invalidate();
+                candidates = board.candidates().size();
+            }
+            ops.add("labourCandidates", wallStats(mark, rounds));
+            final ThreadCost.Mark offers = ThreadCost.mark();
+            for (int i = 0; i < rounds; i++)
+            {
+                board.invalidate();
+                board.offer(jobless, false, true, true);
+            }
+            ops.add("labourOffer", wallStats(offers, rounds));
+            info.addProperty("labourCandidates", candidates);
+        }
+        finally
+        {
+            for (final var claim : colony.getLabourBoard().claims())
+            {
+                colony.getLabourBoard().release(claim, false, false);
+            }
+            com.minecolonies.core.colony.labour.LabourSettings.clearOverrides();
+        }
     }
 
     private void phaseComplete()

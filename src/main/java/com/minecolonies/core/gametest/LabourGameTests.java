@@ -59,12 +59,27 @@ final class LabourGameTests
 
     private static void begin()
     {
+        com.minecolonies.core.colony.labour.LabourStats.debug = true;
         LabourSettings.clearOverrides();
         LabourSettings.override("workScale", 8.0D);
         LabourSettings.override("keepTrees", 0);
         // (a test checks one behaviour at a time: the warehouse stock goals are switched on by the test that checks them)
         LabourSettings.override("stockpile", false);
         IdleCitizenSettings.overrideForTests(null, null, null);
+    }
+
+    /**
+     * The fixture colony, with the automatic hiring switched off: the buildings of a test have no worker, and an unemployed citizen who is hired by one is no labourer any more.
+     */
+    private static RsFixture found(final GameTestHelper helper, final String name, final int racks)
+    {
+        final RsFixture f = RsFixture.found(helper, name, racks);
+        final var hiring = f.colony.getSettings().getSetting(com.minecolonies.core.colony.buildings.workerbuildings.BuildingTownHall.AUTO_HIRING_MODE);
+        if (hiring.getValue())
+        {
+            hiring.trigger();
+        }
+        return f;
     }
 
     private static void end()
@@ -203,7 +218,7 @@ final class LabourGameTests
     public static void craftsWoodenTools(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour tools", 2);
+        final RsFixture f = found(helper, "labour tools", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
@@ -233,7 +248,7 @@ final class LabourGameTests
     public static void coveredIsLeftAlone(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour covered", 2);
+        final RsFixture f = found(helper, "labour covered", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         f.place(ModBlocks.blockHutLumberjack, new BlockPos(8, 1, 24), "fundamentals/lumberjack1.blueprint");
@@ -267,7 +282,7 @@ final class LabourGameTests
     public static void stopsWhenGivenAJob(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour job", 2);
+        final RsFixture f = found(helper, "labour job", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
@@ -310,7 +325,7 @@ final class LabourGameTests
     public static void settingOff(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour setting", 2);
+        final RsFixture f = found(helper, "labour setting", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
@@ -359,11 +374,11 @@ final class LabourGameTests
     public static void coloniesAreIsolated(final GameTestHelper helper)
     {
         begin();
-        LabourSettings.override("gatherRadius", 200);
-        LabourSettings.override("postRange", 200);
-        final RsFixture a = RsFixture.found(helper, "labour iso a", 2);
+        LabourSettings.override("gatherRadius", 400);
+        LabourSettings.override("postRange", 400);
+        final RsFixture a = found(helper, "labour iso a", 2);
         final Colony colonyA = (Colony) a.colony;
-        final int dx = 70;
+        final int dx = 240;
         final Colony colonyB = foundAt(helper, "labour iso b", dx);
         forceArea(a.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(dx + 48, 1, 32)));
         helper.runAfterDelay(100, () -> {
@@ -429,7 +444,9 @@ final class LabourGameTests
     {
         begin();
         LabourSettings.override("graceTicks", 200);
-        final RsFixture f = RsFixture.found(helper, "labour builder", 2);
+        // (the colony spawns citizens of its own: only the builder works in this test)
+        LabourSettings.override("total", 0);
+        final RsFixture f = found(helper, "labour builder", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         tree(helper, 34, 20, 5);
@@ -475,11 +492,20 @@ final class LabourGameTests
     public static void stoneToolsNeedAWoodenPickaxe(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour stone", 2);
+        final RsFixture f = found(helper, "labour stone", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
         tree(helper, 34, 20, 5);
+        // (the stone a labourer digs needs ground under it, and the test floor is a single layer over the void: two layers of stone)
+        for (int x = 18; x <= 30; x++)
+        {
+            for (int z = 22; z <= 30; z++)
+            {
+                helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
+                helper.setBlock(new BlockPos(x, -1, z), Blocks.STONE.defaultBlockState());
+            }
+        }
         helper.runAfterDelay(100, () -> {
             final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
             final IToken<?> iron = ask(f.builder, new ItemStack(Items.IRON_PICKAXE));
@@ -520,7 +546,7 @@ final class LabourGameTests
     public static void coveredGoodsComeFromTheWarehouseOnly(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour withdraw", 2);
+        final RsFixture f = found(helper, "labour withdraw", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         final IBuilding sawmill = f.place(ModBlocks.blockHutSawmill, new BlockPos(8, 1, 24), "craftsmanship/carpentry/sawmill1.blueprint");
@@ -566,7 +592,7 @@ final class LabourGameTests
         LabourSettings.override("stockpile", true);
         com.minecolonies.core.colony.labour.LabourDataListener.overrideStockpileForTests(
           List.of(new com.minecolonies.core.colony.labour.LabourDataListener.StockpileGoal("planks", "minecraft:oak_planks", 4, 8)));
-        final RsFixture f = RsFixture.found(helper, "labour stock", 2);
+        final RsFixture f = found(helper, "labour stock", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         tree(helper, 34, 20, 5);
@@ -599,7 +625,7 @@ final class LabourGameTests
     public static void charcoalAtAFurnace(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour charcoal", 2);
+        final RsFixture f = found(helper, "labour charcoal", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.FURNACE.defaultBlockState());
@@ -617,7 +643,7 @@ final class LabourGameTests
     public static void furnaceWithThingsInItIsLeftAlone(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour furnace", 2);
+        final RsFixture f = found(helper, "labour furnace", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         final BlockPos furnacePos = new BlockPos(22, 1, 20);
@@ -645,7 +671,7 @@ final class LabourGameTests
     public static void naturalTreesOnly(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour trees", 1);
+        final RsFixture f = found(helper, "labour trees", 1);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         // a cabin of logs
@@ -698,7 +724,7 @@ final class LabourGameTests
     public static void coverageRules(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour coverage", 1);
+        final RsFixture f = found(helper, "labour coverage", 1);
         final Colony colony = (Colony) f.colony;
         final var coverage = colony.getLabourBoard().coverage();
         helper.assertTrue(!coverage.covered(Items.OAK_PLANKS) && !coverage.covered(Items.OAK_LOG), "something is covered in an empty colony");
@@ -710,9 +736,6 @@ final class LabourGameTests
           .withPrimaryOutput(new ItemStack(Items.OAK_PLANKS, 4))
           .build();
         helper.assertTrue(craft.addRecipe(IColonyManager.getInstance().getRecipeManager().checkOrAddRecipe(recipe)), "the sawmill rejected the recipe");
-        coverage.invalidate();
-        helper.assertTrue(coverage.covered(Items.OAK_PLANKS), "a built sawmill with the recipe, without a worker, does not cover planks");
-        helper.assertTrue(!coverage.covered(Items.OAK_LOG), "the sawmill covers logs");
         LabourSettings.override("coverageMode", com.minecolonies.api.colony.labour.LabourModes.CoverageMode.STAFFED);
         LabourSettings.override("coverageGrace", 0);
         coverage.invalidate();
@@ -720,11 +743,13 @@ final class LabourGameTests
         LabourSettings.override("coverageMode", com.minecolonies.api.colony.labour.LabourModes.CoverageMode.BUILT);
         LabourSettings.override("coverageGrace", 2400);
         coverage.invalidate();
-        helper.assertTrue(coverage.covered(Items.OAK_PLANKS), "BUILT again");
+        helper.assertTrue(coverage.covered(Items.OAK_PLANKS), "a built sawmill with the recipe, without a worker, does not cover planks");
+        helper.assertTrue(!coverage.covered(Items.OAK_LOG), "the sawmill covers logs");
         // the sawmill goes: planks stay covered for the grace time, then not
-        colony.getServerBuildingManager().removeBuilding(sawmill, null);
+        sawmill.setBuildingLevel(0);
         coverage.invalidate();
-        helper.assertTrue(coverage.covered(Items.OAK_PLANKS) || !colony.getServerBuildingManager().getBuildings().containsKey(sawmill.getID()), "never covered");
+        helper.assertTrue(coverage.covered(Items.OAK_PLANKS), "the good is not covered for the grace time after the sawmill is gone");
+        helper.assertTrue(!coverage.covered(Items.OAK_LOG), "logs are covered");
         end();
         helper.succeed();
     }
@@ -735,7 +760,7 @@ final class LabourGameTests
     public static void ledgerSweepsOrphanedLabourClaims(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour sweep", 1);
+        final RsFixture f = found(helper, "labour sweep", 1);
         final Colony colony = (Colony) f.colony;
         final IToken<?> orphan = new com.minecolonies.api.colony.requestsystem.token.StandardToken(java.util.UUID.randomUUID());
         final long now = helper.getLevel().getGameTime();
@@ -756,7 +781,7 @@ final class LabourGameTests
     {
         begin();
         LabourSettings.override("perRequest", 1);
-        final RsFixture f = RsFixture.found(helper, "labour caps", 2);
+        final RsFixture f = found(helper, "labour caps", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
@@ -803,7 +828,7 @@ final class LabourGameTests
     public static void retryingHeldRequestIsServed(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour retrying", 2);
+        final RsFixture f = found(helper, "labour retrying", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         f.place(ModBlocks.blockHutFarmer, new BlockPos(8, 1, 24), "fundamentals/farmer1.blueprint");
@@ -826,7 +851,7 @@ final class LabourGameTests
     public static void nightEndsTheWork(final GameTestHelper helper)
     {
         begin();
-        final RsFixture f = RsFixture.found(helper, "labour night", 2);
+        final RsFixture f = found(helper, "labour night", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());

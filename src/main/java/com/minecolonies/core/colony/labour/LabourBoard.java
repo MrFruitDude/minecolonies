@@ -114,6 +114,7 @@ public final class LabourBoard
 
     private List<Candidate> candidates = List.of();
     private long            builtAt    = Long.MIN_VALUE / 2;
+    private long            lastReassert;
     private boolean         seenSweep;
     private long            lastSweep;
 
@@ -773,6 +774,7 @@ public final class LabourBoard
     private void register(final LabourClaim claim)
     {
         byCitizen.put(claim.citizenId(), claim);
+        LabourStats.log("claim made by citizen {} for {}x {} ({})", claim.citizenId(), claim.amount(), claim.target(), claim.source());
         LabourStats.CLAIMS.incrementAndGet();
         count(1);
     }
@@ -808,6 +810,7 @@ public final class LabourBoard
         {
             return;
         }
+        LabourStats.log("claim of citizen {} released: success {} penalize {}", claim.citizenId(), success, penalize);
         byCitizen.remove(claim.citizenId());
         (success ? LabourStats.CLAIMS_OK : LabourStats.CLAIMS_FAILED).incrementAndGet();
         count(-1);
@@ -845,6 +848,7 @@ public final class LabourBoard
      */
     public void planFailed(final LabourClaim claim, final LabourPlanner.Why why)
     {
+        LabourStats.log("plan failed for {}: {}", claim.target(), why);
         if (claim.request() != null && alive(claim))
         {
             blocked(claim.request(), why);
@@ -974,10 +978,24 @@ public final class LabourBoard
                     release(claim, false, true);
                     continue;
                 }
-                final IToken<?> request = claim.request();
-                if (request != null && stillWaiting(request) && now % 100 == 0)
+            }
+        }
+        if (now - lastReassert >= 100L)
+        {
+            // the request system names its own reason whenever it parks a request again; what labour knows about its own requests is said again
+            lastReassert = now;
+            for (final LabourClaim claim : byCitizen.values())
+            {
+                if (claim.request() != null && stillWaiting(claim.request()))
                 {
-                    setReason(request, WaitReason.AWAITING_LABOUR);
+                    setReason(claim.request(), WaitReason.AWAITING_LABOUR);
+                }
+            }
+            for (final IToken<?> token : new ArrayList<>(blockedWhy.keySet()))
+            {
+                if (claimsOn(token) == 0 && stillWaiting(token))
+                {
+                    setReason(token, WaitReason.LABOUR_BLOCKED);
                 }
             }
         }

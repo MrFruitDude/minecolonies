@@ -149,6 +149,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         if (supply != null || !building.hasWorkOrder() || !(building.getColony() instanceof com.minecolonies.core.colony.Colony colony) || colony.getWorld() == null
               || !com.minecolonies.core.colony.labour.LabourSettings.worldEnabled() || worker.getCitizenData() == null)
         {
+            com.minecolonies.core.colony.labour.LabourStats.log("builder supply check: no (supply {}, order {})", supply != null, building.hasWorkOrder());
             return false;
         }
         final var state = getState();
@@ -156,7 +157,9 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return false;
         }
-        return colony.getLabourBoard().selfSupplyWanted(building.getID(), building.getWorkOrder() == null ? 0 : building.getWorkOrder().getID());
+        final boolean wanted = colony.getLabourBoard().selfSupplyWanted(building.getID(), building.getWorkOrder() == null ? 0 : building.getWorkOrder().getID());
+        com.minecolonies.core.colony.labour.LabourStats.log("builder supply check in state {}: {}", state, wanted);
+        return wanted;
     }
 
     private IAIState supplyPlan()
