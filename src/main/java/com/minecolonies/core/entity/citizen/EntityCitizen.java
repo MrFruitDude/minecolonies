@@ -1304,6 +1304,11 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
         }
         if (damageSource.is(DamageTypeTags.IS_FIRE) || damageSource.is(DamageTypeTags.IS_LIGHTNING))
         {
+            // armor wears for fire and lightning like for a player's (not for bypassing damage, not fire resistant pieces against fire); nothing else changes for them
+            if (!level().isClientSide())
+            {
+                CitizenItemUtils.updateArmorDamage(this, damageSource, damageInc);
+            }
             return true;
         }
         if (!level().isClientSide())
