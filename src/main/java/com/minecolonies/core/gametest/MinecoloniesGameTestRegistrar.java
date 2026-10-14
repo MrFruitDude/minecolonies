@@ -105,6 +105,14 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 RequestCourierGameTests.register(event);
             }
+            if (only.contains("sticks"))
+            {
+                registerScaffoldRecipe(event);
+            }
+            if (only.contains("idlehelper"))
+            {
+                registerIdleHelpers(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -724,6 +732,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         }
         registerWorkerEfficiency(event);
         registerBuilderScaffolding(event);
+        registerScaffoldRecipe(event);
+        registerIdleHelpers(event);
         // C2 builder collaboration observability and controls (one glob: minecolonies:collab_obs_*).
         for (final String name : new String[] {"collab_obs_view", "collab_obs_cap", "collab_obs_pin", "collab_obs_pin_new", "collab_obs_refusals"})
         {
@@ -1038,6 +1048,54 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                   info -> new MinecoloniesGameTestInstance(info, test),
                   isolatedColonyData(event, name));
             }
+        }
+    }
+
+    /**
+     * Scaffolding from sticks: the crafting table recipe and the sawmill's. Run on their own with {@code MINECOLONIES_GAMETEST_ONLY=sticks}.
+     */
+    private void registerScaffoldRecipe(final RegisterGameTestsEvent event)
+    {
+        for (final String name : new String[] {"sticks_scaffold_table", "sticks_scaffold_sawmill_knows", "sticks_scaffold_sawmill_chain"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "sticks_scaffold_table" -> ScaffoldRecipeGameTests::tableRecipe;
+                case "sticks_scaffold_sawmill_knows" -> ScaffoldRecipeGameTests::sawmillKnowsIt;
+                default -> ScaffoldRecipeGameTests::sawmillCraftsRequestedScaffolding;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
+    }
+
+    /**
+     * Unemployed citizens help builders. Run on their own with {@code MINECOLONIES_GAMETEST_ONLY=idlehelper}.
+     */
+    private void registerIdleHelpers(final RegisterGameTestsEvent event)
+    {
+        for (final String name : new String[] {"idle_helper_faster", "idle_helper_no_order", "idle_helper_unled_order", "idle_helper_job", "idle_helper_night", "idle_helper_needs",
+          "idle_helper_setting", "idle_helper_cap", "idle_helper_colonies", "idle_helper_arbiter_api"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "idle_helper_faster" -> IdleHelperGameTests::helperJoinsAndBuildIsFaster;
+                case "idle_helper_no_order" -> IdleHelperGameTests::noOrderNothingHappens;
+                case "idle_helper_unled_order" -> IdleHelperGameTests::unledOrderIsNotClaimed;
+                case "idle_helper_job" -> IdleHelperGameTests::helperLeavesWhenGivenAJob;
+                case "idle_helper_night" -> IdleHelperGameTests::helperLeavesAtNight;
+                case "idle_helper_needs" -> IdleHelperGameTests::helperLeavesForNeeds;
+                case "idle_helper_setting" -> IdleHelperGameTests::settingOffSendsHelpersAway;
+                case "idle_helper_cap" -> IdleHelperGameTests::perBuilderCap;
+                case "idle_helper_colonies" -> IdleHelperGameTests::coloniesAreIsolated;
+                default -> IdleHelperGameTests::arbiterOffersTasksByPriority;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              name.equals("idle_helper_faster") ? longIsolatedColonyData(event, name, 60_000) : isolatedColonyData(event, name));
         }
     }
 

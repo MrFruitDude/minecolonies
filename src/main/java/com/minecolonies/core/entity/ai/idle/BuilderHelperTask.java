@@ -62,8 +62,10 @@ public final class BuilderHelperTask implements IIdleCitizenTask
     @Override
     public IIdleTaskSession tryStart(final IColony colony, final ICitizenData citizen)
     {
-        if (!(colony instanceof Colony) || !BuilderCollab.enabled() || colony.getWorld() == null)
+        if (!(colony instanceof Colony) || !BuilderCollab.enabled() || colony.getWorld() == null
+              || citizen.getColony() == null || citizen.getColony().getID() != colony.getID() || !citizen.getColony().getDimension().equals(colony.getDimension()))
         {
+            // (a helper never helps the builder of another colony)
             return null;
         }
         final AbstractEntityCitizen entity = citizen.getEntity().orElse(null);

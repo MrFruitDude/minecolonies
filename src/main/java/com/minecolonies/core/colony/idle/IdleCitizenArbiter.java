@@ -74,6 +74,16 @@ public final class IdleCitizenArbiter
     }
 
     /**
+     * Removes a task (tests; citizens that work for it keep their session until it ends).
+     *
+     * @param id the id of the task.
+     */
+    public static void unregister(final String id)
+    {
+        TASKS.removeIf(t -> t.getId().equals(id));
+    }
+
+    /**
      * @return the registered tasks, the highest priority first.
      */
     public static List<IIdleCitizenTask> tasks()
