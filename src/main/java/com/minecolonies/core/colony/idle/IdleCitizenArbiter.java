@@ -137,7 +137,7 @@ public final class IdleCitizenArbiter
     public static boolean isFree(final IColony colony, final ICitizenData citizen)
     {
         final Level level = colony.getWorld();
-        if (level == null || citizen.getJob() != null || citizen.isChild() || citizen.isAsleep() || !workHours(level))
+        if (level == null || citizen.getJob() != null || citizen.isChild() || citizen.isPaused() || citizen.isAsleep() || !workHours(level))
         {
             return false;
         }
@@ -222,6 +222,10 @@ public final class IdleCitizenArbiter
         if (citizen.getJob() != null)
         {
             return IdleStopReason.GOT_JOB;
+        }
+        if (citizen.isPaused())
+        {
+            return IdleStopReason.TASK_INVALID;
         }
         if (!workHours(colony.getWorld()))
         {
