@@ -16,6 +16,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -144,7 +145,8 @@ public class CitizenItemUtils
     /**
      * Swing entity arm, create sound and particle effects.
      * <p>
-     * If breakBlock is true then it will break the block (different sound and particles), and damage the tool in the citizens hand.
+     * If breakBlock is true then it will break the block (different sound and particles), and wear the tool in the citizens hand the way mining the block wears it
+     * for a player (see {@link #damageItemInHandForMinedBlock}).
      *
      * @param blockPos   Block position.
      * @param breakBlock if we want to break this block.
@@ -176,9 +178,9 @@ public class CitizenItemUtils
               SoundSource.BLOCKS,
               block.getSoundType(blockState, CompatibilityUtils.getWorldFromCitizen(citizen), blockPos, citizen).getVolume(),
               block.getSoundType(blockState, CompatibilityUtils.getWorldFromCitizen(citizen), blockPos, citizen).getPitch());
+            // Like ServerPlayerGameMode#destroyBlock: the tool is worn by the state that is mined, before the block is gone
+            damageItemInHandForMinedBlock(citizen, citizen.getUsedItemHand(), blockState, blockPos);
             WorldUtil.removeBlock(CompatibilityUtils.getWorldFromCitizen(citizen), blockPos, false);
-
-            damageItemInHand(citizen, citizen.getUsedItemHand(), 1);
         }
         else
         {
@@ -213,17 +215,9 @@ public class CitizenItemUtils
             return;
         }
 
-        //Check if the effect exists first, to avoid unnecessary calls to random number generator.
-        if (citizen.getCitizenColonyHandler().getColonyOrRegister().getResearchManager().getResearchEffects().getEffectStrength(TOOL_DURABILITY) > 0)
+        if (savedByToolDurabilityResearch(citizen))
         {
-            if (citizen.getRandom().nextDouble() > (1 / (1 + citizen.getCitizenColonyHandler()
-                                                               .getColonyOrRegister()
-                                                               .getResearchManager()
-                                                               .getResearchEffects()
-                                                               .getEffectStrength(TOOL_DURABILITY))))
-            {
-                return;
-            }
+            return;
         }
 
         //check if tool breaks
@@ -231,14 +225,72 @@ public class CitizenItemUtils
               .getInventory()
               .damageInventoryItem(citizen.getCitizenData().getInventory().getHeldItemSlot(hand), damage, citizen, item -> {}))
         {
-            if (hand == InteractionHand.MAIN_HAND)
-            {
-                citizen.setItemSlot(EquipmentSlot.MAINHAND, ItemStackUtils.EMPTY);
-            }
-            else
-            {
-                citizen.setItemSlot(EquipmentSlot.OFFHAND, ItemStackUtils.EMPTY);
-            }
+            clearHeldItemSlot(citizen, hand);
+        }
+    }
+
+    /**
+     * Wears the item in the hand for a block that was mined with it, exactly as the item does when a player mines the block: the item's own
+     * {@link net.minecraft.world.item.Item#mineBlock} decides (a tool with the tool component costs its damage per block, only when the block has a destroy speed above 0;
+     * an item without the component costs nothing). Unbreaking applies through ItemStack#hurtAndBreak. The colony research "Citizen Tools +X% Durability" is the only
+     * extra protection.
+     *
+     * @param citizen the citizen that mined the block.
+     * @param hand    the hand with the tool.
+     * @param state   the state of the block that was mined (before it was removed).
+     * @param pos     the position of the block.
+     */
+    public static void damageItemInHandForMinedBlock(
+      @NotNull final AbstractEntityCitizen citizen,
+      final InteractionHand hand,
+      @NotNull final BlockState state,
+      @NotNull final BlockPos pos)
+    {
+        final ItemStack heldItem = citizen.getCitizenData().getInventory().getHeldItem(hand);
+        if (heldItem == null || heldItem.isEmpty())
+        {
+            return;
+        }
+
+        if (savedByToolDurabilityResearch(citizen))
+        {
+            return;
+        }
+
+        final Level level = CompatibilityUtils.getWorldFromCitizen(citizen);
+        if (citizen.getCitizenData()
+              .getInventory()
+              .wearInventoryItem(citizen.getCitizenData().getInventory().getHeldItemSlot(hand), stack -> stack.getItem().mineBlock(stack, level, state, pos, citizen)))
+        {
+            clearHeldItemSlot(citizen, hand);
+        }
+    }
+
+    /**
+     * The colony research "Citizen Tools +X% Durability": with strength s a wear of a citizen's tool is only applied with the chance 1 / (1 + s). It can only save wear.
+     *
+     * @param citizen the citizen whose tool is about to wear.
+     * @return true if the research saves this wear.
+     */
+    private static boolean savedByToolDurabilityResearch(@NotNull final AbstractEntityCitizen citizen)
+    {
+        final double strength = citizen.getCitizenColonyHandler().getColonyOrRegister().getResearchManager().getResearchEffects().getEffectStrength(TOOL_DURABILITY);
+        //Check if the effect exists first, to avoid unnecessary calls to random number generator.
+        return strength > 0 && citizen.getRandom().nextDouble() > (1 / (1 + strength));
+    }
+
+    /**
+     * The tool in the hand broke: the citizen holds nothing any more.
+     */
+    private static void clearHeldItemSlot(@NotNull final AbstractEntityCitizen citizen, final InteractionHand hand)
+    {
+        if (hand == InteractionHand.MAIN_HAND)
+        {
+            citizen.setItemSlot(EquipmentSlot.MAINHAND, ItemStackUtils.EMPTY);
+        }
+        else
+        {
+            citizen.setItemSlot(EquipmentSlot.OFFHAND, ItemStackUtils.EMPTY);
         }
     }
 

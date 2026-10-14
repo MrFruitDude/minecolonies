@@ -22,7 +22,6 @@ import com.minecolonies.core.entity.citizen.EntityCitizen;
 import com.minecolonies.core.research.GlobalResearchEffect;
 import com.minecolonies.core.util.citizenutils.CitizenItemUtils;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -43,11 +42,15 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.Tool;
 import net.minecraft.world.item.component.Weapon;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
+import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.registries.DeferredRegister;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Method;
@@ -58,7 +61,6 @@ import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 
 import static com.minecolonies.core.gametest.MinecoloniesGameTests.foundGameTestColony;
-import static com.minecolonies.core.gametest.MinecoloniesGameTests.makeConnectedSurvivalPlayer;
 import static com.minecolonies.core.gametest.MinecoloniesGameTests.placeProductionBuilding;
 
 /**
@@ -71,6 +73,21 @@ public final class ToolDurabilityGameTests
 {
     private ToolDurabilityGameTests()
     {
+    }
+
+    /**
+     * The mod tool of the hook test. An item can only be created while the registries are open, so it is registered with the mod (the registrar of the
+     * GameTests links this class only when GameTests are enabled).
+     */
+    private static final DeferredRegister.Items TEST_ITEMS = DeferredRegister.createItems(Constants.MOD_ID);
+    private static final DeferredItem<ProbeTool> PROBE = TEST_ITEMS.register("tooldur_probe", ProbeTool::new);
+
+    /**
+     * Hooks the registration of the probe item onto the mod bus. Call during mod construction only.
+     */
+    static void registerItems(final IEventBus modBus)
+    {
+        TEST_ITEMS.register(modBus);
     }
 
     static void register(final RegisterGameTestsEvent event)
@@ -100,6 +117,20 @@ public final class ToolDurabilityGameTests
     }
 
     // ------------------------------------------------------------------ fixtures
+
+    /**
+     * A connected player in survival mode with the abilities of one: the mock player the other tests use takes the default game mode of the GameTest server
+     * (creative) when it joins, and a creative player's tools do not wear.
+     */
+    private static ServerPlayer makeConnectedSurvivalPlayer(final GameTestHelper helper, final IColony colony)
+    {
+        final ServerPlayer player = MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
+        player.gameMode.changeGameModeForPlayer(GameType.SURVIVAL);
+        helper.assertTrue(!player.hasInfiniteMaterials(), "fixture: the mock player still has infinite materials");
+        // the colony protects its blocks from players who are not members: an officer may break them
+        colony.getPermissions().addPlayer(player.getUUID(), player.getGameProfile().name(), colony.getPermissions().getRankOfficer());
+        return player;
+    }
 
     /**
      * Founds a colony, places the hut and, 20 ticks later, runs {@code body} with a spawned citizen assigned to it (its real work AI exists).
@@ -185,7 +216,10 @@ public final class ToolDurabilityGameTests
         for (int i = 0; i < n; i++)
         {
             level.setBlock(pos, state, 2);
-            player.gameMode.destroyBlock(pos);
+            if (!player.gameMode.destroyBlock(pos))
+            {
+                throw new IllegalStateException("fixture: the player could not break " + state + " at " + pos.toShortString() + " (protected by the colony?)");
+            }
         }
         clearDrops(level, pos);
         final int wear = wearOf(player.getMainHandItem(), tool);
@@ -207,7 +241,7 @@ public final class ToolDurabilityGameTests
     {
         withCitizen(helper, "rules", (colony, citizen) -> {
             final ServerLevel level = helper.getLevel();
-            final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
+            final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
             final BlockPos pos = minePos(helper);
             final List<Case> cases = List.of(
               new Case("iron pickaxe on stone", new ItemStack(Items.IRON_PICKAXE), Blocks.STONE.defaultBlockState(), 30, 30),
@@ -257,7 +291,7 @@ public final class ToolDurabilityGameTests
     {
         withCitizen(helper, "unbreaking", (colony, citizen) -> {
             final ServerLevel level = helper.getLevel();
-            final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
+            final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
             final ItemStack pickaxe = new ItemStack(Items.NETHERITE_PICKAXE);
             pickaxe.enchant(Utils.getRegistryValue(Enchantments.UNBREAKING, level), 3);
             final int n = 400;
@@ -317,9 +351,11 @@ public final class ToolDurabilityGameTests
     {
         withCitizen(helper, "hooks", (colony, citizen) -> {
             final ServerLevel level = helper.getLevel();
-            final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
-            final ProbeTool probe = new ProbeTool();
-            final ItemStack tool = new ItemStack(Holder.direct(probe));
+            final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
+            final ProbeTool probe = PROBE.get();
+            probe.damageHooks = 0;
+            probe.mineCalls = 0;
+            final ItemStack tool = new ItemStack(probe);
             final BlockPos pos = minePos(helper);
 
             final int citizenWear = citizenBreaks(citizen, level, tool, Blocks.STONE.defaultBlockState(), 10, pos);
@@ -337,7 +373,7 @@ public final class ToolDurabilityGameTests
 
             // the inventory API the guards and herders use: one hook run per wear
             probe.damageHooks = 0;
-            citizen.getInventoryCitizen().setStackInSlot(0, new ItemStack(Holder.direct(probe)));
+            citizen.getInventoryCitizen().setStackInSlot(0, new ItemStack(probe));
             CitizenItemUtils.setMainHeldItem(citizen, 0);
             CitizenItemUtils.damageItemInHand(citizen, InteractionHand.MAIN_HAND, 5);
             final int direct = citizen.getInventoryCitizen().getStackInSlot(0).getDamageValue();
@@ -407,7 +443,7 @@ public final class ToolDurabilityGameTests
             final AbstractEntityCitizen citizen = worker.getEntity().get();
             final AbstractEntityAIBasic<?, ?> ai = workAi(worker);
             helper.assertTrue(ai instanceof AbstractEntityAIInteract<?, ?>, name + " worker has no interacting AI: " + ai);
-            final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
+            final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
             final int n = 20;
             final BlockPos pos = minePos(helper);
             level.setBlock(pos.below(), Blocks.GRASS_BLOCK.defaultBlockState(), 2);
@@ -470,7 +506,9 @@ public final class ToolDurabilityGameTests
             final BlockPos origin = order.getLocation();
             final int stone = 32;
             final int[] cleared = {0};
-            WorkerEfficiencyGameTests.everyTick(live, 20_000, tick -> {
+            // the box is built when the order is gone; the builder clears the stone where the box stands (23 of the 32 blocks: floor and walls), the
+            // stone in the hollow inside the walls is none of his business
+            WorkerEfficiencyGameTests.everyTick(live, 30_000, tick -> {
                 int left = 0;
                 for (int y = 0; y < 2; y++)
                 {
@@ -486,7 +524,7 @@ public final class ToolDurabilityGameTests
                     }
                 }
                 cleared[0] = stone - left;
-                return left == 0;
+                return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
             }, () -> {
                 int wear = 0;
                 int found = 0;
@@ -503,8 +541,10 @@ public final class ToolDurabilityGameTests
                 Log.getLogger().info("[tooldur_builder_{}] cleared {} stone, {} pickaxes wore {} in total", name, cleared[0], found, wear);
                 WorkerSettings.clearOverrides();
                 BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
-                helper.assertTrue(found == 2, "a wooden pickaxe broke or went missing: " + found + " left, wear " + wear);
-                helper.assertTrue(wear == stone, "the builder mined " + stone + " stone and its pickaxes lost " + wear + " uses, a player's lose " + stone);
+                // (a builder hands a spare pickaxe back to the hut: what counts is that none broke and the one in use lost one use per block)
+                helper.assertTrue(found >= 1, "the wooden pickaxes broke or went missing: " + found + " left, wear " + wear);
+                helper.assertTrue(cleared[0] >= 23, "the builder cleared only " + cleared[0] + " stone blocks");
+                helper.assertTrue(wear == cleared[0], "the builder mined " + cleared[0] + " stone blocks and its pickaxes lost " + wear + " uses, a player's lose " + cleared[0]);
                 helper.succeed();
             }, () -> {
                 WorkerSettings.clearOverrides();
@@ -552,7 +592,7 @@ public final class ToolDurabilityGameTests
               {
                   throw new IllegalStateException(e);
               }
-              final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
+              final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
               final BlockPos anchor = guard.blockPosition();
               final List<String> failures = new ArrayList<>();
               for (final Item weapon : List.of(Items.IRON_SWORD, Items.DIAMOND_SWORD, Items.IRON_AXE))

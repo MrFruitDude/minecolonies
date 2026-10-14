@@ -58,6 +58,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     {
         INSTANCE_TYPES.register(modBus);
         ENVIRONMENT_TYPES.register(modBus);
+        ToolDurabilityGameTests.registerItems(modBus);
         modBus.addListener(new MinecoloniesGameTestRegistrar());
     }
 
