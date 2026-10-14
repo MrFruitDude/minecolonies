@@ -27,7 +27,7 @@ import java.util.List;
 
 /**
  * Scaffolding from sticks alone. The builders place and request {@code minecraft:scaffolding}; the vanilla recipe wants bamboo and string, so the fork
- * adds {@code minecolonies:scaffolding_from_sticks} (crafting table, seven sticks in a ring with a cross: four pieces) and the same recipe for the
+ * adds {@code minecolonies:scaffolding_from_sticks} (crafting table, seven sticks in a gantry shape, "SSS/S S/S S": four pieces) and the same recipe for the
  * sawmill's worker ({@code crafterrecipes/sawmill/scaffolding_from_sticks.json}, which the sawmill knows without being taught).
  */
 final class ScaffoldRecipeGameTests
@@ -52,7 +52,7 @@ final class ScaffoldRecipeGameTests
         final ItemStack none = ItemStack.EMPTY;
         helper.assertTrue(level.recipeAccess().recipeMap().byKey(ResourceKey.create(Registries.RECIPE, RECIPE_ID)) != null, "no recipe " + RECIPE_ID);
 
-        final CraftingInput ring = CraftingInput.of(3, 3, List.of(stick(), none, stick(), stick(), stick(), stick(), stick(), none, stick()));
+        final CraftingInput ring = CraftingInput.of(3, 3, List.of(stick(), stick(), stick(), stick(), none, stick(), stick(), none, stick()));
         final var match = level.recipeAccess().getRecipeFor(RecipeType.CRAFTING, ring, level);
         helper.assertTrue(match.isPresent(), "seven sticks in the pattern match no recipe");
         helper.assertTrue(match.get().id().identifier().equals(RECIPE_ID), "the pattern matched " + match.get().id().identifier());
@@ -63,9 +63,15 @@ final class ScaffoldRecipeGameTests
         final CraftingInput row = CraftingInput.of(3, 3, List.of(stick(), stick(), stick(), stick(), stick(), stick(), stick(), none, none));
         final var other = level.recipeAccess().getRecipeFor(RecipeType.CRAFTING, row, level);
         helper.assertTrue(other.isEmpty() || !other.get().value().assemble(row).is(Items.SCAFFOLDING), "seven sticks in a block make scaffolding");
-        final CraftingInput six = CraftingInput.of(3, 3, List.of(stick(), none, stick(), stick(), stick(), stick(), stick(), none, none));
+        final CraftingInput six = CraftingInput.of(3, 3, List.of(stick(), stick(), stick(), stick(), none, stick(), stick(), none, none));
         final var short1 = level.recipeAccess().getRecipeFor(RecipeType.CRAFTING, six, level);
         helper.assertTrue(short1.isEmpty() || !short1.get().value().assemble(six).is(Items.SCAFFOLDING), "six sticks make scaffolding");
+
+        // the ladder (seven sticks in another shape) is untouched: it must not turn into scaffolding
+        final CraftingInput ladder = CraftingInput.of(3, 3, List.of(stick(), none, stick(), stick(), stick(), stick(), stick(), none, stick()));
+        final var ladderMatch = level.recipeAccess().getRecipeFor(RecipeType.CRAFTING, ladder, level);
+        helper.assertTrue(ladderMatch.isPresent() && ladderMatch.get().value().assemble(ladder).is(Items.LADDER) && ladderMatch.get().value().assemble(ladder).getCount() == 3,
+          "the ladder recipe is gone or changed: " + ladderMatch);
 
         // the vanilla recipe is untouched: six bamboo and a string still make six
         final ItemStack bamboo = new ItemStack(Items.BAMBOO);

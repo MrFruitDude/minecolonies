@@ -4,8 +4,8 @@
     "S": "minecraft:stick"
   },
   "pattern": [
-    "S S",
     "SSS",
+    "S S",
     "S S"
   ],
   "result": {
