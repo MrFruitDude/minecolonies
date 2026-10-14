@@ -10,6 +10,7 @@ import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingBuilder;
+import com.minecolonies.core.colony.idle.IdleCitizenSettings;
 import com.minecolonies.core.colony.workorders.WorkManager;
 import com.minecolonies.core.entity.ai.workers.util.BuilderStageRules;
 import net.minecraft.core.BlockPos;
@@ -81,6 +82,15 @@ public final class CollabScheduler
             final AbstractBuildingStructureBuilder lead = leadOf(colony, order);
             final int cap = capFor(order);
             final List<BlockPos> huts = collab.getAssistantHuts();
+            final List<BlockPos> idleHelpers = new ArrayList<>();
+            huts.removeIf(h -> {
+                if (IdleHelperKey.is(h))
+                {
+                    idleHelpers.add(h);
+                    return true;
+                }
+                return false;
+            });
             // pinned helpers count against the limit first; the others are kept in the order they joined, up to what is left
             huts.sort(java.util.Comparator.comparing(h -> !collab.getAssistant(h).isPinned()));
             int kept = 0;
@@ -113,7 +123,80 @@ public final class CollabScheduler
                     kept++;
                 }
             }
+            maintainIdleHelpers(colony, collab, lead, idleHelpers, kept, enabled, now);
         }
+    }
+
+    /**
+     * The helpers of an order that are citizens without a job: each has to be free still and to have a task (the idle citizen arbiter ends the task of one who is not, and
+     * the task takes him off the order), the order has to be led, have something left, and the number of them is the colony's limit (and what is left of the player's limit
+     * after the builders). Beyond that the newest go first.
+     */
+    private static void maintainIdleHelpers(final Colony colony, final WorkOrderCollab collab, @Nullable final AbstractBuildingStructureBuilder lead, final List<BlockPos> idleHelpers,
+      final int builderHelpers, final boolean enabled, final long now)
+    {
+        if (idleHelpers.isEmpty())
+        {
+            return;
+        }
+        final int allowed = idleAllowed(colony, collab, builderHelpers);
+        int kept = 0;
+        for (final BlockPos key : idleHelpers)
+        {
+            final WorkOrderCollab.Assistant assistant = collab.getAssistant(key);
+            final ICitizenData citizen = colony.getCitizenManager().getCivilian(IdleHelperKey.citizenId(key));
+            boolean remove = !enabled || !IdleCitizenSettings.enabled(colony) || lead == null || citizen == null || citizen.getJob() != null
+                               || colony.getIdleCitizens().session(citizen.getId()) == null;
+            long cooldown = 0;
+            if (!remove && (assistant == null || now - assistant.since >= BuilderCollab.stayTicks()))
+            {
+                final boolean nothingLeft = collab.hasStageTotals() && collab.getRemainingBlocks() < BuilderCollab.minRemaining();
+                final boolean exhausted = collab.isScanExhausted() && collab.getLeaseCountOf(key) == 0;
+                if (nothingLeft || exhausted)
+                {
+                    remove = true;
+                    cooldown = now + BuilderCollab.stayTicks();
+                }
+            }
+            if (!remove && kept >= allowed)
+            {
+                remove = true;
+                cooldown = now + BuilderCollab.stayTicks();
+            }
+            if (remove)
+            {
+                collab.removeAssistant(key, cooldown);
+                colony.markDirty();
+            }
+            else
+            {
+                kept++;
+            }
+        }
+    }
+
+    /**
+     * How many citizens without a job may help the lead of the order: the colony's limit per builder, and when the player set a limit for the order, what is left of
+     * it after the builders; none while too little is left of the order.
+     */
+    private static int idleAllowed(final IColony colony, final WorkOrderCollab collab, final int builderHelpers)
+    {
+        if (!BuilderCollab.enabled() || !IdleCitizenSettings.enabled(colony) || collab.getRemainingBlocks() < BuilderCollab.minRemaining())
+        {
+            return 0;
+        }
+        final int limit = IdleCitizenSettings.helpersPerBuilder(colony);
+        final int setting = collab.getMaxAssistantsSetting();
+        return setting >= 0 ? Math.max(0, Math.min(limit, Math.min(setting, CollabControls.LIMIT) - builderHelpers)) : limit;
+    }
+
+    /**
+     * How many citizens without a job may help the order right now (the colony setting; 0 when too little is left or the setting is off).
+     */
+    public static int idleCapFor(final IColony colony, final IBuilderWorkOrder order)
+    {
+        final WorkOrderCollab collab = order.getCollab();
+        return idleAllowed(colony, collab, collab.getBuilderAssistantCount());
     }
 
     /**
@@ -230,7 +313,7 @@ public final class CollabScheduler
                     continue;
                 }
                 final int remaining = collab.getRemainingBlocks();
-                if (remaining < BuilderCollab.minRemaining() || collab.getAssistantCount() >= capFor(order)
+                if (remaining < BuilderCollab.minRemaining() || (collab.getMaxAssistantsSetting() >= 0 ? collab.getAssistantCount() : collab.getBuilderAssistantCount()) >= capFor(order)
                       || (collab.getMaxAssistantsSetting() < 0 && !BuilderCollab.worthAHelper(collab.getPlacementBlocks(), collab.getHighBlocks())))
                 {
                     continue;
@@ -299,7 +382,7 @@ public final class CollabScheduler
      * The builder whose hut works on the order.
      */
     @Nullable
-    static AbstractBuildingStructureBuilder leadOf(final IColony colony, final IBuilderWorkOrder order)
+    public static AbstractBuildingStructureBuilder leadOf(final IColony colony, final IBuilderWorkOrder order)
     {
         if (!order.isClaimed())
         {

@@ -1090,6 +1090,28 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             final ItemStorage key = new ItemStorage(stack.copyWithCount(1));
             for (final BlockPos hutPos : collab.getAssistantHuts())
             {
+                if (com.minecolonies.core.colony.workorders.collab.IdleHelperKey.is(hutPos))
+                {
+                    // a citizen without a job who helps: what he took for the order is in his inventory
+                    final ICitizenData idleHelper = building.getColony().getCitizenManager().getCivilian(com.minecolonies.core.colony.workorders.collab.IdleHelperKey.citizenId(hutPos));
+                    if (idleHelper != null
+                          && com.minecolonies.core.colony.idle.IdleCitizenArbiter.sessionOf(idleHelper) instanceof com.minecolonies.core.entity.ai.idle.BuilderHelperSession idleSession)
+                    {
+                        final int idleCarried = idleSession.carry().getOrDefault(key, 0);
+                        final int takenBack = idleCarried <= 0 ? 0 : ItemMover.move(idleHelper.getInventory(), worker.getInventoryCitizen(), sameAs(stack), Math.min(missing, idleCarried));
+                        if (takenBack > 0)
+                        {
+                            idleSession.reduceCarry(key, takenBack);
+                            missing -= takenBack;
+                            movedAny = true;
+                        }
+                        if (missing <= 0)
+                        {
+                            break;
+                        }
+                    }
+                    continue;
+                }
                 final IBuilding hut = building.getColony().getServerBuildingManager().getBuilding(hutPos);
                 if (!(hut instanceof AbstractBuildingStructureBuilder helperHut) || !building.getID().equals(helperHut.getCarryLead()))
                 {

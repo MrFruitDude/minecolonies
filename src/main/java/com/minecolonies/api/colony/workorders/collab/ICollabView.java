@@ -18,14 +18,23 @@ public interface ICollabView
     interface IAssistantView
     {
         /**
-         * @return the hut of the helper.
+         * @return the hut of the helper; for a citizen without a job ({@link #idleCitizen()}) there is none: the position is only his key in the order.
          */
         BlockPos hut();
 
         /**
-         * @return the id of the citizen who works there, -1 if the hut has no builder.
+         * @return the id of the citizen who works there, -1 if the hut has no builder; for a citizen without a job the citizen himself.
          */
         int citizenId();
+
+        /**
+         * @return true if the helper is a citizen without a job who lends a hand ("Helper (idle citizen)"): he has no hut, is no builder, is not pinned and is not
+         *   counted against {@link ICollabView#maxAssistants()}, but against {@link ICollabView#maxIdleAssistants()}.
+         */
+        default boolean idleCitizen()
+        {
+            return false;
+        }
 
         /**
          * @return blocks the helper has leased out of the shared cursor and not placed yet.
@@ -98,6 +107,15 @@ public interface ICollabView
      * @return the most helpers the order may have right now (0 when too little is left or collaboration is off); pinned helpers are always kept.
      */
     int maxAssistants();
+
+    /**
+     * @return the most citizens without a job that may help the lead of this order (the colony setting; 0 when it is off or when too little is left), on top of the
+     *   builders of {@link #maxAssistants()} (the player's limit for the order, when set, counts them all).
+     */
+    default int maxIdleAssistants()
+    {
+        return 0;
+    }
 
     /**
      * @return the player's limit for this order, -1 for automatic (one helper per so many blocks left, at most the configured maximum).

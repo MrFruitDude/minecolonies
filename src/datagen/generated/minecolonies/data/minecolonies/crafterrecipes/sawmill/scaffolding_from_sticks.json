@@ -1,0 +1,15 @@
+{
+  "type": "recipe",
+  "crafter": "sawmill_crafting",
+  "inputs": [
+    {
+      "count": 7,
+      "id": "minecraft:stick"
+    }
+  ],
+  "intermediate": "minecraft:air",
+  "result": {
+    "count": 4,
+    "id": "minecraft:scaffolding"
+  }
+}

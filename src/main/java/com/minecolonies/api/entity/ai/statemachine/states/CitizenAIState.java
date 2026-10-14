@@ -13,6 +13,10 @@ public enum CitizenAIState implements IState
     MOURN,
     WORK,
     WORKING,
+    /**
+     * An unemployed citizen works for an idle task (helps a builder, ...): the session of the idle citizen arbiter runs his steps.
+     */
+    LABOUR,
     INACTIVE();
 
     CitizenAIState()

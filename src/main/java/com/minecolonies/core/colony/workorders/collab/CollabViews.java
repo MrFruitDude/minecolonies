@@ -29,7 +29,7 @@ public final class CollabViews
     {
     }
 
-    private record AssistantView(BlockPos hut, int citizenId, int leasedBlocks, long sinceTick, long stayTicks, boolean pinned) implements ICollabView.IAssistantView
+    private record AssistantView(BlockPos hut, int citizenId, int leasedBlocks, long sinceTick, long stayTicks, boolean pinned, boolean idleCitizen) implements ICollabView.IAssistantView
     {
         @Override
         public long stayLeftTicks(final long now)
@@ -40,7 +40,7 @@ public final class CollabViews
 
     private record OrderView(int orderId, @Nullable BlockPos leadHut, int leadCitizenId, String stage, boolean stageIsShared, int placedBlocks, int totalBlocks, int leasedBlocks,
                              List<ICollabView.IAssistantView> assistants, int maxAssistants, int maxAssistantsSetting, int automaticMaxAssistants, boolean collaborationEnabled,
-                             String projectId) implements ICollabView
+                             String projectId, int maxIdleAssistants) implements ICollabView
     {
     }
 
@@ -59,13 +59,15 @@ public final class CollabViews
         final List<ICollabView.IAssistantView> assistants = new ArrayList<>();
         for (final WorkOrderCollab.Assistant assistant : collab.getAssistants())
         {
-            assistants.add(new AssistantView(assistant.hut.immutable(), citizenOf(colony.getServerBuildingManager().getBuilding(assistant.hut)), collab.getLeaseCountOf(assistant.hut),
-              assistant.since, stay, assistant.isPinned()));
+            final boolean idle = IdleHelperKey.is(assistant.hut);
+            assistants.add(new AssistantView(assistant.hut.immutable(), idle ? IdleHelperKey.citizenId(assistant.hut) : citizenOf(colony.getServerBuildingManager().getBuilding(assistant.hut)),
+              collab.getLeaseCountOf(assistant.hut), assistant.since, stay, assistant.isPinned(), idle));
         }
         final BuildingProgressStage stage = collab.getProgressStage();
         return new OrderView(order.getID(), lead == null ? null : lead.getID().immutable(), lead == null ? -1 : citizenOf(lead), stage == null ? "" : stage.name(),
           stage != null && BuilderStageRules.isSharedStage(stage), collab.getPlacedBlocks(), collab.getTotalBlocks(), collab.getLeaseCount() - leadLeases(collab, lead),
-          List.copyOf(assistants), CollabScheduler.capFor(order), collab.getMaxAssistantsSetting(), CollabScheduler.automaticCapFor(order), BuilderCollab.enabled(), order.getProjectId());
+          List.copyOf(assistants), CollabScheduler.capFor(order), collab.getMaxAssistantsSetting(), CollabScheduler.automaticCapFor(order), BuilderCollab.enabled(), order.getProjectId(),
+          CollabScheduler.idleCapFor(colony, order));
     }
 
     /**

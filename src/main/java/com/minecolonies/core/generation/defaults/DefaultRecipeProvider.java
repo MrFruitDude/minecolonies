@@ -634,6 +634,17 @@ public class DefaultRecipeProvider extends RecipeProvider
                 .unlockedBy("has_stick", has(Items.STICK))
                 .save(recipeOutput, ResourceKey.create(Registries.RECIPE, Identifier.fromNamespaceAndPath(MOD_ID, "spear")));
 
+        // Scaffolding from sticks alone (the vanilla recipe wants bamboo and string): the builders' scaffolding is a plain wood product. Seven sticks
+        // make four pieces, on purpose a worse deal than the vanilla six from three sticks' worth of bamboo and a string; the sawmill has the
+        // same recipe (crafterrecipes/sawmill/scaffolding_from_sticks).
+        ShapedRecipeBuilder.shaped(itemLookup(), RecipeCategory.MISC, Items.SCAFFOLDING, 4)
+                .pattern("S S")
+                .pattern("SSS")
+                .pattern("S S")
+                .define('S', Items.STICK)
+                .unlockedBy("has_stick", has(Items.STICK))
+                .save(recipeOutput, ResourceKey.create(Registries.RECIPE, Identifier.fromNamespaceAndPath(MOD_ID, "scaffolding_from_sticks")));
+
         ShapedRecipeBuilder.shaped(itemLookup(), RecipeCategory.MISC,ModItems.clipboard)
                 .pattern("XTX")
                 .pattern("XPX")

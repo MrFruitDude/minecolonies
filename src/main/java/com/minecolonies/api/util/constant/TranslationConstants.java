@@ -39,6 +39,11 @@ public final class TranslationConstants
     public static final String COM_MINECOLONIES_COREMOD_ENTITY_BUILDER_DECONSTRUCTION_COMPLETE      = "entity.builder.messageremovalcomplete";
     @NonNls
     public static final String COM_MINECOLONIES_COREMOD_ENTITY_BUILDER_MANUAL_SUFFIX                = "entity.builder.messagebuildmanualfinish";
+
+    /**
+     * What a citizen without a job who helps a builder is shown as.
+     */
+    public static final String COM_MINECOLONIES_COREMOD_IDLE_HELPER                                  = "com.minecolonies.coremod.idle.helper";
     @NonNls
     public static final String COM_MINECOLONIES_COREMOD_ENTITY_DELIVERYMAN_FORCEPICKUP              = "entity.deliveryman.forcepickup";
     @NonNls

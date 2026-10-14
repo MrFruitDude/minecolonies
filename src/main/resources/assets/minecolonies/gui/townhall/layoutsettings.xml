@@ -29,4 +29,15 @@
         <button id="trigger" size="29 16" pos="120 0" label="$(com.minecolonies.coremod.gui.townhall.off)" color="black"
                      source="minecolonies:textures/gui/builderhut/builder_button_very_small.png"/>
     </view>
+
+    <view id="idlehelpers" size="148 16" pos="100 200" tooltip="$(com.minecolonies.coremod.gui.townhall.idlehelpers.tooltip)">
+        <text id="desc" label="$(com.minecolonies.coremod.gui.townhall.idlehelpers)" pos="0 3" size="148 11" color="black"/>
+        <button id="trigger" size="29 16" pos="120 0" label="$(com.minecolonies.coremod.gui.townhall.off)" color="black"
+                     source="minecolonies:textures/gui/builderhut/builder_button_very_small.png"/>
+    </view>
+
+    <view id="idlehelperscap" size="148 16" pos="100 220" tooltip="$(com.minecolonies.coremod.gui.townhall.idlehelperscap.tooltip)">
+        <text id="desc" label="$(com.minecolonies.coremod.gui.townhall.idlehelperscap)" pos="0 3" size="110 11" color="black"/>
+        <input id="trigger" size="26 16" pos="120 0"/>
+    </view>
 </window>

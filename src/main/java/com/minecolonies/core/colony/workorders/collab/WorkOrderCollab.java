@@ -722,6 +722,30 @@ public class WorkOrderCollab
         return assistants.size();
     }
 
+    /**
+     * @return how many of the helpers are unemployed citizens (see {@link IdleHelperKey}).
+     */
+    public int getIdleAssistantCount()
+    {
+        int n = 0;
+        for (final BlockPos key : assistants.keySet())
+        {
+            if (IdleHelperKey.is(key))
+            {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /**
+     * @return how many of the helpers are builders from their own huts.
+     */
+    public int getBuilderAssistantCount()
+    {
+        return assistants.size() - getIdleAssistantCount();
+    }
+
     public List<BlockPos> getAssistantHuts()
     {
         return new ArrayList<>(assistants.keySet());
@@ -959,7 +983,7 @@ public class WorkOrderCollab
     // ------------------------------------------------------------------ client view
 
     /**
-     * What clients get to see; the citizen ids are those of the helpers' builders (-1 if a hut has none).
+     * What clients get to see; the citizen ids are those of the helpers' builders (-1 if a hut has none), or the unemployed citizen himself (then the helper is flagged idle).
      */
     public void writeView(@NotNull final RegistryFriendlyByteBuf buf, final java.util.function.ToIntFunction<BlockPos> citizenOfHut)
     {
@@ -970,7 +994,8 @@ public class WorkOrderCollab
         for (final Assistant assistant : assistants.values())
         {
             buf.writeBlockPos(assistant.hut);
-            buf.writeInt(citizenOfHut.applyAsInt(assistant.hut));
+            buf.writeInt(IdleHelperKey.is(assistant.hut) ? IdleHelperKey.citizenId(assistant.hut) : citizenOfHut.applyAsInt(assistant.hut));
+            buf.writeBoolean(IdleHelperKey.is(assistant.hut));
         }
     }
 }

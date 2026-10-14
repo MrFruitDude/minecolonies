@@ -36,6 +36,10 @@ public class WindowSettings extends AbstractWindowTownHall
           .setupHandler(BuildingTownHall.ENTER_LEAVE_MESSAGES, window.findPaneByID("entermessages"), moduleView, buildingView, WindowSettings.this);
         moduleView.getSetting(BuildingTownHall.CONSTRUCTION_TAPE)
           .setupHandler(BuildingTownHall.CONSTRUCTION_TAPE, window.findPaneByID("tape"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.IDLE_HELPERS)
+          .setupHandler(BuildingTownHall.IDLE_HELPERS, window.findPaneByID("idlehelpers"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.IDLE_HELPERS_PER_BUILDER)
+          .setupHandler(BuildingTownHall.IDLE_HELPERS_PER_BUILDER, window.findPaneByID("idlehelperscap"), moduleView, buildingView, WindowSettings.this);
     }
 
     /**
@@ -60,6 +64,10 @@ public class WindowSettings extends AbstractWindowTownHall
           .render(BuildingTownHall.ENTER_LEAVE_MESSAGES, window.findPaneByID("entermessages"), moduleView, buildingView, WindowSettings.this);
         moduleView.getSetting(BuildingTownHall.CONSTRUCTION_TAPE)
           .render(BuildingTownHall.CONSTRUCTION_TAPE, window.findPaneByID("tape"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.IDLE_HELPERS)
+          .render(BuildingTownHall.IDLE_HELPERS, window.findPaneByID("idlehelpers"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.IDLE_HELPERS_PER_BUILDER)
+          .render(BuildingTownHall.IDLE_HELPERS_PER_BUILDER, window.findPaneByID("idlehelperscap"), moduleView, buildingView, WindowSettings.this);
     }
 
     @Override

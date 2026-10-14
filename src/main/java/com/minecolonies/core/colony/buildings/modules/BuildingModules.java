@@ -522,7 +522,9 @@ public class BuildingModules
         .with(BuildingTownHall.ENTER_LEAVE_MESSAGES, new BoolSetting(true))
         .with(BuildingTownHall.AUTO_HOUSING_MODE, new BoolSetting(true))
         .with(BuildingTownHall.AUTO_HIRING_MODE, new BoolSetting(true))
-        .with(BuildingTownHall.CONSTRUCTION_TAPE, new BoolSetting(true)),
+        .with(BuildingTownHall.CONSTRUCTION_TAPE, new BoolSetting(true))
+        .with(BuildingTownHall.IDLE_HELPERS, new BoolSetting(true))
+        .with(BuildingTownHall.IDLE_HELPERS_PER_BUILDER, new IntSetting(2)),
         () -> TownHallSettingsModuleView::new);
 
     /**

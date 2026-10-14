@@ -168,6 +168,7 @@ public class ServerConfiguration extends AbstractConfiguration
     public final IntValue     builderCollaborationStaySeconds;
     public final IntValue     builderCollaborationLeaseSize;
     public final IntValue     builderCollaborationLeaseSeconds;
+    public final DoubleValue  builderCollaborationIdleHelperSpeed;
     public final BooleanValue builderFastClear;
 
     /**
@@ -360,6 +361,8 @@ public class ServerConfiguration extends AbstractConfiguration
         builderCollaborationStaySeconds = defineInteger("collaborationStaySeconds", 120, 0, 3600);
         builderCollaborationLeaseSize = defineInteger("collaborationLeaseSize", 12, 1, 64);
         builderCollaborationLeaseSeconds = defineInteger("collaborationLeaseSeconds", 120, 10, 3600);
+        // The pace of a citizen without a job who helps a builder, as a share of the builder's own (places and breaks at this share of his speed).
+        builderCollaborationIdleHelperSpeed = defineDouble("collaborationIdleHelperSpeed", 0.6, 0.1, 1.0);
         // The clear stage leaves blocks alone that already are what the blueprint wants there (instead of mining and placing them again).
         builderFastClear = defineBoolean("fastClear", true);
         builderSpeedMultiplier = defineDouble("speedMultiplier", 1.5, 0.5, 4.0);

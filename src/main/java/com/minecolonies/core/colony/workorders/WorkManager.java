@@ -243,6 +243,15 @@ public class WorkManager implements IWorkManager
     public void clearWorkForCitizen(@NotNull final ICitizenData citizen)
     {
         dirty = true;
+        // (a citizen without a job who helped a builder: he is gone from the colony, or has a job now)
+        final BlockPos idleKey = com.minecolonies.core.colony.workorders.collab.IdleHelperKey.of(citizen.getId());
+        for (final IServerWorkOrder workOrder : workOrders.values())
+        {
+            if (workOrder instanceof IBuilderWorkOrder builderOrder)
+            {
+                builderOrder.getCollab().removeAssistant(idleKey, 0);
+            }
+        }
         final IBuilding workBuilding = citizen.getWorkBuilding();
         if (workBuilding != null)
         {
