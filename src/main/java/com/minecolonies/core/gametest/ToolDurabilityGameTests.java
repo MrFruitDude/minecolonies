@@ -106,6 +106,8 @@ public final class ToolDurabilityGameTests
         add(event, "tooldur_guard_melee", ToolDurabilityGameTests::guardMelee);
         add(event, "tooldur_guard_shield", ToolDurabilityGameTests::guardShield);
         add(event, "tooldur_armor_wear", ToolDurabilityGameTests::armorWear);
+        add(event, "tooldur_armor_fire", ToolDurabilityGameTests::armorFire);
+        add(event, "tooldur_armor_fire_resistant", ToolDurabilityGameTests::armorFireResistant);
         add(event, "tooldur_armor_research", ToolDurabilityGameTests::armorResearchOnlyReduces);
     }
 
@@ -752,7 +754,50 @@ public final class ToolDurabilityGameTests
      */
     public static void armorWear(final GameTestHelper helper)
     {
-        withWorker(helper, "armor", ModBlocks.blockHutGuardTower, "military/guardtower1.blueprint",
+        armorAgainst(helper, "armor", new Item[] {Items.IRON_HELMET, Items.IRON_CHESTPLATE, Items.IRON_LEGGINGS, Items.IRON_BOOTS}, (level, zombie) -> List.of(
+          new Object[] {"mob attack", level.damageSources().mobAttack(zombie), true},
+          new Object[] {"cactus", level.damageSources().cactus(), true},
+          new Object[] {"fall", level.damageSources().fall(), false},
+          new Object[] {"drowning", level.damageSources().drown(), false},
+          new Object[] {"magic (poison, potions)", level.damageSources().magic(), false},
+          new Object[] {"starvation", level.damageSources().starve(), false},
+          new Object[] {"mob attack", level.damageSources().mobAttack(zombie), true}));
+    }
+
+    /**
+     * Fire and lightning wear armor like they wear a player's (the citizen used to skip armor wear for them): the same hits on a guard and a connected survival player
+     * with iron armor, which wears or not by the tags of the damage types (lightning wears it).
+     */
+    public static void armorFire(final GameTestHelper helper)
+    {
+        armorAgainst(helper, "armor fire", new Item[] {Items.IRON_HELMET, Items.IRON_CHESTPLATE, Items.IRON_LEGGINGS, Items.IRON_BOOTS}, (level, zombie) -> List.of(
+          new Object[] {"lightning", level.damageSources().lightningBolt(), true},
+          new Object[] {"in fire", level.damageSources().inFire(), null},
+          new Object[] {"on fire", level.damageSources().onFire(), null},
+          new Object[] {"lava", level.damageSources().lava(), null},
+          new Object[] {"hot floor", level.damageSources().hotFloor(), null},
+          new Object[] {"lightning", level.damageSources().lightningBolt(), true}));
+    }
+
+    /**
+     * Fire resistant armor (netherite) is safe from fire for a guard as for a player (ItemStack#canBeHurtBy), but lightning wears it.
+     */
+    public static void armorFireResistant(final GameTestHelper helper)
+    {
+        armorAgainst(helper, "armor fire netherite", new Item[] {Items.NETHERITE_HELMET, Items.NETHERITE_CHESTPLATE, Items.NETHERITE_LEGGINGS, Items.NETHERITE_BOOTS},
+          (level, zombie) -> List.of(
+            new Object[] {"in fire", level.damageSources().inFire(), false},
+            new Object[] {"lava", level.damageSources().lava(), false},
+            new Object[] {"lightning", level.damageSources().lightningBolt(), true}));
+    }
+
+    private static void armorAgainst(
+      final GameTestHelper helper,
+      final String name,
+      final Item[] pieces,
+      final java.util.function.BiFunction<ServerLevel, net.minecraft.world.entity.monster.zombie.Zombie, List<Object[]>> sourceList)
+    {
+        withWorker(helper, name, ModBlocks.blockHutGuardTower, "military/guardtower1.blueprint",
           (hut, citizen) -> hut.getModule(BuildingModules.KNIGHT_TOWER_WORK).assignCitizen(citizen),
           (colony, worker) -> {
               final ServerLevel level = helper.getLevel();
@@ -760,7 +805,6 @@ public final class ToolDurabilityGameTests
               final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
               final net.minecraft.world.entity.EquipmentSlot[] slots = {net.minecraft.world.entity.EquipmentSlot.HEAD, net.minecraft.world.entity.EquipmentSlot.CHEST,
                 net.minecraft.world.entity.EquipmentSlot.LEGS, net.minecraft.world.entity.EquipmentSlot.FEET};
-              final Item[] pieces = {Items.IRON_HELMET, Items.IRON_CHESTPLATE, Items.IRON_LEGGINGS, Items.IRON_BOOTS};
               for (int i = 0; i < slots.length; i++)
               {
                   guard.getInventoryCitizen().forceArmorStackToSlot(slots[i], new ItemStack(pieces[i]));
@@ -768,14 +812,7 @@ public final class ToolDurabilityGameTests
               }
               final var zombie = spawnTestMob(level, EntityTypes.ZOMBIE, guard.blockPosition().offset(0, 0, 3));
               final float hit = 4.0F;
-              final var sources = List.of(
-                new Object[] {"mob attack", level.damageSources().mobAttack(zombie), true},
-                new Object[] {"cactus", level.damageSources().cactus(), true},
-                new Object[] {"fall", level.damageSources().fall(), false},
-                new Object[] {"drowning", level.damageSources().drown(), false},
-                new Object[] {"magic (poison, potions)", level.damageSources().magic(), false},
-                new Object[] {"starvation", level.damageSources().starve(), false},
-                new Object[] {"mob attack", level.damageSources().mobAttack(zombie), true});
+              final List<Object[]> sources = sourceList.apply(level, zombie);
               final int[] done = {0};
               final int[] last = {0, 0};
               final List<String> failures = new ArrayList<>();
@@ -791,6 +828,8 @@ public final class ToolDurabilityGameTests
                   final Object[] entry = sources.get(done[0]);
                   guard.setHealth(guard.getMaxHealth());
                   player.setHealth(player.getMaxHealth());
+                  guard.clearFire();
+                  player.clearFire();
                   guard.hurtServer(level, (net.minecraft.world.damagesource.DamageSource) entry[1], hit);
                   player.hurtServer(level, (net.minecraft.world.damagesource.DamageSource) entry[1], hit);
                   int guardTotal = 0;
@@ -804,12 +843,12 @@ public final class ToolDurabilityGameTests
                   final int playerWear = playerTotal - last[1];
                   last[0] = guardTotal;
                   last[1] = playerTotal;
-                  Log.getLogger().info("[tooldur_armor_wear] {} {}: guard armor wore {}, player armor {}", entry[0], hit, guardWear, playerWear);
-                  if ((boolean) entry[2] && playerWear <= 0)
+                  Log.getLogger().info("[tooldur_{}] {} {}: guard armor wore {}, player armor {}", name.replace(' ', '_'), entry[0], hit, guardWear, playerWear);
+                  if (Boolean.TRUE.equals(entry[2]) && playerWear <= 0)
                   {
                       failures.add("fixture: the player's armor did not wear for " + entry[0]);
                   }
-                  if (!(boolean) entry[2] && playerWear != 0)
+                  if (Boolean.FALSE.equals(entry[2]) && playerWear != 0)
                   {
                       failures.add("fixture: the player's armor wore " + playerWear + " for " + entry[0]);
                   }
