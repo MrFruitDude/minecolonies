@@ -83,7 +83,6 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.damagesource.CombatRules;
 import net.minecraft.world.damagesource.CombatTracker;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
@@ -96,16 +95,15 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.BlocksAttacks;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.level.storage.TagValueOutput;
-import net.neoforged.neoforge.common.CommonHooks;
-import net.neoforged.neoforge.event.entity.living.LivingShieldBlockEvent;
 import com.ldtteam.structurize.api.compat.itemhandler.IItemHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -136,7 +134,6 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
     /**
      * The amount of damage a guard takes on blocking.
      */
-    private static final float  GUARD_BLOCK_DAMAGE  = 0.5f;
     /**
      * Max speed factor.
      */
@@ -1201,6 +1198,37 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
     {
         return (float) Math.min(MAX_SPEED_FACTOR, super.getSpeed());
     }
+    /**
+     * A shield wears for a hit it blocks exactly as a player's shield does (vanilla only wears a player's: {@code BlocksAttacks#hurtBlockingItem}): the damage of the shield's
+     * item damage function ({@code 1 + floor(blocked damage)} from 3 blocked damage up) or the amount an event set. The colony research for the durability of citizen's tools
+     * can only save wear.
+     */
+    @Override
+    public float applyItemBlocking(@NotNull final ServerLevel level, @NotNull final DamageSource source, final float damage)
+    {
+        final ItemStack blockingWith = getItemBlockingWith();
+        final float blocked = super.applyItemBlocking(level, source, damage);
+        if (blocked > 0.0F && blockingWith != null && citizenData != null)
+        {
+            final BlocksAttacks blocksAttacks = blockingWith.get(DataComponents.BLOCKS_ATTACKS);
+            if (blocksAttacks != null)
+            {
+                final int fixedDamage = this.damageContainers.empty() ? -1 : (int) this.damageContainers.peek().getShieldDamage();
+                final int shieldDamage = fixedDamage < 0 ? blocksAttacks.itemDamage().apply(blocked) : fixedDamage;
+                if (shieldDamage > 0)
+                {
+                    final InteractionHand hand = getUsedItemHand();
+                    CitizenItemUtils.damageItemInHand(this, hand, shieldDamage);
+                    if (getItemInHand(hand).isEmpty())
+                    {
+                        stopUsingItem();
+                    }
+                }
+            }
+        }
+        return blocked;
+    }
+
     private boolean handleDamagePerformed(@NotNull final ServerLevel level, @NotNull final DamageSource damageSource, final float damage, final Entity sourceEntity)
     {
         float damageInc = Math.min(damage, (getMaxHealth() * 0.2f));
@@ -1268,31 +1296,6 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
         boolean result = super.hurtServer(level, damageSource, damageInc);
         if (!result)
         {
-            LivingShieldBlockEvent ev;
-                if (damageInc > 0.0F && !this.damageContainers.empty()
-                      && (ev = CommonHooks.onDamageBlock(this, this.damageContainers.peek(), damageInc, this.getItemBlockingWith() != null)).getBlocked())
-            {
-                final float blockedDamage = this.damageContainers.peek().getBlockedDamage();
-                if (blockedDamage > 0)
-                {
-                    if (getItemInHand(getUsedItemHand()).getItem() instanceof ShieldItem)
-                    {
-                        if (getHealth() > blockedDamage * GUARD_BLOCK_DAMAGE)
-                        {
-                            final float blockDamage = CombatRules.getDamageAfterAbsorb(this,blockedDamage * GUARD_BLOCK_DAMAGE,
-                              damageSource,
-                              (float) this.getArmorValue(),
-                              (float) this.getAttribute(Attributes.ARMOR_TOUGHNESS).getValue());
-                            setHealth(getHealth() - Math.max(GUARD_BLOCK_DAMAGE, blockDamage));
-                            result = true;
-                        }
-                        CitizenItemUtils.damageItemInHand(this, this.getUsedItemHand(), (int) (blockedDamage * GUARD_BLOCK_DAMAGE));
-                    }
-                }
-            }
-        }
-        if (!result)
-        {
             return false;
         }
         if (damageSource.getEntity() instanceof LivingEntity)
@@ -1305,7 +1308,7 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
         }
         if (!level().isClientSide())
         {
-            CitizenItemUtils.updateArmorDamage(this, damageInc);
+            CitizenItemUtils.updateArmorDamage(this, damageSource, damageInc);
             if (citizenData != null)
             {
                 getCitizenData().getCitizenHappinessHandler().addModifier(new ExpirationBasedHappinessModifier(DAMAGE, 2.0, new StaticHappinessSupplier(0.0), 1));

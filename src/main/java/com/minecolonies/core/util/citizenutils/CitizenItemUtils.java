@@ -13,6 +13,10 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.tags.DamageTypeTags;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.equipment.Equippable;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
@@ -402,12 +406,20 @@ public class CitizenItemUtils
     }
 
     /**
-     * Updates the armour damage after being hit.
+     * Updates the armour damage after being hit, the way a player's armor wears (LivingEntity#getDamageAfterArmorAbsorb and #doHurtEquipment): not at all for damage that
+     * bypasses armor (tag bypasses_armor: falling, drowning, starving, poison, magic ...), and for a piece only if it wears when its wearer is hurt and is not safe from the damage
+     * (fire resistant items against fire). The colony research for the durability of armor can only save wear.
      *
+     * @param source the damage source.
      * @param damage damage dealt.
      */
-    public static void updateArmorDamage(@NotNull final AbstractEntityCitizen citizen, final double damage)
+    public static void updateArmorDamage(@NotNull final AbstractEntityCitizen citizen, @NotNull final DamageSource source, final double damage)
     {
+        if (damage <= 0 || source.is(DamageTypeTags.BYPASSES_ARMOR))
+        {
+            return;
+        }
+
         if (citizen.getCitizenColonyHandler().getColonyOrRegister().getResearchManager().getResearchEffects().getEffectStrength(ARMOR_DURABILITY) > 0)
         {
             if (citizen.getRandom().nextDouble() > (1 / (1 + citizen.getCitizenColonyHandler()
@@ -420,12 +432,17 @@ public class CitizenItemUtils
             }
         }
 
-        final int armorDmg = Math.max(1, (int) (damage / 4));
+        final int armorDmg = (int) Math.max(1.0F, damage / 4.0F);
         for (EquipmentSlot equipmentSlot : EquipmentSlot.values())
         {
             if (equipmentSlot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR)
             {
                 final ItemStack equipment = citizen.getInventoryCitizen().getArmorInSlot(equipmentSlot);
+                final Equippable equippable = equipment.get(DataComponents.EQUIPPABLE);
+                if (equippable == null || !equippable.damageOnHurt() || !equipment.canBeHurtBy(source))
+                {
+                    continue;
+                }
                 equipment.hurtAndBreak(armorDmg, (ServerLevel) citizen.level(), citizen, (s) -> {
                     citizen.onArmorRemove(equipment, equipmentSlot);
                     citizen.getInventoryCitizen().markDirty();
