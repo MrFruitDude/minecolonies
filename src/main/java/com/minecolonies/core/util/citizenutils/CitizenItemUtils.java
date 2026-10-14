@@ -162,7 +162,36 @@ public class CitizenItemUtils
         {
             return;
         }
+        hitBlock(citizen, blockPos, breakBlock, state -> damageItemInHandForMinedBlock(citizen, citizen.getUsedItemHand(), state, blockPos));
+    }
 
+    /**
+     * Breaks a block for a citizen who has no tool of his own and uses one that another citizen carries (a citizen without a job who helps a builder): the sound, the particles
+     * and the removal of the block are the citizen's, and the wear is the same as for the owner mining the block himself ({@link #damageInventoryItemForMinedBlock}).
+     *
+     * @param citizen  the citizen who breaks the block.
+     * @param blockPos the block.
+     * @param owner    the citizen who carries the tool, null for bare hands (nothing wears).
+     * @param slot     the slot of the tool in the owner's inventory.
+     */
+    public static void breakBlockWearingToolOf(
+      @NotNull final AbstractEntityCitizen citizen, @Nullable final BlockPos blockPos, @Nullable final AbstractEntityCitizen owner, final int slot)
+    {
+        if (blockPos == null)
+        {
+            return;
+        }
+        hitBlock(citizen, blockPos, true, state -> {
+            if (owner != null)
+            {
+                damageInventoryItemForMinedBlock(owner, slot, state, blockPos, citizen);
+            }
+        });
+    }
+
+    private static void hitBlock(
+      @NotNull final AbstractEntityCitizen citizen, @NotNull final BlockPos blockPos, final boolean breakBlock, @NotNull final java.util.function.Consumer<BlockState> wear)
+    {
         citizen.getLookControl().setLookAt(blockPos.getX(), blockPos.getY(), blockPos.getZ(), FACING_DELTA_YAW, citizen.getMaxHeadXRot());
 
         citizen.swing(citizen.getUsedItemHand(), SwingAnimation.DEFAULT, false);
@@ -183,7 +212,7 @@ public class CitizenItemUtils
               block.getSoundType(blockState, CompatibilityUtils.getWorldFromCitizen(citizen), blockPos, citizen).getVolume(),
               block.getSoundType(blockState, CompatibilityUtils.getWorldFromCitizen(citizen), blockPos, citizen).getPitch());
             // Like ServerPlayerGameMode#destroyBlock: the tool is worn by the state that is mined, before the block is gone
-            damageItemInHandForMinedBlock(citizen, citizen.getUsedItemHand(), blockState, blockPos);
+            wear.accept(blockState);
             WorldUtil.removeBlock(CompatibilityUtils.getWorldFromCitizen(citizen), blockPos, false);
         }
         else
@@ -267,6 +296,36 @@ public class CitizenItemUtils
               .wearInventoryItem(citizen.getCitizenData().getInventory().getHeldItemSlot(hand), stack -> stack.getItem().mineBlock(stack, level, state, pos, citizen)))
         {
             clearHeldItemSlot(citizen, hand);
+        }
+    }
+
+    /**
+     * Wears an item in the inventory of a citizen for a block that somebody mined with it, exactly as {@link #damageItemInHandForMinedBlock} does for the item in the hand: the
+     * item's own {@link net.minecraft.world.item.Item#mineBlock} decides, the colony research of the owner's colony can save the wear. If the item breaks and was the owner's
+     * main hand item he holds nothing any more.
+     *
+     * @param owner the citizen whose inventory holds the tool.
+     * @param slot  the slot of the tool.
+     * @param state the state of the block that was mined (before it was removed).
+     * @param pos   the position of the block.
+     * @param miner the citizen who mined the block.
+     */
+    public static void damageInventoryItemForMinedBlock(
+      @NotNull final AbstractEntityCitizen owner,
+      final int slot,
+      @NotNull final BlockState state,
+      @NotNull final BlockPos pos,
+      @NotNull final AbstractEntityCitizen miner)
+    {
+        if (owner.getCitizenData().getInventory().getStackInSlot(slot).isEmpty() || savedByToolDurabilityResearch(owner))
+        {
+            return;
+        }
+        final Level level = CompatibilityUtils.getWorldFromCitizen(owner);
+        final boolean held = owner.getCitizenData().getInventory().getHeldItemSlot(InteractionHand.MAIN_HAND) == slot;
+        if (owner.getCitizenData().getInventory().wearInventoryItem(slot, stack -> stack.getItem().mineBlock(stack, level, state, pos, miner)) && held)
+        {
+            clearHeldItemSlot(owner, InteractionHand.MAIN_HAND);
         }
     }
 

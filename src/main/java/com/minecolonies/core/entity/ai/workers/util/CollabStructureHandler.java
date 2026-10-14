@@ -138,11 +138,17 @@ public class CollabStructureHandler extends AbstractStructureHandler
         if (placement && worker != null)
         {
             ReachAudit.record(worker, worldPos);
-            com.minecolonies.core.colony.workorders.collab.BuilderCollab.placed(worldPos, worker.getCitizenData().getWorkBuilding().getID());
+            // (a citizen without a job who helps has no work building: he is known in the order by his key)
+            final IBuilding workBuilding = worker.getCitizenData().getWorkBuilding();
+            com.minecolonies.core.colony.workorders.collab.BuilderCollab.placed(worldPos,
+              workBuilding != null ? workBuilding.getID() : com.minecolonies.core.colony.workorders.collab.IdleHelperKey.of(worker.getCitizenData().getId()));
             worker.getCitizenExperienceHandler().addExperience(XP_EACH_BLOCK);
             for (final ItemStack ignored : list)
             {
-                StatsUtil.trackStat(worker.getCitizenData().getWorkBuilding(), BLOCKS_PLACED, 1);
+                if (workBuilding != null)
+                {
+                    StatsUtil.trackStat(workBuilding, BLOCKS_PLACED, 1);
+                }
                 worker.getCitizenColonyHandler().getColonyOrRegister().getStatisticsManager()
                   .increment(BLOCKS_PLACED, worker.getCitizenColonyHandler().getColonyOrRegister().getDay());
             }

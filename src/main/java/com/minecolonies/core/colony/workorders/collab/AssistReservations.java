@@ -98,6 +98,16 @@ public final class AssistReservations
     }
 
     /**
+     * Like {@link #heldByOthers(IBuilding, IBuilding, ItemStack)} for a helper without a hut (a citizen without a job, see {@link IdleHelperKey}).
+     *
+     * @param helperKey the key of the helper in the order.
+     */
+    public static int heldByOthers(@NotNull final IBuilding leadHut, @NotNull final BlockPos helperKey, @NotNull final ItemStack kind)
+    {
+        return heldForOthers(leadHut, kind, token(helperKey));
+    }
+
+    /**
      * @param hut  a hut.
      * @param kind the item.
      * @return how many of the item are claimed in the hut for anybody but the hut's own requests.
@@ -119,12 +129,20 @@ public final class AssistReservations
      */
     public static int reserve(@NotNull final IBuilding helper, @NotNull final IBuilding leadHut, @NotNull final ItemStack kind, final int amount, final long now)
     {
+        return reserve(helper.getID(), leadHut, kind, amount, now);
+    }
+
+    /**
+     * Like {@link #reserve(IBuilding, IBuilding, ItemStack, int, long)} for a helper without a hut (see {@link IdleHelperKey}).
+     */
+    public static int reserve(@NotNull final BlockPos helperKey, @NotNull final IBuilding leadHut, @NotNull final ItemStack kind, final int amount, final long now)
+    {
         final ReservationLedger ledger = ledger(leadHut);
         if (ledger == null || amount <= 0)
         {
             return 0;
         }
-        return ledger.reserveStock(leadHut.getID(), null, new ItemStorage(kind.copyWithCount(1)), amount, token(helper.getID()), "builder assist @" + helper.getID().toShortString(),
+        return ledger.reserveStock(leadHut.getID(), null, new ItemStorage(kind.copyWithCount(1)), amount, token(helperKey), "builder assist @" + helperKey.toShortString(),
           ReservationReason.BUILD_ASSIST, now);
     }
 
@@ -139,10 +157,18 @@ public final class AssistReservations
      */
     public static void commit(@NotNull final IBuilding helper, @NotNull final IBuilding leadHut, @NotNull final ItemStack kind, final int amount, final long now)
     {
+        commit(helper.getID(), leadHut, kind, amount, now);
+    }
+
+    /**
+     * Like {@link #commit(IBuilding, IBuilding, ItemStack, int, long)} for a helper without a hut (see {@link IdleHelperKey}).
+     */
+    public static void commit(@NotNull final BlockPos helperKey, @NotNull final IBuilding leadHut, @NotNull final ItemStack kind, final int amount, final long now)
+    {
         final ReservationLedger ledger = ledger(leadHut);
         if (ledger != null && amount > 0)
         {
-            ledger.commitStock(token(helper.getID()), leadHut.getID(), new ItemStorage(kind.copyWithCount(1)), amount, now);
+            ledger.commitStock(token(helperKey), leadHut.getID(), new ItemStorage(kind.copyWithCount(1)), amount, now);
         }
     }
 
@@ -155,13 +181,24 @@ public final class AssistReservations
      */
     public static void releaseAll(@NotNull final IBuilding helper, final boolean quiet)
     {
-        final ReservationLedger ledger = ledger(helper);
+        releaseAll(helper.getColony(), helper.getID(), quiet);
+    }
+
+    /**
+     * Like {@link #releaseAll(IBuilding, boolean)} for a helper without a hut (see {@link IdleHelperKey}).
+     *
+     * @param colony    the colony.
+     * @param helperKey the key of the helper in the order.
+     */
+    public static void releaseAll(@NotNull final com.minecolonies.api.colony.IColony colony, @NotNull final BlockPos helperKey, final boolean quiet)
+    {
+        final ReservationLedger ledger = RsAccess.ledger(colony.getRequestManager());
         if (ledger == null)
         {
             return;
         }
-        final long now = RsAccess.now(helper.getColony().getRequestManager());
-        final IToken<?> token = token(helper.getID());
+        final long now = RsAccess.now(colony.getRequestManager());
+        final IToken<?> token = token(helperKey);
         if (quiet)
         {
             ledger.releaseQuiet(token, now);

@@ -90,6 +90,7 @@ public abstract class AbstractWorkOrderView implements IWorkOrderView
     private int          leaseCount;
     private List<BlockPos> assistantHuts = List.of();
     private List<Integer> assistantCitizens = List.of();
+    private List<Boolean> assistantIdle = List.of();
     private String        projectId         = "";
     private List<net.minecraft.world.item.ItemStack> waitingFor = List.of();
 
@@ -300,13 +301,16 @@ public abstract class AbstractWorkOrderView implements IWorkOrderView
         final int helpers = buf.readInt();
         final List<BlockPos> huts = new ArrayList<>(helpers);
         final List<Integer> citizens = new ArrayList<>(helpers);
+        final List<Boolean> idle = new ArrayList<>(helpers);
         for (int i = 0; i < helpers; i++)
         {
             huts.add(buf.readBlockPos());
             citizens.add(buf.readInt());
+            idle.add(buf.readBoolean());
         }
         assistantHuts = List.copyOf(huts);
         assistantCitizens = List.copyOf(citizens);
+        assistantIdle = List.copyOf(idle);
         projectId = buf.readUtf(32767);
         final int waiting = buf.readInt();
         final List<net.minecraft.world.item.ItemStack> stacks = new ArrayList<>(waiting);
@@ -357,6 +361,12 @@ public abstract class AbstractWorkOrderView implements IWorkOrderView
     public List<Integer> getAssistantCitizenIds()
     {
         return assistantCitizens;
+    }
+
+    @Override
+    public List<Boolean> getAssistantIdle()
+    {
+        return assistantIdle;
     }
 
     @Override

@@ -72,6 +72,15 @@ public interface IWorkOrderView extends IWorkOrder
     }
 
     /**
+     * Which of the helpers are citizens without a job (the unemployed lend a hand to a builder; for those the "hut" of {@link #getAssistantHuts()} is no building, and the
+     * citizen id is the citizen himself), in the order of {@link #getAssistantHuts()}.
+     */
+    default java.util.List<Boolean> getAssistantIdle()
+    {
+        return java.util.List.of();
+    }
+
+    /**
      * The project this order belongs to, empty if none.
      */
     default String getProjectId()

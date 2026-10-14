@@ -21,6 +21,7 @@ import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.AbstractBuilding;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
 import com.minecolonies.core.colony.buildings.modules.settings.BoolSetting;
+import com.minecolonies.core.colony.buildings.modules.settings.IntSetting;
 import com.minecolonies.core.colony.buildings.modules.settings.SettingKey;
 import com.minecolonies.core.colony.buildings.views.AbstractBuildingView;
 import net.minecraft.core.BlockPos;
@@ -83,6 +84,16 @@ public class BuildingTownHall extends AbstractBuilding implements ITownHall
      * Constructgion tape setting.
      */
     public static final ISettingKey<BoolSetting> CONSTRUCTION_TAPE = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "tape"));
+
+    /**
+     * Unemployed citizens help the builders who build (a colony setting, on by default).
+     */
+    public static final ISettingKey<BoolSetting> IDLE_HELPERS = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "idlehelpers"));
+
+    /**
+     * The most unemployed citizens that help one builder.
+     */
+    public static final ISettingKey<IntSetting> IDLE_HELPERS_PER_BUILDER = new SettingKey<>(IntSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "idlehelperscap"));
 
     /**
      * Instantiates the building.

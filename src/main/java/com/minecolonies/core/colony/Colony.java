@@ -147,6 +147,11 @@ public class Colony implements IColony
     private final WorkManager workManager;
 
     /**
+     * The work the unemployed citizens do (not saved).
+     */
+    private final com.minecolonies.core.colony.idle.IdleCitizenState idleCitizens = new com.minecolonies.core.colony.idle.IdleCitizenState();
+
+    /**
      * Building manager of the colony.
      */
     private final IRegisteredStructureManager buildingManager;
@@ -576,7 +581,18 @@ public class Colony implements IColony
     private boolean tickWorkManager()
     {
         workManager.onColonyTick(this);
+        com.minecolonies.core.colony.idle.IdleCitizenArbiter.tick(this);
         return false;
+    }
+
+    /**
+     * What the unemployed citizens of this colony do (helping builders, ...). Server side only.
+     *
+     * @return the state.
+     */
+    public com.minecolonies.core.colony.idle.IdleCitizenState getIdleCitizens()
+    {
+        return idleCitizens;
     }
 
     /**

@@ -19,6 +19,7 @@ import com.minecolonies.api.util.constant.CitizenConstants;
 import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
 import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
+import com.minecolonies.core.colony.idle.IdleCitizenArbiter;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.AbstractJobGuard;
 import com.minecolonies.core.colony.jobs.JobPupil;
@@ -92,6 +93,13 @@ public class CitizenAI implements IStateAI
             return CitizenAIState.WORKING;
         }, 10));
 
+        // An unemployed citizen at work for an idle task (helping a builder, ...): the session of the idle citizen arbiter runs his steps.
+        citizen.getCitizenAI().addTransition(new AITarget<>(CitizenAIState.LABOUR, () -> true, () ->
+        {
+            IdleCitizenArbiter.tickSession(citizen.getCitizenData());
+            return CitizenAIState.LABOUR;
+        }, ENTITY_AI_TICKRATE));
+
         citizen.getCitizenAI().addTransition(new AITarget<>(CitizenAIState.WORKING, () -> true, () ->
         {
             if (citizen.getCitizenJobHandler().getColonyJob() != null)
@@ -125,6 +133,11 @@ public class CitizenAI implements IStateAI
         }
 
         citizen.getCitizenData().setVisibleStatus(null);
+        if (lastState == CitizenAIState.LABOUR)
+        {
+            // sleep, food, care, a job: the idle task of the citizen ends
+            IdleCitizenArbiter.leftLabour(citizen.getCitizenData(), next);
+        }
         lastState = next;
         return lastState;
     }
@@ -248,6 +261,13 @@ public class CitizenAI implements IStateAI
         {
             citizen.setVisibleStatusIfNone(HOUSE);
             return CitizenAIState.IDLE;
+        }
+
+        // An unemployed citizen with a task of the idle citizen arbiter (after the needs above: they end it)
+        if (citizen.getCitizenJobHandler().getColonyJob() == null && IdleCitizenArbiter.hasSession(citizen.getCitizenData()))
+        {
+            citizen.setVisibleStatusIfNone(WORKING);
+            return CitizenAIState.LABOUR;
         }
 
         if (citizen.getCitizenJobHandler().getColonyJob() != null
