@@ -548,6 +548,39 @@ final class IdleHelperGameTests
         });
     }
 
+    // ------------------------------------------------------------------ the build tool
+
+    /**
+     * A build tool in the lead's hut and another in the lead's inventory are never taken by the helper, never moved into his inventory and never used as material:
+     * after the order is done both are where they were and the citizen carries none.
+     */
+    public static void helperLeavesTheBuildToolAlone(final GameTestHelper helper)
+    {
+        begin();
+        site(helper, "idle helper build tool", 0, true, site -> {
+            final ICitizenData idle = site.spawnIdle(12, 14);
+            final int size = 6;
+            final Item buildTool = com.ldtteam.structurize.items.ModItems.buildTool.get();
+            site.stock(size * size + SPARE);
+            helper.assertTrue(InventoryUtils.forceItemStackToItemHandler(site.hut.getItemHandlerCap(), new ItemStack(buildTool), s -> true).isEmpty(), "no room for the tool in the hut");
+            helper.assertTrue(InventoryUtils.addItemStackToItemHandler(site.builder.getInventory(), new ItemStack(buildTool)), "no room for the tool on the builder");
+            final WorkOrderDecoration order = site.order("tool", 20, 6, size, true);
+            final int[] mostToolsInHelper = {0};
+            poll(helper, List.of(site), 25_000, () -> {
+                mostToolsInHelper[0] = Math.max(mostToolsInHelper[0], InventoryUtils.getItemCountInItemHandler(idle.getInventory(), s -> s.is(buildTool)));
+                return orderGone(site, order);
+            }, () -> {
+                helper.assertTrue(floorBuilt(site, order, size), "the floor is not complete: " + describe(site));
+                helper.assertTrue(mostToolsInHelper[0] == 0, "the helper carried a build tool");
+                helper.assertTrue(InventoryUtils.getItemCountInItemHandler(site.hut.getItemHandlerCap(), s -> s.is(buildTool)) == 1, "the hut's build tool was taken");
+                helper.assertTrue(InventoryUtils.getItemCountInItemHandler(site.builder.getInventory(), s -> s.is(buildTool)) == 1, "the builder's build tool was taken");
+                helper.assertTrue(site.bricks() == SPARE, "bricks not conserved: " + site.bricks());
+                end();
+                helper.succeed();
+            }, () -> describe(site));
+        });
+    }
+
     // ------------------------------------------------------------------ tools
 
     /**

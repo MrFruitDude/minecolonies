@@ -118,6 +118,17 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 ToolDurabilityGameTests.register(event);
             }
+            if (only.contains("buildtool"))
+            {
+                final Holder<TestEnvironmentDefinition<?>> keptEnvironment = event.registerEnvironment(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "default"));
+                final TestData<Holder<TestEnvironmentDefinition<?>>> keptData = new TestData<>(keptEnvironment, Identifier.fromNamespaceAndPath("minecraft", "empty"), 40100, 0, true,
+                  Rotation.NONE);
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "buildtool_kept_colony_crafter"),
+                  info -> new MinecoloniesGameTestInstance(info, BuildToolKeptGameTests::colonyCrafterLeavesTheBuildTool), keptData);
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "buildtool_kept_hut_window_switch"),
+                  info -> new MinecoloniesGameTestInstance(info, BuildToolKeptGameTests::switchWithToolKeepsTheTool), keptData);
+                registerIdleHelperBuildTool(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -197,6 +208,15 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               info -> new MinecoloniesGameTestInstance(info, test),
               isolatedColonyData(event, name));
         }
+        // The build tool is never used up (one glob: minecolonies:buildtool_kept_*).
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "buildtool_kept_colony_crafter"),
+          info -> new MinecoloniesGameTestInstance(info, BuildToolKeptGameTests::colonyCrafterLeavesTheBuildTool),
+          data);
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "buildtool_kept_hut_window_switch"),
+          info -> new MinecoloniesGameTestInstance(info, BuildToolKeptGameTests::switchWithToolKeepsTheTool),
+          data);
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rack_inventory_round_trip"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::rackInventoryRoundTrip),
@@ -1081,10 +1101,18 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     /**
      * Unemployed citizens help builders. Run on their own with {@code MINECOLONIES_GAMETEST_ONLY=idlehelper}.
      */
+    private void registerIdleHelperBuildTool(final RegisterGameTestsEvent event)
+    {
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "idle_helper_build_tool"),
+          info -> new MinecoloniesGameTestInstance(info, IdleHelperGameTests::helperLeavesTheBuildToolAlone),
+          isolatedColonyData(event, "idle_helper_build_tool"));
+    }
+
     private void registerIdleHelpers(final RegisterGameTestsEvent event)
     {
         for (final String name : new String[] {"idle_helper_faster", "idle_helper_no_order", "idle_helper_unled_order", "idle_helper_job", "idle_helper_night", "idle_helper_needs",
-          "idle_helper_setting", "idle_helper_cap", "idle_helper_colonies", "idle_helper_arbiter_api", "idle_helper_breaks", "idle_helper_reload", "idle_helper_tool_wear"})
+          "idle_helper_setting", "idle_helper_cap", "idle_helper_colonies", "idle_helper_arbiter_api", "idle_helper_breaks", "idle_helper_reload", "idle_helper_tool_wear", "idle_helper_build_tool"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -1100,6 +1128,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "idle_helper_breaks" -> IdleHelperGameTests::helperBreaksAndPlaces;
                 case "idle_helper_reload" -> IdleHelperGameTests::helperStateSavedAndRestartHandled;
                 case "idle_helper_tool_wear" -> IdleHelperGameTests::helperWearsTheLeadsTool;
+                case "idle_helper_build_tool" -> IdleHelperGameTests::helperLeavesTheBuildToolAlone;
                 default -> IdleHelperGameTests::arbiterOffersTasksByPriority;
             };
             event.registerTest(
