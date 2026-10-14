@@ -1077,7 +1077,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     private void registerIdleHelpers(final RegisterGameTestsEvent event)
     {
         for (final String name : new String[] {"idle_helper_faster", "idle_helper_no_order", "idle_helper_unled_order", "idle_helper_job", "idle_helper_night", "idle_helper_needs",
-          "idle_helper_setting", "idle_helper_cap", "idle_helper_colonies", "idle_helper_arbiter_api"})
+          "idle_helper_setting", "idle_helper_cap", "idle_helper_colonies", "idle_helper_arbiter_api", "idle_helper_breaks", "idle_helper_reload"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -1090,6 +1090,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "idle_helper_setting" -> IdleHelperGameTests::settingOffSendsHelpersAway;
                 case "idle_helper_cap" -> IdleHelperGameTests::perBuilderCap;
                 case "idle_helper_colonies" -> IdleHelperGameTests::coloniesAreIsolated;
+                case "idle_helper_breaks" -> IdleHelperGameTests::helperBreaksAndPlaces;
+                case "idle_helper_reload" -> IdleHelperGameTests::helperStateSavedAndRestartHandled;
                 default -> IdleHelperGameTests::arbiterOffersTasksByPriority;
             };
             event.registerTest(

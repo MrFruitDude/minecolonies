@@ -4,7 +4,9 @@ import com.ldtteam.structurize.placement.StructurePhasePlacementResult;
 import com.ldtteam.structurize.placement.StructurePlacer;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.IColonyManager;
+import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.idle.IIdleTaskSession;
 import com.minecolonies.api.colony.idle.IdleStopReason;
@@ -82,11 +84,6 @@ public final class BuilderHelperSession implements IIdleTaskSession
      * Positions right after the lead's cursor that helpers leave to the lead.
      */
     private static final int LEAD_BUFFER = 4;
-
-    /**
-     * The most positions a helper leases at once (he is slow: a small lease keeps the lead's stage from waiting for him at its end).
-     */
-    private static final int MAX_LEASE = 8;
 
     /**
      * The smallest lease towards the end of a stage.
@@ -298,12 +295,25 @@ public final class BuilderHelperSession implements IIdleTaskSession
     }
 
     /**
-     * The work time bank: it earns the time that passes at the helper's pace (a share of the builder's); a block costs what it would cost the lead.
+     * The pace the lead works at: the colony pace of the pace provider for his job, times the worker speed of the settings (the same pace his own AI counts its waits with).
+     */
+    private double leadPace(final AbstractBuildingStructureBuilder lead)
+    {
+        final ICitizenData leadCitizen = leadCitizen(lead);
+        final double provider = leadCitizen == null || leadCitizen.getJob() == null ? 1.0D
+                                  : IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().work(colony, leadCitizen.getJob()));
+        return WorkerSettings.composePace(provider, WorkerSettings.speedMultiplier());
+    }
+
+    /**
+     * The work time bank: it earns the time that passes at the pace of the lead times the helper's share ({@link IdleCitizenSettings#helperSpeed()}); a block costs what it
+     * costs the lead (so he places and breaks at that share of the builder's speed).
      */
     private void earnWorkTime(final long now, final AbstractBuildingStructureBuilder lead)
     {
+        final double pace = leadPace(lead) * IdleCitizenSettings.helperSpeed();
         final double cap = Math.max(20.0D, 3.0D * leadPlaceTicks(lead));
-        bank = lastBank < 0 ? 0.0D : Math.min(cap, bank + (now - lastBank) * IdleCitizenSettings.helperSpeed());
+        bank = lastBank < 0 ? 0.0D : Math.min(cap, bank + (now - lastBank) * pace);
         lastBank = now;
     }
 
@@ -373,7 +383,7 @@ public final class BuilderHelperSession implements IIdleTaskSession
             final Map<ItemStorage, Integer> stockMemo = new HashMap<>();
             final int room = (int) Math.max(1, InventoryUtils.openSlotCount(worker.getInventoryCitizen()) - OPEN_SLOTS);
             final double reachHeight = reachLimitY();
-            final List<LeaseAllocator.Planned> plan = LeaseAllocator.plan(world, order, stage, handler, placer, leaseSizeFor(collab), collab.hasTerritory() ? 0 : LEAD_BUFFER,
+            final List<LeaseAllocator.Planned> plan = LeaseAllocator.plan(world, order, stage, handler, placer, leaseSizeFor(collab, lead, worker), collab.hasTerritory() ? 0 : LEAD_BUFFER,
               k -> stockMemo.computeIfAbsent(k, kind -> Math.max(0, InventoryUtils.getItemCountInItemHandler(lead.getItemHandlerCap(), sameAs(kind.getItemStack()))
                                                                       - AssistReservations.heldByOthers(lead, key, kind.getItemStack()))
                                                         + leadCarried(lead, kind.getItemStack())
@@ -421,9 +431,13 @@ public final class BuilderHelperSession implements IIdleTaskSession
         return order.getLocation().getY() + BuildReach.maxHeightNextToWall(BuildReach.EYE_HEIGHT, WorkerSettings.reach()) + 1;
     }
 
-    private int leaseSizeFor(final WorkOrderCollab collab)
+    /**
+     * How many positions he leases at once: the configured size, more when the hut of the lead is far (every lease costs a walk to the hut and back, and a lease of a few blocks
+     * takes less to place than to fetch), like the builders who help; towards the end of the stage a share of what is left for each of the builders, twice over.
+     */
+    private int leaseSizeFor(final WorkOrderCollab collab, final AbstractBuildingStructureBuilder lead, final AbstractEntityCitizen worker)
     {
-        final int size = Math.min(MAX_LEASE, BuilderCollab.leaseSize());
+        final int size = BuilderCollab.scaledLeaseSize(BuilderCollab.leaseSize(), Math.sqrt(worker.blockPosition().distSqr(lead.getPosition())));
         final int parts = 2 * (collab.getAssistantCount() + 1);
         return Math.max(1, Math.min(size, Math.max(MIN_SHARE, collab.getUnleasedStageRemaining() / parts)));
     }

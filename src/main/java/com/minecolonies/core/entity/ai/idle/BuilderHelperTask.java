@@ -76,15 +76,11 @@ public final class BuilderHelperTask implements IIdleCitizenTask
         final BlockPos key = IdleHelperKey.of(citizen.getId());
         final long now = colony.getWorld().getGameTime();
 
-        // what was saved with the colony: he helps this order still
-        final IBuilderWorkOrder saved = colony.getWorkManager().getAssistedOrder(key);
-        if (saved != null)
+        // what was saved with the colony (a helper whose session did not survive the restart): his leases go back, he joins like anybody else
+        final IBuilderWorkOrder stale = colony.getWorkManager().getAssistedOrder(key);
+        if (stale != null)
         {
-            if (CollabScheduler.leadOf(colony, saved) != null)
-            {
-                return new BuilderHelperSession(colony, citizen, saved);
-            }
-            saved.getCollab().removeAssistant(key, 0);
+            stale.getCollab().removeAssistant(key, 0);
         }
 
         IBuilderWorkOrder best = null;

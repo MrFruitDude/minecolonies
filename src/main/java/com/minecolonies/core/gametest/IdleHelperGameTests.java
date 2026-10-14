@@ -266,9 +266,30 @@ final class IdleHelperGameTests
      */
     private static void poll(final GameTestHelper helper, final List<Site> sites, final int maxTicks, final BooleanSupplier check, final Runnable onDone, final Supplier<String> failure)
     {
+        poll(helper, sites, maxTicks, false, check, onDone, failure);
+    }
+
+    /**
+     * Like {@link #poll(GameTestHelper, List, int, BooleanSupplier, Runnable, Supplier)}; with {@code everyTick} the test waits every tick until the path finder's workers are idle
+     * (a path then arrives at the next tick whatever else the machine does), which is what a timing comparison needs.
+     */
+    private static void poll(final GameTestHelper helper, final List<Site> sites, final int maxTicks, final boolean everyTick, final BooleanSupplier check, final Runnable onDone,
+      final Supplier<String> failure)
+    {
         final int[] elapsed = {0};
+        final int stepTicks = everyTick ? 1 : 20;
         final Runnable[] step = new Runnable[1];
         step[0] = () -> {
+            if (everyTick)
+            {
+                WorkerEfficiencyGameTests.awaitPathing();
+                elapsed[0]++;
+                if (elapsed[0] % 20 != 0)
+                {
+                    helper.runAfterDelay(1, () -> step[0].run());
+                    return;
+                }
+            }
             helper.getLevel().getServer().clockManager().setTotalTicks(helper.getLevel().registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
             for (final Site site : sites)
             {
@@ -289,8 +310,11 @@ final class IdleHelperGameTests
                 helper.assertTrue(false, "timeout after " + maxTicks + " ticks: " + failure.get());
                 return;
             }
-            elapsed[0] += 20;
-            helper.runAfterDelay(20, () -> step[0].run());
+            if (!everyTick)
+            {
+                elapsed[0] += 20;
+            }
+            helper.runAfterDelay(stepTicks, () -> step[0].run());
         };
         helper.runAfterDelay(1, step[0]);
     }
@@ -311,6 +335,10 @@ final class IdleHelperGameTests
         if (site.hut != null)
         {
             sb.append("hutOrder=").append(site.hut.getWorkOrder() == null ? null : site.hut.getWorkOrder().getID()).append(' ');
+            sb.append("lead[state=").append(site.builder == null ? "-" : site.builder.getEntity().map(e -> e.getCitizenJobHandler().getWorkAI() == null ? "no-ai" : String.valueOf(e.getCitizenJobHandler().getWorkAI().getStateAI().getState())).orElse("-"))
+              .append(" at=").append(site.builder == null ? "-" : site.builder.getEntity().map(e -> e.blockPosition().toShortString()).orElse("-"))
+              .append(" bricks=").append(site.builder == null ? 0 : InventoryUtils.getItemCountInItemHandler(site.builder.getInventory(), s -> s.is(BUILD_ITEM)))
+              .append(" hut=").append(InventoryUtils.getItemCountInItemHandler(site.hut.getItemHandlerCap(), s -> s.is(BUILD_ITEM))).append("] ");
         }
         for (final ICitizenData citizen : site.idle)
         {
@@ -361,9 +389,10 @@ final class IdleHelperGameTests
     // ------------------------------------------------------------------ a helper joins and the build is faster; the setting off means no helper
 
     /**
-     * Two builds of the same floor by the same builder, one after the other, with an unemployed citizen next to the site. First the colony setting is off: nobody helps
-     * (no session, no helper in the order), the builder builds alone. Then the setting is on: the citizen joins, places blocks of his own, the floor is complete with
-     * no position placed twice, every brick is accounted for, and the build takes clearly less time than the first.
+     * The same floor built over and over by the same builder at the same place, with an unemployed citizen next to the site: a warm-up build, then with the colony setting
+     * on, off, on, off. With the setting off nobody helps (no session, no helper in the order, no block of the citizen's), the builder builds alone. With it on the citizen
+     * joins, places blocks of his own, the floor is complete with no position placed twice, every brick is accounted for, and the builds take clearly less time on average
+     * than the ones alone.
      */
     public static void helperJoinsAndBuildIsFaster(final GameTestHelper helper)
     {
@@ -371,64 +400,190 @@ final class IdleHelperGameTests
         site(helper, "idle helper faster", 0, true, site -> {
             final ICitizenData idle = site.spawnIdle(12, 14);
             final BlockPos key = IdleHelperKey.of(idle.getId());
-            setIdleHelpers(site.colony, false);
-            site.stock(SIZE * SIZE + SPARE);
-            final WorkOrderDecoration first = site.order("alone", 20, 8, SIZE, true);
-            final long[] start = {site.level.getGameTime()};
-            final long[] aloneTicks = {-1};
-            final WorkOrderDecoration[] second = {null};
-            final long[] helpedTicks = {-1};
+            final boolean[] rounds = {false, true, false, true, false};
+            final int[] round = {-1};
+            final long[] start = {0};
+            final WorkOrderDecoration[] current = {null};
+            final List<Long> alone = new ArrayList<>();
+            final List<Long> helped = new ArrayList<>();
+            final int[] helperBlocks = {0};
             final boolean[] sawSession = {false};
-            poll(helper, List.of(site), 40_000, () -> {
-                if (aloneTicks[0] < 0)
+            final Runnable[] next = new Runnable[1];
+            next[0] = () -> {
+                round[0]++;
+                if (round[0] > 0)
                 {
-                    helper.assertTrue(first.getCollab().getAssistantCount() == 0 && IdleCitizenArbiter.sessionOf(idle) == null, "a helper with the setting off: " + describe(site));
-                    if (orderGone(site, first))
+                    // the floor of the last round is taken away: the same place, the same distance from the hut
+                    for (int x = 0; x < SIZE; x++)
                     {
-                        helper.assertTrue(floorBuilt(site, first, SIZE), "first floor not complete");
-                        helper.assertTrue(placedBy(key) == 0, "the idle citizen placed blocks with the setting off");
-                        aloneTicks[0] = site.level.getGameTime() - start[0];
-                        Log.getLogger().info("IDLE HELPER the builder alone: {} ticks", aloneTicks[0]);
-                        // the setting on, a second order of the same size
-                        setIdleHelpers(site.colony, true);
-                        site.stock(SIZE * SIZE);
-                        second[0] = site.order("helped", 20, 8 + SIZE + 2, SIZE, true);
-                        start[0] = site.level.getGameTime();
+                        for (int z = 0; z < SIZE; z++)
+                        {
+                            site.level.setBlock(current[0].getLocation().offset(x, 0, z), Blocks.AIR.defaultBlockState(), 3);
+                        }
                     }
-                    return false;
                 }
-                if (IdleCitizenArbiter.sessionOf(idle) != null)
+                PLACEMENTS.clear();
+                sawSession[0] = false;
+                setIdleHelpers(site.colony, rounds[round[0]]);
+                site.stock(round[0] == 0 ? SIZE * SIZE + SPARE : SIZE * SIZE);
+                current[0] = site.order("round" + round[0], 20, 8, SIZE, true);
+                start[0] = site.level.getGameTime();
+            };
+            next[0].run();
+            poll(helper, List.of(site), 55_000, true, () -> {
+                final boolean on = rounds[round[0]];
+                if (!on)
+                {
+                    helper.assertTrue(current[0].getCollab().getAssistantCount() == 0 && IdleCitizenArbiter.sessionOf(idle) == null, "a helper with the setting off: " + describe(site));
+                }
+                else if (IdleCitizenArbiter.sessionOf(idle) != null)
                 {
                     sawSession[0] = true;
-                    helper.assertTrue(site.colony.getWorkManager().getAssistedOrder(key) == second[0], "the helper helps another order: " + describe(site));
+                    helper.assertTrue(site.colony.getWorkManager().getAssistedOrder(key) == current[0], "the helper helps another order: " + describe(site));
                     helper.assertTrue(idle.getJob() == null, "the helper got a job");
                 }
-                if (orderGone(site, second[0]))
+                if (!orderGone(site, current[0]))
                 {
-                    helpedTicks[0] = site.level.getGameTime() - start[0];
-                    return true;
+                    return false;
                 }
-                return false;
-            }, () -> {
-                helper.assertTrue(sawSession[0], "the idle citizen never joined");
-                helper.assertTrue(floorBuilt(site, second[0], SIZE), "second floor not complete");
-                final int byHelper = placedBy(key);
-                Log.getLogger().info("IDLE HELPER with an idle citizen: {} ticks (alone {}), the helper placed {} of {} blocks", helpedTicks[0], aloneTicks[0], byHelper, SIZE * SIZE);
-                helper.assertTrue(byHelper > 0, "the idle citizen placed no block");
+                final long ticks = site.level.getGameTime() - start[0];
+                helper.assertTrue(floorBuilt(site, current[0], SIZE), "floor " + round[0] + " not complete");
+                helper.assertTrue(site.bricks() == SPARE, "bricks not conserved in round " + round[0] + ": " + site.bricks() + ", expected " + SPARE);
                 for (int x = 0; x < SIZE; x++)
                 {
                     for (int z = 0; z < SIZE; z++)
                     {
-                        final List<BlockPos> by = PLACEMENTS.get(second[0].getLocation().offset(x, 0, z));
-                        helper.assertTrue(by != null && by.size() == 1, "position " + x + "," + z + " of the second floor was placed " + (by == null ? 0 : by.size()) + " times: " + by);
+                        final List<BlockPos> by = PLACEMENTS.get(current[0].getLocation().offset(x, 0, z));
+                        helper.assertTrue(by != null && by.size() == 1, "round " + round[0] + ": position " + x + "," + z + " was placed " + (by == null ? 0 : by.size()) + " times: " + by);
                     }
                 }
-                helper.assertTrue(helpedTicks[0] < aloneTicks[0] * 0.92D, "the build with a helper took " + helpedTicks[0] + " ticks, alone " + aloneTicks[0]);
-                // the bricks are all there (24 spare)
-                helper.assertTrue(site.bricks() == SPARE, "bricks not conserved: " + site.bricks() + ", expected " + SPARE);
+                if (on)
+                {
+                    helper.assertTrue(sawSession[0], "the idle citizen never joined in round " + round[0]);
+                    helper.assertTrue(placedBy(key) > 0, "the idle citizen placed no block in round " + round[0]);
+                    helperBlocks[0] += placedBy(key);
+                    helped.add(ticks);
+                }
+                else
+                {
+                    helper.assertTrue(placedBy(key) == 0, "the idle citizen placed blocks with the setting off");
+                    if (round[0] > 0)
+                    {
+                        alone.add(ticks);
+                    }
+                }
+                Log.getLogger().info("IDLE HELPER round {} ({}): {} ticks, the citizen placed {} blocks", round[0], on ? "with the citizen" : "alone", ticks, placedBy(key));
+                if (round[0] + 1 < rounds.length)
+                {
+                    next[0].run();
+                    return false;
+                }
+                return true;
+            }, () -> {
+                final double aloneAvg = alone.stream().mapToLong(Long::longValue).average().orElse(0);
+                final double helpedAvg = helped.stream().mapToLong(Long::longValue).average().orElse(0);
+                Log.getLogger().info("IDLE HELPER the builder alone {} ticks, with an idle citizen {} ticks ({} blocks of his in {} builds)", alone, helped, helperBlocks[0], helped.size());
+                helper.assertTrue(helpedAvg < aloneAvg * 0.9D, "the builds with a helper took " + helped + " ticks, alone " + alone);
                 end();
                 helper.succeed();
-            }, () -> describe(site) + " alone=" + aloneTicks[0]);
+            }, () -> describe(site) + " round=" + round[0]);
+        });
+    }
+
+    // ------------------------------------------------------------------ breaking and placing
+
+    /**
+     * The site is full of dirt where the floor is to be: the clear stage breaks it, the build stage places the bricks. The idle citizen breaks and places as well, what he
+     * gets from breaking goes back into the lead's hut when he stops (every dirt block is there once, none is kept or lost), and the floor is complete.
+     */
+    public static void helperBreaksAndPlaces(final GameTestHelper helper)
+    {
+        begin();
+        site(helper, "idle helper breaks", 0, true, site -> {
+            final ICitizenData idle = site.spawnIdle(12, 14);
+            final BlockPos key = IdleHelperKey.of(idle.getId());
+            final int size = 12;
+            final BlockPos at = site.abs(20, 1, 6);
+            for (int x = 0; x < size; x++)
+            {
+                for (int z = 0; z < size; z++)
+                {
+                    site.level.setBlock(at.offset(x, 0, z), Blocks.DIRT.defaultBlockState(), 3);
+                }
+            }
+            site.stock(size * size + SPARE);
+            // the builder has his tools (nobody would deliver them here; a level 1 hut takes wooden ones, and they wear out after 59 blocks: shovels for the dirt); the helper
+            // borrows them
+            final List<Item> tools = new ArrayList<>(List.of(Items.WOODEN_PICKAXE, Items.WOODEN_AXE));
+            for (int i = 0; i < 12; i++)
+            {
+                tools.add(Items.WOODEN_SHOVEL);
+            }
+            for (final Item tool : tools)
+            {
+                helper.assertTrue(InventoryUtils.addItemStackToItemHandler(site.builder.getInventory(), new ItemStack(tool)), "no room for the tools");
+            }
+            final WorkOrderDecoration order = site.order("dirt", 20, 6, size, true);
+            final int[] mostDirtInHelper = {0};
+            poll(helper, List.of(site), 25_000, () -> {
+                mostDirtInHelper[0] = Math.max(mostDirtInHelper[0], InventoryUtils.getItemCountInItemHandler(idle.getInventory(), s -> s.is(Items.DIRT)));
+                return orderGone(site, order);
+            }, () -> {
+                helper.assertTrue(floorBuilt(site, order, size), "the floor is not complete: " + describe(site));
+                int dirt = InventoryUtils.getItemCountInItemHandler(site.hut.getItemHandlerCap(), s -> s.is(Items.DIRT))
+                             + InventoryUtils.getItemCountInItemHandler(site.builder.getInventory(), s -> s.is(Items.DIRT))
+                             + InventoryUtils.getItemCountInItemHandler(idle.getInventory(), s -> s.is(Items.DIRT));
+                // (dirt blocks dropped in the world, not picked up, would be short here: the lead and the helper take what they break)
+                final int dropped = site.level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new net.minecraft.world.phys.AABB(at).inflate(40),
+                  e -> e.getItem().is(Items.DIRT)).stream().mapToInt(e -> e.getItem().getCount()).sum();
+                helper.assertTrue(dirt + dropped == size * size, "dirt: " + dirt + " in hands and hut, " + dropped + " on the ground, expected " + size * size);
+                helper.assertTrue(InventoryUtils.getItemCountInItemHandler(idle.getInventory(), s -> s.is(Items.DIRT)) == 0, "the citizen kept dirt");
+                helper.assertTrue(site.bricks() == SPARE, "bricks not conserved: " + site.bricks());
+                Log.getLogger().info("IDLE HELPER breaks: the citizen held at most {} dirt, placed {} bricks", mostDirtInHelper[0], placedBy(key));
+                helper.assertTrue(mostDirtInHelper[0] > 0 && placedBy(key) > 0, "the citizen did not both break and place: " + mostDirtInHelper[0] + " dirt, " + placedBy(key) + " bricks");
+                end();
+                helper.succeed();
+            }, () -> describe(site));
+        });
+    }
+
+    // ------------------------------------------------------------------ saved state
+
+    /**
+     * The shared state of an order with a citizen who helps is saved and read back: the idle helper (known by his key), his leases and the count of idle helpers. A restart
+     * ends the session (it is not saved), so the colony takes him off the order, gives his leases back, and the citizen joins again like anybody else.
+     */
+    public static void helperStateSavedAndRestartHandled(final GameTestHelper helper)
+    {
+        withWorkingHelper(helper, "idle helper reload", 1, (site, order) -> {
+            final ICitizenData idle = site.idle.get(0);
+            final BlockPos key = IdleHelperKey.of(idle.getId());
+            final int leases = order.getCollab().getLeaseCountOf(key);
+            helper.assertTrue(leases > 0, "fixture: the helper has no leases");
+            final net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
+            order.getCollab().write(tag);
+            final WorkOrderCollab back = new WorkOrderCollab();
+            back.read(tag);
+            helper.assertTrue(back.hasAssistant(key) && back.getIdleAssistantCount() == 1 && back.getBuilderAssistantCount() == 0, "the idle helper was not saved: " + back.getAssistantHuts());
+            helper.assertTrue(back.getLeaseCountOf(key) == leases, "leases after the reload: " + back.getLeaseCountOf(key) + ", before " + leases);
+
+            // the colony restarts: the order is read back, the sessions are gone
+            final net.minecraft.nbt.CompoundTag work = new net.minecraft.nbt.CompoundTag();
+            site.colony.getWorkManager().write(work);
+            site.colony.getWorkManager().read(work);
+            IdleCitizenArbiter.forgetSessionsForTests(site.colony);
+            final IBuilderWorkOrder reread = site.colony.getWorkManager().getWorkOrder(order.getID(), IBuilderWorkOrder.class);
+            helper.assertTrue(reread != null && reread != order, "the order was not read back");
+            reread.setBlueprint(site.floor("big", 30), site.level);
+            helper.assertTrue(reread.getCollab().hasAssistant(key), "the saved order lost the helper");
+            site.tick();
+            helper.assertTrue(IdleCitizenArbiter.sessionOf(idle) == null || reread.getCollab().hasAssistant(key), "a session without the helper in the order");
+            helper.assertTrue(reread.getCollab().getLeaseCountOf(key) == 0 || IdleCitizenArbiter.sessionOf(idle) != null, "leases of a helper without a task: " + describe(site));
+            // he joins again
+            poll(helper, List.of(site), 1_500, () -> IdleCitizenArbiter.sessionOf(idle) != null && reread.getCollab().hasAssistant(key), () -> {
+                end();
+                helper.succeed();
+            }, () -> describe(site));
         });
     }
 

@@ -293,6 +293,14 @@ public final class IdleCitizenArbiter
     }
 
     /**
+     * Only for tests: the sessions are forgotten without being stopped (what a restart does to them: they are not saved).
+     */
+    public static void forgetSessionsForTests(final Colony colony)
+    {
+        colony.getIdleCitizens().sessions().clear();
+    }
+
+    /**
      * Ends every session of the colony.
      */
     public static void stopAll(final Colony colony, final IdleStopReason reason)
