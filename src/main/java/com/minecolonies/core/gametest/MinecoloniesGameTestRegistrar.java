@@ -118,6 +118,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 ToolDurabilityGameTests.register(event);
             }
+            if (only.contains("emptybp"))
+            {
+                EmptyBlueprintGameTests.register(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -760,6 +764,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         RequestCourierGameTests.register(event);
         // Citizens' tools wear like a player's tools (one glob: minecolonies:tooldur_*).
         ToolDurabilityGameTests.register(event);
+        // A blank blueprint path (source stashes) stays blank and breaks nothing (one glob: minecolonies:emptybp_*).
+        EmptyBlueprintGameTests.register(event);
         // Request system defect checks (one glob: minecolonies:rs_*).
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_craft_batch_zero"),

@@ -62,8 +62,12 @@ public class WorkOrderBuilding extends AbstractWorkOrder
         }
 
         final int targetSchematicLevel = type == WorkOrderType.REMOVE ? building.getBuildingLevel() : targetLevel;
-        String schemPath = building.getBlueprintPath().replace(".blueprint", "");
-        schemPath = schemPath.substring(0, schemPath.length() - 1) + targetSchematicLevel + ".blueprint";
+        // A building without a schematic (a source stash) has a blank path: there is no level digit to replace.
+        String schemPath = building.getBlueprintPath() == null ? "" : building.getBlueprintPath().replace(".blueprint", "");
+        if (!schemPath.isBlank())
+        {
+            schemPath = schemPath.substring(0, schemPath.length() - 1) + targetSchematicLevel + ".blueprint";
+        }
         WorkOrderBuilding wo = new WorkOrderBuilding(
           building.getStructurePack(),
           schemPath,
