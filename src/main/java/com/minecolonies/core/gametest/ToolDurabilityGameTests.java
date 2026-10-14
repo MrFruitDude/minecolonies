@@ -670,13 +670,13 @@ public final class ToolDurabilityGameTests
               final float cap = guard.getMaxHealth() * 0.2F;
               final float[] hits = {2.0F, 3.0F, cap, cap, 3.0F, 2.0F};
               final int[] done = {0};
+              final int[] raised = {0};
               final int[] last = {0, 0};
               final List<String> failures = new ArrayList<>();
               final Runnable[] next = new Runnable[1];
               next[0] = () -> {
                   if (done[0] == 0)
                   {
-                      helper.assertTrue(guard.isBlocking(), "fixture: the guard's shield is not up (using " + guard.isUsingItem() + ", ticks " + guard.getTicksUsingItem() + ")");
                       helper.assertTrue(player.isBlocking(), "fixture: the player's shield is not up (using " + player.isUsingItem() + ", ticks " + player.getTicksUsingItem() + ")");
                   }
                   if (done[0] == hits.length)
@@ -687,7 +687,21 @@ public final class ToolDurabilityGameTests
                       helper.succeed();
                       return;
                   }
+                  // the guard's own AI may lower its shield between the hits: raise it again and let the block delay pass
+                  if (!guard.isBlocking())
+                  {
+                      helper.assertTrue(++raised[0] <= 20, "fixture: the guard keeps lowering its shield");
+                      CitizenItemUtils.setHeldItem(guard, InteractionHand.OFF_HAND, 1);
+                      guard.setYRot(0.0F);
+                      guard.setYHeadRot(0.0F);
+                      guard.startUsingItem(InteractionHand.OFF_HAND);
+                      helper.runAfterDelay(7, () -> next[0].run());
+                      return;
+                  }
                   final float hit = hits[done[0]];
+                  // the guard turns away from a hard hit (its flight reaction): face the attacker again
+                  guard.setYRot(0.0F);
+                  guard.setYHeadRot(0.0F);
                   guard.setHealth(guard.getMaxHealth());
                   player.setHealth(player.getMaxHealth());
                   // attackers two blocks in front (south) of each
@@ -701,7 +715,7 @@ public final class ToolDurabilityGameTests
                   final int playerWear = player.getOffhandItem().getDamageValue() - last[1];
                   last[0] += guardWear;
                   last[1] += playerWear;
-                  Log.getLogger().info("[tooldur_guard_shield] a hit of {}: the guard's shield wore {}, the player's {}", hit, guardWear, playerWear);
+                  Log.getLogger().info("[tooldur_guard_shield] a hit of {}: the guard's shield wore {}, the player's {} (guard health {}, yaw {}, using {})", hit, guardWear, playerWear, guard.getHealth(), guard.getYHeadRot(), guard.isUsingItem());
                   if (hit >= 3.0F && playerWear <= 0)
                   {
                       failures.add("fixture: the player's shield did not wear for a blocked hit of " + hit);
