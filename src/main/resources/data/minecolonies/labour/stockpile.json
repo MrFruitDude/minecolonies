@@ -1,0 +1,9 @@
+[
+  { "id": "logs", "item": "#minecraft:logs", "start_below": 16, "target": 32 },
+  { "id": "planks", "item": "#minecraft:planks", "start_below": 16, "target": 32 },
+  { "id": "sticks", "item": "minecraft:stick", "start_below": 8, "target": 16 },
+  { "id": "wooden_axe", "item": "minecraft:wooden_axe", "start_below": 1, "target": 1 },
+  { "id": "wooden_pickaxe", "item": "minecraft:wooden_pickaxe", "start_below": 1, "target": 1 },
+  { "id": "wooden_shovel", "item": "minecraft:wooden_shovel", "start_below": 1, "target": 1 },
+  { "id": "cobblestone", "item": "minecraft:cobblestone", "start_below": 16, "target": 32 }
+]

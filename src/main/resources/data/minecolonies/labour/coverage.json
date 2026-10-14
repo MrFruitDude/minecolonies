@@ -1,0 +1,6 @@
+{
+  "#minecraft:logs": ["minecolonies:lumberjack"],
+  "#minecraft:saplings": ["minecolonies:lumberjack"],
+  "minecraft:cobblestone": ["minecolonies:miner", "minecolonies:simplequarry", "minecolonies:mediumquarry", "minecolonies:largequarry"],
+  "minecraft:stone": ["minecolonies:miner", "minecolonies:simplequarry", "minecolonies:mediumquarry", "minecolonies:largequarry"]
+}

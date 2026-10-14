@@ -61,6 +61,7 @@ public class FMLEventHandler
         event.addListener(Identifier.fromNamespaceAndPath("minecolonies", "study_items"), StudyItemListener.INSTANCE);
         event.addListener(Identifier.fromNamespaceAndPath("minecolonies", "diseases"), new DiseasesListener());
         event.addListener(Identifier.fromNamespaceAndPath("minecolonies", "recruitment_items"), new RecruitmentItemsListener());
+        event.addListener(Identifier.fromNamespaceAndPath("minecolonies", "labour"), new com.minecolonies.core.colony.labour.LabourDataListener());
     }
 
     @SubscribeEvent

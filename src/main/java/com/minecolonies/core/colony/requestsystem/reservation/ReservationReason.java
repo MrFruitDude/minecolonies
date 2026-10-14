@@ -24,6 +24,12 @@ public enum ReservationReason
      */
     BUILD_ASSIST,
     /**
+     * A labourer (an unemployed citizen, or an idle builder for his own build) plans to take stock out of a warehouse for a request or stockpile goal that no
+     * building serves. Like {@link #BUILD_ASSIST} the claim has no request behind it: it is held under the claim's token until the labourer took the items or gave
+     * the claim back, and the ledger drops it when no claim of that token lives any more.
+     */
+    LABOUR,
+    /**
      * Anything else (tests, external callers).
      */
     OTHER

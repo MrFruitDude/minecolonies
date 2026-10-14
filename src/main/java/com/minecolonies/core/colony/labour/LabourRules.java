@@ -1,0 +1,210 @@
+package com.minecolonies.core.colony.labour;
+
+import com.minecolonies.api.util.constant.Constants;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * The basic tier of the labourers: what they may make and gather, as data. The sets are tags (datapacks and modpacks change them):
+ * <ul>
+ *   <li>{@code minecolonies:labour/craft_results}: what may be crafted (planks, sticks, tools of wood and stone, a crafting table, a chest, torches ...);</li>
+ *   <li>{@code minecolonies:labour/never}: vetoes the result tag (iron and better, enchanted things, books ...);</li>
+ *   <li>{@code minecolonies:labour/smelt_basic} and {@code labour/smelt_iron}: what may come out of a furnace in the smelt modes BASIC and IRON;</li>
+ *   <li>{@code minecolonies:labour/loose}: what a labourer picks up when it lies on the ground;</li>
+ *   <li>block tags {@code labour/gather_surface} (sand, dirt, gravel) and {@code labour/gather_stone} (surface stone, needs a pickaxe).</li>
+ * </ul>
+ */
+public final class LabourRules
+{
+    public static final TagKey<Item>  CRAFT_RESULTS = item("labour/craft_results");
+    public static final TagKey<Item>  NEVER         = item("labour/never");
+    public static final TagKey<Item>  SMELT_BASIC   = item("labour/smelt_basic");
+    public static final TagKey<Item>  SMELT_IRON    = item("labour/smelt_iron");
+    public static final TagKey<Item>  LOOSE         = item("labour/loose");
+    public static final TagKey<Block> GATHER_SURFACE = block("labour/gather_surface");
+    public static final TagKey<Block> GATHER_STONE   = block("labour/gather_stone");
+
+    private LabourRules()
+    {
+    }
+
+    private static TagKey<Item> item(final String path)
+    {
+        return TagKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath(Constants.MOD_ID, path));
+    }
+
+    private static TagKey<Block> block(final String path)
+    {
+        return TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath(Constants.MOD_ID, path));
+    }
+
+    /**
+     * @return whether a labourer may craft the item.
+     */
+    public static boolean craftable(final Item item)
+    {
+        final ItemStack stack = new ItemStack(item);
+        return stack.is(CRAFT_RESULTS) && !stack.is(NEVER);
+    }
+
+    /**
+     * @return whether the item may come out of a furnace in the smelt mode.
+     */
+    public static boolean smeltable(final Item item, final com.minecolonies.api.colony.labour.LabourModes.SmeltMode mode)
+    {
+        final ItemStack stack = new ItemStack(item);
+        if (stack.is(NEVER))
+        {
+            return false;
+        }
+        return switch (mode)
+        {
+            case OFF -> false;
+            case BASIC -> stack.is(SMELT_BASIC);
+            case IRON -> stack.is(SMELT_BASIC) || stack.is(SMELT_IRON);
+        };
+    }
+
+    /**
+     * @return whether the item is one a labourer picks up from the ground.
+     */
+    public static boolean looseItem(final ItemStack stack)
+    {
+        return stack.is(LOOSE) && !stack.is(NEVER);
+    }
+
+    /**
+     * What a block gives when a labourer digs it by hand (or with the pickaxe): stone gives cobblestone, grass gives dirt, the rest itself.
+     */
+    public static Item dropOf(final BlockState state)
+    {
+        if (state.is(Blocks.STONE))
+        {
+            return Items.COBBLESTONE;
+        }
+        if (state.is(Blocks.GRASS_BLOCK))
+        {
+            return Items.DIRT;
+        }
+        return state.getBlock().asItem();
+    }
+
+    /**
+     * @return the items every craftable result, the gatherable and the smeltable goods together: what a request may be answered with.
+     */
+    public static List<Item> candidateItems()
+    {
+        final List<Item> items = new ArrayList<>();
+        for (final TagKey<Item> tag : List.of(CRAFT_RESULTS, SMELT_BASIC, SMELT_IRON, LOOSE))
+        {
+            BuiltInRegistries.ITEM.getTagOrEmpty(tag).forEach(holder -> {
+                final Item value = holder.value();
+                if (value != Items.AIR && !items.contains(value) && !new ItemStack(value).is(NEVER))
+                {
+                    items.add(value);
+                }
+            });
+        }
+        return items;
+    }
+
+    /**
+     * How many items one piece of the fuel smelts (vanilla: a furnace burns 200 ticks per item).
+     */
+    public static double smeltsPerFuel(final Item fuel)
+    {
+        final ItemStack stack = new ItemStack(fuel);
+        if (fuel == Items.CHARCOAL || fuel == Items.COAL)
+        {
+            return 8.0D;
+        }
+        if (stack.is(ItemTags.LOGS_THAT_BURN) || stack.is(ItemTags.PLANKS))
+        {
+            return 1.5D;
+        }
+        if (fuel == Items.STICK)
+        {
+            return 0.5D;
+        }
+        return 0.5D;
+    }
+
+    /**
+     * @return what a labourer may burn: charcoal, logs, planks, sticks (never coal from the stock), preferred first.
+     */
+    public static List<Item> fuels()
+    {
+        final List<Item> fuels = new ArrayList<>();
+        fuels.add(Items.CHARCOAL);
+        BuiltInRegistries.ITEM.getTagOrEmpty(ItemTags.LOGS_THAT_BURN).forEach(h -> fuels.add(h.value()));
+        BuiltInRegistries.ITEM.getTagOrEmpty(ItemTags.PLANKS).forEach(h -> fuels.add(h.value()));
+        fuels.add(Items.STICK);
+        return fuels;
+    }
+
+    /**
+     * @param tool a tool kind ({@code pickaxe}).
+     * @return whether the item is such a tool.
+     */
+    public static boolean isTool(final String tool, final Item item)
+    {
+        final ItemStack stack = new ItemStack(item);
+        return switch (tool)
+        {
+            case "pickaxe" -> stack.is(ItemTags.PICKAXES);
+            case "axe" -> stack.is(ItemTags.AXES);
+            case "shovel" -> stack.is(ItemTags.SHOVELS);
+            default -> false;
+        };
+    }
+
+    /**
+     * @return the item to craft first for the tool kind.
+     */
+    public static Item toolItem(final String tool)
+    {
+        return switch (tool)
+        {
+            case "axe" -> Items.WOODEN_AXE;
+            case "shovel" -> Items.WOODEN_SHOVEL;
+            default -> Items.WOODEN_PICKAXE;
+        };
+    }
+
+    /**
+     * @return whether the block is one labourers dig at the surface (sand, dirt, gravel).
+     */
+    public static boolean surface(final BlockState state)
+    {
+        return state.is(GATHER_SURFACE);
+    }
+
+    /**
+     * @return whether the block is surface stone.
+     */
+    public static boolean stone(final BlockState state)
+    {
+        return state.is(GATHER_STONE);
+    }
+
+    /**
+     * @return whether the block is a log (the base of a natural tree).
+     */
+    public static boolean log(final BlockState state)
+    {
+        return state.is(BlockTags.LOGS);
+    }
+}

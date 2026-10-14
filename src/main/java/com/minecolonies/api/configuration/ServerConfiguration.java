@@ -189,6 +189,26 @@ public class ServerConfiguration extends AbstractConfiguration
     public final BooleanValue builderScaffolding;
     public final IntValue     builderScaffoldingStock;
 
+    /* ---------------------------------------------------------------------------- *
+     *  ------------------- ######## Labourer settings ######## -------------------- *
+     *  --------------------------------------------------------------------------- */
+
+    public final BooleanValue labourersEnabled;
+    public final IntValue     labourersWorldMax;
+    public final IntValue     labourersMaxTotalCeiling;
+    public final EnumValue<com.minecolonies.api.colony.labour.LabourModes.PostMode>     labourersPostMode;
+    public final IntValue     labourersPostRange;
+    public final IntValue     labourersGatherRadius;
+    public final EnumValue<com.minecolonies.api.colony.labour.LabourModes.CoverageMode> labourersCoverageMode;
+    public final IntValue     labourersCoverageGrace;
+    public final IntValue     labourersLeaseTicks;
+    public final BooleanValue labourersPocketCrafting;
+    public final EnumValue<com.minecolonies.api.colony.labour.LabourModes.SmeltMode>    labourersSmelt;
+    public final BooleanValue labourersStoneTools;
+    public final IntValue     labourersKeepTrees;
+    public final IntValue     labourersSupplyGraceTicks;
+    public final IntValue     labourersSupplyMaxTicks;
+
     /**
      * RS1: stock and space are reserved in a per-colony ledger when a delivery is planned, and released when it ends.
      */
@@ -371,6 +391,25 @@ public class ServerConfiguration extends AbstractConfiguration
         builderPhysicalReach = defineBoolean("physicalReach", true);
         builderScaffolding = defineBoolean("scaffolding", true);
         builderScaffoldingStock = defineInteger("scaffoldingStock", 32, 8, 128);
+
+        swapToCategory("labourers");
+
+        // Unemployed citizens (and idle builders, for their own build) gather and craft the basic goods nobody in the colony is set up to make.
+        labourersEnabled = defineBoolean("enabled", true);
+        labourersWorldMax = defineInteger("worldMax", 64, 0, 4096);
+        labourersMaxTotalCeiling = defineInteger("maxTotalCeiling", 16, 1, 256);
+        labourersPostMode = defineEnum("postMode", com.minecolonies.api.colony.labour.LabourModes.PostMode.ANY_IN_RANGE);
+        labourersPostRange = defineInteger("postRange", 64, 8, 256);
+        labourersGatherRadius = defineInteger("gatherRadius", 48, 8, 160);
+        labourersCoverageMode = defineEnum("coverageMode", com.minecolonies.api.colony.labour.LabourModes.CoverageMode.BUILT);
+        labourersCoverageGrace = defineInteger("coverageGrace", 2400, 0, 72000);
+        labourersLeaseTicks = defineInteger("leaseTicks", 2400, 200, 72000);
+        labourersPocketCrafting = defineBoolean("pocketCrafting", true);
+        labourersSmelt = defineEnum("smelt", com.minecolonies.api.colony.labour.LabourModes.SmeltMode.BASIC);
+        labourersStoneTools = defineBoolean("stoneTools", true);
+        labourersKeepTrees = defineInteger("keepTrees", 4, 0, 64);
+        labourersSupplyGraceTicks = defineInteger("supplyGraceTicks", 1200, 0, 72000);
+        labourersSupplyMaxTicks = defineInteger("supplyMaxTicks", 6000, 200, 72000);
 
         finishCategory();
     }

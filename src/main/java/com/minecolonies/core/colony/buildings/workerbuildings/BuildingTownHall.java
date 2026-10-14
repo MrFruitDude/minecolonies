@@ -96,6 +96,36 @@ public class BuildingTownHall extends AbstractBuilding implements ITownHall
     public static final ISettingKey<IntSetting> IDLE_HELPERS_PER_BUILDER = new SettingKey<>(IntSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "idlehelperscap"));
 
     /**
+     * Unemployed citizens gather and craft the basic goods nobody else makes (a colony setting, on by default).
+     */
+    public static final ISettingKey<BoolSetting> LABOUR = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "labour"));
+
+    /**
+     * The share of the unemployed citizens (percent) that may labour at once.
+     */
+    public static final ISettingKey<IntSetting> LABOUR_SHARE = new SettingKey<>(IntSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "labourshare"));
+
+    /**
+     * The most labourers of the colony at once.
+     */
+    public static final ISettingKey<IntSetting> LABOUR_CAP = new SettingKey<>(IntSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "labourcap"));
+
+    /**
+     * The most labourers on one request.
+     */
+    public static final ISettingKey<IntSetting> LABOUR_PER_REQUEST = new SettingKey<>(IntSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "labourperrequest"));
+
+    /**
+     * Labourers keep a small stock of the basic goods in the warehouse while nobody makes them.
+     */
+    public static final ISettingKey<BoolSetting> LABOUR_STOCKPILE = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "labourstockpile"));
+
+    /**
+     * An idle builder blocked on basic materials for his own build gathers or crafts them himself.
+     */
+    public static final ISettingKey<BoolSetting> LABOUR_SELF_SUPPLY = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "labourselfsupply"));
+
+    /**
      * Instantiates the building.
      *
      * @param c the colony.

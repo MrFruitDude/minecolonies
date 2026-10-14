@@ -57,7 +57,16 @@ public enum WaitReason
     /**
      * The courier took the task but did not make progress; the task was given up.
      */
-    COURIER_STUCK(Severity.WARNING);
+    COURIER_STUCK(Severity.WARNING),
+    /**
+     * A labourer (a citizen without a job, or a builder for his own build) has taken the request: no building can make the item, he gathers or crafts it by hand.
+     */
+    AWAITING_LABOUR(Severity.INFO),
+    /**
+     * Labourers could serve the request but cannot: no tree or block in reach, no table, no tool material, a covered intermediate nobody has, or every labourer is busy.
+     * The hint of the request says which.
+     */
+    LABOUR_BLOCKED(Severity.WARNING);
 
     /**
      * How loud a reason is.

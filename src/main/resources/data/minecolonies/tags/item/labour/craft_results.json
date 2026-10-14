@@ -1,0 +1,25 @@
+{
+  "replace": false,
+  "values": [
+    "#minecraft:planks",
+    "minecraft:stick",
+    "minecraft:crafting_table",
+    "minecraft:chest",
+    "minecraft:torch",
+    "minecraft:wooden_axe",
+    "minecraft:wooden_pickaxe",
+    "minecraft:wooden_shovel",
+    "minecraft:wooden_hoe",
+    "minecraft:wooden_sword",
+    "minecraft:stone_axe",
+    "minecraft:stone_pickaxe",
+    "minecraft:stone_shovel",
+    "minecraft:stone_hoe",
+    "minecraft:stone_sword",
+    "#minecraft:wooden_fences",
+    "#minecraft:fence_gates",
+    "minecraft:ladder",
+    "minecraft:bowl",
+    "minecraft:scaffolding"
+  ]
+}

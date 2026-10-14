@@ -524,7 +524,13 @@ public class BuildingModules
         .with(BuildingTownHall.AUTO_HIRING_MODE, new BoolSetting(true))
         .with(BuildingTownHall.CONSTRUCTION_TAPE, new BoolSetting(true))
         .with(BuildingTownHall.IDLE_HELPERS, new BoolSetting(true))
-        .with(BuildingTownHall.IDLE_HELPERS_PER_BUILDER, new IntSetting(2)),
+        .with(BuildingTownHall.IDLE_HELPERS_PER_BUILDER, new IntSetting(2))
+        .with(BuildingTownHall.LABOUR, new BoolSetting(true))
+        .with(BuildingTownHall.LABOUR_SHARE, new IntSetting(50))
+        .with(BuildingTownHall.LABOUR_CAP, new IntSetting(8))
+        .with(BuildingTownHall.LABOUR_PER_REQUEST, new IntSetting(2))
+        .with(BuildingTownHall.LABOUR_STOCKPILE, new BoolSetting(true))
+        .with(BuildingTownHall.LABOUR_SELF_SUPPLY, new BoolSetting(true)),
         () -> TownHallSettingsModuleView::new);
 
     /**

@@ -960,6 +960,7 @@ public class StandardRequestManager implements IStandardRequestManager
         }, now);
         dropped += reservationLedger.sweepStaleHandouts(now, HANDOUT_MAX_AGE);
         dropped += reservationLedger.sweepStaleAssists(now, ASSIST_MAX_AGE);
+        dropped += reservationLedger.sweepStaleLabour(token -> com.minecolonies.core.colony.labour.LabourBoard.isLive(colony, token), now, 400L);
         if (dropped > 0)
         {
             log("Dropped " + dropped + " orphaned reservations");

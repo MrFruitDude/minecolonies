@@ -464,7 +464,7 @@ public final class ReservationLedger
         }
         for (final Reservation reservation : claims)
         {
-            if (reservation.reason() != ReservationReason.BUILD_ASSIST)
+            if (reservation.reason() != ReservationReason.BUILD_ASSIST && reservation.reason() != ReservationReason.LABOUR)
             {
                 return false;
             }
@@ -519,6 +519,43 @@ public final class ReservationLedger
             if (stale)
             {
                 end(token, null, tick, LedgerEvent.Op.ORPHAN, true, r -> r.reason() == ReservationReason.BUILD_ASSIST && tick - r.tick() > maxAge);
+                dropped++;
+            }
+        }
+        return dropped;
+    }
+
+    /**
+     * Self-healing: drops the labourers' claims whose token no claim of the colony's labour board holds any more (the labourer vanished, the colony part was
+     * unloaded, the world was reloaded in the middle of it: the board is not saved).
+     *
+     * @param live whether a labour claim token is still held by a live claim.
+     * @param tick the game time.
+     * @param minAge claims younger than this are left alone (a claim is written before its board entry is visible to another thread of the tick).
+     * @return the number of tokens whose claims were dropped.
+     */
+    public int sweepStaleLabour(@NotNull final Predicate<IToken<?>> live, final long tick, final long minAge)
+    {
+        int dropped = 0;
+        for (final IToken<?> token : new ArrayList<>(byToken.keySet()))
+        {
+            final List<Reservation> mine = byToken.get(token);
+            if (mine == null || live.test(token))
+            {
+                continue;
+            }
+            boolean stale = false;
+            for (final Reservation reservation : mine)
+            {
+                if (reservation.reason() == ReservationReason.LABOUR && tick - reservation.tick() > minAge)
+                {
+                    stale = true;
+                    break;
+                }
+            }
+            if (stale)
+            {
+                end(token, null, tick, LedgerEvent.Op.ORPHAN, true, r -> r.reason() == ReservationReason.LABOUR && tick - r.tick() > minAge);
                 dropped++;
             }
         }

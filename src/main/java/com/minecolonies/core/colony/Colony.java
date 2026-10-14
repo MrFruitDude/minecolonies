@@ -152,6 +152,16 @@ public class Colony implements IColony
     private final com.minecolonies.core.colony.idle.IdleCitizenState idleCitizens = new com.minecolonies.core.colony.idle.IdleCitizenState();
 
     /**
+     * What the colony remembers about its labourers (flags on tables), saved.
+     */
+    private final com.minecolonies.core.colony.labour.LabourData labourData = new com.minecolonies.core.colony.labour.LabourData();
+
+    /**
+     * The claims and caches of the colony's labourers (not saved). Server side only.
+     */
+    private com.minecolonies.core.colony.labour.LabourBoard labourBoard;
+
+    /**
      * Building manager of the colony.
      */
     private final IRegisteredStructureManager buildingManager;
@@ -582,6 +592,10 @@ public class Colony implements IColony
     {
         workManager.onColonyTick(this);
         com.minecolonies.core.colony.idle.IdleCitizenArbiter.tick(this);
+        if (labourBoard != null)
+        {
+            labourBoard.tick();
+        }
         return false;
     }
 
@@ -593,6 +607,26 @@ public class Colony implements IColony
     public com.minecolonies.core.colony.idle.IdleCitizenState getIdleCitizens()
     {
         return idleCitizens;
+    }
+
+    /**
+     * @return what the colony remembers about its labourers.
+     */
+    public com.minecolonies.core.colony.labour.LabourData getLabourData()
+    {
+        return labourData;
+    }
+
+    /**
+     * @return the labourers' board of this colony (server side only; made when first asked).
+     */
+    public com.minecolonies.core.colony.labour.LabourBoard getLabourBoard()
+    {
+        if (labourBoard == null)
+        {
+            labourBoard = new com.minecolonies.core.colony.labour.LabourBoard(this);
+        }
+        return labourBoard;
     }
 
     /**
@@ -847,6 +881,7 @@ public class Colony implements IColony
 
         eventManager.readFromNBT(provider, compound);
         statisticManager.readFromNBT(compound);
+        labourData.read(compound.getCompoundOrEmpty("labour"));
 
         questManager.deserializeNBT(provider, compound.getCompoundOrEmpty(TAG_QUEST_MANAGER));
         eventDescManager.deserializeNBT(provider, compound.getCompoundOrEmpty(NbtTagConstants.TAG_EVENT_DESC_MANAGER));
@@ -1029,6 +1064,7 @@ public class Colony implements IColony
 
         eventManager.writeToNBT(provider, compound);
         statisticManager.writeToNBT(compound);
+        compound.put("labour", labourData.write());
 
         compound.put(TAG_QUEST_MANAGER, questManager.serializeNBT(provider));
         compound.put(NbtTagConstants.TAG_EVENT_DESC_MANAGER, eventDescManager.serializeNBT(provider));
