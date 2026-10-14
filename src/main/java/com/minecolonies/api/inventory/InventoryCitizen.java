@@ -383,12 +383,25 @@ public class InventoryCitizen implements IItemHandlerModifiable, Nameable
      */
     public <T extends LivingEntity> boolean damageInventoryItem(final int slot, int amount, @Nullable T entityIn, @Nullable Consumer<ItemStack> onBroken)
     {
+        // ItemStack#hurtAndBreak asks the item's own damageItem hook itself (and then applies Unbreaking): asking it here too would run a
+        // mod item's hook twice and make it wear faster than for a player.
+        return wearInventoryItem(slot, stack -> stack.hurtAndBreak(amount, (ServerLevel) entityIn.level(), entityIn, onBroken));
+    }
+
+    /**
+     * Lets an item of the inventory wear the way the vanilla code for a player does (the {@code wear} calls ItemStack#hurtAndBreak or an item hook that does), keeping
+     * the count of free slots right when the item breaks.
+     *
+     * @param slot slot of the item
+     * @param wear the wear to apply to the stack in the slot
+     * @return true if the slot is empty afterwards (the item broke)
+     */
+    public boolean wearInventoryItem(final int slot, final Consumer<ItemStack> wear)
+    {
         final ItemStack stack = mainInventory.get(slot);
         if (!ItemStackUtils.isEmpty(stack))
         {
-            // The 4 parameter inner call from forge is for adding a callback to alter the damage caused,
-            // but unlike its description does not actually damage the item(despite the same function name). So used to just calculate the damage.
-            stack.hurtAndBreak(stack.getItem().damageItem(stack, amount, entityIn, onBroken), (ServerLevel) entityIn.level(), entityIn, onBroken);
+            wear.accept(stack);
 
             if (ItemStackUtils.isEmpty(stack))
             {

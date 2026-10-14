@@ -58,6 +58,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     {
         INSTANCE_TYPES.register(modBus);
         ENVIRONMENT_TYPES.register(modBus);
+        ToolDurabilityGameTests.registerItems(modBus);
         modBus.addListener(new MinecoloniesGameTestRegistrar());
     }
 
@@ -112,6 +113,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             if (only.contains("idlehelper"))
             {
                 registerIdleHelpers(event);
+            }
+            if (only.contains("tooldur"))
+            {
+                ToolDurabilityGameTests.register(event);
             }
             return;
         }
@@ -753,6 +758,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         // CA-1 + CA-3 request-system / citizen view sync (one glob: minecolonies:reqsync_*).
         RequestSyncGameTests.register(event);
         RequestCourierGameTests.register(event);
+        // Citizens' tools wear like a player's tools (one glob: minecolonies:tooldur_*).
+        ToolDurabilityGameTests.register(event);
         // Request system defect checks (one glob: minecolonies:rs_*).
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_craft_batch_zero"),

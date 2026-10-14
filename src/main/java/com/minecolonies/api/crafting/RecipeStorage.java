@@ -719,9 +719,8 @@ public class RecipeStorage implements IRecipeStorage
                             ItemStack toDamage = handler.extractItem(slotOfStack, 1, false);
                             if (!ItemStackUtils.isEmpty(toDamage))
                             {
-                                // The 4 parameter inner call from forge is for adding a callback to alter the damage caused,
-                                // but unlike its description does not actually damage the item(despite the same function name). So used to just calculate the damage.
-                                toDamage.hurtAndBreak(toDamage.getItem().damageItem(stack, 1, citizen, item -> {}), citizen, EquipmentSlot.MAINHAND);
+                                // ItemStack#hurtAndBreak asks the item's own damageItem hook itself: calling it here too ran a mod item's hook twice
+                                toDamage.hurtAndBreak(1, citizen, EquipmentSlot.MAINHAND);
                             }
                             if (!ItemStackUtils.isEmpty(toDamage))
                             {
