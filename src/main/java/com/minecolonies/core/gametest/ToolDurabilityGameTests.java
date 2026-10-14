@@ -105,6 +105,8 @@ public final class ToolDurabilityGameTests
         add(event, "tooldur_builder_max", helper -> builderClearsStone(helper, "max", 4.0D, 4.0D, true));
         add(event, "tooldur_guard_melee", ToolDurabilityGameTests::guardMelee);
         add(event, "tooldur_guard_shield", ToolDurabilityGameTests::guardShield);
+        add(event, "tooldur_armor_wear", ToolDurabilityGameTests::armorWear);
+        add(event, "tooldur_armor_research", ToolDurabilityGameTests::armorResearchOnlyReduces);
     }
 
     private static void add(final RegisterGameTestsEvent event, final String name, final Consumer<GameTestHelper> test)
@@ -635,10 +637,27 @@ public final class ToolDurabilityGameTests
           });
     }
 
+    /** The counter of the ticks an item has been in use (LivingEntity#useItemRemaining); the mock player is not ticked, so a blocking shield is set up by hand. */
+    private static void raiseShield(final ServerPlayer player)
+    {
+        player.setItemInHand(InteractionHand.OFF_HAND, new ItemStack(Items.SHIELD));
+        player.startUsingItem(InteractionHand.OFF_HAND);
+        try
+        {
+            final java.lang.reflect.Field remaining = LivingEntity.class.getDeclaredField("useItemRemaining");
+            remaining.setAccessible(true);
+            remaining.setInt(player, player.getUseItem().getUseDuration(player) - 20);
+        }
+        catch (final ReflectiveOperationException e)
+        {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /**
-     * A shield: a hit it blocks wears a player's shield (1 + the damage blocked, from 3 damage up; vanilla wears no mob's shield). A citizen's shield never wears more
-     * than a player's for the same hit. (The branch of {@code EntityCitizen#hurtServer} that wore the shield by half the blocked damage runs after the vanilla code
-     * has finished with the hit, when its damage container is gone, so a citizen's shield does not wear at all; that is left as it is.)
+     * A shield wears for a blocked hit exactly as a player's shield does: 1 + floor(blocked damage) from 3 blocked damage up, nothing below (BlocksAttacks item damage
+     * function). The guard and a connected survival player, both with a raised shield, take the same hits from a zombie in front of them; the shields end with the same wear
+     * after every hit (hits up to the 20% of the guard's health that the colony lets through at once).
      */
     public static void guardShield(final GameTestHelper helper)
     {
@@ -648,30 +667,185 @@ public final class ToolDurabilityGameTests
               final ServerLevel level = helper.getLevel();
               final EntityCitizen guard = (EntityCitizen) worker.getEntity().get();
               final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
-              guard.getInventoryCitizen().setStackInSlot(1, new ItemStack(Items.SHIELD));
-              CitizenItemUtils.setHeldItem(guard, InteractionHand.OFF_HAND, 1);
-              guard.setYRot(0.0F);
-              guard.setYHeadRot(0.0F);
-              guard.startUsingItem(InteractionHand.OFF_HAND);
-              helper.runAfterDelay(12, () -> {
-                  helper.assertTrue(guard.isBlocking(), "fixture: the guard's shield is not up (using " + guard.isUsingItem() + ", ticks " + guard.getTicksUsingItem() + ")");
-                  // an attacker two blocks in front (south) of the guard
-                  final var attacker = spawnTestMob(level, EntityTypes.ZOMBIE, guard.blockPosition().offset(0, 0, 2));
-                  final float hit = 8.0F;
-                  final ItemStack playersShield = new ItemStack(Items.SHIELD);
-                  // vanilla: what a hit of 8 that the shield blocks completely does to the shield of a player
-                  playersShield.get(DataComponents.BLOCKS_ATTACKS).hurtBlockingItem(level, playersShield, player, InteractionHand.OFF_HAND, hit);
-                  final int playerWear = playersShield.getDamageValue();
-                  guard.hurtServer(level, level.damageSources().mobAttack(attacker), hit);
-                  final int guardWear = guard.getInventoryCitizen().getStackInSlot(1).getDamageValue();
-                  Log.getLogger().info("[tooldur_guard_shield] a blocked hit of {}: the guard's shield wore {}, a player's {}", hit, guardWear, playerWear);
-                  attacker.discard();
-                  guard.stopUsingItem();
-                  guard.getInventoryCitizen().setStackInSlot(1, ItemStack.EMPTY);
-                  helper.assertTrue(playerWear > 0, "fixture: the player's shield did not wear for a blocked hit of " + hit);
-                  helper.assertTrue(guardWear <= playerWear, "the guard's shield wore " + guardWear + " for a blocked hit, a player's " + playerWear);
-                  helper.succeed();
+              final float cap = guard.getMaxHealth() * 0.2F;
+              final float[] hits = {2.0F, 3.0F, cap, cap, 3.0F, 2.0F};
+              final int[] done = {0};
+              final int[] last = {0, 0};
+              final List<String> failures = new ArrayList<>();
+              final Runnable[] next = new Runnable[1];
+              next[0] = () -> {
+                  if (done[0] == 0)
+                  {
+                      helper.assertTrue(guard.isBlocking(), "fixture: the guard's shield is not up (using " + guard.isUsingItem() + ", ticks " + guard.getTicksUsingItem() + ")");
+                      helper.assertTrue(player.isBlocking(), "fixture: the player's shield is not up (using " + player.isUsingItem() + ", ticks " + player.getTicksUsingItem() + ")");
+                  }
+                  if (done[0] == hits.length)
+                  {
+                      guard.stopUsingItem();
+                      guard.getInventoryCitizen().setStackInSlot(1, ItemStack.EMPTY);
+                      helper.assertTrue(failures.isEmpty(), "a guard's shield wears differently from a player's: " + failures);
+                      helper.succeed();
+                      return;
+                  }
+                  final float hit = hits[done[0]];
+                  guard.setHealth(guard.getMaxHealth());
+                  player.setHealth(player.getMaxHealth());
+                  // attackers two blocks in front (south) of each
+                  final var onGuard = spawnTestMob(level, EntityTypes.ZOMBIE, guard.blockPosition().offset(0, 0, 2));
+                  final var onPlayer = spawnTestMob(level, EntityTypes.ZOMBIE, player.blockPosition().offset(0, 0, 2));
+                  guard.hurtServer(level, level.damageSources().mobAttack(onGuard), hit);
+                  player.hurtServer(level, level.damageSources().mobAttack(onPlayer), hit);
+                  onGuard.discard();
+                  onPlayer.discard();
+                  final int guardWear = guard.getInventoryCitizen().getStackInSlot(1).getDamageValue() - last[0];
+                  final int playerWear = player.getOffhandItem().getDamageValue() - last[1];
+                  last[0] += guardWear;
+                  last[1] += playerWear;
+                  Log.getLogger().info("[tooldur_guard_shield] a hit of {}: the guard's shield wore {}, the player's {}", hit, guardWear, playerWear);
+                  if (hit >= 3.0F && playerWear <= 0)
+                  {
+                      failures.add("fixture: the player's shield did not wear for a blocked hit of " + hit);
+                  }
+                  if (guardWear != playerWear)
+                  {
+                      failures.add("hit " + hit + ": the guard's shield wore " + guardWear + ", the player's " + playerWear);
+                  }
+                  done[0]++;
+                  // the damage cooldown of both has to pass before the next hit counts
+                  helper.runAfterDelay(25, () -> next[0].run());
+              };
+              // a mock player is hurt only once its connection counts as loaded (about 60 ticks); then the shields go up and the block delay (5 ticks) passes
+              helper.runAfterDelay(70, () -> {
+                  guard.getInventoryCitizen().setStackInSlot(1, new ItemStack(Items.SHIELD));
+                  CitizenItemUtils.setHeldItem(guard, InteractionHand.OFF_HAND, 1);
+                  guard.setYRot(0.0F);
+                  guard.setYHeadRot(0.0F);
+                  guard.startUsingItem(InteractionHand.OFF_HAND);
+                  final BlockPos at = guard.blockPosition();
+                  player.setPos(at.getX() + 4.5D, at.getY(), at.getZ() + 0.5D);
+                  player.setYRot(0.0F);
+                  player.setYHeadRot(0.0F);
+                  raiseShield(player);
+                  helper.runAfterDelay(12, () -> next[0].run());
               });
+          });
+    }
+
+    /**
+     * Armor wears for a hit as a player's armor does (LivingEntity#getDamageAfterArmorAbsorb): damage that bypasses armor (falling, drowning, magic, starving) does
+     * not wear it at all, other damage wears every piece by max(1, damage / 4). A guard and a connected survival player with the same iron armor take the same hits.
+     * With the colony research for the durability of armor at its top level the wear can only shrink.
+     */
+    public static void armorWear(final GameTestHelper helper)
+    {
+        withWorker(helper, "armor", ModBlocks.blockHutGuardTower, "military/guardtower1.blueprint",
+          (hut, citizen) -> hut.getModule(BuildingModules.KNIGHT_TOWER_WORK).assignCitizen(citizen),
+          (colony, worker) -> {
+              final ServerLevel level = helper.getLevel();
+              final EntityCitizen guard = (EntityCitizen) worker.getEntity().get();
+              final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
+              final net.minecraft.world.entity.EquipmentSlot[] slots = {net.minecraft.world.entity.EquipmentSlot.HEAD, net.minecraft.world.entity.EquipmentSlot.CHEST,
+                net.minecraft.world.entity.EquipmentSlot.LEGS, net.minecraft.world.entity.EquipmentSlot.FEET};
+              final Item[] pieces = {Items.IRON_HELMET, Items.IRON_CHESTPLATE, Items.IRON_LEGGINGS, Items.IRON_BOOTS};
+              for (int i = 0; i < slots.length; i++)
+              {
+                  guard.getInventoryCitizen().forceArmorStackToSlot(slots[i], new ItemStack(pieces[i]));
+                  player.setItemSlot(slots[i], new ItemStack(pieces[i]));
+              }
+              final var zombie = spawnTestMob(level, EntityTypes.ZOMBIE, guard.blockPosition().offset(0, 0, 3));
+              final float hit = 4.0F;
+              final var sources = List.of(
+                new Object[] {"mob attack", level.damageSources().mobAttack(zombie), true},
+                new Object[] {"cactus", level.damageSources().cactus(), true},
+                new Object[] {"fall", level.damageSources().fall(), false},
+                new Object[] {"drowning", level.damageSources().drown(), false},
+                new Object[] {"magic (poison, potions)", level.damageSources().magic(), false},
+                new Object[] {"starvation", level.damageSources().starve(), false},
+                new Object[] {"mob attack", level.damageSources().mobAttack(zombie), true});
+              final int[] done = {0};
+              final int[] last = {0, 0};
+              final List<String> failures = new ArrayList<>();
+              final Runnable[] next = new Runnable[1];
+              next[0] = () -> {
+                  if (done[0] == sources.size())
+                  {
+                      zombie.discard();
+                      helper.assertTrue(failures.isEmpty(), "a guard's armor wears differently from a player's: " + failures);
+                      helper.succeed();
+                      return;
+                  }
+                  final Object[] entry = sources.get(done[0]);
+                  guard.setHealth(guard.getMaxHealth());
+                  player.setHealth(player.getMaxHealth());
+                  guard.hurtServer(level, (net.minecraft.world.damagesource.DamageSource) entry[1], hit);
+                  player.hurtServer(level, (net.minecraft.world.damagesource.DamageSource) entry[1], hit);
+                  int guardTotal = 0;
+                  int playerTotal = 0;
+                  for (int i = 0; i < slots.length; i++)
+                  {
+                      guardTotal += guard.getInventoryCitizen().getArmorInSlot(slots[i]).getDamageValue();
+                      playerTotal += player.getItemBySlot(slots[i]).getDamageValue();
+                  }
+                  final int guardWear = guardTotal - last[0];
+                  final int playerWear = playerTotal - last[1];
+                  last[0] = guardTotal;
+                  last[1] = playerTotal;
+                  Log.getLogger().info("[tooldur_armor_wear] {} {}: guard armor wore {}, player armor {}", entry[0], hit, guardWear, playerWear);
+                  if ((boolean) entry[2] && playerWear <= 0)
+                  {
+                      failures.add("fixture: the player's armor did not wear for " + entry[0]);
+                  }
+                  if (!(boolean) entry[2] && playerWear != 0)
+                  {
+                      failures.add("fixture: the player's armor wore " + playerWear + " for " + entry[0]);
+                  }
+                  if (guardWear != playerWear)
+                  {
+                      failures.add(entry[0] + ": the guard's armor wore " + guardWear + ", the player's " + playerWear);
+                  }
+                  done[0]++;
+                  helper.runAfterDelay(25, () -> next[0].run());
+              };
+              // (a mock player is hurt only once its connection counts as loaded, about 60 ticks)
+              helper.runAfterDelay(70, () -> next[0].run());
+          });
+    }
+
+    /**
+     * The research for the durability of armor only saves wear: with +100% the iron armor of a guard never wears more than without, and bypassing damage still costs nothing.
+     */
+    public static void armorResearchOnlyReduces(final GameTestHelper helper)
+    {
+        withWorker(helper, "armor research", ModBlocks.blockHutGuardTower, "military/guardtower1.blueprint",
+          (hut, citizen) -> hut.getModule(BuildingModules.KNIGHT_TOWER_WORK).assignCitizen(citizen),
+          (colony, worker) -> {
+              final EntityCitizen guard = (EntityCitizen) worker.getEntity().get();
+              final ItemStack chest = new ItemStack(Items.DIAMOND_CHESTPLATE);
+              guard.getInventoryCitizen().forceArmorStackToSlot(net.minecraft.world.entity.EquipmentSlot.CHEST, chest);
+              final var level = helper.getLevel();
+              final int hits = 200;
+              for (int i = 0; i < hits; i++)
+              {
+                  CitizenItemUtils.updateArmorDamage(guard, level.damageSources().fall(), 8.0D);
+              }
+              helper.assertTrue(chest.getDamageValue() == 0, "falling wore a guard's armor by " + chest.getDamageValue());
+              for (int i = 0; i < hits; i++)
+              {
+                  CitizenItemUtils.updateArmorDamage(guard, level.damageSources().cactus(), 4.0D);
+              }
+              final int plain = chest.getDamageValue();
+              helper.assertTrue(plain == hits, "without research the armor wore " + plain + " in " + hits + " hits");
+              colony.getResearchManager().getResearchEffects().applyEffect(
+                new com.minecolonies.core.research.GlobalResearchEffect(ResearchConstants.ARMOR_DURABILITY, "geardur", "geardur", 1.0D, 1.0D));
+              for (int i = 0; i < hits; i++)
+              {
+                  CitizenItemUtils.updateArmorDamage(guard, level.damageSources().cactus(), 4.0D);
+              }
+              final int researched = chest.getDamageValue() - plain;
+              Log.getLogger().info("[tooldur_armor_research] {} hits: without research {}, with +100% {}", hits, plain, researched);
+              // half of the hits wear: 100 expected, 7 standard deviation
+              helper.assertTrue(researched > hits * 0.30D && researched < hits * 0.70D, "research +100%: the armor wore " + researched + " in " + hits + " hits, expected about " + hits / 2);
+              helper.succeed();
           });
     }
 }
