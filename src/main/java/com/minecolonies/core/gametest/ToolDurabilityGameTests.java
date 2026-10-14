@@ -106,6 +106,7 @@ public final class ToolDurabilityGameTests
         add(event, "tooldur_builder_default", helper -> builderClearsStone(helper, "default", null, null, null));
         add(event, "tooldur_builder_max", helper -> builderClearsStone(helper, "max", 4.0D, 4.0D, true));
         add(event, "tooldur_guard_melee", ToolDurabilityGameTests::guardMelee);
+        add(event, "tooldur_guard_shield", ToolDurabilityGameTests::guardShield);
     }
 
     private static void add(final RegisterGameTestsEvent event, final String name, final Consumer<GameTestHelper> test)
@@ -644,6 +645,46 @@ public final class ToolDurabilityGameTests
               CitizenItemUtils.removeHeldItem(guard);
               helper.assertTrue(failures.isEmpty(), "guard melee wear differs from the player's: " + failures);
               helper.succeed();
+          });
+    }
+
+    /**
+     * A shield: a hit it blocks wears a player's shield (1 + the damage blocked, from 3 damage up; vanilla wears no mob's shield). A citizen's shield never wears more
+     * than a player's for the same hit. (The branch of {@code EntityCitizen#hurtServer} that wore the shield by half the blocked damage runs after the vanilla code
+     * has finished with the hit, when its damage container is gone, so a citizen's shield does not wear at all; that is left as it is.)
+     */
+    public static void guardShield(final GameTestHelper helper)
+    {
+        withWorker(helper, "shield", ModBlocks.blockHutGuardTower, "military/guardtower1.blueprint",
+          (hut, citizen) -> hut.getModule(BuildingModules.KNIGHT_TOWER_WORK).assignCitizen(citizen),
+          (colony, worker) -> {
+              final ServerLevel level = helper.getLevel();
+              final EntityCitizen guard = (EntityCitizen) worker.getEntity().get();
+              final ServerPlayer player = makeConnectedSurvivalPlayer(helper, colony);
+              guard.getInventoryCitizen().setStackInSlot(1, new ItemStack(Items.SHIELD));
+              CitizenItemUtils.setHeldItem(guard, InteractionHand.OFF_HAND, 1);
+              guard.setYRot(0.0F);
+              guard.setYHeadRot(0.0F);
+              guard.startUsingItem(InteractionHand.OFF_HAND);
+              helper.runAfterDelay(12, () -> {
+                  helper.assertTrue(guard.isBlocking(), "fixture: the guard's shield is not up (using " + guard.isUsingItem() + ", ticks " + guard.getTicksUsingItem() + ")");
+                  // an attacker two blocks in front (south) of the guard
+                  final var attacker = spawnTestMob(level, EntityTypes.ZOMBIE, guard.blockPosition().offset(0, 0, 2));
+                  final float hit = 8.0F;
+                  final ItemStack playersShield = new ItemStack(Items.SHIELD);
+                  // vanilla: what a hit of 8 that the shield blocks completely does to the shield of a player
+                  playersShield.get(DataComponents.BLOCKS_ATTACKS).hurtBlockingItem(level, playersShield, player, InteractionHand.OFF_HAND, hit);
+                  final int playerWear = playersShield.getDamageValue();
+                  guard.hurtServer(level, level.damageSources().mobAttack(attacker), hit);
+                  final int guardWear = guard.getInventoryCitizen().getStackInSlot(1).getDamageValue();
+                  Log.getLogger().info("[tooldur_guard_shield] a blocked hit of {}: the guard's shield wore {}, a player's {}", hit, guardWear, playerWear);
+                  attacker.discard();
+                  guard.stopUsingItem();
+                  guard.getInventoryCitizen().setStackInSlot(1, ItemStack.EMPTY);
+                  helper.assertTrue(playerWear > 0, "fixture: the player's shield did not wear for a blocked hit of " + hit);
+                  helper.assertTrue(guardWear <= playerWear, "the guard's shield wore " + guardWear + " for a blocked hit, a player's " + playerWear);
+                  helper.succeed();
+              });
           });
     }
 }
