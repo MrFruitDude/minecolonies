@@ -547,6 +547,49 @@ final class IdleHelperGameTests
         });
     }
 
+    // ------------------------------------------------------------------ tools
+
+    /**
+     * A citizen without a job breaks a block with the tool of the builder: the tool wears exactly as when the builder mines the same block with an identical tool in his hand (the
+     * same damage path of the citizen tools), and nothing of the helper's own wears.
+     */
+    public static void helperWearsTheLeadsTool(final GameTestHelper helper)
+    {
+        begin();
+        site(helper, "idle helper tool wear", 0, true, site -> {
+            final ICitizenData idle = site.spawnIdle(12, 14);
+            final var lead = site.builder.getEntity().orElseThrow();
+            final var worker = idle.getEntity().orElseThrow();
+            final int held = 0;
+            final int carried = 1;
+            site.builder.getInventory().setStackInSlot(held, new ItemStack(Items.WOODEN_SHOVEL));
+            site.builder.getInventory().setStackInSlot(carried, new ItemStack(Items.WOODEN_SHOVEL));
+            com.minecolonies.core.util.citizenutils.CitizenItemUtils.setMainHeldItem(lead, held);
+            // the helper has a tool of his own in his hand: it must not wear
+            idle.getInventory().setStackInSlot(0, new ItemStack(Items.WOODEN_SHOVEL));
+            com.minecolonies.core.util.citizenutils.CitizenItemUtils.setMainHeldItem(worker, 0);
+            final BlockPos a = site.abs(20, 1, 8);
+            final BlockPos b = site.abs(21, 1, 8);
+            site.level.setBlock(a, Blocks.DIRT.defaultBlockState(), 3);
+            site.level.setBlock(b, Blocks.DIRT.defaultBlockState(), 3);
+
+            com.minecolonies.core.util.citizenutils.CitizenItemUtils.breakBlockWithToolInHand(lead, a);
+            final int byLead = site.builder.getInventory().getStackInSlot(held).getDamageValue();
+            com.minecolonies.core.util.citizenutils.CitizenItemUtils.breakBlockWearingToolOf(worker, b, lead, carried);
+            final int byHelper = site.builder.getInventory().getStackInSlot(carried).getDamageValue();
+            helper.assertTrue(site.level.getBlockState(a).isAir() && site.level.getBlockState(b).isAir(), "the blocks are still there");
+            helper.assertTrue(byLead == 1, "fixture: the builder's own shovel wore " + byLead + " for one dirt block");
+            helper.assertTrue(byHelper == byLead, "the borrowed shovel wore " + byHelper + ", the builder's own " + byLead + " for the same block");
+            helper.assertTrue(idle.getInventory().getStackInSlot(0).getDamageValue() == 0, "the helper's own tool wore");
+            // bare hands: nothing wears, the block goes
+            site.level.setBlock(a, Blocks.DIRT.defaultBlockState(), 3);
+            com.minecolonies.core.util.citizenutils.CitizenItemUtils.breakBlockWearingToolOf(worker, a, null, -1);
+            helper.assertTrue(site.level.getBlockState(a).isAir() && idle.getInventory().getStackInSlot(0).getDamageValue() == 0, "bare hands");
+            end();
+            helper.succeed();
+        });
+    }
+
     // ------------------------------------------------------------------ saved state
 
     /**

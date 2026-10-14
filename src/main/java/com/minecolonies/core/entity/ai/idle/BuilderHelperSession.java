@@ -126,6 +126,10 @@ public final class BuilderHelperSession implements IIdleTaskSession
 
     private Phase                              phase        = Phase.PLAN;
     private IBuilderWorkOrder                  order;
+    /**
+     * The hut of the lead as long as he has been known: what the helper carries goes back there also when the order is gone (it was finished).
+     */
+    private BlockPos                           leadHut;
     private CollabStructureHandler             handler;
     private StructurePlacer                    placer;
     private BuildingProgressStage              batchStage;
@@ -251,6 +255,7 @@ public final class BuilderHelperSession implements IIdleTaskSession
         }
         final long now = world.getGameTime();
         final WorkOrderCollab collab = order.getCollab();
+        leadHut = lead.getID().immutable();
         collab.renew(key, now + BuilderCollab.leaseTicks());
         earnWorkTime(now, lead);
 
@@ -827,7 +832,9 @@ public final class BuilderHelperSession implements IIdleTaskSession
         {
             return;
         }
-        final ItemStack tool = bestToolOfLead(lead, state);
+        final int toolSlot = bestToolSlotOfLead(lead, state);
+        final ICitizenData toolOwner = leadCitizen(lead);
+        final ItemStack tool = toolSlot < 0 || toolOwner == null ? ItemStack.EMPTY : toolOwner.getInventory().getStackInSlot(toolSlot);
         final double cost = leadBreakTicks(lead, state, mining, tool);
         if (bank < cost)
         {
@@ -850,8 +857,8 @@ public final class BuilderHelperSession implements IIdleTaskSession
             }
         }
         com.minecolonies.core.util.WorkerUtil.faceBlock(mining, worker);
-        com.minecolonies.core.util.citizenutils.CitizenItemUtils.breakBlockWithToolInHand(worker, mining);
-        worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
+        // the lead's tool wears the way it does when he mines the block himself (the same damage path of the citizen tools)
+        com.minecolonies.core.util.citizenutils.CitizenItemUtils.breakBlockWearingToolOf(worker, mining, toolSlot < 0 || toolOwner == null ? null : toolOwner.getEntity().orElse(null), toolSlot);
         worker.getCitizenExperienceHandler().addExperience(0.05D);
         mining = null;
         finishPosition(planned, lead, collab, now, true);
@@ -859,12 +866,12 @@ public final class BuilderHelperSession implements IIdleTaskSession
     }
 
     /**
-     * The best tool for a block among what the lead carries (a helper uses the tools of the builder, he has none of his own); empty for none.
+     * The slot of the best tool for a block among what the lead carries (a helper uses the tools of the builder, he has none of his own); -1 for none.
      */
-    private ItemStack bestToolOfLead(final AbstractBuildingStructureBuilder lead, final BlockState state)
+    private int bestToolSlotOfLead(final AbstractBuildingStructureBuilder lead, final BlockState state)
     {
         final ICitizenData leadCitizen = leadCitizen(lead);
-        ItemStack best = ItemStack.EMPTY;
+        int best = -1;
         double bestSpeed = 1.0D;
         if (leadCitizen != null)
         {
@@ -879,7 +886,7 @@ public final class BuilderHelperSession implements IIdleTaskSession
                 if (speed > bestSpeed)
                 {
                     bestSpeed = speed;
-                    best = stack;
+                    best = slot;
                 }
             }
         }
@@ -1019,6 +1026,10 @@ public final class BuilderHelperSession implements IIdleTaskSession
         if (current != null && current.isClaimed())
         {
             hut = colony.getServerBuildingManager().getBuilding(current.getClaimedBy());
+        }
+        if (hut == null && leadHut != null)
+        {
+            hut = colony.getServerBuildingManager().getBuilding(leadHut);
         }
         if (hut == null || hut.getItemHandlerCap() == null)
         {

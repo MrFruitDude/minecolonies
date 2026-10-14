@@ -66,7 +66,9 @@ In the shared order state he is known by an `IdleHelperKey` (a block position no
 hut; leases, territories (`divideStage`), the helper lists, the reservation ledger and the lead's steal logic all key by it. The work is the helper's work of a builder
 (`BuilderHelperSession`): lease a few positions of the stage out of the lead's stream (the lease size grows with the walk to the lead's hut, like a builder helper's), take
 the materials for them from the lead's hut (what the ledger holds for others stays) or from the lead himself, walk to a spot on the ground from which he reaches each
-position (3D reach), place or break it (a clear-stage block breaks with the best fitting tool the lead carries, the drops go into his inventory), release the lease. What he
+position (3D reach), place or break it (a clear-stage block breaks with the best fitting tool the lead carries: the tool wears through the damage path of the citizen tools
+(`CitizenItemUtils.damageInventoryItemForMinedBlock`: the item's own `Item#mineBlock`, the colony's tool durability research), exactly as when the lead mines the block, and nothing
+of the helper's own wears; the drops go into the helper's inventory), release the lease. What he
 cannot do goes back to the lead: positions higher than what he reaches from the ground (builders raise scaffolding for those), a material nobody has, a position with no
 spot. When he stops, his leases go back, his claims on the ledger end, and what he carries (materials he did not use, drops of blocks he broke) goes into the lead's
 hut. If the lead is short of a material that a helper carries he takes it from the helper's inventory instead of requesting it again (no double requesting).
@@ -89,12 +91,14 @@ key, his citizen id is the citizen himself. Colony Command shows him as "Helper 
 ### Measured
 
 `idle_helper_faster` builds the same 16 by 16 floor five times at the same place (a warm-up, then with the setting off and on): a builder alone 2140 to 2300 ticks, with an idle
-citizen 1620 to 1720 (he places 80 to 100 of the 256 blocks): about 22 to 25 percent faster. The gate matters: a flat structure like this one is below
+citizen 1480 to 1720 (he places 80 to 100 of the 256 blocks): about 22 to 30 percent faster (the test waits for the path finder every tick, so the numbers do not swing with the load
+of the machine). The gate matters: a flat structure like this one is below
 `collaborationMinOrderScore` in a normal game, so the test lowers the gate (`BuilderCollab.overrideForTests`); in a normal game a small building keeps its builder alone (the
 scaffold benchmark behind the gate found a helper no help on small and flat structures).
 
 ### Game tests (`MINECOLONIES_GAMETEST_ONLY=idlehelper`, `=sticks`)
 
 `idle_helper_*`: faster with the helper and no helper with the setting off, no order means nothing happens, an order nobody leads is not claimed, leaves when given a job,
-at night, when hungry, the setting off, the per builder limit (and the player's limit), two colonies in one world, the arbiter's task API, breaking and placing, saved state.
+at night, when hungry, the setting off, the per builder limit (and the player's limit), two colonies in one world, the arbiter's task API, breaking and placing (and the drops go back
+to the lead's hut), the borrowed tool wears like the lead's own, saved state.
 `sticks_scaffold_*`: the table recipe (and the ladder and the vanilla recipe unharmed), the sawmill knows its recipe, the sawmill chain.
