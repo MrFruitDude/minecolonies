@@ -165,6 +165,20 @@ public final class MacroRun
     public int     cycles;
     private int    cures;
     public long injectedUnits;
+
+    /**
+     * Counts the sticks that decaying leaves drop as supplied (labour runs only); null otherwise.
+     */
+    private java.util.function.Consumer<net.neoforged.neoforge.event.entity.EntityJoinLevelEvent> leafDrops;
+
+    private void stopLeafWatch()
+    {
+        if (leafDrops != null)
+        {
+            net.neoforged.neoforge.common.NeoForge.EVENT_BUS.unregister(leafDrops);
+            leafDrops = null;
+        }
+    }
     public long consumedUnits;
     /** Blocks the scenario expects in the world as the result of builds: position -> block. */
     public final Map<BlockPos, Block> sites = new HashMap<>();
@@ -278,6 +292,17 @@ public final class MacroRun
         }
         com.minecolonies.core.colony.labour.LabourStats.reset();
         com.minecolonies.core.colony.labour.LabourStats.gatherProbe = labourOn ? stack -> injectedUnits += ItemUnits.units(stack) : null;
+        if (labourOn)
+        {
+            // the leaves of a felled tree decay and now and then drop sticks: the world supplies them, like the logs
+            leafDrops = event -> {
+                if (!event.getLevel().isClientSide() && event.getEntity() instanceof net.minecraft.world.entity.item.ItemEntity item && item.getItem().is(net.minecraft.world.item.Items.STICK))
+                {
+                    injectedUnits += ItemUnits.units(item.getItem());
+                }
+            };
+            net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(leafDrops);
+        }
         if (BenchEnv.pinWorkers())
         {
             // 1.0 speed and real walking: the pace the request system is judged at does not move with the worker-efficiency settings
@@ -358,6 +383,7 @@ public final class MacroRun
         com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
         com.minecolonies.core.colony.labour.LabourSettings.clearOverrides();
         com.minecolonies.core.colony.labour.LabourStats.gatherProbe = null;
+        stopLeafWatch();
         RsProbe.stop();
         StandardToken.seedForBenchmark(null);
         if (t != null)
@@ -1422,6 +1448,7 @@ public final class MacroRun
         com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
         com.minecolonies.core.colony.labour.LabourSettings.clearOverrides();
         com.minecolonies.core.colony.labour.LabourStats.gatherProbe = null;
+        stopLeafWatch();
         BenchEnv.write(testName, out);
         harnessCpuTotal += end.cpuNs();
         done.accept(errors.isEmpty() ? null : "macro bench " + testName + " gates failed: " + errors);
