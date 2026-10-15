@@ -3,6 +3,7 @@ package com.minecolonies.core.client.gui.containers;
 import com.minecolonies.api.inventory.container.ContainerGrave;
 import com.minecolonies.api.util.constant.Constants;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.resources.Identifier;
@@ -119,15 +120,15 @@ public class WindowGrave extends AbstractContainerScreen<ContainerGrave>
 
         if (inventoryRows < SLOTS_EACH_ROW)
         {
-            stack.blit(loc, i, j, 0, 0, this.imageWidth, this.inventoryRows * SLOT_OFFSET + SLOT_OFFSET - 1, TEXTURE_SIZE, TEXTURE_SIZE);
-            stack.blit(loc, i, j + this.inventoryRows * SLOT_OFFSET + SLOT_OFFSET - 1, 0,
+            stack.blit(RenderPipelines.GUI_TEXTURED, loc, i, j, 0, 0, this.imageWidth, this.inventoryRows * SLOT_OFFSET + SLOT_OFFSET - 1, TEXTURE_SIZE, TEXTURE_SIZE);
+            stack.blit(RenderPipelines.GUI_TEXTURED, loc, i, j + this.inventoryRows * SLOT_OFFSET + SLOT_OFFSET - 1, 0,
               TEXTURE_OFFSET, this.imageWidth, TEXTURE_HEIGHT, TEXTURE_SIZE, TEXTURE_SIZE);
         }
         else
         {
             final int textureOffset = TEXTURE_OFFSET - EXTRA_OFFSET;
-            stack.blit(loc, i, j, 0, 0, (this.imageWidth * SIZE_MULTIPLIER) / 2, this.inventoryRows * SLOT_OFFSET + SLOT_OFFSET - 1, TEXTURE_SIZE, TEXTURE_SIZE);
-            stack.blit(loc, i,
+            stack.blit(RenderPipelines.GUI_TEXTURED, loc, i, j, 0, 0, (this.imageWidth * SIZE_MULTIPLIER) / 2, this.inventoryRows * SLOT_OFFSET + SLOT_OFFSET - 1, TEXTURE_SIZE, TEXTURE_SIZE);
+            stack.blit(RenderPipelines.GUI_TEXTURED, loc, i,
               j + Math.min(SLOTS_EACH_ROW, this.inventoryRows) * SLOT_OFFSET + SLOT_OFFSET - 1,
               0,
               textureOffset,
