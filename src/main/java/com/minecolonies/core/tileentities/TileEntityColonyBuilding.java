@@ -415,10 +415,9 @@ public class TileEntityColonyBuilding extends AbstractTileEntityColonyBuilding i
             path = BlueprintMapping.getPathMapping("", abstractBlockHut.getBlueprintName()) + "1.blueprint";
         }
 
-        if (!path.endsWith(".blueprint"))
-        {
-            path += ".blueprint";
-        }
+        // A blank path is legitimate (source stashes and postboxes have no schematic): keep it blank instead of
+        // inventing the file ".blueprint".
+        path = BlueprintPathNormalizer.ensureBlueprintExtension(path);
 
         this.packMeta = packName;
         this.path = path;
@@ -547,7 +546,11 @@ public class TileEntityColonyBuilding extends AbstractTileEntityColonyBuilding i
     {
         if (rotationMirror == null)
         {
-            calcRotation(StructurePacks.getBlueprint(this.packMeta, this.path.replace("0.blueprint", "1.blueprint")));
+            // Source stashes and other non-schematic blocks have no blueprint path: keep the neutral rotation
+            // without asking Structurize to read an empty resource.
+            calcRotation(this.path == null || this.path.isBlank()
+              ? null
+              : StructurePacks.getBlueprint(this.packMeta, this.path.replace("0.blueprint", "1.blueprint")));
         }
         return rotationMirror;
     }

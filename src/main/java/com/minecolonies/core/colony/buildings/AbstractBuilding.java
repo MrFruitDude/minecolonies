@@ -450,6 +450,13 @@ public abstract class AbstractBuilding extends AbstractBuildingContainer
             }
         }
 
+        if (getBlueprintPath() == null || getBlueprintPath().isBlank())
+        {
+            // No schematic to build, upgrade, repair or remove (a source stash): a work order for it could never be resolved.
+            Log.getLogger().warn("Not requesting a {} work order for the building at {}: it has no blueprint path.", type, getPosition());
+            return;
+        }
+
         WorkOrderBuilding workOrder = WorkOrderBuilding.create(type, this);
         if (type == WorkOrderType.REMOVE && !canDeconstruct())
         {
