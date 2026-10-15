@@ -85,6 +85,7 @@ final class LabourGameTests
 
     private static void end()
     {
+        com.minecolonies.core.colony.labour.LabourStats.debug = false;
         LabourSettings.clearOverrides();
     }
 
