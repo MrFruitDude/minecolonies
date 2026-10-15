@@ -74,6 +74,7 @@ final class LabourGameTests
     private static RsFixture found(final GameTestHelper helper, final String name, final int racks)
     {
         final RsFixture f = RsFixture.found(helper, name, racks);
+        clearTrees(helper);
         final var hiring = f.colony.getSettings().getSetting(com.minecolonies.core.colony.buildings.workerbuildings.BuildingTownHall.AUTO_HIRING_MODE);
         if (hiring.getValue())
         {
@@ -125,6 +126,35 @@ final class LabourGameTests
             }
         }
         return n;
+    }
+
+    /**
+     * Takes away the trees, tables and furnaces that earlier tests left within the labourers' reach (the tests of a run stand side by side in one world).
+     */
+    private static void clearTrees(final GameTestHelper helper)
+    {
+        final BlockPos center = helper.absolutePos(new BlockPos(20, 0, 16));
+        final ServerLevel level = helper.getLevel();
+        final int radius = 70;
+        for (int x = center.getX() - radius; x <= center.getX() + radius; x++)
+        {
+            for (int z = center.getZ() - radius; z <= center.getZ() + radius; z++)
+            {
+                if (!level.hasChunk(x >> 4, z >> 4))
+                {
+                    continue;
+                }
+                for (int y = center.getY() - 2; y <= center.getY() + 24; y++)
+                {
+                    final BlockPos pos = new BlockPos(x, y, z);
+                    final BlockState state = level.getBlockState(pos);
+                    if (state.is(net.minecraft.tags.BlockTags.LOGS) || state.is(net.minecraft.tags.BlockTags.LEAVES) || state.is(Blocks.CRAFTING_TABLE) || state.is(Blocks.FURNACE))
+                    {
+                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
+                    }
+                }
+            }
+        }
     }
 
     private static void forceArea(final ServerLevel level, final BlockPos min, final BlockPos max)
@@ -453,7 +483,6 @@ final class LabourGameTests
         helper.runAfterDelay(100, () -> {
             final ICitizenData builder = f.spawn(new BlockPos(12, 1, 8), false);
             helper.assertTrue(f.builder.getModule(BuildingModules.BUILDER_WORK).assignCitizen(builder), "builder not assigned");
-            builder.getEntity().ifPresent(e -> e.setPos(f.builder.getID().getX() + 0.5D, f.builder.getID().getY(), f.builder.getID().getZ() + 0.5D));
             final int size = 4;
             planksFloor(helper, colony, f.builder, 22, 12, size);
             final IToken<?> others = colony.getServerBuildingManager().getTownHall().createRequest(new Stack(new ItemStack(Items.OAK_PLANKS, 4), 4, 4), false);
@@ -479,7 +508,10 @@ final class LabourGameTests
                 end();
                 helper.succeed();
             }, () -> "builder inv " + LabourSession.inventoryOf(builder) + " claims " + colony.getLabourBoard().claims().size() + " logs left " + logsLeft(helper, 34, 20, 5)
-                       + " state " + f.builder.getModule(BuildingModules.BUILDER_WORK).getAssignedCitizen());
+                       + " ai " + (builder.getJob() == null ? "no job" : builder.getJob().getWorkerAI() == null ? "no ai" : builder.getJob().getWorkerAI().getState())
+                       + " citizen " + builder.getEntity().map(e -> e.blockPosition() + " alive " + e.isAlive() + " "
+                                                                       + (e instanceof com.minecolonies.core.entity.citizen.EntityCitizen c ? c.getCitizenAI().getState() : "?")).orElse("no entity")
+                       + " time " + f.level.getGameTime() % 24000);
         });
     }
 
@@ -504,10 +536,35 @@ final class LabourGameTests
             {
                 helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
                 helper.setBlock(new BlockPos(x, -1, z), Blocks.STONE.defaultBlockState());
+                // (the test box has a barrier roof: the surface scan, which looks from the sky down, would see only that)
+                for (int y = 20; y <= 60; y++)
+                {
+                    if (helper.getBlockState(new BlockPos(x, y, z)).is(Blocks.BARRIER))
+                    {
+                        helper.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState());
+                    }
+                }
             }
         }
         helper.runAfterDelay(100, () -> {
             final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            {
+                final BlockPos probe = helper.absolutePos(new BlockPos(24, 0, 26));
+                final var sites = colony.getLabourBoard().sites();
+                for (int y = probe.getY() + 60; y > probe.getY(); y--)
+                {
+                    final BlockState above = f.level.getBlockState(new BlockPos(probe.getX(), y, probe.getZ()));
+                    if (!above.isAir())
+                    {
+                        com.minecolonies.core.colony.labour.LabourStats.log("stone probe: above the pad at y {}: {}", y, above);
+                        break;
+                    }
+                }
+                com.minecolonies.core.colony.labour.LabourStats.log("stone probe: y-1 {} y0 {} y1 {} height {} owned {} protected {} surface {} center {}", helper.getBlockState(new BlockPos(24, -1, 26)),
+                  helper.getBlockState(new BlockPos(24, 0, 26)), helper.getBlockState(new BlockPos(24, 1, 26)),
+                  f.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, probe.getX(), probe.getZ()), sites.ownedBy(probe), sites.protectedBlock(probe),
+                  sites.hasSurface(Items.COBBLESTONE), colony.getCenter());
+            }
             final IToken<?> iron = ask(f.builder, new ItemStack(Items.IRON_PICKAXE));
             final IToken<?> stone = ask(f.builder, new ItemStack(Items.STONE_PICKAXE));
             final int[] worn = {0};

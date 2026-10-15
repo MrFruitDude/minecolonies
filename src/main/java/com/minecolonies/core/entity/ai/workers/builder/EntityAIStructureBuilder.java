@@ -149,7 +149,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         if (supply != null || !building.hasWorkOrder() || !(building.getColony() instanceof com.minecolonies.core.colony.Colony colony) || colony.getWorld() == null
               || !com.minecolonies.core.colony.labour.LabourSettings.worldEnabled() || worker.getCitizenData() == null)
         {
-            com.minecolonies.core.colony.labour.LabourStats.log("builder supply check: no (supply {}, order {})", supply != null, building.hasWorkOrder());
+            com.minecolonies.core.colony.labour.LabourStats.log("builder supply check: no (supply {}, order {}, state {})", supply != null, building.hasWorkOrder(), getState());
             return false;
         }
         final var state = getState();
@@ -174,6 +174,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             return START_WORKING;
         }
         supply = new com.minecolonies.core.colony.labour.LabourSession("builder_supply", colony, worker.getCitizenData(), colony.getLabourBoard(), claim);
+        com.minecolonies.core.colony.labour.LabourStats.log("builder supply plan done, state {}", getState());
         return SUPPLY_RUN;
     }
 
@@ -189,8 +190,21 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             supply = null;
             return START_WORKING;
         }
+        if (worker.level().getGameTime() % 100 < 10)
+        {
+            com.minecolonies.core.colony.labour.LabourStats.log("builder supply run at {} nav done {} phase {}", worker.blockPosition(), worker.getNavigation().isDone(), supply.phaseName());
+        }
         supply.tick();
         return SUPPLY_RUN;
+    }
+
+    /**
+     * While he fetches the wood himself the open request for it must not pull him back to waiting for the delivery (the base AI does that every second).
+     */
+    @Override
+    protected boolean checkIfNeedsItem()
+    {
+        return supply == null && super.checkIfNeedsItem();
     }
 
     @Override
