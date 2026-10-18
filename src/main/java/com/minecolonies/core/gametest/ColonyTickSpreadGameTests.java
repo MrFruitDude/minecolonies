@@ -133,6 +133,33 @@ public final class ColonyTickSpreadGameTests
         return rack;
     }
 
+    /**
+     * Coarsest thread CPU clock step accepted for timing colony ticks; a 60-building tick takes well under a millisecond.
+     */
+    private static final long MAX_CPU_CLOCK_RESOLUTION = 1_000_000L;
+
+    /**
+     * Smallest step the current thread's CPU clock was seen to advance by, sampled over a few steps (busy-waits at most
+     * about 100 ms when the clock is quantised).
+     */
+    private static long cpuClockResolution(final ThreadMXBean threads)
+    {
+        long smallest = Long.MAX_VALUE;
+        long last = threads.getCurrentThreadCpuTime();
+        final long deadline = System.nanoTime() + 100_000_000L;
+        for (int steps = 0; steps < 3 && System.nanoTime() < deadline; )
+        {
+            final long now = threads.getCurrentThreadCpuTime();
+            if (now != last)
+            {
+                smallest = Math.min(smallest, now - last);
+                last = now;
+                steps++;
+            }
+        }
+        return smallest;
+    }
+
     private static long median(final long[] values)
     {
         final long[] sorted = values.clone();
@@ -216,11 +243,14 @@ public final class ColonyTickSpreadGameTests
         colony.getPackageManager().addCloseSubscriber(player);
 
         final ThreadMXBean threads = ManagementFactory.getThreadMXBean();
-        final boolean cpuTime = threads.isCurrentThreadCpuTimeSupported();
-        if (cpuTime && !threads.isThreadCpuTimeEnabled())
+        if (threads.isCurrentThreadCpuTimeSupported() && !threads.isThreadCpuTimeEnabled())
         {
             threads.setThreadCpuTimeEnabled(true);
         }
+        // ZP5: on Windows thread CPU time only advances in 15.625 ms scheduler quanta, so a colony tick reads as
+        // either 0 or 15.6 ms and the median-based spike check fails on noise. Fall back to wall time there.
+        final boolean cpuTime = threads.isCurrentThreadCpuTimeSupported() && threads.isThreadCpuTimeEnabled()
+                                  && cpuClockResolution(threads) <= MAX_CPU_CLOCK_RESOLUTION;
 
         final long[] cpu = new long[RECORD_TICKS];
         final long[] wall = new long[RECORD_TICKS];
