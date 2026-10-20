@@ -83,6 +83,28 @@ public final class LabourSites
     private List<BoundingBox> boxes   = List.of();
     private long              boxesAt = Long.MIN_VALUE / 2;
 
+    /**
+     * The scans of the directed orders' areas, by order id.
+     */
+    private final Map<Integer, AreaScan> areas = new HashMap<>();
+
+    /**
+     * What one directed order's area holds of its resource.
+     */
+    private record AreaScan(long at, List<TreeSite> trees, List<BlockPos> blocks)
+    {
+    }
+
+    /**
+     * How long the scan of an area is reused.
+     */
+    public static final int AREA_CACHE_TICKS = 200;
+
+    /**
+     * Most blocks an area scan keeps.
+     */
+    public static final int AREA_MAX_BLOCKS = 512;
+
     public LabourSites(final Colony colony)
     {
         this.colony = colony;
@@ -97,6 +119,7 @@ public final class LabourSites
         surfaceAt = Long.MIN_VALUE / 2;
         postsAt = Long.MIN_VALUE / 2;
         boxesAt = Long.MIN_VALUE / 2;
+        areas.clear();
     }
 
     @Nullable
@@ -685,5 +708,355 @@ public final class LabourSites
             }
         }
         return list;
+    }
+
+    // ------------------------------------------------------------------ a directed order's area
+
+    /**
+     * @param resource a resource of a directed order.
+     * @param state    a block.
+     * @return whether a worker of the order may take the block: natural stone (never cobblestone, which somebody may have placed), grass or dirt, gravel. Logs are
+     *   taken only as a whole natural tree ({@link #nearestTreeIn}).
+     */
+    public static boolean directedBlock(final DirectedOrder.Resource resource, final BlockState state)
+    {
+        return switch (resource)
+        {
+            case WOOD -> false;
+            case COBBLESTONE -> state.is(Blocks.STONE);
+            case DIRT -> state.is(Blocks.DIRT) || state.is(Blocks.GRASS_BLOCK);
+            case GRAVEL -> state.is(Blocks.GRAVEL);
+        };
+    }
+
+    /**
+     * @param area an area of the world.
+     * @return whether every chunk of the area is loaded and part of this colony's claim (nothing is loaded for the check).
+     */
+    public boolean areaUsable(final DirectedOrder.Area area)
+    {
+        final ServerLevel level = level();
+        if (level == null)
+        {
+            return false;
+        }
+        final int y = anchor().getY();
+        for (int cx = area.minX() >> 4; cx <= area.maxX() >> 4; cx++)
+        {
+            for (int cz = area.minZ() >> 4; cz <= area.maxZ() >> 4; cz++)
+            {
+                final int x = Math.max(area.minX(), Math.min(area.maxX(), cx << 4));
+                final int z = Math.max(area.minZ(), Math.min(area.maxZ(), cz << 4));
+                if (level.getChunkSource().getChunkNow(cx, cz) == null || !ownedBy(new BlockPos(x, y, z)))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Forgets the scan of one order's area (the order ended).
+     */
+    public void forgetArea(final int orderId)
+    {
+        areas.remove(orderId);
+    }
+
+    private AreaScan scanArea(final int orderId, final DirectedOrder.Area area, final DirectedOrder.Resource resource, final int floor)
+    {
+        final long now = now();
+        final AreaScan cached = areas.get(orderId);
+        if (cached != null && now - cached.at() < AREA_CACHE_TICKS && now >= cached.at())
+        {
+            return cached;
+        }
+        final ServerLevel level = level();
+        final List<TreeSite> trees = new ArrayList<>();
+        final List<BlockPos> blocks = new ArrayList<>();
+        if (level != null)
+        {
+            final Map<Long, Boolean> chunkOwned = new HashMap<>();
+            final Set<BlockPos> seen = new HashSet<>();
+            for (int x = area.minX(); x <= area.maxX(); x++)
+            {
+                for (int z = area.minZ(); z <= area.maxZ(); z++)
+                {
+                    if (level.getChunkSource().getChunkNow(x >> 4, z >> 4) == null)
+                    {
+                        continue;
+                    }
+                    final BlockPos top = new BlockPos(x, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1, z);
+                    final long key = ((long) (x >> 4) << 32) ^ ((z >> 4) & 0xffffffffL);
+                    if (!chunkOwned.computeIfAbsent(key, k -> ownedBy(top)))
+                    {
+                        continue;
+                    }
+                    final BlockState state = level.getBlockState(top);
+                    if (resource == DirectedOrder.Resource.WOOD)
+                    {
+                        if (!LabourRules.log(state) || seen.contains(top))
+                        {
+                            continue;
+                        }
+                        BlockPos base = top;
+                        while (LabourRules.log(level.getBlockState(base.below())) && top.getY() - base.getY() < MAX_TREE_LOGS)
+                        {
+                            base = base.below();
+                        }
+                        if (seen.contains(base) || !level.getBlockState(base.below()).is(BlockTags.DIRT))
+                        {
+                            continue;
+                        }
+                        seen.add(base);
+                        final TreeSite tree = treeInArea(level, base, area);
+                        if (tree != null)
+                        {
+                            seen.addAll(tree.logs());
+                            trees.add(tree);
+                        }
+                        continue;
+                    }
+                    if (blocks.size() >= AREA_MAX_BLOCKS || !directedBlock(resource, state) || top.getY() < floor || makesPit(level, top))
+                    {
+                        continue;
+                    }
+                    if (!level.getBlockState(top.above()).isAir() || level.getBlockState(top.below()).isAir() || !level.getFluidState(top.below()).isEmpty()
+                          || exposedToFluid(level, top) || protectedBlock(top))
+                    {
+                        continue;
+                    }
+                    blocks.add(top);
+                }
+            }
+        }
+        final AreaScan scan = new AreaScan(now, List.copyOf(trees), List.copyOf(blocks));
+        areas.put(orderId, scan);
+        return scan;
+    }
+
+    /**
+     * @param orderId the order (its area's scan is shared by its workers).
+     * @param area    the order's area.
+     * @param from    where the worker stands.
+     * @param taken   bases of trees another labourer is felling.
+     * @return the nearest natural tree standing wholly in the area, still there, or null.
+     */
+    @Nullable
+    public TreeSite nearestTreeIn(final int orderId, final DirectedOrder.Area area, final BlockPos from, final Set<BlockPos> taken)
+    {
+        final TreeSite found = nearestTreeInScan(orderId, area, from, taken);
+        return found != null || !rescan(orderId) ? found : nearestTreeInScan(orderId, area, from, taken);
+    }
+
+    /**
+     * Nothing was found in a scan that is a second old or more: the area is scanned again once (blocks dug since the scan uncover the next ones).
+     */
+    private boolean rescan(final int orderId)
+    {
+        final AreaScan cached = areas.get(orderId);
+        if (cached == null || now() - cached.at() < 20L)
+        {
+            return false;
+        }
+        areas.remove(orderId);
+        return true;
+    }
+
+    @Nullable
+    private TreeSite nearestTreeInScan(final int orderId, final DirectedOrder.Area area, final BlockPos from, final Set<BlockPos> taken)
+    {
+        final ServerLevel level = level();
+        TreeSite best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (final TreeSite tree : scanArea(orderId, area, DirectedOrder.Resource.WOOD, DirectedOrder.NO_FLOOR).trees())
+        {
+            if (taken.contains(tree.base()) || level == null || !level.isLoaded(tree.base()) || !LabourRules.log(level.getBlockState(tree.base())))
+            {
+                continue;
+            }
+            final double distance = tree.base().distSqr(from);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = tree;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * @param orderId  the order.
+     * @param area     the order's area.
+     * @param resource what the order gathers (not wood).
+     * @param floor    the lowest y the order may dig at.
+     * @param from     where the worker stands.
+     * @param taken    blocks another labourer is digging.
+     * @return the nearest top block of the resource in the area that is still there, or null.
+     */
+    @Nullable
+    public BlockPos nearestBlockIn(final int orderId, final DirectedOrder.Area area, final DirectedOrder.Resource resource, final int floor, final BlockPos from,
+      final Set<BlockPos> taken)
+    {
+        final BlockPos found = nearestBlockInScan(orderId, area, resource, floor, from, taken);
+        return found != null || !rescan(orderId) ? found : nearestBlockInScan(orderId, area, resource, floor, from, taken);
+    }
+
+    @Nullable
+    private BlockPos nearestBlockInScan(final int orderId, final DirectedOrder.Area area, final DirectedOrder.Resource resource, final int floor, final BlockPos from,
+      final Set<BlockPos> taken)
+    {
+        final ServerLevel level = level();
+        if (level == null)
+        {
+            return null;
+        }
+        BlockPos best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (final BlockPos pos : scanArea(orderId, area, resource, floor).blocks())
+        {
+            if (taken.contains(pos) || !level.isLoaded(pos) || !directedBlock(resource, level.getBlockState(pos)) || !level.getBlockState(pos.above()).isAir())
+            {
+                continue;
+            }
+            final double distance = pos.distSqr(from);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = pos;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * @return the lowest top block of the loaded columns of the area (the order's digging floor is measured from it), or the anchor's y when none is loaded.
+     */
+    public int lowestSurface(final DirectedOrder.Area area)
+    {
+        final ServerLevel level = level();
+        if (level == null)
+        {
+            return anchor().getY();
+        }
+        int lowest = Integer.MAX_VALUE;
+        for (int x = area.minX(); x <= area.maxX(); x++)
+        {
+            for (int z = area.minZ(); z <= area.maxZ(); z++)
+            {
+                if (level.getChunkSource().getChunkNow(x >> 4, z >> 4) != null)
+                {
+                    lowest = Math.min(lowest, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1);
+                }
+            }
+        }
+        return lowest == Integer.MAX_VALUE ? anchor().getY() : lowest;
+    }
+
+    /**
+     * @return whether digging the top block would leave a hole two or more blocks deep next to a neighbour (an order takes the ground off in layers, never a shaft); a
+     *   neighbour in a chunk that is not loaded counts as a pit (it is never loaded to look).
+     */
+    private static boolean makesPit(final ServerLevel level, final BlockPos top)
+    {
+        for (final net.minecraft.core.Direction direction : net.minecraft.core.Direction.Plane.HORIZONTAL)
+        {
+            final BlockPos side = top.relative(direction);
+            if (level.getChunkSource().getChunkNow(side.getX() >> 4, side.getZ() >> 4) == null
+                  || level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, side.getX(), side.getZ()) - 1 >= top.getY() + 2)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A natural tree for a directed order: its logs and the leaves around them are read only in loaded chunks, every log stands in the area and in this colony, the base
+     * is no building's, and enough leaves nobody placed hang on it. A log found outside the area (a trunk or branch that leaves it) rejects the whole tree.
+     *
+     * @return the tree, or null.
+     */
+    @Nullable
+    private TreeSite treeInArea(final ServerLevel level, final BlockPos base, final DirectedOrder.Area area)
+    {
+        final BlockState baseState = level.getBlockState(base);
+        if (!LabourRules.log(baseState) || !area.contains(base))
+        {
+            return null;
+        }
+        final List<BlockPos> logs = new ArrayList<>();
+        final Set<BlockPos> visited = new HashSet<>();
+        final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
+        queue.add(base);
+        visited.add(base);
+        final Map<Long, Boolean> owned = new HashMap<>();
+        while (!queue.isEmpty())
+        {
+            final BlockPos current = queue.poll();
+            if (!area.contains(current) || logs.size() >= MAX_TREE_LOGS)
+            {
+                return null;
+            }
+            final long key = ((long) (current.getX() >> 4) << 32) ^ ((current.getZ() >> 4) & 0xffffffffL);
+            if (!owned.computeIfAbsent(key, k -> ownedBy(current)) || LabourExclusions.excluded(colony, current))
+            {
+                return null;
+            }
+            logs.add(current);
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = 0; dy <= 1; dy++)
+                {
+                    for (int dz = -1; dz <= 1; dz++)
+                    {
+                        final BlockPos next = current.offset(dx, dy, dz);
+                        if (!visited.add(next))
+                        {
+                            continue;
+                        }
+                        if (!level.isLoaded(next))
+                        {
+                            // (what lies there is not known without loading it: the tree is left alone)
+                            return null;
+                        }
+                        if (LabourRules.log(level.getBlockState(next)))
+                        {
+                            queue.add(next);
+                        }
+                    }
+                }
+            }
+        }
+        final Set<BlockPos> leaves = new HashSet<>();
+        for (final BlockPos log : logs)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    for (int dz = -1; dz <= 1; dz++)
+                    {
+                        final BlockPos near = log.offset(dx, dy, dz);
+                        if (!level.isLoaded(near))
+                        {
+                            continue;
+                        }
+                        final BlockState state = level.getBlockState(near);
+                        if (state.getBlock() instanceof LeavesBlock && !state.getValue(LeavesBlock.PERSISTENT))
+                        {
+                            leaves.add(near);
+                        }
+                    }
+                }
+            }
+        }
+        if (leaves.size() < MIN_LEAVES || protectedBlock(base))
+        {
+            return null;
+        }
+        logs.sort(Comparator.comparingInt(BlockPos::getY));
+        return new TreeSite(base, logs, baseState.getBlock().asItem());
     }
 }

@@ -55,6 +55,7 @@ public final class IdleCitizenArbiter
     static
     {
         register(new BuilderHelperTask());
+        register(new com.minecolonies.core.colony.labour.DirectedTask());
         for (final com.minecolonies.core.colony.labour.LabourTask task : com.minecolonies.core.colony.labour.LabourTask.all())
         {
             register(task);

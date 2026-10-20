@@ -9,7 +9,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.UUID;
 
 /**
- * One labourer's claim on a unit of work: a lot of a good for a request, a stock goal, or the idle builder's own build. Held by the colony's {@link LabourBoard}
+ * One labourer's claim on a unit of work: a lot of a good for a request, a stock goal, the idle builder's own build, or a manager's directed order. Held by the colony's {@link LabourBoard}
  * (not saved). It has a lease that every finished action renews; a claim whose lease runs out is given back.
  */
 public final class LabourClaim
@@ -30,7 +30,11 @@ public final class LabourClaim
         /**
          * A request of the idle builder's own hut.
          */
-        SELF
+        SELF,
+        /**
+         * A manager's directed gathering order ({@link DirectedOrder}).
+         */
+        DIRECTED
     }
 
     private final IToken<?> token = new StandardToken(UUID.randomUUID());
@@ -45,11 +49,19 @@ public final class LabourClaim
     private final int       amount;
     private final BlockPos  destination;
     private final long      created;
+    private final int       orderId;
     private       long      leaseUntil;
 
     LabourClaim(final Source source, @Nullable final IToken<?> request, @Nullable final String goalId, final int citizenId, final Item target, final int amount,
       final BlockPos destination, final long now, final long leaseUntil)
     {
+        this(source, request, goalId, citizenId, target, amount, destination, now, leaseUntil, 0);
+    }
+
+    LabourClaim(final Source source, @Nullable final IToken<?> request, @Nullable final String goalId, final int citizenId, final Item target, final int amount,
+      final BlockPos destination, final long now, final long leaseUntil, final int orderId)
+    {
+        this.orderId = orderId;
         this.source = source;
         this.request = request;
         this.goalId = goalId;
@@ -124,6 +136,14 @@ public final class LabourClaim
     public long created()
     {
         return created;
+    }
+
+    /**
+     * @return the directed order served, 0 for any other source.
+     */
+    public int orderId()
+    {
+        return orderId;
     }
 
     public long leaseUntil()

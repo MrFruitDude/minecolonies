@@ -92,6 +92,7 @@ public final class LabourBoard
     private final Colony       colony;
     private final LabourSites  sites;
     private final LabourCoverage coverage;
+    private final DirectedOrders directed;
 
     private final Map<Integer, LabourClaim>      byCitizen = new LinkedHashMap<>();
     private final Map<IToken<?>, Integer>        delivered = new HashMap<>();
@@ -123,6 +124,7 @@ public final class LabourBoard
         this.colony = colony;
         this.sites = new LabourSites(colony);
         this.coverage = new LabourCoverage(colony);
+        this.directed = new DirectedOrders(colony, this);
     }
 
     // ------------------------------------------------------------------ access
@@ -162,6 +164,14 @@ public final class LabourBoard
     public LabourCoverage coverage()
     {
         return coverage;
+    }
+
+    /**
+     * @return the managers' directed gathering orders.
+     */
+    public DirectedOrders directed()
+    {
+        return directed;
     }
 
     public Set<BlockPos> takenTrees()
@@ -322,7 +332,8 @@ public final class LabourBoard
 
     private boolean capReached()
     {
-        return claimsOf(LabourClaim.Source.REQUEST) + claimsOf(LabourClaim.Source.STOCKPILE) >= allowed();
+        // (the citizens on a manager's directed order count against the same caps)
+        return claimsOf(LabourClaim.Source.REQUEST) + claimsOf(LabourClaim.Source.STOCKPILE) + Math.max(claimsOf(LabourClaim.Source.DIRECTED), directed.assigned()) >= allowed();
     }
 
     private void count(final int delta)
@@ -520,7 +531,7 @@ public final class LabourBoard
     public LabourClaim offer(final ICitizenData citizen, final boolean urgentOnly, final boolean requests, final boolean stockpile)
     {
         final int offerKey = citizen.getId() * 4 + (urgentOnly ? 0 : requests ? 1 : 2);
-        if (!LabourSettings.enabled(colony) || citizen.getJob() != null || byCitizen.containsKey(citizen.getId()))
+        if (!LabourSettings.enabled(colony) || citizen.getJob() != null || byCitizen.containsKey(citizen.getId()) || directed.orderOf(citizen.getId()) != null)
         {
             return null;
         }
@@ -771,6 +782,32 @@ public final class LabourBoard
         return null;
     }
 
+    /**
+     * A claim for a citizen on a manager's directed order (the order was checked against the caps when it was accepted). Holds no ledger entry: the goods are gathered,
+     * never taken from stock.
+     *
+     * @return the claim, or null when he holds one already or the order has no destination.
+     */
+    @Nullable
+    public LabourClaim claimDirected(final ICitizenData citizen, final DirectedOrder order)
+    {
+        if (byCitizen.containsKey(citizen.getId()) || !order.active() || !order.has(citizen.getId()))
+        {
+            return null;
+        }
+        final IBuilding destination = directed.destinationOf(order);
+        if (destination == null)
+        {
+            directed.blocked(order, citizen.getId(), DirectedOrder.Why.NO_DESTINATION, 200L);
+            return null;
+        }
+        final long now = now();
+        final LabourClaim claim = new LabourClaim(LabourClaim.Source.DIRECTED, null, null, citizen.getId(), DirectedOrders.shown(order.resource()), order.amount(),
+          destination.getID(), now, now + LabourSettings.leaseTicks(), order.id());
+        register(claim);
+        return claim;
+    }
+
     private void register(final LabourClaim claim)
     {
         byCitizen.put(claim.citizenId(), claim);
@@ -967,6 +1004,7 @@ public final class LabourBoard
     public void tick()
     {
         final long now = now();
+        directed.tick();
         if (!byCitizen.isEmpty())
         {
             for (final LabourClaim claim : new ArrayList<>(byCitizen.values()))

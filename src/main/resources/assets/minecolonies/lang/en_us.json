@@ -4038,6 +4038,9 @@
   "com.minecolonies.coremod.labour.task.withdraw": "Labourer: fetches stock for %2$s",
   "com.minecolonies.coremod.labour.task.deliver": "Labourer: brings %1$sx %2$s",
   "com.minecolonies.coremod.labour.task.builder": "Builder: fetches basics for his build (%2$s)",
+  "com.minecolonies.coremod.labour.task.directed.gather": "Ordered: gathers %2$s (%1$s to go)",
+  "com.minecolonies.coremod.labour.task.directed.deliver": "Ordered: brings %2$s",
+  "com.minecolonies.coremod.labour.task.directed.wait": "Ordered: waits (%2$s)",
   "com.minecolonies.coremod.request.wait.awaiting_labour": "A citizen without a job is making it by hand",
   "com.minecolonies.coremod.request.wait.labour_blocked": "Nothing makes this, and the jobless cannot make it by hand right now (no tree, block, table or tool in reach, or a specialist is missing)",
   "com.minecolonies.coremod.request.wait.labour_blocked.notify": "The citizens without a job cannot make %s by hand right now. Place a crafting table in the colony, or hire a specialist for it."

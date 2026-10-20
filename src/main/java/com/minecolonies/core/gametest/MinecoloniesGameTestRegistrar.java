@@ -122,6 +122,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerLabour(event);
             }
+            if (only.contains("directed"))
+            {
+                registerDirected(event);
+            }
             if (only.contains("emptybp"))
             {
                 EmptyBlueprintGameTests.register(event);
@@ -1116,6 +1120,21 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),
               name.equals("idle_helper_faster") ? longIsolatedColonyData(event, name, 60_000) : isolatedColonyData(event, name));
+        }
+    }
+
+    /**
+     * Directed gathering orders: a manager sends chosen jobless citizens to gather in an area. Run on their own with {@code MINECOLONIES_GAMETEST_ONLY=directed}.
+     */
+    private void registerDirected(final RegisterGameTestsEvent event)
+    {
+        for (final String name : DirectedLabourGameTests.NAMES)
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = DirectedLabourGameTests.test(name);
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              longIsolatedColonyData(event, name, 20_000));
         }
     }
 
