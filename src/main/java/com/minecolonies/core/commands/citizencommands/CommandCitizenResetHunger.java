@@ -14,7 +14,6 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.MinecraftServer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -65,12 +64,6 @@ public class CommandCitizenResetHunger implements IMCColonyOfficerCommand
             if (!context.getSource().permissions().hasPermission(Permissions.COMMANDS_OWNER) && !MineColonies.getConfig().getServer().canPlayerUseModifyCitizensCommand.get())
             {
                 context.getSource().sendSuccess(() -> Component.translatable(CommandTranslationConstants.COMMAND_DISABLED_IN_CONFIG), true);
-                return 0;
-            }
-
-            if (!(context.getSource().source instanceof MinecraftServer) && !(context.getSource().isPlayer() && context.getSource().getPlayer().isCreative()))
-            {
-                context.getSource().sendSuccess(() -> Component.translatable(CommandTranslationConstants.COMMAND_REQUIRES_CREATIVE), true);
                 return 0;
             }
 
