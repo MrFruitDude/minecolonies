@@ -62,6 +62,8 @@ public class CommandTranslationConstants
     @NonNls
     public static final String COMMAND_CITIZEN_MODIFY_SUCCESS = "com.minecolonies.command.citizenmodify.success";
     @NonNls
+    public static final String COMMAND_CITIZEN_RESET_HUNGER_SUCCESS = "com.minecolonies.command.citizenresethunger.success";
+    @NonNls
     public static final String COMMAND_CITIZEN_RELOAD_SUCCESS                = "com.minecolonies.command.citizenreload.success";
     @NonNls
     public static final String COMMAND_CITIZEN_SPAWN_SUCCESS                 = "com.minecolonies.command.citizenspawn.success";

@@ -75,6 +75,7 @@ public class EntryPoint
             .addNode(new CommandCitizenList().build())
             .addNode(new CommandCitizenModify().build())
             .addNode(new CommandCitizenReload().build())
+            .addNode(new CommandCitizenResetHunger().build())
             .addNode(new CommandCitizenSpawnNew().build())
             .addNode(new CommandCitizenTeleport().build())
             .addNode(new CommandCitizenTriggerWalkTo().build())

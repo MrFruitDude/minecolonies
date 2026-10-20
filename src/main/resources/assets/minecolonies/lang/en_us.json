@@ -441,6 +441,7 @@
   "com.minecolonies.command.citizenlist.pagetop": "§2   ------------------ page %d of %d ------------------",
   "com.minecolonies.command.citizenlist.prev": " <- prev",
   "com.minecolonies.command.citizenmodify.success": "The %s of %s is now %s.",
+  "com.minecolonies.command.citizenresethunger.success": "Reset hunger for %s citizen(s) in %s.",
   "com.minecolonies.command.citizenreload.success": "Updated entity for citizen ID %s.",
   "com.minecolonies.command.citizenspawn.success": "Spawned new citizen (%s).",
   "com.minecolonies.command.citizentrack.success.disable": "Tracking disabled",
