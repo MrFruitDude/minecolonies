@@ -3,6 +3,8 @@ package com.minecolonies.core.gametest;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.idle.IIdleTaskSession;
+import com.minecolonies.api.colony.labour.ILabourExclusion;
+import com.minecolonies.api.colony.labour.LabourExclusions;
 import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.core.colony.Colony;
@@ -30,7 +32,10 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -55,10 +60,39 @@ final class DirectedLabourGameTests
         IdleCitizenSettings.overrideForTests(null, null, null);
     }
 
-    private static void end()
+    /** What a test changed beyond its blocks (a veto, a moved building box, a test breaker), put back by {@link #end}; by test, as tests run side by side. */
+    private static final Map<GameTestHelper, List<Runnable>> RESTORE = new HashMap<>();
+
+    private static void restore(final GameTestHelper helper, final Runnable undo)
+    {
+        RESTORE.computeIfAbsent(helper, h -> new ArrayList<>()).add(undo);
+    }
+
+    private static void end(final GameTestHelper helper)
     {
         com.minecolonies.core.colony.labour.LabourStats.debug = false;
         LabourSettings.clearOverrides();
+        final List<Runnable> undo = RESTORE.remove(helper);
+        if (undo != null)
+        {
+            undo.forEach(Runnable::run);
+        }
+    }
+
+    private static boolean gathering(final ICitizenData citizen)
+    {
+        return IdleCitizenArbiter.sessionOf(citizen) instanceof DirectedSession d && d.phase() == DirectedSession.Phase.GATHER;
+    }
+
+    /**
+     * Moves the building's box (with its margin of 2) over the two corners; {@link #end} puts it back.
+     */
+    private static void moveBox(final GameTestHelper helper, final IBuilding building, final BlockPos a, final BlockPos b)
+    {
+        final BlockPos oldA = building.getCorners().getA();
+        final BlockPos oldB = building.getCorners().getB();
+        building.setCorners(a, b);
+        restore(helper, () -> building.setCorners(oldA, oldB));
     }
 
     private static RsFixture found(final GameTestHelper helper, final String name)
@@ -162,7 +196,7 @@ final class DirectedLabourGameTests
             elapsed[0] += 20;
             if (elapsed[0] >= maxTicks)
             {
-                end();
+                end(helper);
                 helper.assertTrue(false, "timeout after " + maxTicks + " ticks: " + failure.get());
                 return;
             }
@@ -219,7 +253,7 @@ final class DirectedLabourGameTests
                 helper.assertTrue(colony.getLabourBoard().claimOf(idle.getId()) == null, "the claim is left");
                 helper.assertTrue(colony.getLabourBoard().directed().orderOf(idle.getId()) == null, "the citizen is still on the order");
                 helper.assertTrue(colony.getLabourBoard().takenTrees().isEmpty(), "a tree is still taken");
-                end();
+                end(helper);
                 helper.succeed();
             }, () -> describe(colony, order, idle));
         });
@@ -269,7 +303,7 @@ final class DirectedLabourGameTests
                 helper.assertTrue(count(helper, Blocks.DIRT, 30, 20, 35, 23, 1, 1) == 24 - 6, "dug: " + (24 - count(helper, Blocks.DIRT, 30, 20, 35, 23, 1, 1)));
                 helper.assertTrue(carrying(a, dirt) + carrying(b, dirt) == carriedBefore, "the workers kept dirt of the order");
                 helper.assertTrue(colony.getLabourBoard().takenSurface().isEmpty(), "a block is still taken");
-                end();
+                end(helper);
                 helper.succeed();
             }, () -> describe(colony, order, a, b));
         });
@@ -336,7 +370,7 @@ final class DirectedLabourGameTests
                 }
                 return false;
             }, () -> {
-                end();
+                end(helper);
                 helper.succeed();
             }, () -> {
                 final DirectedOrder order = colony.getLabourBoard().directed().order(id);
@@ -385,7 +419,7 @@ final class DirectedLabourGameTests
                 helper.assertTrue(carrying(idle, dirt) == holding, "the job took his dirt");
                 return true;
             }, () -> {
-                end();
+                end(helper);
                 helper.succeed();
             }, () -> describe(colony, order, idle));
         });
@@ -438,7 +472,7 @@ final class DirectedLabourGameTests
             expect(helper, orders.start(List.of(idle.getId()), DirectedOrder.Resource.GRAVEL, 4, ok, null), DirectedOrders.Refusal.NOT_ELIGIBLE, "a second order");
             helper.assertTrue(orders.cancel(first.order().id()), "cancel");
             helper.assertTrue(!orders.cancel(424242), "a cancel of no order was accepted");
-            end();
+            end(helper);
             helper.succeed();
         });
     }
@@ -448,9 +482,196 @@ final class DirectedLabourGameTests
         helper.assertTrue(start.order() == null && start.refusal() == refusal, what + ": expected " + refusal + " but got " + (start.order() != null ? "an order" : start.refusal()));
     }
 
+    // ------------------------------------------------------------------ the target changes while he walks
+
+    /**
+     * A veto comes over the tree after he chose it and before the first log breaks: not one log is felled, nothing is counted or carried, the tree and the block he
+     * spoke for are given back, and the order says that no site is left.
+     */
+    public static void vetoedBeforeTheBreak(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "directed veto");
+        final Colony colony = (Colony) f.colony;
+        tree(helper, 34, 20, 5);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            final Predicate<ItemStack> logs = s -> s.is(ItemTags.LOGS);
+            final int holding = carrying(idle, logs);
+            final DirectedOrder.Area area = area(helper, 30, 16, 41, 26);
+            final boolean[] vetoed = {false};
+            final ILabourExclusion veto = (c, pos) -> vetoed[0] && c.getID() == colony.getID() && area.contains(pos);
+            LabourExclusions.register(veto);
+            restore(helper, () -> LabourExclusions.unregister(veto));
+            final DirectedOrders.Start start = colony.getLabourBoard().directed().start(List.of(idle.getId()), DirectedOrder.Resource.WOOD, 3, area, null);
+            helper.assertTrue(start.order() != null, "refused: " + start.refusal());
+            final DirectedOrder order = start.order();
+            final long[] since = {0L};
+            poll(helper, colony, 6000, () -> {
+                if (!vetoed[0])
+                {
+                    if (!gathering(idle))
+                    {
+                        return false;
+                    }
+                    helper.assertTrue(count(helper, Blocks.OAK_LOG, 34, 20, 34, 20, 1, 5) == 5, "a log fell before the veto came");
+                    vetoed[0] = true;
+                    since[0] = helper.getLevel().getGameTime();
+                    return false;
+                }
+                helper.assertTrue(count(helper, Blocks.OAK_LOG, 34, 20, 34, 20, 1, 5) == 5, "a vetoed log was felled");
+                helper.assertTrue(order.carried(idle.getId()) == 0 && order.delivered() == 0, "a vetoed log was counted");
+                return helper.getLevel().getGameTime() - since[0] >= 400 && order.why() == DirectedOrder.Why.NO_SITE;
+            }, () -> {
+                helper.assertTrue(carrying(idle, logs) == holding, "he carries logs he may not have: " + carrying(idle, logs));
+                helper.assertTrue(order.committed() == 0, "the order still speaks for " + order.committed());
+                helper.assertTrue(colony.getLabourBoard().takenTrees().isEmpty(), "the vetoed tree is still taken");
+                helper.assertTrue(colony.getLabourBoard().directed().cancel(order.id()), "cancel");
+                end(helper);
+                helper.succeed();
+            }, () -> describe(colony, order, idle) + " vetoed " + vetoed[0]);
+        });
+    }
+
+    /**
+     * A building's box comes over the dirt after he chose a block and before it breaks: the check at the break reads the buildings as they are (not the scan's cache
+     * of them), so not one block is dug and nothing is counted.
+     */
+    public static void buildingBeforeTheBreak(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "directed building");
+        final Colony colony = (Colony) f.colony;
+        for (int x = 30; x <= 35; x++)
+        {
+            for (int z = 20; z <= 23; z++)
+            {
+                helper.setBlock(new BlockPos(x, 1, z), Blocks.DIRT.defaultBlockState());
+            }
+        }
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            final Predicate<ItemStack> dirt = s -> s.is(Items.DIRT);
+            final int holding = carrying(idle, dirt);
+            final DirectedOrders.Start start = colony.getLabourBoard().directed().start(List.of(idle.getId()), DirectedOrder.Resource.DIRT, 4, area(helper, 30, 20, 35, 23), null);
+            helper.assertTrue(start.order() != null, "refused: " + start.refusal());
+            final DirectedOrder order = start.order();
+            final boolean[] built = {false};
+            final long[] since = {0L};
+            poll(helper, colony, 6000, () -> {
+                if (!built[0])
+                {
+                    if (!gathering(idle))
+                    {
+                        return false;
+                    }
+                    helper.assertTrue(count(helper, Blocks.DIRT, 30, 20, 35, 23, 1, 1) == 24, "dirt was dug before the building came");
+                    built[0] = true;
+                    since[0] = helper.getLevel().getGameTime();
+                    moveBox(helper, f.builder, helper.absolutePos(new BlockPos(32, 1, 21)), helper.absolutePos(new BlockPos(33, 1, 22)));
+                    return false;
+                }
+                helper.assertTrue(count(helper, Blocks.DIRT, 30, 20, 35, 23, 1, 1) == 24, "dirt in the building's box was dug");
+                helper.assertTrue(order.carried(idle.getId()) == 0 && order.delivered() == 0, "dirt of the building was counted");
+                return helper.getLevel().getGameTime() - since[0] >= 600;
+            }, () -> {
+                helper.assertTrue(carrying(idle, dirt) == holding, "he carries dirt he may not have: " + carrying(idle, dirt));
+                helper.assertTrue(colony.getLabourBoard().directed().cancel(order.id()), "cancel");
+                end(helper);
+                helper.succeed();
+            }, () -> describe(colony, order, idle) + " built " + built[0]);
+        });
+    }
+
+    /**
+     * A natural tree whose branch reaches into a building's box is the building's: it stands whole, the clean tree next to it is felled for the order. (Only the base
+     * was looked at before; every log is now.)
+     */
+    public static void branchInABuilding(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "directed branch");
+        final Colony colony = (Colony) f.colony;
+        tree(helper, 34, 20, 5);
+        helper.setBlock(new BlockPos(34, 4, 21), Blocks.OAK_LOG.defaultBlockState());
+        helper.setBlock(new BlockPos(34, 4, 22), Blocks.OAK_LOG.defaultBlockState());
+        helper.setBlock(new BlockPos(34, 4, 23), Blocks.OAK_LOG.defaultBlockState());
+        tree(helper, 39, 18, 5);
+        helper.runAfterDelay(100, () -> {
+            // the box (margin 2) holds the branch's last two logs, not the trunk or the base
+            moveBox(helper, f.builder, helper.absolutePos(new BlockPos(34, 4, 24)), helper.absolutePos(new BlockPos(34, 4, 24)));
+            colony.getLabourBoard().sites().invalidate();
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            final Predicate<ItemStack> logs = s -> s.is(ItemTags.LOGS);
+            final int before = inBuilding(f.warehouse, logs);
+            final DirectedOrders.Start start = colony.getLabourBoard().directed().start(List.of(idle.getId()), DirectedOrder.Resource.WOOD, 3, area(helper, 30, 14, 41, 26), null);
+            helper.assertTrue(start.order() != null, "refused: " + start.refusal());
+            final DirectedOrder order = start.order();
+            poll(helper, colony, 9000, () -> {
+                helper.assertTrue(count(helper, Blocks.OAK_LOG, 34, 20, 34, 23, 1, 5) == 8, "the tree reaching into the building was cut");
+                return !order.active();
+            }, () -> {
+                helper.assertTrue(order.state() == DirectedOrder.State.COMPLETED, "the order ended as " + order.state());
+                helper.assertTrue(inBuilding(f.warehouse, logs) - before == 3, "logs in the warehouse: " + (inBuilding(f.warehouse, logs) - before));
+                helper.assertTrue(count(helper, Blocks.OAK_LOG, 39, 18, 39, 18, 1, 5) < 5, "the clean tree was not felled");
+                end(helper);
+                helper.succeed();
+            }, () -> describe(colony, order, idle));
+        });
+    }
+
+    /**
+     * The block does not break (something refused the removal): its drops are never made, nothing is counted or carried, and he leaves the block.
+     */
+    public static void failedBreakMintsNothing(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "directed failed break");
+        final Colony colony = (Colony) f.colony;
+        for (int x = 30; x <= 35; x++)
+        {
+            for (int z = 20; z <= 23; z++)
+            {
+                helper.setBlock(new BlockPos(x, 1, z), Blocks.DIRT.defaultBlockState());
+            }
+        }
+        final int[] tries = {0};
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            // only his breaks fail: the workers of tests running beside this one break as always
+            DirectedSession.breakerForTests((worker, pos, owner, slot) -> {
+                if (idle.getEntity().orElse(null) == worker)
+                {
+                    tries[0]++;
+                    return;
+                }
+                DirectedSession.REAL_BREAKER.breakBlock(worker, pos, owner, slot);
+            });
+            restore(helper, () -> DirectedSession.breakerForTests(null));
+            final Predicate<ItemStack> dirt = s -> s.is(Items.DIRT);
+            final int holding = carrying(idle, dirt);
+            final int before = inBuilding(f.warehouse, dirt);
+            final DirectedOrders.Start start = colony.getLabourBoard().directed().start(List.of(idle.getId()), DirectedOrder.Resource.DIRT, 4, area(helper, 30, 20, 35, 23), null);
+            helper.assertTrue(start.order() != null, "refused: " + start.refusal());
+            final DirectedOrder order = start.order();
+            poll(helper, colony, 6000, () -> {
+                helper.assertTrue(carrying(idle, dirt) == holding, "a block that did not break gave dirt: " + carrying(idle, dirt));
+                helper.assertTrue(order.carried(idle.getId()) == 0 && order.delivered() == 0, "a block that did not break was counted");
+                return tries[0] >= 3;
+            }, () -> {
+                helper.assertTrue(count(helper, Blocks.DIRT, 30, 20, 35, 23, 1, 1) == 24, "a block broke past the test breaker");
+                helper.assertTrue(inBuilding(f.warehouse, dirt) == before, "dirt reached the warehouse");
+                helper.assertTrue(colony.getLabourBoard().directed().cancel(order.id()), "cancel");
+                end(helper);
+                helper.succeed();
+            }, () -> describe(colony, order, idle) + " tries " + tries[0]);
+        });
+    }
+
     // ------------------------------------------------------------------ registration
 
-    static final String[] NAMES = {"labour_directed_wood_area", "labour_directed_two_workers", "labour_directed_reload_cancel", "labour_directed_job", "labour_directed_refusals"};
+    static final String[] NAMES = {"labour_directed_wood_area", "labour_directed_two_workers", "labour_directed_reload_cancel", "labour_directed_job", "labour_directed_refusals",
+      "labour_directed_veto_before_break", "labour_directed_building_before_break", "labour_directed_branch_in_building", "labour_directed_failed_break"};
 
     static java.util.function.Consumer<GameTestHelper> test(final String name)
     {
@@ -460,6 +681,10 @@ final class DirectedLabourGameTests
             case "labour_directed_two_workers" -> DirectedLabourGameTests::twoWorkersShareWithoutExtra;
             case "labour_directed_reload_cancel" -> DirectedLabourGameTests::reloadThenCancelConserves;
             case "labour_directed_job" -> DirectedLabourGameTests::jobEndsTheOrderForHim;
+            case "labour_directed_veto_before_break" -> DirectedLabourGameTests::vetoedBeforeTheBreak;
+            case "labour_directed_building_before_break" -> DirectedLabourGameTests::buildingBeforeTheBreak;
+            case "labour_directed_branch_in_building" -> DirectedLabourGameTests::branchInABuilding;
+            case "labour_directed_failed_break" -> DirectedLabourGameTests::failedBreakMintsNothing;
             default -> DirectedLabourGameTests::refusals;
         };
     }

@@ -19,6 +19,7 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -46,6 +47,32 @@ public final class DirectedSession implements IIdleTaskSession
 
     private static final int  ACTION_TIMEOUT = 1800;
     private static final long WAIT_TICKS     = 200L;
+
+    /** {@link #breakWork}: he still works on the block. */
+    private static final int WORKING = -1;
+    /** {@link #breakWork}: the block may no longer be taken, or it did not break; nothing was gathered. */
+    private static final int REFUSED = -2;
+
+    /**
+     * How a block is broken: the citizens' path that wears the tool and removes the block.
+     */
+    @FunctionalInterface
+    public interface Breaker
+    {
+        void breakBlock(AbstractEntityCitizen worker, BlockPos pos, @Nullable AbstractEntityCitizen owner, int slot);
+    }
+
+    /** The citizens' real path. */
+    public static final     Breaker REAL_BREAKER = CitizenItemUtils::breakBlockWearingToolOf;
+    private static volatile Breaker breaker      = REAL_BREAKER;
+
+    /**
+     * Only for tests (a removal that fails): null puts the real path back.
+     */
+    public static void breakerForTests(@Nullable final Breaker test)
+    {
+        breaker = test == null ? REAL_BREAKER : test;
+    }
 
     private final Colony       colony;
     private final ICitizenData citizen;
@@ -368,7 +395,12 @@ public final class DirectedSession implements IIdleTaskSession
             final BlockPos log = logsLeft.get(0);
             // (a tree that was started is felled to the last log: the logs past what the order needs are the worker's own)
             order.reserve(citizen.getId());
-            final int matched = breakWork(worker, level, log, toolSlot(level, level.getBlockState(log), order.resource()), now, matcher);
+            final int matched = breakWork(worker, level, log, toolSlot(level, level.getBlockState(log), order.resource()), now, matcher, pos -> treeSafe(order));
+            if (matched == REFUSED)
+            {
+                abandon(order, tree.base(), now);
+                return;
+            }
             if (matched >= 0)
             {
                 logsLeft.remove(0);
@@ -404,13 +436,48 @@ public final class DirectedSession implements IIdleTaskSession
             go(Phase.FIND, now);
             return;
         }
-        final int matched = breakWork(worker, level, block, slot, now, matcher);
+        final int matched = breakWork(worker, level, block, slot, now, matcher,
+          pos -> board.sites().directedSurfaceSafe(order.area(), order.resource(), order.floor(), pos));
+        if (matched == REFUSED)
+        {
+            abandon(order, block, now);
+            return;
+        }
         if (matched >= 0)
         {
             dropTarget();
             counted(order, matched);
             go(Phase.FIND, now);
         }
+    }
+
+    /**
+     * @return whether every log still to fell may still be taken (a tree that grew into a building's box, a veto or a lost claim is left whole from here on).
+     */
+    private boolean treeSafe(final DirectedOrder order)
+    {
+        for (final BlockPos log : logsLeft)
+        {
+            if (!board.sites().directedSafe(order.area(), log))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The target may no longer be taken, or it did not break: it is left for good, the block he spoke for is given back without goods, the area is looked at again.
+     */
+    private void abandon(final DirectedOrder order, final BlockPos target, final long now)
+    {
+        LabourStats.log("citizen {} leaves {} of order {}: no longer to be taken", citizen.getId(), target.toShortString(), order.id());
+        unreachable.add(target);
+        dropTarget();
+        order.unreserve(citizen.getId());
+        board.sites().forgetArea(orderId);
+        board.heartbeat(claim);
+        go(Phase.FIND, now);
     }
 
     private void counted(final DirectedOrder order, final int matched)
@@ -449,12 +516,15 @@ public final class DirectedSession implements IIdleTaskSession
     }
 
     /**
-     * Works on a block until it breaks (the time a hand or the tool takes); then its real drops go into his inventory (what does not fit lies at his feet) and the tool
-     * wears through the citizens' damage path.
+     * Works on a block until it breaks (the time a hand or the tool takes). When it is due, the block is looked at once more ({@code safe}: borders, buildings and
+     * vetoes as they are now); then the tool wears and the block is removed through the citizens' path, and only when it is really gone do its real drops go into his
+     * inventory (what does not fit lies at his feet).
      *
-     * @return -1 while he still works, else how many of the drops are the resource.
+     * @return {@link #WORKING} while he still works, {@link #REFUSED} when the block may no longer be taken or did not break (nothing gathered), else how many of the
+     *   drops are the resource.
      */
-    private int breakWork(final AbstractEntityCitizen worker, final ServerLevel level, final BlockPos pos, final int toolSlot, final long now, final Predicate<ItemStack> matcher)
+    private int breakWork(final AbstractEntityCitizen worker, final ServerLevel level, final BlockPos pos, final int toolSlot, final long now, final Predicate<ItemStack> matcher,
+      final Predicate<BlockPos> safe)
     {
         final BlockState state = level.getBlockState(pos);
         if (state.isAir())
@@ -478,11 +548,27 @@ public final class DirectedSession implements IIdleTaskSession
                 lastSwing = now;
                 CitizenItemUtils.hitBlockWithToolInHand(worker, pos, false);
             }
-            return -1;
+            return WORKING;
         }
         workUntil = 0L;
-        int matched = 0;
+        if (!safe.test(pos))
+        {
+            return REFUSED;
+        }
+        // the drops are read while the block stands, and kept only once it is gone
+        final List<ItemStack> drops = new ArrayList<>();
         for (final ItemStack drop : BlockPosUtil.getBlockDrops(level, pos, 0, tool, worker))
+        {
+            drops.add(drop.copy());
+        }
+        breaker.breakBlock(worker, pos, toolSlot < 0 ? null : worker, toolSlot);
+        if (level.getBlockState(pos).getBlock() == state.getBlock())
+        {
+            LabourStats.log("citizen {} could not break {} at {}: nothing gathered", citizen.getId(), state.getBlock(), pos.toShortString());
+            return REFUSED;
+        }
+        int matched = 0;
+        for (final ItemStack drop : drops)
         {
             LabourStats.gathered(drop);
             if (matcher.test(drop))
@@ -491,7 +577,6 @@ public final class DirectedSession implements IIdleTaskSession
             }
             keep(worker, drop);
         }
-        CitizenItemUtils.breakBlockWearingToolOf(worker, pos, toolSlot < 0 ? null : worker, toolSlot);
         return matched;
     }
 

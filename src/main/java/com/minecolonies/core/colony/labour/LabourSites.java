@@ -227,14 +227,22 @@ public final class LabourSites
         final List<BoundingBox> list = new ArrayList<>();
         for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
         {
-            final BlockPos a = building.getCorners().getA();
-            final BlockPos b = building.getCorners().getB();
-            list.add(new BoundingBox(Math.min(a.getX(), b.getX()) - 2, Math.min(a.getY(), b.getY()) - 2, Math.min(a.getZ(), b.getZ()) - 2,
-              Math.max(a.getX(), b.getX()) + 2, Math.max(a.getY(), b.getY()) + 2, Math.max(a.getZ(), b.getZ()) + 2));
+            list.add(box(building));
         }
         boxes = list;
         boxesAt = now;
         return list;
+    }
+
+    /**
+     * @return the building's box with its 2 block margin.
+     */
+    private static BoundingBox box(final IBuilding building)
+    {
+        final BlockPos a = building.getCorners().getA();
+        final BlockPos b = building.getCorners().getB();
+        return new BoundingBox(Math.min(a.getX(), b.getX()) - 2, Math.min(a.getY(), b.getY()) - 2, Math.min(a.getZ(), b.getZ()) - 2,
+          Math.max(a.getX(), b.getX()) + 2, Math.max(a.getY(), b.getY()) + 2, Math.max(a.getZ(), b.getZ()) + 2);
     }
 
     /**
@@ -1000,7 +1008,8 @@ public final class LabourSites
                 return null;
             }
             final long key = ((long) (current.getX() >> 4) << 32) ^ ((current.getZ() >> 4) & 0xffffffffL);
-            if (!owned.computeIfAbsent(key, k -> ownedBy(current)) || LabourExclusions.excluded(colony, current))
+            // every log, not just the base: a natural tree that touches a building's logs is the building's
+            if (!owned.computeIfAbsent(key, k -> ownedBy(current)) || protectedBlock(current))
             {
                 return null;
             }
@@ -1052,11 +1061,51 @@ public final class LabourSites
                 }
             }
         }
-        if (leaves.size() < MIN_LEAVES || protectedBlock(base))
+        if (leaves.size() < MIN_LEAVES)
         {
             return null;
         }
         logs.sort(Comparator.comparingInt(BlockPos::getY));
         return new TreeSite(base, logs, baseState.getBlock().asItem());
+    }
+
+    // ------------------------------------------------------------------ the last look before a directed worker breaks a block
+
+    /**
+     * Whether a directed worker may still break the block now, though borders, buildings and vetoes may have changed since the area was scanned: it lies in the area,
+     * in a loaded chunk (nothing is loaded to look) and in this colony's claim, and in no building's box (read from the buildings now, not the scan's cache) and no
+     * veto. Called once per block, when it breaks.
+     */
+    public boolean directedSafe(final DirectedOrder.Area area, final BlockPos pos)
+    {
+        final ServerLevel level = level();
+        if (level == null || !area.contains(pos) || level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) == null || !ownedBy(pos))
+        {
+            return false;
+        }
+        for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
+        {
+            if (box(building).isInside(pos))
+            {
+                return false;
+            }
+        }
+        return !LabourExclusions.excluded(colony, pos);
+    }
+
+    /**
+     * {@link #directedSafe} for a top block of a directed order: still the resource, open above, standing on solid ground above the floor, no fluid next to it and no
+     * pit left by digging it.
+     */
+    public boolean directedSurfaceSafe(final DirectedOrder.Area area, final DirectedOrder.Resource resource, final int floor, final BlockPos pos)
+    {
+        if (!directedSafe(area, pos))
+        {
+            return false;
+        }
+        final ServerLevel level = level();
+        // (makesPit before the fluid check: it refuses a neighbour in a chunk that is not loaded, which the fluid check would load)
+        return pos.getY() >= floor && directedBlock(resource, level.getBlockState(pos)) && level.getBlockState(pos.above()).isAir() && !level.getBlockState(pos.below()).isAir()
+                 && level.getFluidState(pos.below()).isEmpty() && !makesPit(level, pos) && !exposedToFluid(level, pos);
     }
 }
