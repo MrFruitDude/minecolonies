@@ -178,6 +178,41 @@ public final class LabourSettings
         return config(c -> c.labourersKeepTrees.get(), 4, "keepTrees");
     }
 
+    /**
+     * @return whether automatic labour (requests, stock goals, a builder's own supply) may dig sand, dirt, gravel and stone out of the world. Off by default and when
+     *   the config cannot be read: a block of the ground that a player placed before placements were recorded cannot be told from the world's own, so nothing is
+     *   dug unless the server owner accepts that. Directed orders dig only in the area their manager chose and are not switched by this.
+     */
+    public static boolean digUnprovenGround()
+    {
+        return config(c -> c.labourersDigUnprovenGround.get(), false, "digUnproven");
+    }
+
+    private static final java.util.Set<Integer> DIG_FOR_TESTS = ConcurrentHashMap.newKeySet();
+
+    /**
+     * @return {@link #digUnprovenGround()} for the colony (a test may allow it for its own colony only).
+     */
+    public static boolean digUnprovenGround(final IColony colony)
+    {
+        return digUnprovenGround() || DIG_FOR_TESTS.contains(colony.getID());
+    }
+
+    /**
+     * Only for tests: lets one colony's automatic labour dig the ground. Per colony, so tests that run side by side (and clear the overrides) do not see it.
+     */
+    public static void allowDiggingForTest(final int colonyId, final boolean allow)
+    {
+        if (allow)
+        {
+            DIG_FOR_TESTS.add(colonyId);
+        }
+        else
+        {
+            DIG_FOR_TESTS.remove(colonyId);
+        }
+    }
+
     public static int supplyGraceTicks()
     {
         return config(c -> c.labourersSupplyGraceTicks.get(), 1200, "graceTicks");

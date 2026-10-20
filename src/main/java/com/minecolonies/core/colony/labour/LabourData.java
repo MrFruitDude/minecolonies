@@ -26,6 +26,8 @@ public final class LabourData
     private static final String TAG_DIRECTED = "directed";
     private static final String TAG_NEXT     = "directedNext";
     private static final String TAG_REVISION = "directedRevision";
+    private static final String TAG_PLACED      = "placed";
+    private static final String TAG_PLACED_FULL = "placedFull";
 
     /**
      * What a manager says about a table or furnace.
@@ -42,6 +44,17 @@ public final class LabourData
     private final java.util.List<DirectedOrder> directed = new java.util.ArrayList<>();
     private int  nextOrder = 1;
     private long directedRevision;
+
+    /** Where blocks a labourer could take were placed since this record exists (absent in older saves: nothing on record). */
+    private final LabourPlacements placements = new LabourPlacements();
+
+    /**
+     * @return the record of placed blocks (the live record).
+     */
+    public LabourPlacements placements()
+    {
+        return placements;
+    }
 
     /**
      * @return the directed orders (the live list; {@link DirectedOrders} changes it).
@@ -125,6 +138,11 @@ public final class LabourData
             tag.putInt(TAG_NEXT, nextOrder);
             tag.putLong(TAG_REVISION, directedRevision);
         }
+        if (placements.size() > 0 || placements.full())
+        {
+            tag.putLongArray(TAG_PLACED, placements.toArray());
+            tag.putBoolean(TAG_PLACED_FULL, placements.full());
+        }
         return tag;
     }
 
@@ -158,5 +176,6 @@ public final class LabourData
         }
         nextOrder = Math.max(highest + 1, tag.getIntOr(TAG_NEXT, 1));
         directedRevision = tag.getLongOr(TAG_REVISION, 0L) + 1;
+        placements.read(tag.getLongArray(TAG_PLACED).orElse(new long[0]), tag.getBooleanOr(TAG_PLACED_FULL, false));
     }
 }

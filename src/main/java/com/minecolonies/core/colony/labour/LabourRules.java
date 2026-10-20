@@ -47,6 +47,13 @@ public final class LabourRules
     public static final TagKey<Item>  STRIP_RESULTS  = item("labour/strip_results");
     public static final TagKey<Item>  CUTTER_INPUTS  = item("labour/cutter_inputs");
     public static final TagKey<Item>  STRIPPED_LOGS  = TagKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath("c", "stripped_logs"));
+    public static final TagKey<Block> STRIPPED_LOG_BLOCKS  = TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath("c", "stripped_logs"));
+    public static final TagKey<Block> STRIPPED_WOOD_BLOCKS = TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath("c", "stripped_woods"));
+
+    /**
+     * The longest straight run of horizontal logs a natural tree has (a longer one is a beam somebody built).
+     */
+    public static final int MAX_BRANCH_RUN = 5;
 
     private LabourRules()
     {
@@ -269,5 +276,54 @@ public final class LabourRules
     public static boolean log(final BlockState state)
     {
         return state.is(BlockTags.LOGS);
+    }
+
+    /**
+     * @return whether the block is a log as a tree grows it: a log, never stripped and never a bark block ({@code _wood}, {@code _hyphae}: crafted, no tree of the
+     *   world grows them). Whether the axe would still strip it is the site's check ({@link LabourSites}).
+     */
+    public static boolean naturalLog(final BlockState state)
+    {
+        if (!state.is(BlockTags.LOGS) || state.is(STRIPPED_LOG_BLOCKS) || state.is(STRIPPED_WOOD_BLOCKS))
+        {
+            return false;
+        }
+        final String path = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
+        return !path.startsWith("stripped_") && !path.contains("_stripped") && !path.endsWith("_wood") && !path.endsWith("_hyphae");
+    }
+
+    /**
+     * @return whether the block next to a log shows that people built there: planks, stairs, slabs, fences, gates, doors, trapdoors, walls, beds, wool, carpets, signs,
+     *   banners, buttons, plates, rails, cobblestone, glass, leaves somebody placed, or any block with a block entity but a bee nest. A tree touching one is not felled.
+     */
+    public static boolean construction(final BlockState state)
+    {
+        if (state.isAir())
+        {
+            return false;
+        }
+        if (state.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock)
+        {
+            return state.getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT);
+        }
+        if (state.hasBlockEntity())
+        {
+            return !state.is(Blocks.BEE_NEST);
+        }
+        return state.is(BlockTags.PLANKS) || state.is(BlockTags.STAIRS) || state.is(BlockTags.SLABS) || state.is(BlockTags.FENCES) || state.is(BlockTags.FENCE_GATES)
+                 || state.is(BlockTags.DOORS) || state.is(BlockTags.TRAPDOORS) || state.is(BlockTags.WALLS) || state.is(BlockTags.BEDS) || state.is(BlockTags.WOOL)
+                 || state.is(BlockTags.WOOL_CARPETS) || state.is(BlockTags.ALL_SIGNS) || state.is(BlockTags.BANNERS) || state.is(BlockTags.BUTTONS)
+                 || state.is(BlockTags.PRESSURE_PLATES) || state.is(BlockTags.RAILS) || state.is(Blocks.COBBLESTONE) || state.is(Blocks.GLASS)
+                 || state.getBlock() instanceof net.minecraft.world.level.block.TransparentBlock || state.getBlock() instanceof net.minecraft.world.level.block.StainedGlassPaneBlock
+                 || state.getBlock() instanceof net.minecraft.world.level.block.IronBarsBlock;
+    }
+
+    /**
+     * @return whether a placement of the block is recorded for the labourers (what they could otherwise take: logs, saplings, sand, dirt, gravel, stone).
+     */
+    public static boolean recordsPlacement(final BlockState state)
+    {
+        return state.is(BlockTags.LOGS) || state.is(BlockTags.SAPLINGS) || surface(state) || stone(state) || state.is(Blocks.STONE) || state.is(Blocks.DIRT)
+                 || state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.GRAVEL);
     }
 }

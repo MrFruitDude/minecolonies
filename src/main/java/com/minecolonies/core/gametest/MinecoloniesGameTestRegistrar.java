@@ -130,6 +130,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerExpanded(event);
             }
+            if (only.contains("natural"))
+            {
+                registerNatural(event);
+            }
             if (only.contains("emptybp"))
             {
                 EmptyBlueprintGameTests.register(event);
@@ -1135,7 +1139,40 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     {
         for (final String name : ExpandedLabourGameTests.NAMES)
         {
+            if (skipped(name))
+            {
+                continue;
+            }
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = ExpandedLabourGameTests.test(name);
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              longIsolatedColonyData(event, name, 20_000));
+        }
+    }
+
+    /**
+     * @return whether a development run leaves the test out ({@code MINECOLONIES_GAMETEST_SKIP}: test names separated by commas; for a run of only the cases a change
+     *   touches).
+     */
+    private static boolean skipped(final String name)
+    {
+        final String skip = System.getenv("MINECOLONIES_GAMETEST_SKIP");
+        return skip != null && java.util.Arrays.asList(skip.split(",")).contains(name);
+    }
+
+    /**
+     * Labourers take natural resources only. Run on their own with {@code MINECOLONIES_GAMETEST_ONLY=natural}.
+     */
+    private void registerNatural(final RegisterGameTestsEvent event)
+    {
+        for (final String name : NaturalSafetyGameTests.NAMES)
+        {
+            if (skipped(name))
+            {
+                continue;
+            }
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = NaturalSafetyGameTests.test(name);
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),
@@ -1150,6 +1187,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     {
         for (final String name : DirectedLabourGameTests.NAMES)
         {
+            if (skipped(name))
+            {
+                continue;
+            }
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = DirectedLabourGameTests.test(name);
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
@@ -1167,6 +1208,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           "labour_builder_self_supply", "labour_stone_tools", "labour_withdraw_covered", "labour_stockpile", "labour_charcoal", "labour_furnace_taken", "labour_natural_trees",
           "labour_coverage", "labour_ledger_sweep", "labour_caps", "labour_retrying_held", "labour_night"})
         {
+            if (skipped(name))
+            {
+                continue;
+            }
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
                 case "labour_crafts_wooden_tools" -> LabourGameTests::craftsWoodenTools;

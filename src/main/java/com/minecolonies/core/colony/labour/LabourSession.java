@@ -79,7 +79,13 @@ public final class LabourSession implements IIdleTaskSession
     // gather
     private LabourSites.TreeSite tree;
     private List<BlockPos>       logsLeft;
+    /** The stripped states he set himself on the logs of the tree he works on (only those stripped logs are his to fell). */
+    private final Map<BlockPos, BlockState> strippedHere = new HashMap<>();
+    /** Whether the tree he works on passed the fresh look before its first log was changed. */
+    private boolean                     treeVerified;
     private BlockPos             block;
+    /** The block the top block was when he chose it (another block there is not his to dig). */
+    private net.minecraft.world.level.block.Block blockChosen;
     private int                  looseId = -1;
     private long                 workUntil;
     private long                 lastSwing;
@@ -274,11 +280,14 @@ public final class LabourSession implements IIdleTaskSession
             board.takenTrees().remove(tree.base());
             tree = null;
         }
+        strippedHere.clear();
+        treeVerified = false;
         if (block != null)
         {
             board.takenSurface().remove(block);
             block = null;
         }
+        blockChosen = null;
         if (looseId >= 0)
         {
             board.takenEntities().remove(looseId);
@@ -616,16 +625,15 @@ public final class LabourSession implements IIdleTaskSession
     {
         if (tree == null)
         {
+            final java.util.Set<BlockPos> skip = new java.util.HashSet<>(board.takenTrees());
+            skip.addAll(leftTrees);
             if (area != null)
             {
-                final java.util.Set<BlockPos> skip = new java.util.HashSet<>(board.takenTrees());
-                skip.addAll(leftTrees);
                 tree = board.sites().nearestToolTreeIn(orderId, area, item, worker.blockPosition(), skip);
             }
             else
             {
-                tree = strip ? board.sites().nearestStripTree(item, worker.blockPosition(), board.takenTrees())
-                         : board.sites().nearestTree(item, worker.blockPosition(), board.takenTrees());
+                tree = strip ? board.sites().nearestStripTree(item, worker.blockPosition(), skip) : board.sites().nearestTree(item, worker.blockPosition(), skip);
             }
             if (tree == null)
             {
@@ -635,16 +643,28 @@ public final class LabourSession implements IIdleTaskSession
             }
             board.takenTrees().add(tree.base());
             logsLeft = new ArrayList<>(tree.logs());
+            strippedHere.clear();
+            treeVerified = false;
             workUntil = 0L;
         }
-        // (in tool mode a log in a chunk that unloaded is not read: that would load it)
-        logsLeft.removeIf(pos -> (area != null && !level.isLoaded(pos)) || !LabourRules.log(level.getBlockState(pos)));
+        // (a log in a chunk that is not loaded is not read: that would load it; the tree is left)
+        for (final BlockPos pos : logsLeft)
+        {
+            if (!level.isLoaded(pos))
+            {
+                leaveTree("a log lies in a chunk that is not loaded", now);
+                return;
+            }
+        }
+        logsLeft.removeIf(pos -> level.getBlockState(pos).isAir());
         if (logsLeft.isEmpty())
         {
             plantSapling(worker, level, tree.base());
             board.sites().invalidate();
             board.takenTrees().remove(tree.base());
             tree = null;
+            strippedHere.clear();
+            treeVerified = false;
             board.heartbeat(claim);
             return;
         }
@@ -652,16 +672,23 @@ public final class LabourSession implements IIdleTaskSession
         {
             return;
         }
-        final BlockPos log = logsLeft.get(0);
-        if (area != null && !areaSafe())
+        if (!treeVerified)
         {
-            // a log grew into a building's box, a veto, an unloaded chunk or out of the claim since the scan: the rest of the tree stands, he looks again
-            LabourStats.log("citizen {} leaves tree {} of order {} for the tool", citizen.getId(), tree.base(), orderId);
-            leftTrees.add(tree.base());
-            cleanup();
-            go(Phase.THINK, now);
+            // the scan may be old: the whole tree is proved natural once more, with the buildings, vetoes and placed blocks as they are now, before a log is changed
+            if (!board.sites().verifyTree(tree, area))
+            {
+                leaveTree("the tree is no longer a natural tree to take", now);
+                return;
+            }
+            treeVerified = true;
+        }
+        if (!board.sites().treeStillSafe(tree, logsLeft, area, strippedHere))
+        {
+            // a log grew into a building's box, a veto, a placed block, an unloaded chunk or out of the claim, or a log changed or something built touches the tree
+            leaveTree("a log may no longer be taken", now);
             return;
         }
+        final BlockPos log = logsLeft.get(0);
         int toolSlot = -1;
         if (strip)
         {
@@ -673,47 +700,72 @@ public final class LabourSession implements IIdleTaskSession
                 go(Phase.THINK, now);
                 return;
             }
-            if (level.getBlockState(log).getBlock().asItem() != item && !stripNow(worker, level, log, toolSlot, item, now))
+            // (only a stripped log he made himself here is felled as such: a stripped log he did not make is never a tree's, and treeStillSafe refused it)
+            if (!strippedHere.containsKey(log))
             {
-                return;
+                final int stripped = stripNow(worker, level, log, toolSlot, item, now);
+                if (stripped == REFUSED)
+                {
+                    leaveTree("the log cannot be stripped to " + item, now);
+                    return;
+                }
+                if (stripped == WORKING)
+                {
+                    return;
+                }
+                if (!board.sites().treeStillSafe(tree, logsLeft, area, strippedHere))
+                {
+                    leaveTree("a log may no longer be taken", now);
+                    return;
+                }
             }
         }
-        if (breakWork(worker, level, log, toolSlot, now))
+        final List<BlockPos> remaining = logsLeft;
+        final int broken = breakWork(worker, level, log, toolSlot, now, pos -> board.sites().treeStillSafe(tree, remaining, area, strippedHere));
+        if (broken == REFUSED)
         {
+            leaveTree("the log did not break or may no longer be taken", now);
+            return;
+        }
+        if (broken == DONE)
+        {
+            strippedHere.remove(log);
             logsLeft.remove(0);
             board.heartbeat(claim);
         }
     }
 
     /**
-     * @return whether every log still to fell for the tool of the order may still be taken, read now (the directed session's own check of a tree).
+     * Leaves the rest of the tree he works on standing for good (this session and the scans until they run again) and thinks again.
      */
-    private boolean areaSafe()
+    private void leaveTree(final String why, final long now)
     {
-        for (final BlockPos pos : logsLeft)
-        {
-            if (!board.sites().directedSafe(area, pos))
-            {
-                return false;
-            }
-        }
-        return true;
+        LabourStats.log("citizen {} leaves tree {}{}: {}", citizen.getId(), tree.base(), area == null ? "" : " of order " + orderId + " for the tool", why);
+        leftTrees.add(tree.base());
+        board.sites().dropTree(tree.base());
+        cleanup();
+        go(Phase.THINK, now);
     }
 
+    private static final int WORKING = -1;
+    private static final int REFUSED = -2;
+    private static final int DONE    = 0;
+
     /**
-     * Strips the log at the position with the axe in the slot.
+     * Strips the log at the position with the axe in the slot. The block is changed only when it is still the tree's natural log and the axe's transformer makes the
+     * wanted kind of it; the axe wears only when the world took the change, and the stripped state is remembered as his own.
      *
-     * @return true once the block is stripped to the wanted kind; false while he works on it, or when it cannot be (then the tree is left and he thinks again).
+     * @return {@link #DONE} once the block is stripped to the wanted kind, {@link #WORKING} while he works on it, {@link #REFUSED} when it cannot be (nothing changed).
      */
-    private boolean stripNow(final AbstractEntityCitizen worker, final ServerLevel level, final BlockPos pos, final int toolSlot, final Item wanted, final long now)
+    private int stripNow(final AbstractEntityCitizen worker, final ServerLevel level, final BlockPos pos, final int toolSlot, final Item wanted, final long now)
     {
         final ItemStack axe = citizen.getInventory().getStackInSlot(toolSlot);
+        final BlockState before = level.getBlockState(pos);
         final LabourStrip.Result result = LabourStrip.stripped(level, pos, LabourStrip.of(axe));
-        if (result == null || result.state().getBlock().asItem() != wanted || colony.getWorld() == null)
+        if (!LabourRules.naturalLog(before) || result == null || result.state().getBlock().asItem() != wanted || colony.getWorld() == null)
         {
-            LabourStats.log("citizen {} cannot strip {} at {} to {}", citizen.getId(), level.getBlockState(pos), pos, wanted);
-            logsLeft.remove(0);
-            return false;
+            LabourStats.log("citizen {} cannot strip {} at {} to {}", citizen.getId(), before, pos, wanted);
+            return REFUSED;
         }
         WorkerUtil.faceBlock(pos, worker);
         if (workUntil == 0L)
@@ -722,16 +774,25 @@ public final class LabourSession implements IIdleTaskSession
         }
         if (now < workUntil)
         {
-            return false;
+            return WORKING;
         }
         workUntil = 0L;
-        level.setBlock(pos, result.state(), 11);
+        if (!board.sites().treeStillSafe(tree, logsLeft, area, strippedHere) || level.getBlockState(pos) != before)
+        {
+            return REFUSED;
+        }
+        if (!level.setBlock(pos, result.state(), 11) || !level.getBlockState(pos).equals(result.state()))
+        {
+            LabourStats.log("citizen {} could not strip {} at {}: the world refused", citizen.getId(), before, pos);
+            return REFUSED;
+        }
+        strippedHere.put(pos.immutable(), result.state());
         if (result.damage() > 0)
         {
             CitizenItemUtils.setMainHeldItem(worker, toolSlot);
             CitizenItemUtils.damageItemInHand(worker, net.minecraft.world.InteractionHand.MAIN_HAND, result.damage());
         }
-        return true;
+        return DONE;
     }
 
     private void plantSapling(final AbstractEntityCitizen worker, final ServerLevel level, final BlockPos base)
@@ -740,13 +801,16 @@ public final class LabourSession implements IIdleTaskSession
         for (int slot = 0; slot < inventory.getSlots(); slot++)
         {
             final ItemStack stack = inventory.getStackInSlot(slot);
-            if (stack.is(ItemTags.SAPLINGS) && stack.getItem() instanceof BlockItem blockItem && level.getBlockState(base).isAir())
+            if (stack.is(ItemTags.SAPLINGS) && stack.getItem() instanceof BlockItem blockItem && board.sites().safeNow(area, base) && level.getBlockState(base).isAir())
             {
                 final BlockState sapling = blockItem.getBlock().defaultBlockState();
                 if (sapling.canSurvive(level, base))
                 {
-                    level.setBlock(base, sapling, 3);
-                    inventory.extractItem(slot, 1, false);
+                    // (the sapling leaves his hands only when the world took it)
+                    if (level.setBlock(base, sapling, 3))
+                    {
+                        inventory.extractItem(slot, 1, false);
+                    }
                 }
                 return;
             }
@@ -766,12 +830,13 @@ public final class LabourSession implements IIdleTaskSession
                 return;
             }
             board.takenSurface().add(block);
+            blockChosen = level.getBlockState(block).getBlock();
             workUntil = 0L;
         }
-        if (!LabourRules.surface(level.getBlockState(block)) && !LabourRules.stone(level.getBlockState(block)))
+        if (!board.sites().surfaceSafeNow(block, blockChosen))
         {
-            board.takenSurface().remove(block);
-            block = null;
+            // (it changed, was built over, a building or veto came, or digging the ground was switched off: it is not taken)
+            leaveBlock();
             return;
         }
         if (!EntityNavigationUtils.walkToPos(worker, block.above(), 2, true))
@@ -783,12 +848,30 @@ public final class LabourSession implements IIdleTaskSession
         {
             toolSlot = bestToolSlot(level.getBlockState(block), g.gather().tool());
         }
-        if (breakWork(worker, level, block, toolSlot, now))
+        final net.minecraft.world.level.block.Block chosen = blockChosen;
+        final int broken = breakWork(worker, level, block, toolSlot, now, pos -> board.sites().surfaceSafeNow(pos, chosen));
+        if (broken == REFUSED)
+        {
+            leaveBlock();
+            return;
+        }
+        if (broken == DONE)
         {
             board.takenSurface().remove(block);
             block = null;
+            blockChosen = null;
             board.heartbeat(claim);
         }
+    }
+
+    private void leaveBlock()
+    {
+        LabourStats.log("citizen {} leaves block {}: no longer to be taken", citizen.getId(), block.toShortString());
+        board.sites().dropSurface(block);
+        board.takenSurface().remove(block);
+        block = null;
+        blockChosen = null;
+        workUntil = 0L;
     }
 
     private int bestToolSlot(final BlockState state, final String tool)
@@ -813,16 +896,19 @@ public final class LabourSession implements IIdleTaskSession
     }
 
     /**
-     * Works on a block until it breaks: the time a hand or the tool takes, then the drops go into the inventory and the tool wears through the citizens' damage path.
+     * Works on a block until it breaks (the time a hand or the tool takes). When it is due, the block is looked at once more ({@code safe}, read now); then the tool
+     * wears and the block is removed through the citizens' path, and only when it is really gone do its real drops go into the inventory (what does not fit lies at
+     * his feet).
      *
-     * @return true once the block is broken.
+     * @return {@link #WORKING} while he works, {@link #REFUSED} when the block may no longer be taken or did not break (nothing gathered), {@link #DONE} once it is
+     *   broken.
      */
-    private boolean breakWork(final AbstractEntityCitizen worker, final ServerLevel level, final BlockPos pos, final int toolSlot, final long now)
+    private int breakWork(final AbstractEntityCitizen worker, final ServerLevel level, final BlockPos pos, final int toolSlot, final long now, final java.util.function.Predicate<BlockPos> safe)
     {
         final BlockState state = level.getBlockState(pos);
         if (state.isAir())
         {
-            return true;
+            return DONE;
         }
         final ItemStack tool = toolSlot >= 0 ? citizen.getInventory().getStackInSlot(toolSlot) : ItemStack.EMPTY;
         if (workUntil == 0L)
@@ -841,16 +927,31 @@ public final class LabourSession implements IIdleTaskSession
                 lastSwing = now;
                 CitizenItemUtils.hitBlockWithToolInHand(worker, pos, false);
             }
-            return false;
+            return WORKING;
         }
         workUntil = 0L;
+        if (!safe.test(pos))
+        {
+            return REFUSED;
+        }
+        // the drops are read while the block stands, and kept only once it is gone
+        final List<ItemStack> drops = new ArrayList<>();
         for (final ItemStack drop : BlockPosUtil.getBlockDrops(level, pos, 0, tool, worker))
+        {
+            drops.add(drop.copy());
+        }
+        CitizenItemUtils.breakBlockWearingToolOf(worker, pos, toolSlot < 0 ? null : worker, toolSlot);
+        if (level.getBlockState(pos).getBlock() == state.getBlock())
+        {
+            LabourStats.log("citizen {} could not break {} at {}: nothing gathered", citizen.getId(), state.getBlock(), pos.toShortString());
+            return REFUSED;
+        }
+        for (final ItemStack drop : drops)
         {
             LabourStats.gathered(drop);
             keep(worker, drop);
         }
-        CitizenItemUtils.breakBlockWearingToolOf(worker, pos, toolSlot < 0 ? null : worker, toolSlot);
-        return true;
+        return DONE;
     }
 
     private void gatherLoose(final AbstractEntityCitizen worker, final ServerLevel level, final Item item, final long now)

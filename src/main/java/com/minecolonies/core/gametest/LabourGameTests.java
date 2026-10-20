@@ -527,6 +527,8 @@ final class LabourGameTests
         begin();
         final RsFixture f = found(helper, "labour stone", 2);
         final Colony colony = (Colony) f.colony;
+        // (automatic labour digs no ground unless allowed: this colony's own test floor of stone is allowed)
+        LabourSettings.allowDiggingForTest(colony.getID(), true);
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
         tree(helper, 34, 20, 5);
@@ -589,6 +591,7 @@ final class LabourGameTests
                 helper.assertTrue(worn[0] > 0 || LabourSession.inventoryOf(idle).getOrDefault(Items.WOODEN_PICKAXE, 0) == 0,
                   "the wooden pickaxe did not wear while mining cobblestone");
                 helper.assertTrue(f.isWithPlayer(iron) || f.isRetrying(iron), "the iron pickaxe request was touched: " + f.describe(iron));
+                LabourSettings.allowDiggingForTest(colony.getID(), false);
                 end();
                 helper.succeed();
             }, () -> describe(f, stone, idle));

@@ -269,7 +269,49 @@ public final class LabourSites
                 return true;
             }
         }
-        return LabourExclusions.excluded(colony, pos);
+        return LabourExclusions.excluded(colony, pos) || placed(pos);
+    }
+
+    /**
+     * {@link #protectedBlock} read now: the buildings' boxes from the buildings themselves (a building placed since the cached scan counts).
+     */
+    public boolean protectedNow(final BlockPos pos)
+    {
+        for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
+        {
+            if (box(building).isInside(pos))
+            {
+                return true;
+            }
+        }
+        return LabourExclusions.excluded(colony, pos) || placed(pos);
+    }
+
+    /**
+     * @return whether somebody placed a block there since the colony records placements (or the record is full: then every block counts as placed).
+     */
+    public boolean placed(final BlockPos pos)
+    {
+        return colony.getLabourData().placements().placed(pos.asLong());
+    }
+
+    /**
+     * The last look before a labourer changes a block (strips, breaks, plants): it lies in the area (when there is one), in a loaded chunk (nothing is loaded to look)
+     * and in this colony's claim, in no building's box read now, under no veto and is not on the record of placed blocks.
+     */
+    public boolean safeNow(@Nullable final DirectedOrder.Area area, final BlockPos pos)
+    {
+        final ServerLevel level = level();
+        if (level == null || (area != null && !area.contains(pos)) || level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) == null || !ownedBy(pos))
+        {
+            return false;
+        }
+        return !protectedNow(pos);
+    }
+
+    private static boolean loadedNow(final ServerLevel level, final BlockPos pos)
+    {
+        return level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) != null;
     }
 
     // ------------------------------------------------------------------ trees
@@ -289,7 +331,7 @@ public final class LabourSites
             scan(LabourSettings.gatherRadius(), LabourRules::log, pos -> {
                 if (found.size() < MAX_TREES && !seen.contains(pos) && level.getBlockState(pos.below()).is(BlockTags.DIRT))
                 {
-                    final TreeSite tree = detectTree(level, pos);
+                    final TreeSite tree = naturalTree(level, pos, null, false);
                     if (tree != null)
                     {
                         seen.addAll(tree.logs());
@@ -319,46 +361,107 @@ public final class LabourSites
         return usable;
     }
 
+    /**
+     * The proof of a natural tree, the same for the automatic scan and a directed order's area. Fail closed: a doubt leaves the whole tree standing.
+     * <ul>
+     *   <li>the base is a natural log ({@link LabourRules#naturalLog}: never stripped, never a bark block) that the world's axe would still strip, on dirt;</li>
+     *   <li>every log connected to it (all 26 neighbours) is of the base's very block: a stripped log, another wood or a bark block touching it means built work or
+     *   another tree, and nothing is felled. A connected log below the base, or past {@link #MAX_TREE_LOGS}, rejects too;</li>
+     *   <li>every log is read only in loaded chunks (a neighbour in a chunk that is not loaded rejects the tree), lies in this colony's claim, in the area when there is
+     *   one, in no building's box, under no veto and not on the record of placed blocks ({@code fresh}: the boxes are read from the buildings now);</li>
+     *   <li>only the trunk stands on the ground: on dirt at the base's height, one log or a square of four; any other log rests on its own tree, air, natural leaves or a
+     *   plant, never on something built;</li>
+     *   <li>no block next to a log is construction ({@link LabourRules#construction}), and no straight run of horizontal logs is longer than
+     *   {@link LabourRules#MAX_BRANCH_RUN} (a beam);</li>
+     *   <li>at least {@link #MIN_LEAVES} leaves nobody placed hang on it.</li>
+     * </ul>
+     * A log that the world grew and a log somebody placed before the colony recorded placements look the same: such a log is only refused by the rules above.
+     *
+     * @return the tree, or null.
+     */
     @Nullable
-    private TreeSite detectTree(final ServerLevel level, final BlockPos base)
+    private TreeSite naturalTree(final ServerLevel level, final BlockPos base, @Nullable final DirectedOrder.Area area, final boolean fresh)
     {
-        final BlockState baseState = level.getBlockState(base);
-        if (!LabourRules.log(baseState))
+        if (!loadedNow(level, base) || (area != null && !area.contains(base)))
         {
             return null;
         }
+        final BlockState baseState = level.getBlockState(base);
+        if (!LabourRules.naturalLog(baseState) || !level.getBlockState(base.below()).is(BlockTags.DIRT)
+              || LabourStrip.stripped(level, base, LabourStrip.standardAxe(level)) == null)
+        {
+            return null;
+        }
+        final net.minecraft.world.level.block.Block species = baseState.getBlock();
         final List<BlockPos> logs = new ArrayList<>();
         final Set<BlockPos> visited = new HashSet<>();
         final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
         queue.add(base);
         visited.add(base);
+        final Map<Long, Boolean> owned = new HashMap<>();
         while (!queue.isEmpty())
         {
             final BlockPos current = queue.poll();
-            logs.add(current);
-            if (logs.size() > MAX_TREE_LOGS)
+            if ((area != null && !area.contains(current)) || logs.size() >= MAX_TREE_LOGS)
             {
                 return null;
             }
+            final long key = ((long) (current.getX() >> 4) << 32) ^ ((current.getZ() >> 4) & 0xffffffffL);
+            // every log, not just the base: a natural tree that touches a building's logs is the building's
+            if (!owned.computeIfAbsent(key, k -> ownedBy(current)) || (fresh ? protectedNow(current) : protectedBlock(current)))
+            {
+                return null;
+            }
+            logs.add(current);
             for (int dx = -1; dx <= 1; dx++)
             {
-                for (int dy = 0; dy <= 1; dy++)
+                for (int dy = -1; dy <= 1; dy++)
                 {
                     for (int dz = -1; dz <= 1; dz++)
                     {
                         final BlockPos next = current.offset(dx, dy, dz);
-                        if (visited.add(next) && LabourRules.log(level.getBlockState(next)))
+                        if (!visited.add(next))
                         {
-                            queue.add(next);
+                            continue;
                         }
+                        if (!loadedNow(level, next))
+                        {
+                            // (what lies there is not known without loading it: the tree is left alone)
+                            return null;
+                        }
+                        final BlockState state = level.getBlockState(next);
+                        if (!state.is(BlockTags.LOGS))
+                        {
+                            continue;
+                        }
+                        if (state.getBlock() != species || next.getY() < base.getY())
+                        {
+                            return null;
+                        }
+                        queue.add(next);
                     }
                 }
             }
         }
+        final Set<BlockPos> inTree = new HashSet<>(logs);
+        final List<BlockPos> ground = new ArrayList<>();
         final Set<BlockPos> leaves = new HashSet<>();
         for (final BlockPos log : logs)
         {
-            if (!ownedBy(log) || LabourExclusions.excluded(colony, log))
+            final BlockPos below = log.below();
+            if (!inTree.contains(below))
+            {
+                final BlockState under = level.getBlockState(below);
+                if (under.is(BlockTags.DIRT))
+                {
+                    ground.add(log);
+                }
+                else if (!under.isAir() && !under.canBeReplaced() && !(under.getBlock() instanceof LeavesBlock && !under.getValue(LeavesBlock.PERSISTENT)))
+                {
+                    return null;
+                }
+            }
+            if (branchRun(level, log, inTree) > LabourRules.MAX_BRANCH_RUN)
             {
                 return null;
             }
@@ -369,7 +472,15 @@ public final class LabourSites
                     for (int dz = -1; dz <= 1; dz++)
                     {
                         final BlockPos near = log.offset(dx, dy, dz);
+                        if (inTree.contains(near) || !loadedNow(level, near))
+                        {
+                            continue;
+                        }
                         final BlockState state = level.getBlockState(near);
+                        if (LabourRules.construction(state))
+                        {
+                            return null;
+                        }
                         if (state.getBlock() instanceof LeavesBlock && !state.getValue(LeavesBlock.PERSISTENT))
                         {
                             leaves.add(near);
@@ -378,12 +489,161 @@ public final class LabourSites
                 }
             }
         }
-        if (leaves.size() < MIN_LEAVES || protectedBlock(base))
+        if (leaves.size() < MIN_LEAVES || !trunkOnGround(base, ground))
         {
             return null;
         }
         logs.sort(Comparator.comparingInt(BlockPos::getY));
-        return new TreeSite(base, logs, baseState.getBlock().asItem());
+        return new TreeSite(base, logs, species.asItem());
+    }
+
+    /**
+     * @return whether the logs standing on the ground are the trunk: the base alone, or a square of four at its height.
+     */
+    static boolean trunkOnGround(final BlockPos base, final List<BlockPos> ground)
+    {
+        if (ground.size() == 1)
+        {
+            return ground.get(0).equals(base);
+        }
+        if (ground.size() != 4)
+        {
+            return false;
+        }
+        int minX = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        for (final BlockPos pos : ground)
+        {
+            if (pos.getY() != base.getY())
+            {
+                return false;
+            }
+            minX = Math.min(minX, pos.getX());
+            minZ = Math.min(minZ, pos.getZ());
+        }
+        for (final BlockPos pos : ground)
+        {
+            if (pos.getX() - minX > 1 || pos.getZ() - minZ > 1)
+            {
+                return false;
+            }
+        }
+        return new HashSet<>(ground).size() == 4;
+    }
+
+    /**
+     * @return the length of the straight run of logs lying along the log's own horizontal axis through it (0 for an upright log).
+     */
+    private static int branchRun(final ServerLevel level, final BlockPos log, final Set<BlockPos> inTree)
+    {
+        final BlockState state = level.getBlockState(log);
+        if (!state.hasProperty(net.minecraft.world.level.block.RotatedPillarBlock.AXIS))
+        {
+            return 0;
+        }
+        final net.minecraft.core.Direction.Axis axis = state.getValue(net.minecraft.world.level.block.RotatedPillarBlock.AXIS);
+        if (axis == net.minecraft.core.Direction.Axis.Y)
+        {
+            return 0;
+        }
+        int run = 1;
+        for (final net.minecraft.core.Direction.AxisDirection sign : net.minecraft.core.Direction.AxisDirection.values())
+        {
+            final net.minecraft.core.Direction step = net.minecraft.core.Direction.fromAxisAndDirection(axis, sign);
+            BlockPos next = log.relative(step);
+            while (inTree.contains(next) && level.getBlockState(next).getOptionalValue(net.minecraft.world.level.block.RotatedPillarBlock.AXIS).orElse(null) == axis)
+            {
+                run++;
+                next = next.relative(step);
+            }
+        }
+        return run;
+    }
+
+    /**
+     * The proof of {@link #naturalTree} once more, read now, before a labourer changes the first log of a tree that came out of a scan: the same logs must still be a
+     * natural tree with the buildings, vetoes, claim and placed blocks as they are now.
+     */
+    public boolean verifyTree(final TreeSite tree, @Nullable final DirectedOrder.Area area)
+    {
+        final ServerLevel level = level();
+        if (level == null)
+        {
+            return false;
+        }
+        final TreeSite now = naturalTree(level, tree.base(), area, true);
+        return now != null && now.log() == tree.log() && new HashSet<>(now.logs()).equals(new HashSet<>(tree.logs()));
+    }
+
+    /**
+     * Whether a labourer may still change the next log of a tree he works on, read now before each strip and each break: every log still to take is
+     * {@link #safeNow}, is still the tree's own natural block (or exactly the stripped state the labourer set there himself, {@code ours}), and no log or construction
+     * that was not part of the tree touches one of them (a chunk that is not loaded next to one counts as such). Otherwise the rest of the tree stands.
+     */
+    public boolean treeStillSafe(final TreeSite tree, final List<BlockPos> remaining, @Nullable final DirectedOrder.Area area, final Map<BlockPos, BlockState> ours)
+    {
+        final ServerLevel level = level();
+        final net.minecraft.world.level.block.Block species = net.minecraft.world.level.block.Block.byItem(tree.log());
+        if (level == null || species == Blocks.AIR)
+        {
+            return false;
+        }
+        final Set<BlockPos> original = new HashSet<>(tree.logs());
+        for (final BlockPos pos : remaining)
+        {
+            if (!safeNow(area, pos))
+            {
+                return false;
+            }
+            final BlockState state = level.getBlockState(pos);
+            final BlockState mine = ours.get(pos);
+            if (mine != null ? !state.equals(mine) : state.getBlock() != species)
+            {
+                return false;
+            }
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    for (int dz = -1; dz <= 1; dz++)
+                    {
+                        final BlockPos near = pos.offset(dx, dy, dz);
+                        if (original.contains(near))
+                        {
+                            continue;
+                        }
+                        if (!loadedNow(level, near))
+                        {
+                            return false;
+                        }
+                        final BlockState state2 = level.getBlockState(near);
+                        if (state2.is(BlockTags.LOGS) || LabourRules.construction(state2))
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Forgets a tree the fresh look refused (it is out of the scans until they run again).
+     */
+    public void dropTree(final BlockPos base)
+    {
+        final List<TreeSite> kept = new ArrayList<>(trees);
+        kept.removeIf(t -> t.base().equals(base));
+        trees = kept;
+        for (final Map.Entry<Integer, AreaScan> entry : areas.entrySet())
+        {
+            final List<TreeSite> list = new ArrayList<>(entry.getValue().trees());
+            if (list.removeIf(t -> t.base().equals(base)))
+            {
+                entry.setValue(new AreaScan(entry.getValue().at(), List.copyOf(list), entry.getValue().blocks()));
+            }
+        }
     }
 
     /**
@@ -505,7 +765,9 @@ public final class LabourSites
         }
         surface.clear();
         final ServerLevel level = level();
-        if (level != null)
+        // (whether a block of the ground is the world's or a player's own building cannot be told from the block: unless the server owner allows it, automatic labour
+        // digs no ground at all; a directed order digs the area its manager chose)
+        if (level != null && LabourSettings.digUnprovenGround(colony))
         {
             final BlockPos hall = anchor();
             final int radius = LabourSettings.gatherRadius();
@@ -535,7 +797,7 @@ public final class LabourSites
                         continue;
                     }
                     if (!level.getBlockState(pos.above()).isAir() || level.getBlockState(pos.below()).isAir() || !level.getFluidState(pos.below()).isEmpty()
-                          || exposedToFluid(level, pos) || protectedBlock(pos))
+                          || !sidesLoaded(level, pos) || exposedToFluid(level, pos) || protectedBlock(pos))
                     {
                         continue;
                     }
@@ -549,6 +811,48 @@ public final class LabourSites
         }
         surfaceAt = now;
         return surface;
+    }
+
+    /**
+     * @return whether the four sides of the block lie in loaded chunks (a look at them must not load one).
+     */
+    private static boolean sidesLoaded(final ServerLevel level, final BlockPos pos)
+    {
+        for (final net.minecraft.core.Direction direction : net.minecraft.core.Direction.Plane.HORIZONTAL)
+        {
+            if (!loadedNow(level, pos.relative(direction)))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The last look before automatic labour digs a top block: digging the ground is allowed ({@link LabourSettings#digUnprovenGround}), the block is
+     * {@link #safeNow}, it is still the very block chosen ({@code chosen}) and still a block labour digs, open above, on solid ground, with no fluid under or next to it.
+     */
+    public boolean surfaceSafeNow(final BlockPos pos, final net.minecraft.world.level.block.Block chosen)
+    {
+        final ServerLevel level = level();
+        if (level == null || !LabourSettings.digUnprovenGround(colony) || !safeNow(null, pos) || !sidesLoaded(level, pos))
+        {
+            return false;
+        }
+        final BlockState state = level.getBlockState(pos);
+        return state.getBlock() == chosen && (LabourRules.surface(state) || LabourRules.stone(state)) && level.getBlockState(pos.above()).isAir()
+                 && !level.getBlockState(pos.below()).isAir() && level.getFluidState(pos.below()).isEmpty() && !exposedToFluid(level, pos);
+    }
+
+    /**
+     * Forgets a top block the fresh look refused.
+     */
+    public void dropSurface(final BlockPos pos)
+    {
+        for (final List<BlockPos> list : surface.values())
+        {
+            list.remove(pos);
+        }
     }
 
     private static boolean exposedToFluid(final ServerLevel level, final BlockPos pos)
@@ -584,7 +888,7 @@ public final class LabourSites
     {
         final ServerLevel level = level();
         final List<BlockPos> list = scanSurface().get(drop);
-        if (list == null || level == null)
+        if (list == null || level == null || !LabourSettings.digUnprovenGround(colony))
         {
             return null;
         }
@@ -958,7 +1262,7 @@ public final class LabourSites
                             continue;
                         }
                         seen.add(base);
-                        final TreeSite tree = treeInArea(level, base, area);
+                        final TreeSite tree = naturalTree(level, base, area, false);
                         if (tree != null)
                         {
                             seen.addAll(tree.logs());
@@ -1152,117 +1456,16 @@ public final class LabourSites
         return false;
     }
 
-    /**
-     * A natural tree for a directed order: its logs and the leaves around them are read only in loaded chunks, every log stands in the area and in this colony, the base
-     * is no building's, and enough leaves nobody placed hang on it. A log found outside the area (a trunk or branch that leaves it) rejects the whole tree.
-     *
-     * @return the tree, or null.
-     */
-    @Nullable
-    private TreeSite treeInArea(final ServerLevel level, final BlockPos base, final DirectedOrder.Area area)
-    {
-        final BlockState baseState = level.getBlockState(base);
-        if (!LabourRules.log(baseState) || !area.contains(base))
-        {
-            return null;
-        }
-        final List<BlockPos> logs = new ArrayList<>();
-        final Set<BlockPos> visited = new HashSet<>();
-        final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
-        queue.add(base);
-        visited.add(base);
-        final Map<Long, Boolean> owned = new HashMap<>();
-        while (!queue.isEmpty())
-        {
-            final BlockPos current = queue.poll();
-            if (!area.contains(current) || logs.size() >= MAX_TREE_LOGS)
-            {
-                return null;
-            }
-            final long key = ((long) (current.getX() >> 4) << 32) ^ ((current.getZ() >> 4) & 0xffffffffL);
-            // every log, not just the base: a natural tree that touches a building's logs is the building's
-            if (!owned.computeIfAbsent(key, k -> ownedBy(current)) || protectedBlock(current))
-            {
-                return null;
-            }
-            logs.add(current);
-            for (int dx = -1; dx <= 1; dx++)
-            {
-                for (int dy = 0; dy <= 1; dy++)
-                {
-                    for (int dz = -1; dz <= 1; dz++)
-                    {
-                        final BlockPos next = current.offset(dx, dy, dz);
-                        if (!visited.add(next))
-                        {
-                            continue;
-                        }
-                        if (!level.isLoaded(next))
-                        {
-                            // (what lies there is not known without loading it: the tree is left alone)
-                            return null;
-                        }
-                        if (LabourRules.log(level.getBlockState(next)))
-                        {
-                            queue.add(next);
-                        }
-                    }
-                }
-            }
-        }
-        final Set<BlockPos> leaves = new HashSet<>();
-        for (final BlockPos log : logs)
-        {
-            for (int dx = -1; dx <= 1; dx++)
-            {
-                for (int dy = -1; dy <= 1; dy++)
-                {
-                    for (int dz = -1; dz <= 1; dz++)
-                    {
-                        final BlockPos near = log.offset(dx, dy, dz);
-                        if (!level.isLoaded(near))
-                        {
-                            continue;
-                        }
-                        final BlockState state = level.getBlockState(near);
-                        if (state.getBlock() instanceof LeavesBlock && !state.getValue(LeavesBlock.PERSISTENT))
-                        {
-                            leaves.add(near);
-                        }
-                    }
-                }
-            }
-        }
-        if (leaves.size() < MIN_LEAVES)
-        {
-            return null;
-        }
-        logs.sort(Comparator.comparingInt(BlockPos::getY));
-        return new TreeSite(base, logs, baseState.getBlock().asItem());
-    }
-
     // ------------------------------------------------------------------ the last look before a directed worker breaks a block
 
     /**
      * Whether a directed worker may still break the block now, though borders, buildings and vetoes may have changed since the area was scanned: it lies in the area,
-     * in a loaded chunk (nothing is loaded to look) and in this colony's claim, and in no building's box (read from the buildings now, not the scan's cache) and no
-     * veto. Called once per block, when it breaks.
+     * in a loaded chunk (nothing is loaded to look) and in this colony's claim, and in no building's box (read from the buildings now, not the scan's cache), no
+     * veto and not on the record of placed blocks ({@link #safeNow}). Called once per block, when it breaks.
      */
     public boolean directedSafe(final DirectedOrder.Area area, final BlockPos pos)
     {
-        final ServerLevel level = level();
-        if (level == null || !area.contains(pos) || level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) == null || !ownedBy(pos))
-        {
-            return false;
-        }
-        for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
-        {
-            if (box(building).isInside(pos))
-            {
-                return false;
-            }
-        }
-        return !LabourExclusions.excluded(colony, pos);
+        return area != null && safeNow(area, pos);
     }
 
     /**

@@ -122,6 +122,75 @@ public class ColonyPermissionEventHandler
     }
 
     /**
+     * Records for the labourers where a block they could take was placed (a log, a sapling, sand, dirt, gravel, stone), in this colony's claim or, while unclaimed,
+     * within the widest labour reach of its town hall: such a block is never taken out of the world. Runs last and only for a placement that stands (not cancelled);
+     * a placement of several blocks records each of them. Players, fake players and other entities that post the event all count.
+     *
+     * @param event the placement.
+     */
+    @SubscribeEvent(priority = net.neoforged.bus.api.EventPriority.LOWEST)
+    public void recordLabourPlacement(final BlockEvent.EntityPlaceEvent event)
+    {
+        if (event.isCanceled() || !(event.getLevel() instanceof final ServerLevel level) || !level.dimension().equals(colony.getDimension()))
+        {
+            return;
+        }
+        boolean changed = false;
+        if (event instanceof final BlockEvent.EntityMultiPlaceEvent multi)
+        {
+            for (final net.neoforged.neoforge.common.util.BlockSnapshot snapshot : multi.getReplacedBlockSnapshots())
+            {
+                changed |= recordLabourPlacement(level, snapshot.getPos(), level.getBlockState(snapshot.getPos()));
+            }
+        }
+        else
+        {
+            changed = recordLabourPlacement(level, event.getPos(), event.getPlacedBlock());
+        }
+        if (changed)
+        {
+            colony.markDirty();
+        }
+    }
+
+    private boolean recordLabourPlacement(final ServerLevel level, final BlockPos pos, final BlockState state)
+    {
+        if (!com.minecolonies.core.colony.labour.LabourRules.recordsPlacement(state))
+        {
+            return false;
+        }
+        final com.minecolonies.api.colony.IColony owner = IColonyManager.getInstance().getColonyByPosFromWorld(level, pos);
+        if (owner != null ? owner.getID() != colony.getID() : !withinLabourReach(pos))
+        {
+            return false;
+        }
+        return colony.getLabourData().placements().add(pos.asLong());
+    }
+
+    private boolean withinLabourReach(final BlockPos pos)
+    {
+        final long reach = com.minecolonies.core.colony.labour.LabourSettings.MAX_GATHER_RADIUS + 32L;
+        final long dx = pos.getX() - colony.getCenter().getX();
+        final long dz = pos.getZ() - colony.getCenter().getZ();
+        return dx * dx + dz * dz <= reach * reach;
+    }
+
+    /**
+     * A player broke a block that was on the labourers' record of placed blocks: the position is forgotten (runs last, only for a break that stands).
+     *
+     * @param event the break.
+     */
+    @SubscribeEvent(priority = net.neoforged.bus.api.EventPriority.LOWEST)
+    public void forgetLabourPlacement(final BreakBlockEvent event)
+    {
+        if (!event.isCanceled() && event.getLevel() instanceof final ServerLevel level && level.dimension().equals(colony.getDimension())
+              && colony.getLabourData().placements().remove(event.getPos().asLong()))
+        {
+            colony.markDirty();
+        }
+    }
+
+    /**
      * This method returns TRUE if this event should be denied.
      *
      * @param worldIn    the world to check in

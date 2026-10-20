@@ -362,6 +362,16 @@ public final class DirectedSession implements IIdleTaskSession
         {
             skip.addAll(board.takenTrees());
             tree = board.sites().nearestTreeIn(order.id(), order.area(), worker.blockPosition(), skip);
+            if (tree != null && !board.sites().verifyTree(tree, order.area()))
+            {
+                // the scan may be old: the tree is proved natural once more, with the buildings, vetoes and placed blocks as they are now, before a log is felled
+                LabourStats.log("citizen {} leaves tree {} of order {}: no longer a natural tree to take", citizen.getId(), tree.base().toShortString(), order.id());
+                unreachable.add(tree.base());
+                board.sites().dropTree(tree.base());
+                tree = null;
+                board.heartbeat(claim);
+                return;
+            }
             if (tree != null)
             {
                 board.takenTrees().add(tree.base());
@@ -425,7 +435,13 @@ public final class DirectedSession implements IIdleTaskSession
         final Predicate<ItemStack> matcher = DirectedOrders.matcher(order.resource());
         if (tree != null)
         {
-            logsLeft.removeIf(pos -> !level.isLoaded(pos) || !LabourRules.log(level.getBlockState(pos)));
+            if (logsLeft.stream().anyMatch(pos -> !level.isLoaded(pos)))
+            {
+                // (a log in a chunk that is not loaded is not read: the rest of the tree is left)
+                abandon(order, tree.base(), now);
+                return;
+            }
+            logsLeft.removeIf(pos -> level.getBlockState(pos).isAir());
             if (logsLeft.isEmpty())
             {
                 plantSapling(level, tree.base());
@@ -503,14 +519,9 @@ public final class DirectedSession implements IIdleTaskSession
      */
     private boolean treeSafe(final DirectedOrder order)
     {
-        for (final BlockPos log : logsLeft)
-        {
-            if (!board.sites().directedSafe(order.area(), log))
-            {
-                return false;
-            }
-        }
-        return true;
+        // (every log still to fell is in the area, loaded, claimed, outside every building's box read now, unvetoed, not placed, still the tree's natural block, and
+        // nothing that was not part of the tree touches it)
+        return board.sites().treeStillSafe(tree, logsLeft, order.area(), java.util.Map.of());
     }
 
     /**
@@ -646,13 +657,16 @@ public final class DirectedSession implements IIdleTaskSession
         for (int slot = 0; slot < inventory.getSlots(); slot++)
         {
             final ItemStack stack = inventory.getStackInSlot(slot);
-            if (stack.is(ItemTags.SAPLINGS) && stack.getItem() instanceof BlockItem blockItem && level.getBlockState(base).isAir())
+            if (stack.is(ItemTags.SAPLINGS) && stack.getItem() instanceof BlockItem blockItem && board.sites().safeNow(null, base) && level.getBlockState(base).isAir())
             {
                 final BlockState sapling = blockItem.getBlock().defaultBlockState();
                 if (sapling.canSurvive(level, base))
                 {
-                    level.setBlock(base, sapling, 3);
-                    inventory.extractItem(slot, 1, false);
+                    // (the sapling leaves his hands only when the world took it)
+                    if (level.setBlock(base, sapling, 3))
+                    {
+                        inventory.extractItem(slot, 1, false);
+                    }
                 }
                 return;
             }

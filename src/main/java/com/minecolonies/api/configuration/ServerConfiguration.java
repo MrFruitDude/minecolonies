@@ -206,6 +206,7 @@ public class ServerConfiguration extends AbstractConfiguration
     public final EnumValue<com.minecolonies.api.colony.labour.LabourModes.SmeltMode>    labourersSmelt;
     public final BooleanValue labourersStoneTools;
     public final IntValue     labourersKeepTrees;
+    public final BooleanValue labourersDigUnprovenGround;
     public final IntValue     labourersSupplyGraceTicks;
     public final IntValue     labourersSupplyMaxTicks;
 
@@ -408,6 +409,8 @@ public class ServerConfiguration extends AbstractConfiguration
         labourersSmelt = defineEnum("smelt", com.minecolonies.api.colony.labour.LabourModes.SmeltMode.BASIC);
         labourersStoneTools = defineBoolean("stoneTools", true);
         labourersKeepTrees = defineInteger("keepTrees", 4, 0, 64);
+        // Off: automatic labour digs no sand, dirt, gravel or stone from the world (a player's old build of them cannot be told from the world's own ground).
+        labourersDigUnprovenGround = defineBoolean("digUnprovenGround", false);
         labourersSupplyGraceTicks = defineInteger("supplyGraceTicks", 1200, 0, 72000);
         labourersSupplyMaxTicks = defineInteger("supplyMaxTicks", 6000, 200, 72000);
 
