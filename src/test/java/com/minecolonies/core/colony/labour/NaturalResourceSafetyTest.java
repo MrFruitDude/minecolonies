@@ -94,4 +94,17 @@ public class NaturalResourceSafetyTest
         assertFalse(LabourSites.trunkOnGround(base, List.of(base, base.east(), base.south(), base.east().south().above())));
         assertFalse(LabourSites.trunkOnGround(base, List.of()));
     }
+
+    /**
+     * The safe-digging reason is a separate read-only call (DirectedOrders.groundOff, LabourSites.groundAllowed), not a new constant: the UI maps these enums by ordinal
+     * and with an exhaustive switch, so their constants stay as they were.
+     */
+    @Test
+    public void reasonEnumsKeepTheirConstants()
+    {
+        assertEquals(List.of("NONE", "NO_WORKERS", "NO_SITE", "NO_TOOL", "NO_DESTINATION", "DESTINATION_FULL", "INVENTORY_FULL", "LABOUR_OFF", "COVERED"),
+          java.util.Arrays.stream(DirectedOrder.Why.values()).map(Enum::name).toList());
+        assertEquals(List.of("LABOUR_OFF", "NO_CITIZEN", "NOT_ELIGIBLE", "BAD_AMOUNT", "BAD_AREA", "AREA_OUTSIDE", "COVERED", "NO_TOOL", "NO_DESTINATION",
+          "DESTINATION_FULL", "CAP", "TOO_MANY"), java.util.Arrays.stream(DirectedOrders.Refusal.values()).map(Enum::name).toList());
+    }
 }

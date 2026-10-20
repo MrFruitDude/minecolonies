@@ -95,6 +95,15 @@ final class DirectedLabourGameTests
         restore(helper, () -> building.setCorners(oldA, oldB));
     }
 
+    /**
+     * Digging the ground is off by default, for directed orders too: a test of a ground order allows it for its own colony ({@link #end} takes it back).
+     */
+    private static void allowDigging(final GameTestHelper helper, final Colony colony)
+    {
+        LabourSettings.allowDiggingForTest(colony.getID(), true);
+        restore(helper, () -> LabourSettings.allowDiggingForTest(colony.getID(), false));
+    }
+
     private static RsFixture found(final GameTestHelper helper, final String name)
     {
         final RsFixture f = RsFixture.found(helper, name, 2);
@@ -284,6 +293,7 @@ final class DirectedLabourGameTests
         begin();
         final RsFixture f = found(helper, "directed dirt");
         final Colony colony = (Colony) f.colony;
+        allowDigging(helper, colony);
         for (int x = 30; x <= 35; x++)
         {
             for (int z = 20; z <= 23; z++)
@@ -334,6 +344,7 @@ final class DirectedLabourGameTests
         begin();
         final RsFixture f = found(helper, "directed cancel");
         final Colony colony = (Colony) f.colony;
+        allowDigging(helper, colony);
         for (int x = 30; x <= 37; x++)
         {
             for (int z = 20; z <= 25; z++)
@@ -404,6 +415,7 @@ final class DirectedLabourGameTests
         begin();
         final RsFixture f = found(helper, "directed job");
         final Colony colony = (Colony) f.colony;
+        allowDigging(helper, colony);
         for (int x = 30; x <= 37; x++)
         {
             for (int z = 20; z <= 25; z++)
@@ -556,6 +568,7 @@ final class DirectedLabourGameTests
         begin();
         final RsFixture f = found(helper, "directed building");
         final Colony colony = (Colony) f.colony;
+        allowDigging(helper, colony);
         for (int x = 30; x <= 35; x++)
         {
             for (int z = 20; z <= 23; z++)
@@ -642,6 +655,7 @@ final class DirectedLabourGameTests
         begin();
         final RsFixture f = found(helper, "directed failed break");
         final Colony colony = (Colony) f.colony;
+        allowDigging(helper, colony);
         for (int x = 30; x <= 35; x++)
         {
             for (int z = 20; z <= 23; z++)

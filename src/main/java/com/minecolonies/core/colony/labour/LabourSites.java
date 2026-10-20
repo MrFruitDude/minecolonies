@@ -578,7 +578,7 @@ public final class LabourSites
     /**
      * Whether a labourer may still change the next log of a tree he works on, read now before each strip and each break: every log still to take is
      * {@link #safeNow}, is still the tree's own natural block (or exactly the stripped state the labourer set there himself, {@code ours}), and no log or construction
-     * that was not part of the tree touches one of them (a chunk that is not loaded next to one counts as such). Otherwise the rest of the tree stands.
+     * that is not one of the logs still to take touches one of them (one standing where a log of the tree was felled counts) (a chunk that is not loaded next to one counts as such). Otherwise the rest of the tree stands.
      */
     public boolean treeStillSafe(final TreeSite tree, final List<BlockPos> remaining, @Nullable final DirectedOrder.Area area, final Map<BlockPos, BlockState> ours)
     {
@@ -588,7 +588,8 @@ public final class LabourSites
         {
             return false;
         }
-        final Set<BlockPos> original = new HashSet<>(tree.logs());
+        // (only the logs still to take are skipped as neighbours: a log or construction now standing where a log of the tree was already felled is new and stops the rest)
+        final Set<BlockPos> left = new HashSet<>(remaining);
         for (final BlockPos pos : remaining)
         {
             if (!safeNow(area, pos))
@@ -608,7 +609,7 @@ public final class LabourSites
                     for (int dz = -1; dz <= 1; dz++)
                     {
                         final BlockPos near = pos.offset(dx, dy, dz);
-                        if (original.contains(near))
+                        if (left.contains(near))
                         {
                             continue;
                         }
@@ -1227,6 +1228,8 @@ public final class LabourSites
         final ServerLevel level = level();
         final List<TreeSite> trees = new ArrayList<>();
         final List<BlockPos> blocks = new ArrayList<>();
+        // (the manager's area does not make its ground provably natural: a directed order digs only while digging the ground is allowed, like automatic labour)
+        final boolean digGround = groundAllowed();
         if (level != null)
         {
             final Map<Long, Boolean> chunkOwned = new HashMap<>();
@@ -1270,7 +1273,7 @@ public final class LabourSites
                         }
                         continue;
                     }
-                    if (blocks.size() >= AREA_MAX_BLOCKS || !directedBlock(resource, state) || top.getY() < floor || makesPit(level, top))
+                    if (!digGround || blocks.size() >= AREA_MAX_BLOCKS || !directedBlock(resource, state) || top.getY() < floor || makesPit(level, top))
                     {
                         continue;
                     }
@@ -1392,7 +1395,7 @@ public final class LabourSites
       final Set<BlockPos> taken)
     {
         final ServerLevel level = level();
-        if (level == null)
+        if (level == null || !groundAllowed())
         {
             return null;
         }
@@ -1456,6 +1459,15 @@ public final class LabourSites
         return false;
     }
 
+    /**
+     * Read-only, for status and UI: whether this colony's labour may dig the ground now ({@link LabourSettings#digUnprovenGround(IColony)}). When false, no sand, dirt,
+     * gravel or stone is dug, automatic or directed: a request or order waiting for ground waits because of this safety policy, not because none lies there.
+     */
+    public boolean groundAllowed()
+    {
+        return LabourSettings.digUnprovenGround(colony);
+    }
+
     // ------------------------------------------------------------------ the last look before a directed worker breaks a block
 
     /**
@@ -1469,12 +1481,12 @@ public final class LabourSites
     }
 
     /**
-     * {@link #directedSafe} for a top block of a directed order: still the resource, open above, standing on solid ground above the floor, no fluid next to it and no
+     * {@link #directedSafe} for a top block of a directed order: digging the ground is still allowed ({@link #groundAllowed}, read now), still the resource, open above, standing on solid ground above the floor, no fluid next to it and no
      * pit left by digging it.
      */
     public boolean directedSurfaceSafe(final DirectedOrder.Area area, final DirectedOrder.Resource resource, final int floor, final BlockPos pos)
     {
-        if (!directedSafe(area, pos))
+        if (!groundAllowed() || !directedSafe(area, pos))
         {
             return false;
         }

@@ -197,6 +197,23 @@ public final class DirectedOrders
         };
     }
 
+    /**
+     * Read-only, for status and UI: whether the order digs the ground (not wood) while digging the ground is off ({@link LabourSites#groundAllowed}). Such an order
+     * waits with {@link DirectedOrder.Why#NO_SITE} because of the safety policy, not because the area holds none of its resource.
+     */
+    public boolean groundOff(final DirectedOrder order)
+    {
+        return groundOff(order.resource());
+    }
+
+    /**
+     * @return {@link #groundOff(DirectedOrder)} for an order of the resource (the order page can warn before the area is chosen).
+     */
+    public boolean groundOff(final DirectedOrder.Resource resource)
+    {
+        return resource != DirectedOrder.Resource.WOOD && !board.sites().groundAllowed();
+    }
+
     public static boolean needsTool(final DirectedOrder.Resource resource)
     {
         return resource == DirectedOrder.Resource.COBBLESTONE;

@@ -398,6 +398,8 @@ final class ExpandedLabourGameTests
         begin();
         final RsFixture f = found(helper, "expanded directed pickaxe");
         final Colony colony = (Colony) f.colony;
+        // (digging the ground is off by default, for directed orders too: allowed for this colony only)
+        LabourSettings.allowDiggingForTest(colony.getID(), true);
         for (int x = 30; x <= 33; x++)
         {
             for (int z = 20; z <= 23; z++)
@@ -421,6 +423,7 @@ final class ExpandedLabourGameTests
                 helper.assertTrue(order.state() == DirectedOrder.State.COMPLETED, "the order ended as " + order.state() + " (" + order.why() + ")");
                 helper.assertTrue(in(f.warehouse, cobble) - before == 4, "cobblestone in the warehouse: " + (in(f.warehouse, cobble) - before));
                 helper.assertTrue(carrying(idle, s -> s.is(Items.STONE_PICKAXE)) == 1 && f.physical(s -> s.is(Items.STONE_PICKAXE)) == 0, "the stock pickaxe was not taken");
+                LabourSettings.allowDiggingForTest(colony.getID(), false);
                 end();
                 helper.succeed();
             }, () -> "order " + order.state() + " " + order.why() + " delivered " + order.delivered() + ", " + describe(f, null, idle));
@@ -465,6 +468,8 @@ final class ExpandedLabourGameTests
         begin();
         final RsFixture f = found(helper, "expanded directed tool inside");
         final Colony colony = (Colony) f.colony;
+        // (digging the ground is off by default, for directed orders too: allowed for this colony only)
+        LabourSettings.allowDiggingForTest(colony.getID(), true);
         stoneField(helper);
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
         tree(helper, 34, 32, 5, Blocks.OAK_LOG, Blocks.OAK_LEAVES);
@@ -482,6 +487,7 @@ final class ExpandedLabourGameTests
                 helper.assertTrue(blocks(helper, Blocks.OAK_LOG, 34, 32, 1, 5) == 5, "the oak outside the area was touched");
                 helper.assertTrue(blocks(helper, Blocks.OAK_LOG, 38, 24, 1, 5) == 0, "the oak in the area was not felled");
                 helper.assertTrue(carrying(idle, s -> s.is(ItemTags.PICKAXES)) >= 1, "he has no pickaxe");
+                LabourSettings.allowDiggingForTest(colony.getID(), false);
                 end();
                 helper.succeed();
             }, () -> "order " + order.state() + " " + order.why() + " delivered " + order.delivered() + ", " + describe(f, null, idle));

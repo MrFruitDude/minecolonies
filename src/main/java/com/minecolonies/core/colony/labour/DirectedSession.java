@@ -334,6 +334,18 @@ public final class DirectedSession implements IIdleTaskSession
             waitFor(order, DirectedOrder.Why.COVERED, worker, now);
             return;
         }
+        if (orders().groundOff(order))
+        {
+            // digging the ground is off: the area chosen does not allow it, nothing is dug and no pickaxe is made for it (the order shows NO_SITE; the UI can tell why
+            // from DirectedOrders.groundOff)
+            if (carried > 0)
+            {
+                go(Phase.DELIVER, now);
+                return;
+            }
+            waitFor(order, DirectedOrder.Why.NO_SITE, worker, now);
+            return;
+        }
         if (DirectedOrders.needsTool(order.resource()) && toolSlot(level, null, order.resource()) < 0)
         {
             if (carried > 0)

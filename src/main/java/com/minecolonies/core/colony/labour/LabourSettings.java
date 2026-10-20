@@ -179,9 +179,10 @@ public final class LabourSettings
     }
 
     /**
-     * @return whether automatic labour (requests, stock goals, a builder's own supply) may dig sand, dirt, gravel and stone out of the world. Off by default and when
-     *   the config cannot be read: a block of the ground that a player placed before placements were recorded cannot be told from the world's own, so nothing is
-     *   dug unless the server owner accepts that. Directed orders dig only in the area their manager chose and are not switched by this.
+     * @return whether labour may dig sand, dirt, gravel and stone out of the world: automatic labour (requests, stock goals, a builder's own supply) and directed
+     *   orders alike. Off by default and when the config cannot be read: a block of the ground that a player placed before placements were recorded cannot be told
+     *   from the world's own, so nothing is dug unless the server owner accepts that. A directed order's area does not allow it; with the switch on, a directed order
+     *   still digs only in its area.
      */
     public static boolean digUnprovenGround()
     {

@@ -409,7 +409,8 @@ public class ServerConfiguration extends AbstractConfiguration
         labourersSmelt = defineEnum("smelt", com.minecolonies.api.colony.labour.LabourModes.SmeltMode.BASIC);
         labourersStoneTools = defineBoolean("stoneTools", true);
         labourersKeepTrees = defineInteger("keepTrees", 4, 0, 64);
-        // Off: automatic labour digs no sand, dirt, gravel or stone from the world (a player's old build of them cannot be told from the world's own ground).
+        // Off: no labourer digs sand, dirt, gravel or stone from the world, automatic or directed (a player's old build of them cannot be told from the world's own
+        // ground; a manager's chosen area does not change that).
         labourersDigUnprovenGround = defineBoolean("digUnprovenGround", false);
         labourersSupplyGraceTicks = defineInteger("supplyGraceTicks", 1200, 0, 72000);
         labourersSupplyMaxTicks = defineInteger("supplyMaxTicks", 6000, 200, 72000);

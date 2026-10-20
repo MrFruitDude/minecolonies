@@ -77,6 +77,15 @@ final class NaturalSafetyGameTests
         }
     }
 
+    /**
+     * The server owner's opt-in to dig the ground, for this test's colony only ({@link #end} takes it back).
+     */
+    private static void allowDigging(final GameTestHelper helper, final Colony colony, final boolean allow)
+    {
+        LabourSettings.allowDiggingForTest(colony.getID(), allow);
+        RESTORE.computeIfAbsent(helper, h -> new ArrayList<>()).add(() -> LabourSettings.allowDiggingForTest(colony.getID(), false));
+    }
+
     private static RsFixture found(final GameTestHelper helper, final String name)
     {
         final RsFixture f = RsFixture.found(helper, name, 2);
@@ -422,6 +431,161 @@ final class NaturalSafetyGameTests
     }
 
     /**
+     * Digging the ground is off (the default). A tall oak is chosen and felling starts; then a plank is set (no placement event: like an old build) where a log of the
+     * tree was already felled, right under the lowest log still standing. The rest of the tree stands: a block new on a felled spot is no part of the tree.
+     */
+    public static void buildOnAFelledSpotStopsTheFelling(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "natural felled spot");
+        final Colony colony = (Colony) f.colony;
+        tree(helper, 34, 20, 9, Blocks.OAK_LOG);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            final IToken<?> token = ask(f.builder, new ItemStack(Items.OAK_LOG), 9);
+            final int[] atBuild = {-1};
+            final long[] since = {0L};
+            poll(helper, colony, 9000, () -> {
+                final int logs = count(helper, Blocks.OAK_LOG, 34, 20, 34, 20, 1, 9);
+                if (atBuild[0] < 0)
+                {
+                    if (logs == 9)
+                    {
+                        return false;
+                    }
+                    helper.assertTrue(logs >= 3, "the test came too late: only " + logs + " logs stand");
+                    // (logs fall from the base up: the felled spot right under the lowest standing log touches it)
+                    int lowest = 1;
+                    while (!helper.getBlockState(new BlockPos(34, lowest, 20)).is(Blocks.OAK_LOG))
+                    {
+                        lowest++;
+                    }
+                    helper.setBlock(new BlockPos(34, lowest - 1, 20), Blocks.OAK_PLANKS.defaultBlockState());
+                    atBuild[0] = logs;
+                    since[0] = helper.getLevel().getGameTime();
+                    return false;
+                }
+                helper.assertTrue(logs == atBuild[0], "a log broke after a plank was set on a felled spot: " + logs + " of " + atBuild[0]);
+                return helper.getLevel().getGameTime() - since[0] >= 600;
+            }, () -> {
+                end(helper);
+                helper.succeed();
+            }, () -> describe(f, token, idle) + " built at " + atBuild[0]);
+        });
+    }
+
+    /**
+     * Digging the ground is off (the default) and the manager chooses an area: that does not allow it. Dirt, gravel and stone set there without a placement event (like
+     * a player's old build, which no record holds) are not dug; a stone order does not fell the oak of its area for a pickaxe. Both orders wait with NO_SITE, and the
+     * read-only reason says it is the policy (DirectedOrders.groundOff, LabourSites.groundAllowed); the planner sees no ground either.
+     */
+    public static void directedDigsNoGroundByDefault(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "natural directed off");
+        final Colony colony = (Colony) f.colony;
+        for (int x = 30; x <= 35; x++)
+        {
+            for (int z = 20; z <= 23; z++)
+            {
+                helper.setBlock(new BlockPos(x, 1, z), (x + z) % 3 == 0 ? Blocks.GRAVEL.defaultBlockState() : Blocks.DIRT.defaultBlockState());
+            }
+        }
+        for (int x = 30; x <= 33; x++)
+        {
+            for (int z = 28; z <= 31; z++)
+            {
+                helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
+                helper.setBlock(new BlockPos(x, 1, z), Blocks.STONE.defaultBlockState());
+            }
+        }
+        helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
+        tree(helper, 38, 30, 5, Blocks.OAK_LOG);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData digger = f.spawn(new BlockPos(14, 1, 16), false);
+            final ICitizenData miner = f.spawn(new BlockPos(15, 1, 16), false);
+            final DirectedOrders orders = colony.getLabourBoard().directed();
+            helper.assertTrue(!colony.getLabourBoard().sites().groundAllowed() && orders.groundOff(DirectedOrder.Resource.DIRT)
+                                && !orders.groundOff(DirectedOrder.Resource.WOOD), "the policy reason is wrong");
+            final BlockPos a = helper.absolutePos(new BlockPos(30, 1, 20));
+            final BlockPos b = helper.absolutePos(new BlockPos(35, 1, 23));
+            final DirectedOrders.Start dirt = orders.start(List.of(digger.getId()), DirectedOrder.Resource.DIRT, 4, DirectedOrder.Area.of(a.getX(), a.getZ(), b.getX(), b.getZ()), null);
+            helper.assertTrue(dirt.order() != null, "refused: " + dirt.refusal());
+            final BlockPos c = helper.absolutePos(new BlockPos(29, 1, 27));
+            final BlockPos d = helper.absolutePos(new BlockPos(40, 1, 33));
+            final DirectedOrders.Start stone = orders.start(List.of(miner.getId()), DirectedOrder.Resource.COBBLESTONE, 4, DirectedOrder.Area.of(c.getX(), c.getZ(), d.getX(), d.getZ()),
+              null);
+            helper.assertTrue(stone.order() != null, "refused: " + stone.refusal());
+            final long start = helper.getLevel().getGameTime();
+            poll(helper, colony, 3000, () -> {
+                helper.assertTrue(count(helper, Blocks.DIRT, 30, 20, 35, 23, 1, 1) + count(helper, Blocks.GRAVEL, 30, 20, 35, 23, 1, 1) == 24, "ground of the area was dug");
+                helper.assertTrue(count(helper, Blocks.STONE, 30, 28, 33, 31, 0, 1) == 32, "stone of the area was dug");
+                helper.assertTrue(count(helper, Blocks.OAK_LOG, 38, 30, 38, 30, 1, 5) == 5, "the oak was felled for a pickaxe that may dig nothing");
+                helper.assertTrue(carrying(digger, s -> s.is(Items.DIRT) || s.is(Items.GRAVEL)) == 0 && carrying(miner, s -> s.is(Items.COBBLESTONE) || s.is(Items.OAK_LOG)) == 0,
+                  "a worker carries ground or logs");
+                return helper.getLevel().getGameTime() - start >= 800 && dirt.order().why() == DirectedOrder.Why.NO_SITE && stone.order().why() == DirectedOrder.Why.NO_SITE;
+            }, () -> {
+                helper.assertTrue(orders.groundOff(dirt.order()) && orders.groundOff(stone.order()), "the orders do not say why");
+                helper.assertTrue(!colony.getLabourBoard().sites().hasSurface(Items.DIRT) && colony.getLabourBoard().takenSurface().isEmpty(), "the planner sees ground");
+                helper.assertTrue(orders.cancel(dirt.order().id()) && orders.cancel(stone.order().id()), "cancel");
+                end(helper);
+                helper.succeed();
+            }, () -> "dirt " + dirt.order().why() + " stone " + stone.order().why() + ", " + describe(f, null, digger) + "; " + describe(f, null, miner));
+        });
+    }
+
+    /**
+     * Digging the ground is allowed when the order starts and he digs; then the switch goes off. No further block of the area breaks, and the order waits with NO_SITE.
+     */
+    public static void directedStopsWhenDiggingGoesOff(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "natural directed switch");
+        final Colony colony = (Colony) f.colony;
+        allowDigging(helper, colony, true);
+        for (int x = 30; x <= 35; x++)
+        {
+            for (int z = 20; z <= 23; z++)
+            {
+                helper.setBlock(new BlockPos(x, 1, z), Blocks.DIRT.defaultBlockState());
+            }
+        }
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            final BlockPos a = helper.absolutePos(new BlockPos(30, 1, 20));
+            final BlockPos b = helper.absolutePos(new BlockPos(35, 1, 23));
+            final DirectedOrders.Start start = colony.getLabourBoard().directed().start(List.of(idle.getId()), DirectedOrder.Resource.DIRT, 20,
+              DirectedOrder.Area.of(a.getX(), a.getZ(), b.getX(), b.getZ()), null);
+            helper.assertTrue(start.order() != null, "refused: " + start.refusal());
+            final DirectedOrder order = start.order();
+            final int[] atOff = {-1};
+            final long[] since = {0L};
+            poll(helper, colony, 9000, () -> {
+                final int left = count(helper, Blocks.DIRT, 30, 20, 35, 23, 1, 1);
+                if (atOff[0] < 0)
+                {
+                    if (left == 24)
+                    {
+                        return false;
+                    }
+                    helper.assertTrue(left > 4, "the test came too late: " + left + " left");
+                    LabourSettings.allowDiggingForTest(colony.getID(), false);
+                    atOff[0] = left;
+                    since[0] = helper.getLevel().getGameTime();
+                    return false;
+                }
+                helper.assertTrue(left == atOff[0], "dirt was dug after digging went off: " + left + " of " + atOff[0]);
+                return helper.getLevel().getGameTime() - since[0] >= 600 && order.why() == DirectedOrder.Why.NO_SITE;
+            }, () -> {
+                helper.assertTrue(order.active() && colony.getLabourBoard().directed().groundOff(order), "the order does not say why");
+                helper.assertTrue(colony.getLabourBoard().directed().cancel(order.id()), "cancel");
+                end(helper);
+                helper.succeed();
+            }, () -> "order " + order.state() + " " + order.why() + " delivered " + order.delivered() + " off at " + atOff[0] + ", " + describe(f, null, idle));
+        });
+    }
+
+    /**
      * A directed dirt order: two blocks of the area were placed (recorded through the placement event), and the colony's record is saved and read back before the
      * order starts. The order completes from the other dirt; the two placed blocks stay.
      */
@@ -430,6 +594,8 @@ final class NaturalSafetyGameTests
         begin();
         final RsFixture f = found(helper, "natural directed");
         final Colony colony = (Colony) f.colony;
+        // (the opt-in: with it a directed order digs natural ground in its area, still never a placed block)
+        allowDigging(helper, colony, true);
         for (int x = 30; x <= 35; x++)
         {
             for (int z = 20; z <= 23; z++)
@@ -468,7 +634,7 @@ final class NaturalSafetyGameTests
     // ------------------------------------------------------------------ registration
 
     static final String[] NAMES = {"labour_natural_auto_guards", "labour_natural_strip_guards", "labour_natural_fresh_building", "labour_natural_ground",
-      "labour_natural_directed_placed"};
+      "labour_natural_directed_placed", "labour_natural_felled_spot", "labour_natural_directed_off", "labour_natural_directed_switch"};
 
     static java.util.function.Consumer<GameTestHelper> test(final String name)
     {
@@ -478,6 +644,9 @@ final class NaturalSafetyGameTests
             case "labour_natural_strip_guards" -> NaturalSafetyGameTests::strippingNeverTakesStrippedWood;
             case "labour_natural_fresh_building" -> NaturalSafetyGameTests::buildingAfterTheChoiceStopsTheFelling;
             case "labour_natural_ground" -> NaturalSafetyGameTests::automaticDigsNoUnprovenGround;
+            case "labour_natural_felled_spot" -> NaturalSafetyGameTests::buildOnAFelledSpotStopsTheFelling;
+            case "labour_natural_directed_off" -> NaturalSafetyGameTests::directedDigsNoGroundByDefault;
+            case "labour_natural_directed_switch" -> NaturalSafetyGameTests::directedStopsWhenDiggingGoesOff;
             default -> NaturalSafetyGameTests::directedLeavesPlacedBlocksAfterAReload;
         };
     }
