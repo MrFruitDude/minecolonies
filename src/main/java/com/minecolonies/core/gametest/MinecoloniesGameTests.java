@@ -2113,6 +2113,26 @@ public final class MinecoloniesGameTests
         return out;
     }
 
+    /**
+     * Everything the server sent this connected player since the last drain, oldest first.
+     */
+    static java.util.List<Object> drainOutbound(final ServerPlayer player)
+    {
+        final java.util.List<Object> out = new java.util.ArrayList<>();
+        final EmbeddedChannel channel = CHANNELS.get(player);
+        Object packet;
+        while (channel != null && (packet = channel.readOutbound()) != null)
+        {
+            out.add(packet);
+        }
+        return out;
+    }
+
+    static ServerPlayer makeConnectedPlayer(final GameTestHelper helper, final GameType gameType)
+    {
+        return makeConnectedPlayer(helper, UUID.randomUUID(), gameType);
+    }
+
     private static ServerPlayer makeConnectedSurvivalPlayer(final GameTestHelper helper, final UUID playerUuid)
     {
         return makeConnectedPlayer(helper, playerUuid, GameType.SURVIVAL);

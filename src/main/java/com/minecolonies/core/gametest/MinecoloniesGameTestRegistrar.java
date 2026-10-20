@@ -165,6 +165,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           info -> new MinecoloniesGameTestInstance(info, BuildToolGameTests::buildToolTownHallPaste),
           isolatedColonyData(event, "buildtool_townhall_paste"));
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "hut_pickup_native_path"),
+          info -> new MinecoloniesGameTestInstance(info, HutPickupGameTests::hutPickupNativePath),
+          isolatedColonyData(event, "hut_pickup_native_path"));
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "survival_player_actions"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::survivalPlayerActions),
           isolatedColonyData(event, "survival_player_actions"));
