@@ -341,8 +341,8 @@ public final class DirectedSession implements IIdleTaskSession
                 go(Phase.DELIVER, now);
                 return;
             }
-            // no pickaxe: he gets one (stock first, then the basic one made by hand) before he digs
-            toolSession = LabourSession.forTool(colony, citizen, board, claim, DirectedOrders.tool(order.resource()));
+            // no pickaxe: he gets one (stock first, then the basic one made by hand from the area's own trees) before he digs
+            toolSession = LabourSession.forTool(colony, citizen, board, claim, DirectedOrders.tool(order.resource()), order.id(), order.area());
             board.heartbeat(claim);
             go(Phase.TOOL, now);
             return;

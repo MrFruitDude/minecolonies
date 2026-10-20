@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * What a labourer does next to get hold of some goods with his hands: gather it, take it from a warehouse (only what a specialist covers), craft it at a table or
@@ -282,6 +283,94 @@ public final class LabourPlanner<K>
     {
         final LabourPlanner<K> planner = new LabourPlanner<>(env, inventory);
         return planner.need(target, count, new HashMap<>(inventory), 0);
+    }
+
+    /**
+     * The colony as seen for a directed order whose area the manager chose: everything the env says, except that the only raw gathering left is felling a natural tree
+     * that stands wholly in the area ({@code treeInArea}, by its log). No stripping, digging or loose items, and nothing in the wider labour reach: what is made from
+     * there comes from what he holds, what the warehouses give for covered goods, and the area's own trees, or the plan is blocked ({@link Why#NO_SITE}).
+     *
+     * @param env        the colony.
+     * @param treeInArea whether a tree of the log stands in the area (with the same checks as the order's own felling).
+     * @return the bounded env.
+     */
+    public static <K> Env<K> withinArea(final Env<K> env, final Predicate<K> treeInArea)
+    {
+        return new Env<>()
+        {
+            @Override
+            public List<Recipe<K>> recipesFor(final K output)
+            {
+                return env.recipesFor(output);
+            }
+
+            @Override
+            public List<GatherDef<K>> gathersOf(final K item)
+            {
+                return env.gathersOf(item);
+            }
+
+            @Override
+            public boolean canGather(final GatherDef<K> gather)
+            {
+                return gather.kind() == GatherKind.LOG && treeInArea.test(gather.item());
+            }
+
+            @Override
+            public boolean hasTable()
+            {
+                return env.hasTable();
+            }
+
+            @Override
+            public boolean hasFurnace()
+            {
+                return env.hasFurnace();
+            }
+
+            @Override
+            public boolean covered(final K item)
+            {
+                return env.covered(item);
+            }
+
+            @Override
+            public int withdrawable(final K item)
+            {
+                return env.withdrawable(item);
+            }
+
+            @Override
+            public boolean hasTool(final String tool, final Map<K, Integer> inventory)
+            {
+                return env.hasTool(tool, inventory);
+            }
+
+            @Override
+            @Nullable
+            public K toolItem(final String tool)
+            {
+                return env.toolItem(tool);
+            }
+
+            @Override
+            public List<K> fuels()
+            {
+                return env.fuels();
+            }
+
+            @Override
+            public double smeltsPerFuel(final K fuel)
+            {
+                return env.smeltsPerFuel(fuel);
+            }
+
+            @Override
+            public boolean smeltAllowed(final Recipe<K> recipe)
+            {
+                return env.smeltAllowed(recipe);
+            }
+        };
     }
 
     /**

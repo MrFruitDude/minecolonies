@@ -32,6 +32,7 @@ import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.block.Block;
@@ -48,7 +49,7 @@ import java.util.function.Supplier;
 /**
  * The expanded basic tier (EXPANDED LABOUR, 2026-10-20): wood stairs made from a tree at a table, stripped logs of the tree's own species with an axe, a Domum
  * Ornamentum block made at a physical Architect's Cutter as exactly the requested variant (and a variant of a material labour does not get refused with its reason),
- * and a directed stone order whose worker takes a pickaxe out of the warehouse first. Real colonies and citizens, ticked by the test. Run with
+ * and a directed stone order whose worker takes a pickaxe out of the warehouse first, or makes one from a tree in the order's area only. Real colonies and citizens, ticked by the test. Run with
  * {@code MINECOLONIES_GAMETEST_ONLY=expanded}.
  */
 final class ExpandedLabourGameTests
@@ -426,10 +427,93 @@ final class ExpandedLabourGameTests
         });
     }
 
+    /**
+     * The manager's area bounds the pickaxe: a citizen without one, no pickaxe and no planks in stock, an oak standing in the colony but outside the order's area. The
+     * stone order is refused with NO_TOOL (the usual labour reach would fell that oak, the order may not), nothing is started and the oak stands whole.
+     */
+    public static void directedToolOnlyOutsideTheArea(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "expanded directed tool outside");
+        final Colony colony = (Colony) f.colony;
+        stoneField(helper);
+        helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
+        tree(helper, 34, 32, 5, Blocks.OAK_LOG, Blocks.OAK_LEAVES);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            final DirectedOrders orders = colony.getLabourBoard().directed();
+            // (the order page's hint, before an area is chosen, still sees the oak)
+            helper.assertTrue(orders.canEquip(idle, "pickaxe"), "the hint does not see the oak in reach");
+            final DirectedOrders.Start start = orders.start(List.of(idle.getId()), DirectedOrder.Resource.COBBLESTONE, 4, toolArea(helper), null);
+            helper.assertTrue(start.order() == null && start.refusal() == DirectedOrders.Refusal.NO_TOOL, "not refused with NO_TOOL: " + start.refusal());
+            helper.assertTrue(orders.orders().isEmpty(), "a refused start left an order");
+            helper.runAfterDelay(200, () -> {
+                helper.assertTrue(blocks(helper, Blocks.OAK_LOG, 34, 32, 1, 5) == 5, "the oak outside the area was touched");
+                helper.assertTrue(carrying(idle, s -> s.is(Items.OAK_LOG) || s.is(Items.WOODEN_PICKAXE)) == 0, "he got logs or a pickaxe");
+                end();
+                helper.succeed();
+            });
+        });
+    }
+
+    /**
+     * The same, with a second oak inside the area: the order is accepted, he fells only the oak in the area to make his wooden pickaxe at the table, digs the stone and
+     * hands in 4 cobblestone. The oak outside stands whole.
+     */
+    public static void directedToolFromATreeInTheArea(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "expanded directed tool inside");
+        final Colony colony = (Colony) f.colony;
+        stoneField(helper);
+        helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
+        tree(helper, 34, 32, 5, Blocks.OAK_LOG, Blocks.OAK_LEAVES);
+        tree(helper, 38, 24, 5, Blocks.OAK_LOG, Blocks.OAK_LEAVES);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            final Predicate<ItemStack> cobble = s -> s.is(Items.COBBLESTONE);
+            final int before = in(f.warehouse, cobble);
+            final DirectedOrders.Start start = colony.getLabourBoard().directed().start(List.of(idle.getId()), DirectedOrder.Resource.COBBLESTONE, 4, toolArea(helper), null);
+            helper.assertTrue(start.order() != null, "refused: " + start.refusal());
+            final DirectedOrder order = start.order();
+            poll(helper, colony, 12000, () -> !order.active(), () -> {
+                helper.assertTrue(order.state() == DirectedOrder.State.COMPLETED, "the order ended as " + order.state() + " (" + order.why() + ")");
+                helper.assertTrue(in(f.warehouse, cobble) - before == 4, "cobblestone in the warehouse: " + (in(f.warehouse, cobble) - before));
+                helper.assertTrue(blocks(helper, Blocks.OAK_LOG, 34, 32, 1, 5) == 5, "the oak outside the area was touched");
+                helper.assertTrue(blocks(helper, Blocks.OAK_LOG, 38, 24, 1, 5) == 0, "the oak in the area was not felled");
+                helper.assertTrue(carrying(idle, s -> s.is(ItemTags.PICKAXES)) >= 1, "he has no pickaxe");
+                end();
+                helper.succeed();
+            }, () -> "order " + order.state() + " " + order.why() + " delivered " + order.delivered() + ", " + describe(f, null, idle));
+        });
+    }
+
+    private static void stoneField(final GameTestHelper helper)
+    {
+        for (int x = 30; x <= 33; x++)
+        {
+            for (int z = 20; z <= 23; z++)
+            {
+                helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
+                helper.setBlock(new BlockPos(x, 1, z), Blocks.STONE.defaultBlockState());
+            }
+        }
+    }
+
+    /**
+     * @return the stone orders' area: x 28..40, z 18..26 (the stone field, room for one oak at 38/24; the oak at 34/32 stands outside).
+     */
+    private static DirectedOrder.Area toolArea(final GameTestHelper helper)
+    {
+        final BlockPos a = helper.absolutePos(new BlockPos(28, 1, 18));
+        final BlockPos b = helper.absolutePos(new BlockPos(40, 1, 26));
+        return DirectedOrder.Area.of(a.getX(), a.getZ(), b.getX(), b.getZ());
+    }
+
     // ------------------------------------------------------------------ registration
 
     static final String[] NAMES = {"labour_expanded_cutter_variant", "labour_expanded_cutter_input", "labour_expanded_stairs", "labour_expanded_strip",
-      "labour_expanded_directed_pickaxe"};
+      "labour_expanded_directed_pickaxe", "labour_expanded_directed_tool_outside", "labour_expanded_directed_tool_inside"};
 
     static java.util.function.Consumer<GameTestHelper> test(final String name)
     {
@@ -439,6 +523,8 @@ final class ExpandedLabourGameTests
             case "labour_expanded_cutter_input" -> ExpandedLabourGameTests::cutterRefusesAnUnsupportedMaterial;
             case "labour_expanded_stairs" -> ExpandedLabourGameTests::stairsFromATree;
             case "labour_expanded_strip" -> ExpandedLabourGameTests::strippedLogsOfTheTreesSpecies;
+            case "labour_expanded_directed_tool_outside" -> ExpandedLabourGameTests::directedToolOnlyOutsideTheArea;
+            case "labour_expanded_directed_tool_inside" -> ExpandedLabourGameTests::directedToolFromATreeInTheArea;
             default -> ExpandedLabourGameTests::directedStoneTakesAPickaxeFromStock;
         };
     }

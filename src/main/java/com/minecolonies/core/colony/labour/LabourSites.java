@@ -894,16 +894,32 @@ public final class LabourSites
     public void forgetArea(final int orderId)
     {
         areas.remove(orderId);
+        areas.remove(toolKey(orderId));
     }
 
-    private AreaScan scanArea(final int orderId, final DirectedOrder.Area area, final DirectedOrder.Resource resource, final int floor)
+    /**
+     * @return the key of the trees of an order's area that his workers may fell for the tool of the order (kept apart from the order's own scan, which may be stone).
+     */
+    private static int toolKey(final int orderId)
+    {
+        return -1 - orderId;
+    }
+
+    private AreaScan scanArea(final int key, final DirectedOrder.Area area, final DirectedOrder.Resource resource, final int floor)
     {
         final long now = now();
-        final AreaScan cached = areas.get(orderId);
+        final AreaScan cached = areas.get(key);
         if (cached != null && now - cached.at() < AREA_CACHE_TICKS && now >= cached.at())
         {
             return cached;
         }
+        final AreaScan scan = scanAreaNow(now, area, resource, floor);
+        areas.put(key, scan);
+        return scan;
+    }
+
+    private AreaScan scanAreaNow(final long now, final DirectedOrder.Area area, final DirectedOrder.Resource resource, final int floor)
+    {
         final ServerLevel level = level();
         final List<TreeSite> trees = new ArrayList<>();
         final List<BlockPos> blocks = new ArrayList<>();
@@ -963,9 +979,41 @@ public final class LabourSites
                 }
             }
         }
-        final AreaScan scan = new AreaScan(now, List.copyOf(trees), List.copyOf(blocks));
-        areas.put(orderId, scan);
-        return scan;
+        return new AreaScan(now, List.copyOf(trees), List.copyOf(blocks));
+    }
+
+    /**
+     * The kinds of log of the natural trees standing wholly in the area, with the checks of a directed wood order: what a directed worker may fell to make the tool of his
+     * order (the wider labour reach is never used for it).
+     *
+     * @param orderId the order, or a negative id before it exists (then the area is scanned once, not cached).
+     * @param area    the order's area.
+     * @return the log kinds.
+     */
+    public Set<Item> treeLogsIn(final int orderId, final DirectedOrder.Area area)
+    {
+        final AreaScan scan = orderId < 0 ? scanAreaNow(now(), area, DirectedOrder.Resource.WOOD, DirectedOrder.NO_FLOOR)
+                                : scanArea(toolKey(orderId), area, DirectedOrder.Resource.WOOD, DirectedOrder.NO_FLOOR);
+        final ServerLevel level = level();
+        final Set<Item> logs = new HashSet<>();
+        for (final TreeSite tree : scan.trees())
+        {
+            if (level != null && level.isLoaded(tree.base()) && LabourRules.log(level.getBlockState(tree.base())))
+            {
+                logs.add(tree.log());
+            }
+        }
+        return logs;
+    }
+
+    /**
+     * {@link #nearestTreeIn} for the tool of an order: the nearest natural tree of the log standing wholly in the area, still there, or null.
+     */
+    @Nullable
+    public TreeSite nearestToolTreeIn(final int orderId, final DirectedOrder.Area area, final Item log, final BlockPos from, final Set<BlockPos> taken)
+    {
+        final TreeSite found = nearestTreeInScan(toolKey(orderId), area, log, from, taken);
+        return found != null || !rescan(toolKey(orderId)) ? found : nearestTreeInScan(toolKey(orderId), area, log, from, taken);
     }
 
     /**
@@ -978,33 +1026,33 @@ public final class LabourSites
     @Nullable
     public TreeSite nearestTreeIn(final int orderId, final DirectedOrder.Area area, final BlockPos from, final Set<BlockPos> taken)
     {
-        final TreeSite found = nearestTreeInScan(orderId, area, from, taken);
-        return found != null || !rescan(orderId) ? found : nearestTreeInScan(orderId, area, from, taken);
+        final TreeSite found = nearestTreeInScan(orderId, area, null, from, taken);
+        return found != null || !rescan(orderId) ? found : nearestTreeInScan(orderId, area, null, from, taken);
     }
 
     /**
      * Nothing was found in a scan that is a second old or more: the area is scanned again once (blocks dug since the scan uncover the next ones).
      */
-    private boolean rescan(final int orderId)
+    private boolean rescan(final int key)
     {
-        final AreaScan cached = areas.get(orderId);
+        final AreaScan cached = areas.get(key);
         if (cached == null || now() - cached.at() < 20L)
         {
             return false;
         }
-        areas.remove(orderId);
+        areas.remove(key);
         return true;
     }
 
     @Nullable
-    private TreeSite nearestTreeInScan(final int orderId, final DirectedOrder.Area area, final BlockPos from, final Set<BlockPos> taken)
+    private TreeSite nearestTreeInScan(final int key, final DirectedOrder.Area area, @Nullable final Item log, final BlockPos from, final Set<BlockPos> taken)
     {
         final ServerLevel level = level();
         TreeSite best = null;
         double bestDistance = Double.MAX_VALUE;
-        for (final TreeSite tree : scanArea(orderId, area, DirectedOrder.Resource.WOOD, DirectedOrder.NO_FLOOR).trees())
+        for (final TreeSite tree : scanArea(key, area, DirectedOrder.Resource.WOOD, DirectedOrder.NO_FLOOR).trees())
         {
-            if (taken.contains(tree.base()) || level == null || !level.isLoaded(tree.base()) || !LabourRules.log(level.getBlockState(tree.base())))
+            if ((log != null && tree.log() != log) || taken.contains(tree.base()) || level == null || !level.isLoaded(tree.base()) || !LabourRules.log(level.getBlockState(tree.base())))
             {
                 continue;
             }

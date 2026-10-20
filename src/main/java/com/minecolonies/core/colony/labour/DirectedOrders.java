@@ -211,8 +211,8 @@ public final class DirectedOrders
     }
 
     /**
-     * @return whether the citizen carries a tool of the kind or can get one before he works: a free one lies in a warehouse, or labour can make the basic one (from
-     * what the colony gives for covered goods and what he gathers and crafts himself).
+     * A hint before the area is chosen (the order page's chip): whether the citizen carries a tool of the kind or could get one: a free one lies in a warehouse, or labour
+     * can make the basic one within its usual reach. A start checks the chosen area itself ({@link #canEquip(ICitizenData, String, DirectedOrder.Area)}).
      */
     public boolean canEquip(final ICitizenData citizen, final String tool)
     {
@@ -221,6 +221,21 @@ public final class DirectedOrders
             return true;
         }
         final LabourPlanner.Result<net.minecraft.world.item.Item> plan = LabourPlanner.next(new LabourEnv(colony, board, true), LabourRules.toolItem(tool), 1,
+          LabourSession.inventoryOf(citizen));
+        return !(plan instanceof LabourPlanner.Blocked<?>);
+    }
+
+    /**
+     * @return whether the citizen carries a tool of the kind or can get one for an order in the area before he works: a free one lies in a warehouse, or labour can
+     *   make the basic one from what he holds, what the warehouses give for covered goods and the natural trees standing wholly in the area (nothing outside it).
+     */
+    public boolean canEquip(final ICitizenData citizen, final String tool, final DirectedOrder.Area area)
+    {
+        if (carries(citizen, tool) || LabourSession.stockedTool(board, tool) != null)
+        {
+            return true;
+        }
+        final LabourPlanner.Result<net.minecraft.world.item.Item> plan = LabourPlanner.next(LabourSession.toolEnv(colony, board, -1, area), LabourRules.toolItem(tool), 1,
           LabourSession.inventoryOf(citizen));
         return !(plan instanceof LabourPlanner.Blocked<?>);
     }
@@ -370,7 +385,7 @@ public final class DirectedOrders
         {
             for (final ICitizenData citizen : chosen)
             {
-                if (!canEquip(citizen, tool(resource)))
+                if (!canEquip(citizen, tool(resource), area))
                 {
                     return refuse(Refusal.NO_TOOL);
                 }

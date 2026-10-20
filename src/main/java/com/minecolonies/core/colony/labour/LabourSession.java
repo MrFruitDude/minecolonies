@@ -101,15 +101,23 @@ public final class LabourSession implements IIdleTaskSession
     private final String toolKind;
     @Nullable
     private LabourPlanner.Why lastWhy;
+    // in tool mode, the order and its area: the only raw goods he takes for the tool are the area's own natural trees
+    private final int                  orderId;
+    @Nullable
+    private final DirectedOrder.Area   area;
+    private final java.util.Set<BlockPos> leftTrees = new java.util.HashSet<>();
 
     public LabourSession(final String taskId, final Colony colony, final ICitizenData citizen, final LabourBoard board, final LabourClaim claim)
     {
-        this(taskId, colony, citizen, board, claim, null);
+        this(taskId, colony, citizen, board, claim, null, -1, null);
     }
 
-    private LabourSession(final String taskId, final Colony colony, final ICitizenData citizen, final LabourBoard board, final LabourClaim claim, @Nullable final String toolKind)
+    private LabourSession(final String taskId, final Colony colony, final ICitizenData citizen, final LabourBoard board, final LabourClaim claim, @Nullable final String toolKind,
+      final int orderId, @Nullable final DirectedOrder.Area area)
     {
         this.toolKind = toolKind;
+        this.orderId = orderId;
+        this.area = area;
         this.taskId = taskId;
         this.colony = colony;
         this.citizen = citizen;
@@ -122,12 +130,23 @@ public final class LabourSession implements IIdleTaskSession
 
     /**
      * A session that only gets the citizen a tool of the kind for himself, on the claim of his directed order: a free one out of a warehouse first (reserved through
-     * the ledger), else the basic tool made the labour way (from what the warehouses give for covered goods, and what he gathers and crafts). It keeps what it makes,
-     * hands nothing in and never releases the claim; the directed session drives it ({@link #tick}) and ends it ({@link #abort}).
+     * the ledger), else the basic tool made the labour way: from what he holds, what the warehouses give for covered goods, and the logs of natural trees standing wholly in
+     * the order's area (the manager's choice bounds what he takes out of the world; nothing is felled, stripped or dug outside it). It keeps what it makes, hands nothing
+     * in and never releases the claim; the directed session drives it ({@link #tick}) and ends it ({@link #abort}).
      */
-    public static LabourSession forTool(final Colony colony, final ICitizenData citizen, final LabourBoard board, final LabourClaim claim, final String toolKind)
+    public static LabourSession forTool(final Colony colony, final ICitizenData citizen, final LabourBoard board, final LabourClaim claim, final String toolKind,
+      final int orderId, final DirectedOrder.Area area)
     {
-        return new LabourSession(DirectedTask.ID, colony, citizen, board, claim, toolKind);
+        return new LabourSession(DirectedTask.ID, colony, citizen, board, claim, toolKind, orderId, area);
+    }
+
+    /**
+     * @return the colony as the planner sees it for the tool of a directed order: raw goods only from the natural trees standing wholly in the area.
+     */
+    public static LabourPlanner.Env<Item> toolEnv(final Colony colony, final LabourBoard board, final int orderId, final DirectedOrder.Area area)
+    {
+        final java.util.Set<Item> logs = board.sites().treeLogsIn(orderId, area);
+        return LabourPlanner.withinArea(new LabourEnv(colony, board, true), logs::contains);
     }
 
     /**
@@ -466,7 +485,7 @@ public final class LabourSession implements IIdleTaskSession
             perform(new LabourPlanner.Withdraw<>(stocked, 1), now);
             return;
         }
-        final LabourPlanner.Result<Item> result = LabourPlanner.next(new LabourEnv(colony, board, true), LabourRules.toolItem(toolKind), 1, inventoryOf(citizen));
+        final LabourPlanner.Result<Item> result = LabourPlanner.next(toolEnv(colony, board, orderId, area), LabourRules.toolItem(toolKind), 1, inventoryOf(citizen));
         if (result instanceof LabourPlanner.Done<Item>)
         {
             end(true);
@@ -572,6 +591,13 @@ public final class LabourSession implements IIdleTaskSession
             go(Phase.THINK, now);
             return;
         }
+        if (area != null && g.gather().kind() != LabourPlanner.GatherKind.LOG)
+        {
+            // (the tool of a directed order: only the area's trees are felled, nothing else is taken out of the world)
+            failed(LabourPlanner.Why.NO_SITE);
+            end(false);
+            return;
+        }
         switch (g.gather().kind())
         {
             case LOG -> gatherLog(worker, level, item, now, false);
@@ -590,8 +616,17 @@ public final class LabourSession implements IIdleTaskSession
     {
         if (tree == null)
         {
-            tree = strip ? board.sites().nearestStripTree(item, worker.blockPosition(), board.takenTrees())
-                     : board.sites().nearestTree(item, worker.blockPosition(), board.takenTrees());
+            if (area != null)
+            {
+                final java.util.Set<BlockPos> skip = new java.util.HashSet<>(board.takenTrees());
+                skip.addAll(leftTrees);
+                tree = board.sites().nearestToolTreeIn(orderId, area, item, worker.blockPosition(), skip);
+            }
+            else
+            {
+                tree = strip ? board.sites().nearestStripTree(item, worker.blockPosition(), board.takenTrees())
+                         : board.sites().nearestTree(item, worker.blockPosition(), board.takenTrees());
+            }
             if (tree == null)
             {
                 failed(LabourPlanner.Why.NO_SITE);
@@ -602,7 +637,8 @@ public final class LabourSession implements IIdleTaskSession
             logsLeft = new ArrayList<>(tree.logs());
             workUntil = 0L;
         }
-        logsLeft.removeIf(pos -> !LabourRules.log(level.getBlockState(pos)));
+        // (in tool mode a log in a chunk that unloaded is not read: that would load it)
+        logsLeft.removeIf(pos -> (area != null && !level.isLoaded(pos)) || !LabourRules.log(level.getBlockState(pos)));
         if (logsLeft.isEmpty())
         {
             plantSapling(worker, level, tree.base());
@@ -617,6 +653,15 @@ public final class LabourSession implements IIdleTaskSession
             return;
         }
         final BlockPos log = logsLeft.get(0);
+        if (area != null && !areaSafe())
+        {
+            // a log grew into a building's box, a veto, an unloaded chunk or out of the claim since the scan: the rest of the tree stands, he looks again
+            LabourStats.log("citizen {} leaves tree {} of order {} for the tool", citizen.getId(), tree.base(), orderId);
+            leftTrees.add(tree.base());
+            cleanup();
+            go(Phase.THINK, now);
+            return;
+        }
         int toolSlot = -1;
         if (strip)
         {
@@ -638,6 +683,21 @@ public final class LabourSession implements IIdleTaskSession
             logsLeft.remove(0);
             board.heartbeat(claim);
         }
+    }
+
+    /**
+     * @return whether every log still to fell for the tool of the order may still be taken, read now (the directed session's own check of a tree).
+     */
+    private boolean areaSafe()
+    {
+        for (final BlockPos pos : logsLeft)
+        {
+            if (!board.sites().directedSafe(area, pos))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
