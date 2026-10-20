@@ -505,6 +505,8 @@ final class NaturalSafetyGameTests
             final ICitizenData digger = f.spawn(new BlockPos(14, 1, 16), false);
             final ICitizenData miner = f.spawn(new BlockPos(15, 1, 16), false);
             final DirectedOrders orders = colony.getLabourBoard().directed();
+            // (two labourers at once: the colony's labour share is raised, as for two workers on one order)
+            colony.getSettings().updateSetting(BuildingTownHall.LABOUR_SHARE, new com.minecolonies.core.colony.buildings.modules.settings.IntSetting(100), null);
             helper.assertTrue(!colony.getLabourBoard().sites().groundAllowed() && orders.groundOff(DirectedOrder.Resource.DIRT)
                                 && !orders.groundOff(DirectedOrder.Resource.WOOD), "the policy reason is wrong");
             final BlockPos a = helper.absolutePos(new BlockPos(30, 1, 20));
