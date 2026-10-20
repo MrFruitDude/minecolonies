@@ -78,7 +78,19 @@ public final class LabourSites
     private List<BlockPos> furnaces    = List.of();
     private List<BlockPos> allTables   = List.of();
     private List<BlockPos> allFurnaces = List.of();
+    private List<BlockPos> cutters     = List.of();
+    private List<BlockPos> allCutters  = List.of();
     private long           postsAt     = Long.MIN_VALUE / 2;
+
+    /**
+     * What the world's axe makes of each kind of log, read at a tree of that kind (dropped with the tree scan).
+     */
+    private final Map<Item, Item> strippedOf = new HashMap<>();
+
+    /**
+     * Most trees a scan keeps (the scan over a wide gathering radius stops looking once it has these).
+     */
+    public static final int MAX_TREES = 256;
 
     private List<BoundingBox> boxes   = List.of();
     private long              boxesAt = Long.MIN_VALUE / 2;
@@ -275,7 +287,7 @@ public final class LabourSites
         {
             final Set<BlockPos> seen = new HashSet<>();
             scan(LabourSettings.gatherRadius(), LabourRules::log, pos -> {
-                if (!seen.contains(pos) && level.getBlockState(pos.below()).is(BlockTags.DIRT))
+                if (found.size() < MAX_TREES && !seen.contains(pos) && level.getBlockState(pos.below()).is(BlockTags.DIRT))
                 {
                     final TreeSite tree = detectTree(level, pos);
                     if (tree != null)
@@ -303,6 +315,7 @@ public final class LabourSites
         }
         trees = usable;
         treesAt = now;
+        strippedOf.clear();
         return usable;
     }
 
@@ -404,6 +417,70 @@ public final class LabourSites
         for (final TreeSite tree : scanTrees())
         {
             if (tree.log() != log || taken.contains(tree.base()) || level == null || !LabourRules.log(level.getBlockState(tree.base())))
+            {
+                continue;
+            }
+            final double distance = tree.base().distSqr(from);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = tree;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * @return what the world's standard axe makes of the tree's logs (read at its base, the species of the game's own transformer), or null.
+     */
+    @Nullable
+    public Item strippedOf(final TreeSite tree)
+    {
+        final ServerLevel level = level();
+        if (level == null)
+        {
+            return null;
+        }
+        final Item known = strippedOf.get(tree.log());
+        if (known != null || strippedOf.containsKey(tree.log()))
+        {
+            return known;
+        }
+        final LabourStrip.Result result = LabourStrip.stripped(level, tree.base(), LabourStrip.standardAxe(level));
+        final Item stripped = result == null ? null : result.state().getBlock().asItem();
+        final Item allowed = stripped != null && LabourRules.stripResult(stripped) ? stripped : null;
+        strippedOf.put(tree.log(), allowed);
+        return allowed;
+    }
+
+    /**
+     * @param stripped a kind of stripped log.
+     * @return whether a tree stands in reach whose logs an axe strips to it.
+     */
+    public boolean hasStripTree(final Item stripped)
+    {
+        for (final TreeSite tree : scanTrees())
+        {
+            if (strippedOf(tree) == stripped)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return the nearest tree, still standing and not taken, whose logs an axe strips to the kind, or null.
+     */
+    @Nullable
+    public TreeSite nearestStripTree(final Item stripped, final BlockPos from, final Set<BlockPos> taken)
+    {
+        final ServerLevel level = level();
+        TreeSite best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (final TreeSite tree : scanTrees())
+        {
+            if (taken.contains(tree.base()) || level == null || !LabourRules.log(level.getBlockState(tree.base())) || strippedOf(tree) != stripped)
             {
                 continue;
             }
@@ -605,10 +682,24 @@ public final class LabourSites
                 }
             }
         });
+        final List<BlockPos> foundCutters = new ArrayList<>();
+        final List<BlockPos> everyCutter = new ArrayList<>();
+        scan(range, LabourSites::cutterBlock, pos -> {
+            if (ownedBy(pos))
+            {
+                everyCutter.add(pos);
+                if (usablePost(pos))
+                {
+                    foundCutters.add(pos);
+                }
+            }
+        });
         tables = foundTables;
         furnaces = foundFurnaces;
+        cutters = foundCutters;
         allTables = everyTable;
         allFurnaces = everyFurnace;
+        allCutters = everyCutter;
         postsAt = now;
     }
 
@@ -644,6 +735,39 @@ public final class LabourSites
         return allFurnaces;
     }
 
+    /**
+     * @return whether the block is an Architect's Cutter.
+     */
+    public static boolean cutterBlock(final BlockState state)
+    {
+        return state.getBlock() instanceof com.ldtteam.domumornamentum.block.ArchitectsCutterBlock;
+    }
+
+    /**
+     * @return every Architect's Cutter in the colony's claim within the post range.
+     */
+    public List<BlockPos> allCutters()
+    {
+        scanPosts();
+        return allCutters;
+    }
+
+    public boolean hasCutter()
+    {
+        scanPosts();
+        return !cutters.isEmpty();
+    }
+
+    /**
+     * @return the cutter to use: preferred ones first, then the nearest; null if none is free.
+     */
+    @Nullable
+    public BlockPos cutter(final BlockPos from, final Set<BlockPos> taken)
+    {
+        scanPosts();
+        return pickPost(cutters, from, taken, LabourSites::cutterBlock);
+    }
+
     public boolean hasTable()
     {
         scanPosts();
@@ -665,18 +789,18 @@ public final class LabourSites
     public BlockPos table(final BlockPos from, final Set<BlockPos> taken)
     {
         scanPosts();
-        return pickPost(tables, from, taken, Blocks.CRAFTING_TABLE);
+        return pickPost(tables, from, taken, state -> state.is(Blocks.CRAFTING_TABLE));
     }
 
     @Nullable
     public BlockPos furnace(final BlockPos from, final Set<BlockPos> taken)
     {
         scanPosts();
-        return pickPost(furnaces, from, taken, Blocks.FURNACE);
+        return pickPost(furnaces, from, taken, state -> state.is(Blocks.FURNACE));
     }
 
     @Nullable
-    private BlockPos pickPost(final List<BlockPos> posts, final BlockPos from, final Set<BlockPos> taken, final net.minecraft.world.level.block.Block block)
+    private BlockPos pickPost(final List<BlockPos> posts, final BlockPos from, final Set<BlockPos> taken, final Predicate<BlockState> block)
     {
         final ServerLevel level = level();
         BlockPos best = null;
@@ -684,7 +808,7 @@ public final class LabourSites
         double bestDistance = Double.MAX_VALUE;
         for (final BlockPos pos : posts)
         {
-            if (taken.contains(pos) || level == null || !level.getBlockState(pos).is(block))
+            if (taken.contains(pos) || level == null || !level.isLoaded(pos) || !block.test(level.getBlockState(pos)))
             {
                 continue;
             }

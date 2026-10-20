@@ -1,6 +1,7 @@
 {
   "#minecraft:logs": ["minecolonies:lumberjack"],
   "#minecraft:saplings": ["minecolonies:lumberjack"],
+  "#c:stripped_logs": ["minecolonies:lumberjack"],
   "minecraft:cobblestone": ["minecolonies:miner", "minecolonies:simplequarry", "minecolonies:mediumquarry", "minecolonies:largequarry"],
   "minecraft:stone": ["minecolonies:miner", "minecolonies:simplequarry", "minecolonies:mediumquarry", "minecolonies:largequarry"]
 }

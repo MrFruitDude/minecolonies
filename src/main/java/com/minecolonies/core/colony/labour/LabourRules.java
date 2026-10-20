@@ -24,7 +24,12 @@ import java.util.List;
  *   <li>{@code minecolonies:labour/never}: vetoes the result tag (iron and better, enchanted things, books ...);</li>
  *   <li>{@code minecolonies:labour/smelt_basic} and {@code labour/smelt_iron}: what may come out of a furnace in the smelt modes BASIC and IRON;</li>
  *   <li>{@code minecolonies:labour/loose}: what a labourer picks up when it lies on the ground;</li>
- *   <li>block tags {@code labour/gather_surface} (sand, dirt, gravel) and {@code labour/gather_stone} (surface stone, needs a pickaxe).</li>
+ *   <li>block tags {@code labour/gather_surface} (sand, dirt, gravel) and {@code labour/gather_stone} (surface stone, needs a pickaxe);</li>
+ *   <li>{@code labour/woodcraft}: the basic wood results (planks, sticks, stairs, slabs, doors, trapdoors, fences, gates, plates, buttons, wood and bark blocks); a
+ *   recipe for one of them is used only with inputs of {@code labour/basic_wood} (logs, planks, sticks, stripped wood), so a mod's recipe that makes planks out of
+ *   something else is not labour's;</li>
+ *   <li>{@code labour/strip_results}: what an axe makes of a log (stripped logs and wood, the tree's own species);</li>
+ *   <li>{@code labour/cutter_inputs}: the materials labour brings to an Architect's Cutter (wood and plain stone).</li>
  * </ul>
  */
 public final class LabourRules
@@ -37,6 +42,11 @@ public final class LabourRules
     public static final TagKey<Item>  SELF_SUPPLY   = item("labour/self_supply");
     public static final TagKey<Block> GATHER_SURFACE = block("labour/gather_surface");
     public static final TagKey<Block> GATHER_STONE   = block("labour/gather_stone");
+    public static final TagKey<Item>  WOODCRAFT      = item("labour/woodcraft");
+    public static final TagKey<Item>  BASIC_WOOD     = item("labour/basic_wood");
+    public static final TagKey<Item>  STRIP_RESULTS  = item("labour/strip_results");
+    public static final TagKey<Item>  CUTTER_INPUTS  = item("labour/cutter_inputs");
+    public static final TagKey<Item>  STRIPPED_LOGS  = TagKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath("c", "stripped_logs"));
 
     private LabourRules()
     {
@@ -59,6 +69,49 @@ public final class LabourRules
     {
         final ItemStack stack = new ItemStack(item);
         return stack.is(CRAFT_RESULTS) && !stack.is(NEVER);
+    }
+
+    /**
+     * @return whether the item is a basic wood result: its recipes are used with basic wood inputs only.
+     */
+    public static boolean woodcraft(final Item item)
+    {
+        return new ItemStack(item).is(WOODCRAFT);
+    }
+
+    /**
+     * @return whether the item may go into a basic wood recipe (logs, planks, sticks, stripped wood).
+     */
+    public static boolean basicWood(final Item item)
+    {
+        final ItemStack stack = new ItemStack(item);
+        return stack.is(BASIC_WOOD) && !stack.is(NEVER);
+    }
+
+    /**
+     * @return whether the item is a stripped log or wood that labour may make with an axe.
+     */
+    public static boolean stripResult(final Item item)
+    {
+        final ItemStack stack = new ItemStack(item);
+        return stack.is(STRIP_RESULTS) && !stack.is(NEVER);
+    }
+
+    /**
+     * @return whether the item is a stripped log labour gets by stripping a tree (stripped wood is crafted from those).
+     */
+    public static boolean strippedLog(final Item item)
+    {
+        return stripResult(item) && new ItemStack(item).is(STRIPPED_LOGS);
+    }
+
+    /**
+     * @return whether labour brings the item to an Architect's Cutter as a material.
+     */
+    public static boolean cutterInput(final Item item)
+    {
+        final ItemStack stack = new ItemStack(item);
+        return stack.is(CUTTER_INPUTS) && !stack.is(NEVER);
     }
 
     /**
@@ -118,7 +171,7 @@ public final class LabourRules
     public static List<Item> candidateItems()
     {
         final List<Item> items = new ArrayList<>();
-        for (final TagKey<Item> tag : List.of(CRAFT_RESULTS, SMELT_BASIC, SMELT_IRON, LOOSE))
+        for (final TagKey<Item> tag : List.of(CRAFT_RESULTS, SMELT_BASIC, SMELT_IRON, LOOSE, STRIP_RESULTS))
         {
             BuiltInRegistries.ITEM.getTagOrEmpty(tag).forEach(holder -> {
                 final Item value = holder.value();

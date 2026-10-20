@@ -106,9 +106,41 @@ public final class LabourSettings
         return config(c -> c.labourersPostRange.get(), 64, "postRange");
     }
 
+    /**
+     * The gathering radius a new config gets, and the old one (configs written before keep 48 until a server owner changes it: a config value is never rewritten).
+     */
+    public static final int DEFAULT_GATHER_RADIUS = 96;
+    public static final int OLD_GATHER_RADIUS     = 48;
+    public static final int MIN_GATHER_RADIUS     = 8;
+    /**
+     * The widest supported radius (the config's ceiling): the scans read only loaded chunks of the colony's own claim, cached per colony.
+     */
+    public static final int MAX_GATHER_RADIUS     = 160;
+
+    private static volatile boolean oldRadiusLogged;
+
+    /**
+     * @return how far around the town hall labourers look for trees and surface blocks: the config value (the fallback when it cannot be read is the new default),
+     * clamped to the supported range. Only loaded chunks inside the colony's claim are ever looked at.
+     */
     public static int gatherRadius()
     {
-        return config(c -> c.labourersGatherRadius.get(), 48, "gatherRadius");
+        final int raw = config(c -> c.labourersGatherRadius.get(), DEFAULT_GATHER_RADIUS, "gatherRadius");
+        if (raw == OLD_GATHER_RADIUS && !oldRadiusLogged && !OVERRIDES.containsKey("gatherRadius"))
+        {
+            oldRadiusLogged = true;
+            com.minecolonies.api.util.Log.getLogger().info("labourers.gatherRadius is {} (the old default). The new default is {}; set it in the server config to use the wider range.",
+              OLD_GATHER_RADIUS, DEFAULT_GATHER_RADIUS);
+        }
+        return clampRadius(raw);
+    }
+
+    /**
+     * @return the radius inside the supported range.
+     */
+    public static int clampRadius(final int raw)
+    {
+        return Math.max(MIN_GATHER_RADIUS, Math.min(MAX_GATHER_RADIUS, raw));
     }
 
     public static LabourModes.CoverageMode coverageMode()

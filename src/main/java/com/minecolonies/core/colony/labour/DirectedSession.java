@@ -39,8 +39,13 @@ public final class DirectedSession implements IIdleTaskSession
     /** What he does now. */
     public enum Phase
     {
-        FIND, GATHER, DELIVER, WAIT
+        FIND, GATHER, DELIVER, WAIT,
+        /** He gets himself the tool of the order first (a free one from a warehouse, else the basic one made the labour way). */
+        TOOL
     }
+
+    /** Longest he may spend getting a tool before he waits and the order says why. */
+    private static final int TOOL_TIMEOUT = 6000;
 
     /** Most he gathers before he walks to hand in. */
     public static final int LOT = 32;
@@ -94,6 +99,8 @@ public final class DirectedSession implements IIdleTaskSession
     private long                 workUntil;
     private long                 lastSwing;
     private final Set<BlockPos>  unreachable = new HashSet<>();
+    @Nullable
+    private LabourSession        toolSession;
 
     public DirectedSession(final Colony colony, final ICitizenData citizen, final LabourBoard board, final LabourClaim claim)
     {
@@ -170,6 +177,7 @@ public final class DirectedSession implements IIdleTaskSession
             return;
         }
         stopped = true;
+        endTool();
         LabourStats.log("directed session of citizen {} stops: {} (phase {}, ended {}, ok {})", citizen.getId(), reason, phase, ended, ok);
         dropTarget();
         final DirectedOrder order = orders().order(orderId);
@@ -204,6 +212,15 @@ public final class DirectedSession implements IIdleTaskSession
             block = null;
         }
         workUntil = 0L;
+    }
+
+    private void endTool()
+    {
+        if (toolSession != null)
+        {
+            toolSession.abort();
+            toolSession = null;
+        }
     }
 
     private void end(final boolean success)
@@ -261,7 +278,7 @@ public final class DirectedSession implements IIdleTaskSession
             end(false);
             return;
         }
-        if (phase != Phase.WAIT && now - actionStart > ACTION_TIMEOUT)
+        if (phase != Phase.WAIT && phase != Phase.TOOL && now - actionStart > ACTION_TIMEOUT)
         {
             // the target cannot be reached: it is left for good, the next nearest is tried
             if (tree != null)
@@ -286,6 +303,7 @@ public final class DirectedSession implements IIdleTaskSession
             case FIND -> find(order, worker, level, now);
             case GATHER -> gather(order, worker, level, now);
             case DELIVER -> deliver(order, worker, now);
+            case TOOL -> tool(order, worker, now);
             case WAIT ->
             {
                 board.heartbeat(claim);
@@ -323,7 +341,10 @@ public final class DirectedSession implements IIdleTaskSession
                 go(Phase.DELIVER, now);
                 return;
             }
-            waitFor(order, DirectedOrder.Why.NO_TOOL, worker, now);
+            // no pickaxe: he gets one (stock first, then the basic one made by hand) before he digs
+            toolSession = LabourSession.forTool(colony, citizen, board, claim, DirectedOrders.tool(order.resource()));
+            board.heartbeat(claim);
+            go(Phase.TOOL, now);
             return;
         }
         if (InventoryUtils.isItemHandlerFull(citizen.getInventory()))
@@ -369,6 +390,32 @@ public final class DirectedSession implements IIdleTaskSession
         workUntil = 0L;
         board.heartbeat(claim);
         go(Phase.GATHER, now);
+    }
+
+    // ------------------------------------------------------------------ tool
+
+    private void tool(final DirectedOrder order, final AbstractEntityCitizen worker, final long now)
+    {
+        if (toolSession == null)
+        {
+            go(Phase.FIND, now);
+            return;
+        }
+        toolSession.tick();
+        if (!toolSession.isEnded() && now - actionStart <= TOOL_TIMEOUT)
+        {
+            return;
+        }
+        final boolean got = toolSession.succeeded() && DirectedOrders.carries(citizen, DirectedOrders.tool(order.resource()));
+        LabourStats.log("citizen {} tool for order {}: {} ({})", citizen.getId(), order.id(), got, toolSession.lastWhy());
+        endTool();
+        if (got)
+        {
+            board.heartbeat(claim);
+            go(Phase.FIND, now);
+            return;
+        }
+        waitFor(order, DirectedOrder.Why.NO_TOOL, worker, now);
     }
 
     // ------------------------------------------------------------------ gather

@@ -126,6 +126,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerDirected(event);
             }
+            if (only.contains("expanded"))
+            {
+                registerExpanded(event);
+            }
             if (only.contains("emptybp"))
             {
                 EmptyBlueprintGameTests.register(event);
@@ -1120,6 +1124,22 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),
               name.equals("idle_helper_faster") ? longIsolatedColonyData(event, name, 60_000) : isolatedColonyData(event, name));
+        }
+    }
+
+    /**
+     * The expanded basic tier: wood stairs, stripped logs, the Architect's Cutter's exact variants, a directed stone order's pickaxe. Run on their own with
+     * {@code MINECOLONIES_GAMETEST_ONLY=expanded}.
+     */
+    private void registerExpanded(final RegisterGameTestsEvent event)
+    {
+        for (final String name : ExpandedLabourGameTests.NAMES)
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = ExpandedLabourGameTests.test(name);
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              longIsolatedColonyData(event, name, 20_000));
         }
     }
 

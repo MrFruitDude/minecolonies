@@ -22,6 +22,8 @@ import com.minecolonies.core.colony.requestsystem.resolvers.StandardPlayerReques
 import com.minecolonies.core.colony.requestsystem.resolvers.StandardRetryingRequestResolver;
 import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponentPatch;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
@@ -85,9 +87,36 @@ public final class LabourBoard
     /**
      * A request that waits for labour.
      */
-    public record Candidate(IToken<?> token, BlockPos hut, IDeliverable deliverable, List<Item> targets, RequestImportance importance, long since, int count, int minimum)
+    public record Candidate(IToken<?> token, BlockPos hut, IDeliverable deliverable, List<Item> targets, RequestImportance importance, long since, int count, int minimum,
+                            ItemStack exact)
+    {
+        public Candidate(final IToken<?> token, final BlockPos hut, final IDeliverable deliverable, final List<Item> targets, final RequestImportance importance, final long since,
+          final int count, final int minimum)
+        {
+            this(token, hut, deliverable, targets, importance, since, count, minimum, ItemStack.EMPTY);
+        }
+    }
+
+    /**
+     * A request labour could make but leaves alone because a specialist covers it (shown, so the player sees why nobody labours on it).
+     */
+    public record Covered(IToken<?> token, ItemStack stack, int count)
     {
     }
+
+    /**
+     * Most covered requests kept for the panel.
+     */
+    public static final int MAX_COVERED = 16;
+
+    private List<Covered> covered = List.of();
+
+    private record CutKey(Item item, DataComponentPatch components)
+    {
+    }
+
+    private final Map<CutKey, LabourCutter.Resolved> cutJobs = new HashMap<>();
+    private Object cutJobsKey;
 
     private final Colony       colony;
     private final LabourSites  sites;
@@ -108,6 +137,7 @@ public final class LabourBoard
     private final Set<BlockPos> takenSurface  = new HashSet<>();
     private final Set<BlockPos> takenTables   = new HashSet<>();
     private final Set<BlockPos> takenFurnaces = new HashSet<>();
+    private final Set<BlockPos> takenCutters  = new HashSet<>();
     private final Set<Integer>  takenEntities = new HashSet<>();
 
     private final Map<IToken<?>, Long>           firstSeen   = new HashMap<>();
@@ -192,6 +222,11 @@ public final class LabourBoard
     public Set<BlockPos> takenFurnaces()
     {
         return takenFurnaces;
+    }
+
+    public Set<BlockPos> takenCutters()
+    {
+        return takenCutters;
     }
 
     public Set<Integer> takenEntities()
@@ -421,6 +456,7 @@ public final class LabourBoard
         final RequestWaitTracker tracker = RequestWaitTracker.of(manager);
         final List<Item> items = LabourRules.candidateItems();
         final List<Candidate> list = new ArrayList<>();
+        final List<Covered> coveredNow = new ArrayList<>();
         for (final IToken<?> token : tokens)
         {
             final IRequest<?> request;
@@ -442,24 +478,118 @@ public final class LabourBoard
                 continue;
             }
             final List<Item> targets = new ArrayList<>();
+            Item coveredItem = null;
             for (final Item item : items)
             {
-                if (deliverable.matches(new ItemStack(item)) && !coverage.covered(item))
+                if (deliverable.matches(new ItemStack(item)))
                 {
-                    targets.add(item);
+                    if (!coverage.covered(item))
+                    {
+                        targets.add(item);
+                    }
+                    else if (coveredItem == null)
+                    {
+                        coveredItem = item;
+                    }
+                }
+            }
+            ItemStack exact = ItemStack.EMPTY;
+            if (targets.isEmpty() && coveredItem == null)
+            {
+                // a Domum Ornamentum block: made at an Architect's Cutter, exactly the requested variant
+                final ItemStack wanted = com.minecolonies.core.util.DomumOrnamentumUtils.getRequestedStack(request);
+                if (LabourCutter.isCutterStack(wanted) && deliverable.matches(wanted))
+                {
+                    if (coverage.covered(wanted.getItem()))
+                    {
+                        coveredItem = wanted.getItem();
+                        exact = wanted.copyWithCount(1);
+                    }
+                    else
+                    {
+                        exact = wanted.copyWithCount(1);
+                        targets.add(wanted.getItem());
+                    }
                 }
             }
             if (targets.isEmpty())
             {
+                if (coveredItem != null && coveredNow.size() < MAX_COVERED)
+                {
+                    coveredNow.add(new Covered(token, exact.isEmpty() ? new ItemStack(coveredItem) : exact, Math.max(1, deliverable.getCount())));
+                }
                 continue;
             }
             targets.sort(Comparator.comparingInt(LabourBoard::tier));
             final RequestWaitTracker.Waiter waiter = tracker == null ? null : tracker.waiter(token);
             list.add(new Candidate(token, hut.immutable(), deliverable, targets, RequestImportance.of(manager, request), waiter == null ? 0L : waiter.since(),
-              Math.max(1, deliverable.getCount()), Math.max(1, deliverable.getMinimumCount())));
+              Math.max(1, deliverable.getCount()), Math.max(1, deliverable.getMinimumCount()), exact));
         }
         list.sort(Comparator.comparingInt((Candidate c) -> c.importance().rank()).thenComparingLong(Candidate::since).thenComparing(c -> c.token().toString()));
+        covered = List.copyOf(coveredNow);
         return list.size() > MAX_CANDIDATES ? new ArrayList<>(list.subList(0, MAX_CANDIDATES)) : list;
+    }
+
+    /**
+     * @return the requests labour could make but leaves to a specialist that covers them (as of the last candidate list).
+     */
+    public List<Covered> covered()
+    {
+        candidates();
+        return covered;
+    }
+
+    /**
+     * The cutter recipe for an exact Domum Ornamentum stack, resolved once per recipe manager.
+     */
+    public LabourCutter.Resolved cutJob(final ItemStack exact)
+    {
+        final ServerLevel level = colony.getWorld() instanceof ServerLevel server ? server : null;
+        if (level == null)
+        {
+            return new LabourCutter.Resolved(null, LabourCutter.Refusal.WRONG_VARIANT);
+        }
+        if (cutJobsKey != level.recipeAccess())
+        {
+            cutJobs.clear();
+            cutJobsKey = level.recipeAccess();
+        }
+        final CutKey key = new CutKey(exact.getItem(), exact.getComponentsPatch());
+        LabourCutter.Resolved resolved = cutJobs.get(key);
+        if (resolved == null)
+        {
+            if (cutJobs.size() > 256)
+            {
+                cutJobs.clear();
+            }
+            resolved = LabourCutter.resolve(level, exact);
+            cutJobs.put(key, resolved);
+        }
+        return resolved;
+    }
+
+    /**
+     * The next step toward holding {@code lot} of the exact stack: the cutter's materials (planned like any good), DONE when they are held for every run.
+     *
+     * @param held how many of the exact stack he holds already.
+     */
+    public LabourPlanner.Result<Item> planCut(final LabourEnv env, final ItemStack exact, final int lot, final int held, final Map<Item, Integer> inventory)
+    {
+        final LabourCutter.Resolved resolved = cutJob(exact);
+        if (resolved.job() == null)
+        {
+            return new LabourPlanner.Blocked<>(resolved.refusal() == LabourCutter.Refusal.INPUT ? LabourPlanner.Why.CUTTER_INPUT : LabourPlanner.Why.WRONG_VARIANT,
+              exact.getItem());
+        }
+        if (held >= lot)
+        {
+            return new LabourPlanner.Done<>();
+        }
+        if (!sites.hasCutter())
+        {
+            return new LabourPlanner.Blocked<>(LabourPlanner.Why.NO_CUTTER, exact.getItem());
+        }
+        return LabourPlanner.nextInputs(env, resolved.job().inputs(), resolved.job().runsFor(lot - held), inventory);
     }
 
     private static boolean isOpen(final RequestState state)
@@ -648,7 +778,7 @@ public final class LabourBoard
             }
         }
         final Candidate restricted = new Candidate(candidate.token(), candidate.hut(), candidate.deliverable(), own, candidate.importance(), candidate.since(), candidate.count(),
-          candidate.minimum());
+          candidate.minimum(), ItemStack.EMPTY);
         final LabourClaim claim = tryClaim(builder, restricted, LabourClaim.Source.SELF, new LabourEnv(colony, this, true), LabourSession.inventoryOf(builder), now);
         if (claim != null)
         {
@@ -682,7 +812,19 @@ public final class LabourBoard
         final int lot = Math.max(1, Math.min(remaining, MAX_LOT));
         Item chosen = null;
         LabourPlanner.Why why = LabourPlanner.Why.NO_RECIPE;
-        for (final Item item : candidate.targets())
+        if (!candidate.exact().isEmpty())
+        {
+            final LabourPlanner.Result<Item> result = planCut(env, candidate.exact(), lot, 0, inventory);
+            if (result instanceof LabourPlanner.Blocked<Item> blocked)
+            {
+                why = blocked.why();
+            }
+            else
+            {
+                chosen = candidate.exact().getItem();
+            }
+        }
+        for (final Item item : candidate.exact().isEmpty() ? candidate.targets() : List.<Item>of())
         {
             final LabourPlanner.Result<Item> result = LabourPlanner.next(env, item, lot, inventory);
             if (result instanceof LabourPlanner.Blocked<Item> blocked)
@@ -701,7 +843,8 @@ public final class LabourBoard
             blocked(candidate.token(), why);
             return null;
         }
-        final LabourClaim claim = new LabourClaim(source, candidate.token(), null, citizen.getId(), chosen, lot, candidate.hut(), now, now + LabourSettings.leaseTicks());
+        final LabourClaim claim = new LabourClaim(source, candidate.token(), null, citizen.getId(), chosen, lot, candidate.hut(), now, now + LabourSettings.leaseTicks(), 0,
+          candidate.exact());
         if (coverage.covered(chosen))
         {
             LabourStats.CLAIMS_ON_COVERED.incrementAndGet();
@@ -710,7 +853,8 @@ public final class LabourBoard
         final ReservationLedger ledger = RsFlags.reservations() ? RsAccess.ledger(colony.getRequestManager()) : null;
         if (ledger != null)
         {
-            ledger.reserveSpace(candidate.hut(), new ItemStorage(new ItemStack(chosen)), lot, claim.token(), "labourer " + citizen.getName(), ReservationReason.LABOUR, now);
+            ledger.reserveSpace(candidate.hut(), new ItemStorage(candidate.exact().isEmpty() ? new ItemStack(chosen) : candidate.exact()), lot, claim.token(), "labourer " + citizen.getName(),
+              ReservationReason.LABOUR, now);
         }
         blockedWhy.remove(candidate.token());
         setReason(candidate.token(), WaitReason.AWAITING_LABOUR);

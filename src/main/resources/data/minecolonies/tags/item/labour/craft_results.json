@@ -20,6 +20,7 @@
     "#minecraft:fence_gates",
     "minecraft:ladder",
     "minecraft:bowl",
-    "minecraft:scaffolding"
+    "minecraft:scaffolding",
+    "#minecolonies:labour/woodcraft"
   ]
 }

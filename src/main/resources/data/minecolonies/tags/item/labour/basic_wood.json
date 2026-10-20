@@ -1,0 +1,10 @@
+{
+  "replace": false,
+  "values": [
+    "#minecraft:logs",
+    "#minecraft:planks",
+    "minecraft:stick",
+    "#c:stripped_logs",
+    "#c:stripped_woods"
+  ]
+}

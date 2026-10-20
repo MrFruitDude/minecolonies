@@ -1,0 +1,64 @@
+{
+  "replace": false,
+  "values": [
+    "#minecraft:planks",
+    "minecraft:stick",
+    "#minecraft:wooden_stairs",
+    "#minecraft:wooden_slabs",
+    "#minecraft:wooden_doors",
+    "#minecraft:wooden_trapdoors",
+    "#minecraft:wooden_fences",
+    "#minecraft:fence_gates",
+    "#minecraft:wooden_pressure_plates",
+    "#minecraft:wooden_buttons",
+    {
+      "id": "minecraft:oak_wood",
+      "required": false
+    },
+    {
+      "id": "minecraft:spruce_wood",
+      "required": false
+    },
+    {
+      "id": "minecraft:birch_wood",
+      "required": false
+    },
+    {
+      "id": "minecraft:jungle_wood",
+      "required": false
+    },
+    {
+      "id": "minecraft:acacia_wood",
+      "required": false
+    },
+    {
+      "id": "minecraft:dark_oak_wood",
+      "required": false
+    },
+    {
+      "id": "minecraft:mangrove_wood",
+      "required": false
+    },
+    {
+      "id": "minecraft:cherry_wood",
+      "required": false
+    },
+    {
+      "id": "minecraft:pale_oak_wood",
+      "required": false
+    },
+    {
+      "id": "minecraft:crimson_hyphae",
+      "required": false
+    },
+    {
+      "id": "minecraft:warped_hyphae",
+      "required": false
+    },
+    {
+      "id": "minecraft:poplar_wood",
+      "required": false
+    },
+    "#c:stripped_woods"
+  ]
+}

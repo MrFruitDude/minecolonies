@@ -400,7 +400,7 @@ public class ServerConfiguration extends AbstractConfiguration
         labourersMaxTotalCeiling = defineInteger("maxTotalCeiling", 16, 1, 256);
         labourersPostMode = defineEnum("postMode", com.minecolonies.api.colony.labour.LabourModes.PostMode.ANY_IN_RANGE);
         labourersPostRange = defineInteger("postRange", 64, 8, 256);
-        labourersGatherRadius = defineInteger("gatherRadius", 48, 8, 160);
+        labourersGatherRadius = defineInteger("gatherRadius", 96, 8, 160);
         labourersCoverageMode = defineEnum("coverageMode", com.minecolonies.api.colony.labour.LabourModes.CoverageMode.BUILT);
         labourersCoverageGrace = defineInteger("coverageGrace", 2400, 0, 72000);
         labourersLeaseTicks = defineInteger("leaseTicks", 2400, 200, 72000);

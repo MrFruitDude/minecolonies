@@ -93,7 +93,12 @@ public final class LabourEnv implements LabourPlanner.Env<Item>
         {
             defs.add(new LabourPlanner.GatherDef<>(LabourPlanner.GatherKind.LOOSE, item, null));
         }
-        if (stack.is(ItemTags.LOGS))
+        if (LabourRules.strippedLog(item))
+        {
+            // (a stripped log is a log too: it is had by stripping a tree of its species with an axe, never by felling another kind)
+            defs.add(new LabourPlanner.GatherDef<>(LabourPlanner.GatherKind.STRIP, item, "axe"));
+        }
+        else if (stack.is(ItemTags.LOGS))
         {
             defs.add(new LabourPlanner.GatherDef<>(LabourPlanner.GatherKind.LOG, item, null));
         }
@@ -115,6 +120,7 @@ public final class LabourEnv implements LabourPlanner.Env<Item>
         return switch (gather.kind())
         {
             case LOG -> sites.hasTree(gather.item());
+            case STRIP -> sites.hasStripTree(gather.item());
             case SURFACE, STONE -> sites.hasSurface(gather.item());
             case LOOSE -> sites.nearestLoose(gather.item(), sites.anchor(), board.takenEntities()) != null;
         };

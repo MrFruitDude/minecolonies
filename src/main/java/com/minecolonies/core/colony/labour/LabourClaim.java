@@ -4,6 +4,7 @@ import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.colony.requestsystem.token.StandardToken;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
@@ -50,6 +51,7 @@ public final class LabourClaim
     private final BlockPos  destination;
     private final long      created;
     private final int       orderId;
+    private final ItemStack exact;
     private       long      leaseUntil;
 
     LabourClaim(final Source source, @Nullable final IToken<?> request, @Nullable final String goalId, final int citizenId, final Item target, final int amount,
@@ -61,6 +63,16 @@ public final class LabourClaim
     LabourClaim(final Source source, @Nullable final IToken<?> request, @Nullable final String goalId, final int citizenId, final Item target, final int amount,
       final BlockPos destination, final long now, final long leaseUntil, final int orderId)
     {
+        this(source, request, goalId, citizenId, target, amount, destination, now, leaseUntil, orderId, ItemStack.EMPTY);
+    }
+
+    /**
+     * @param exact the exact stack the request wants (a variant with its components, made at the Architect's Cutter), or EMPTY when the item is enough.
+     */
+    LabourClaim(final Source source, @Nullable final IToken<?> request, @Nullable final String goalId, final int citizenId, final Item target, final int amount,
+      final BlockPos destination, final long now, final long leaseUntil, final int orderId, final ItemStack exact)
+    {
+        this.exact = exact.isEmpty() ? ItemStack.EMPTY : exact.copyWithCount(1);
         this.orderId = orderId;
         this.source = source;
         this.request = request;
@@ -144,6 +156,22 @@ public final class LabourClaim
     public int orderId()
     {
         return orderId;
+    }
+
+    /**
+     * @return a copy of the exact stack (one) the claim must bring, or EMPTY when any stack of the target item does.
+     */
+    public ItemStack exact()
+    {
+        return exact.copy();
+    }
+
+    /**
+     * @return whether the stack counts for the claim: the exact variant when there is one, else the target item.
+     */
+    public boolean accepts(final ItemStack stack)
+    {
+        return !stack.isEmpty() && (exact.isEmpty() ? stack.is(target) : ItemStack.isSameItemSameComponents(stack, exact));
     }
 
     public long leaseUntil()

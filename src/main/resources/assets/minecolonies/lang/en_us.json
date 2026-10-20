@@ -4035,6 +4035,7 @@
   "com.minecolonies.coremod.labour.task.gather": "Labourer: gathers materials for %2$s",
   "com.minecolonies.coremod.labour.task.craft": "Labourer: crafts for %2$s",
   "com.minecolonies.coremod.labour.task.smelt": "Labourer: smelts for %2$s",
+  "com.minecolonies.coremod.labour.task.cut": "Labourer: cuts %2$s at the Architect's Cutter",
   "com.minecolonies.coremod.labour.task.withdraw": "Labourer: fetches stock for %2$s",
   "com.minecolonies.coremod.labour.task.deliver": "Labourer: brings %1$sx %2$s",
   "com.minecolonies.coremod.labour.task.builder": "Builder: fetches basics for his build (%2$s)",

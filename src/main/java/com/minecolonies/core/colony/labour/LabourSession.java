@@ -46,7 +46,7 @@ public final class LabourSession implements IIdleTaskSession
 {
     private enum Phase
     {
-        THINK, GATHER, WITHDRAW, CRAFT, SMELT_LOAD, SMELT_WAIT, DELIVER, UNLOAD, END
+        THINK, GATHER, WITHDRAW, CRAFT, SMELT_LOAD, SMELT_WAIT, CUT, DELIVER, UNLOAD, END
     }
 
     /**
@@ -91,8 +91,25 @@ public final class LabourSession implements IIdleTaskSession
     private int      smeltExpect;
     private Item     smeltOutput;
 
+    // the Architect's Cutter: the job for the claim's exact stack and how many runs are wanted
+    private LabourCutter.Job cutJob;
+    private int              cutRuns;
+    private long             cutUntil;
+
+    // tool mode (a directed worker who has to get the tool of his order first): the tool kind, null otherwise
+    @Nullable
+    private final String toolKind;
+    @Nullable
+    private LabourPlanner.Why lastWhy;
+
     public LabourSession(final String taskId, final Colony colony, final ICitizenData citizen, final LabourBoard board, final LabourClaim claim)
     {
+        this(taskId, colony, citizen, board, claim, null);
+    }
+
+    private LabourSession(final String taskId, final Colony colony, final ICitizenData citizen, final LabourBoard board, final LabourClaim claim, @Nullable final String toolKind)
+    {
+        this.toolKind = toolKind;
         this.taskId = taskId;
         this.colony = colony;
         this.citizen = citizen;
@@ -102,6 +119,42 @@ public final class LabourSession implements IIdleTaskSession
     }
 
     // ------------------------------------------------------------------ the session contract
+
+    /**
+     * A session that only gets the citizen a tool of the kind for himself, on the claim of his directed order: a free one out of a warehouse first (reserved through
+     * the ledger), else the basic tool made the labour way (from what the warehouses give for covered goods, and what he gathers and crafts). It keeps what it makes,
+     * hands nothing in and never releases the claim; the directed session drives it ({@link #tick}) and ends it ({@link #abort}).
+     */
+    public static LabourSession forTool(final Colony colony, final ICitizenData citizen, final LabourBoard board, final LabourClaim claim, final String toolKind)
+    {
+        return new LabourSession(DirectedTask.ID, colony, citizen, board, claim, toolKind);
+    }
+
+    /**
+     * @return whether the (tool) session ended with the tool in hand.
+     */
+    public boolean succeeded()
+    {
+        return ended && ok;
+    }
+
+    /**
+     * @return why the planner could not go on, or null.
+     */
+    @Nullable
+    public LabourPlanner.Why lastWhy()
+    {
+        return lastWhy;
+    }
+
+    /**
+     * Ends a tool session: its targets are given back, the claim stays with the directed session.
+     */
+    public void abort()
+    {
+        cleanup();
+        ended = true;
+    }
 
     @Override
     public String getTaskId()
@@ -159,13 +212,14 @@ public final class LabourSession implements IIdleTaskSession
     @Override
     public Component describe()
     {
-        final Component what = new ItemStack(claim.target()).getHoverName();
+        final Component what = (claim.exact().isEmpty() ? new ItemStack(claim.target()) : claim.exact()).getHoverName();
         final String key = switch (phase)
         {
             case GATHER -> "com.minecolonies.coremod.labour.task.gather";
             case WITHDRAW -> "com.minecolonies.coremod.labour.task.withdraw";
             case CRAFT -> "com.minecolonies.coremod.labour.task.craft";
             case SMELT_LOAD, SMELT_WAIT -> "com.minecolonies.coremod.labour.task.smelt";
+            case CUT -> "com.minecolonies.coremod.labour.task.cut";
             case DELIVER, UNLOAD, END -> "com.minecolonies.coremod.labour.task.deliver";
             default -> "com.minecolonies.coremod.labour.task.plan";
         };
@@ -220,6 +274,7 @@ public final class LabourSession implements IIdleTaskSession
         {
             board.takenTables().remove(post);
             board.takenFurnaces().remove(post);
+            board.takenCutters().remove(post);
             post = null;
         }
     }
@@ -253,6 +308,14 @@ public final class LabourSession implements IIdleTaskSession
     private int count(final Item item)
     {
         return InventoryUtils.getItemCountInItemHandler(citizen.getInventory(), item);
+    }
+
+    /**
+     * @return how many of what the claim brings he holds (the exact variant when the claim names one).
+     */
+    private int countClaimed()
+    {
+        return InventoryUtils.getItemCountInItemHandler(citizen.getInventory(), claim::accepts);
     }
 
     /**
@@ -326,6 +389,7 @@ public final class LabourSession implements IIdleTaskSession
             case CRAFT -> craft(worker, level, now);
             case SMELT_LOAD -> smeltLoad(worker, level, now);
             case SMELT_WAIT -> smeltWait(worker, level, now);
+            case CUT -> cut(worker, level, now);
             case DELIVER -> deliver(worker, now);
             case UNLOAD -> unload(worker, now);
             case END -> end(true);
@@ -341,26 +405,120 @@ public final class LabourSession implements IIdleTaskSession
 
     private void think(final AbstractEntityCitizen worker, final long now)
     {
+        if (toolKind != null)
+        {
+            thinkTool(now);
+            return;
+        }
         if (++thinks > MAX_THINKS || board.coverage().covered(claim.target()))
         {
             end(false);
             return;
         }
         final LabourEnv env = new LabourEnv(colony, board, claim.source() != LabourClaim.Source.STOCKPILE);
-        final LabourPlanner.Result<Item> result = LabourPlanner.next(env, claim.target(), claim.amount(), inventoryOf(citizen));
+        final boolean cutting = !claim.exact().isEmpty();
+        final int held = cutting ? countClaimed() : 0;
+        final LabourPlanner.Result<Item> result = cutting ? board.planCut(env, claim.exact(), claim.amount(), held, materialsOf(citizen, claim))
+                                                    : LabourPlanner.next(env, claim.target(), claim.amount(), inventoryOf(citizen));
         if (result instanceof LabourPlanner.Done<Item>)
         {
+            if (cutting && held < claim.amount())
+            {
+                // every material for the runs is held: to the cutter
+                cutJob = board.cutJob(claim.exact()).job();
+                cutRuns = cutJob == null ? 0 : cutJob.runsFor(claim.amount() - held);
+                cutUntil = 0L;
+                board.heartbeat(claim);
+                go(Phase.CUT, now);
+                return;
+            }
             go(Phase.DELIVER, now);
             return;
         }
         if (result instanceof LabourPlanner.Blocked<Item> blocked)
         {
             LabourStats.log("citizen {} is blocked: {} {}", citizen.getId(), blocked.why(), blocked.item());
-            board.planFailed(claim, blocked.why());
+            failed(blocked.why());
             end(false);
             return;
         }
-        action = ((LabourPlanner.Do<Item>) result).action();
+        perform(((LabourPlanner.Do<Item>) result).action(), now);
+    }
+
+    /**
+     * Tool mode: done once he holds a tool of the kind; a free stock tool first; else the planner's way to the basic one.
+     */
+    private void thinkTool(final long now)
+    {
+        if (DirectedOrders.carries(citizen, toolKind))
+        {
+            end(true);
+            return;
+        }
+        if (++thinks > MAX_THINKS)
+        {
+            end(false);
+            return;
+        }
+        final Item stocked = stockedTool(board, toolKind);
+        if (stocked != null)
+        {
+            perform(new LabourPlanner.Withdraw<>(stocked, 1), now);
+            return;
+        }
+        final LabourPlanner.Result<Item> result = LabourPlanner.next(new LabourEnv(colony, board, true), LabourRules.toolItem(toolKind), 1, inventoryOf(citizen));
+        if (result instanceof LabourPlanner.Done<Item>)
+        {
+            end(true);
+            return;
+        }
+        if (result instanceof LabourPlanner.Blocked<Item> blocked)
+        {
+            lastWhy = blocked.why();
+            end(false);
+            return;
+        }
+        perform(((LabourPlanner.Do<Item>) result).action(), now);
+    }
+
+    /**
+     * @return a tool of the kind that lies in a warehouse free of reservations, or null.
+     */
+    @Nullable
+    public static Item stockedTool(final LabourBoard board, final String toolKind)
+    {
+        final ReservationLedger ledger = RsAccess.ledger(board.colony().getRequestManager());
+        for (final IWareHouse wareHouse : board.sites().warehouses())
+        {
+            final var handler = wareHouse.getItemHandlerCap();
+            for (int slot = 0; handler != null && slot < handler.getSlots(); slot++)
+            {
+                final ItemStack stack = handler.getStackInSlot(slot);
+                if (stack.isEmpty() || !LabourRules.isTool(toolKind, stack.getItem()))
+                {
+                    continue;
+                }
+                final Item item = stack.getItem();
+                final int physical = InventoryUtils.getCountFromBuilding(wareHouse, s -> s.is(item));
+                final int reserved = ledger == null ? 0 : ledger.reservedStock(wareHouse.getID(), s -> s.is(item));
+                if (physical - reserved > 0)
+                {
+                    return item;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void failed(final LabourPlanner.Why why)
+    {
+        lastWhy = why;
+        board.planFailed(claim, why);
+    }
+
+    private void perform(final LabourPlanner.Action<Item> next, final long now)
+    {
+        action = next;
         LabourStats.log("citizen {} does {}", citizen.getId(), action);
         board.heartbeat(claim);
         if (action instanceof LabourPlanner.Gather<Item>)
@@ -383,6 +541,24 @@ public final class LabourSession implements IIdleTaskSession
         }
     }
 
+    /**
+     * What he holds that may go into the cutter: by item, but never the claim's own exact stacks (a made block is not a material).
+     */
+    private static Map<Item, Integer> materialsOf(final ICitizenData citizen, final LabourClaim claim)
+    {
+        final Map<Item, Integer> counts = new HashMap<>();
+        final var inventory = citizen.getInventory();
+        for (int slot = 0; slot < inventory.getSlots(); slot++)
+        {
+            final ItemStack stack = inventory.getStackInSlot(slot);
+            if (!stack.isEmpty() && !claim.accepts(stack) && stack.getComponentsPatch().isEmpty())
+            {
+                counts.merge(stack.getItem(), stack.getCount(), Integer::sum);
+            }
+        }
+        return counts;
+    }
+
     // ------------------------------------------------------------------ gather
 
     private void gather(final AbstractEntityCitizen worker, final ServerLevel level, final long now)
@@ -398,20 +574,27 @@ public final class LabourSession implements IIdleTaskSession
         }
         switch (g.gather().kind())
         {
-            case LOG -> gatherLog(worker, level, item, now);
+            case LOG -> gatherLog(worker, level, item, now, false);
+            case STRIP -> gatherLog(worker, level, item, now, true);
             case SURFACE, STONE -> gatherBlock(worker, level, g, now);
             case LOOSE -> gatherLoose(worker, level, item, now);
         }
     }
 
-    private void gatherLog(final AbstractEntityCitizen worker, final ServerLevel level, final Item item, final long now)
+    /**
+     * Fells a natural tree log by log. To strip ({@code strip}), each log is first stripped where it stands with his axe, through the axe's own transformer (the
+     * axe wears by the transformer's damage per use), then felled: the drops are the stripped logs of the tree's species. A log the axe would make into anything else
+     * than the wanted kind is not touched.
+     */
+    private void gatherLog(final AbstractEntityCitizen worker, final ServerLevel level, final Item item, final long now, final boolean strip)
     {
         if (tree == null)
         {
-            tree = board.sites().nearestTree(item, worker.blockPosition(), board.takenTrees());
+            tree = strip ? board.sites().nearestStripTree(item, worker.blockPosition(), board.takenTrees())
+                     : board.sites().nearestTree(item, worker.blockPosition(), board.takenTrees());
             if (tree == null)
             {
-                board.planFailed(claim, LabourPlanner.Why.NO_SITE);
+                failed(LabourPlanner.Why.NO_SITE);
                 end(false);
                 return;
             }
@@ -434,11 +617,61 @@ public final class LabourSession implements IIdleTaskSession
             return;
         }
         final BlockPos log = logsLeft.get(0);
-        if (breakWork(worker, level, log, -1, now))
+        int toolSlot = -1;
+        if (strip)
+        {
+            toolSlot = bestToolSlot(level.getBlockState(log), "axe");
+            if (toolSlot < 0)
+            {
+                // (the axe broke or is gone: the planner gets him one first)
+                cleanup();
+                go(Phase.THINK, now);
+                return;
+            }
+            if (level.getBlockState(log).getBlock().asItem() != item && !stripNow(worker, level, log, toolSlot, item, now))
+            {
+                return;
+            }
+        }
+        if (breakWork(worker, level, log, toolSlot, now))
         {
             logsLeft.remove(0);
             board.heartbeat(claim);
         }
+    }
+
+    /**
+     * Strips the log at the position with the axe in the slot.
+     *
+     * @return true once the block is stripped to the wanted kind; false while he works on it, or when it cannot be (then the tree is left and he thinks again).
+     */
+    private boolean stripNow(final AbstractEntityCitizen worker, final ServerLevel level, final BlockPos pos, final int toolSlot, final Item wanted, final long now)
+    {
+        final ItemStack axe = citizen.getInventory().getStackInSlot(toolSlot);
+        final LabourStrip.Result result = LabourStrip.stripped(level, pos, LabourStrip.of(axe));
+        if (result == null || result.state().getBlock().asItem() != wanted || colony.getWorld() == null)
+        {
+            LabourStats.log("citizen {} cannot strip {} at {} to {}", citizen.getId(), level.getBlockState(pos), pos, wanted);
+            logsLeft.remove(0);
+            return false;
+        }
+        WorkerUtil.faceBlock(pos, worker);
+        if (workUntil == 0L)
+        {
+            workUntil = now + Math.max(5, (long) (10 / LabourSettings.workScale()));
+        }
+        if (now < workUntil)
+        {
+            return false;
+        }
+        workUntil = 0L;
+        level.setBlock(pos, result.state(), 11);
+        if (result.damage() > 0)
+        {
+            CitizenItemUtils.setMainHeldItem(worker, toolSlot);
+            CitizenItemUtils.damageItemInHand(worker, net.minecraft.world.InteractionHand.MAIN_HAND, result.damage());
+        }
+        return true;
     }
 
     private void plantSapling(final AbstractEntityCitizen worker, final ServerLevel level, final BlockPos base)
@@ -468,7 +701,7 @@ public final class LabourSession implements IIdleTaskSession
             block = board.sites().nearestSurface(item, worker.blockPosition(), board.takenSurface());
             if (block == null)
             {
-                board.planFailed(claim, LabourPlanner.Why.NO_SITE);
+                failed(LabourPlanner.Why.NO_SITE);
                 end(false);
                 return;
             }
@@ -570,7 +803,7 @@ public final class LabourSession implements IIdleTaskSession
             entity = board.sites().nearestLoose(item, worker.blockPosition(), board.takenEntities());
             if (entity == null)
             {
-                board.planFailed(claim, LabourPlanner.Why.NO_SITE);
+                failed(LabourPlanner.Why.NO_SITE);
                 end(false);
                 return;
             }
@@ -600,6 +833,11 @@ public final class LabourSession implements IIdleTaskSession
 
     private void withdraw(final AbstractEntityCitizen worker, final long now)
     {
+        if (toolKind != null && DirectedOrders.carries(citizen, toolKind))
+        {
+            end(true);
+            return;
+        }
         final LabourPlanner.Withdraw<Item> w = (LabourPlanner.Withdraw<Item>) action;
         final ReservationLedger ledger = RsAccess.ledger(colony.getRequestManager());
         IWareHouse best = null;
@@ -617,7 +855,7 @@ public final class LabourSession implements IIdleTaskSession
         }
         if (best == null || bestAvailable < w.amount())
         {
-            board.planFailed(claim, LabourPlanner.Why.COVERED);
+            failed(LabourPlanner.Why.COVERED);
             end(false);
             return;
         }
@@ -652,7 +890,7 @@ public final class LabourSession implements IIdleTaskSession
                 post = board.sites().table(worker.blockPosition(), board.takenTables());
                 if (post == null)
                 {
-                    board.planFailed(claim, LabourPlanner.Why.NO_TABLE);
+                    failed(LabourPlanner.Why.NO_TABLE);
                     end(false);
                     return;
                 }
@@ -731,11 +969,14 @@ public final class LabourSession implements IIdleTaskSession
         {
             take(entry.getKey(), entry.getValue());
         }
+        // what the recipe itself gives (with whatever it carries), never a stack made up from the item
+        final ItemStack made = LabourRecipes.result(c.recipe().id());
+        final ItemStack template = made.isEmpty() || !made.is(c.recipe().output()) ? new ItemStack(c.recipe().output()) : made;
         int left = c.recipe().outputCount() * c.times();
         while (left > 0)
         {
-            final int n = Math.min(left, c.recipe().output().getDefaultMaxStackSize());
-            keep(worker, new ItemStack(c.recipe().output(), n));
+            final int n = Math.min(left, template.getMaxStackSize());
+            keep(worker, template.copyWithCount(n));
             left -= n;
         }
         return true;
@@ -759,7 +1000,7 @@ public final class LabourSession implements IIdleTaskSession
             if (post == null)
             {
                 LabourStats.log("no furnace found from {}", worker.blockPosition());
-                board.planFailed(claim, LabourPlanner.Why.NO_FURNACE);
+                failed(LabourPlanner.Why.NO_FURNACE);
                 end(false);
                 return;
             }
@@ -781,7 +1022,7 @@ public final class LabourSession implements IIdleTaskSession
             LabourStats.log("furnace {} is in use: {} / {} / {}", post, furnace.getItem(0), furnace.getItem(1), furnace.getItem(2));
             board.sites().invalidate();
             releasePost();
-            board.planFailed(claim, LabourPlanner.Why.NO_FURNACE);
+            failed(LabourPlanner.Why.NO_FURNACE);
             end(false);
             return;
         }
@@ -848,6 +1089,135 @@ public final class LabourSession implements IIdleTaskSession
         go(Phase.THINK, now);
     }
 
+    // ------------------------------------------------------------------ the Architect's Cutter
+
+    /**
+     * At a free cutter of the colony: as many runs as he holds the materials for, each the recipe's own result of his own material stacks. The materials are taken
+     * only once the result is known to be exactly the requested stack; a wrong result takes nothing and makes nothing.
+     */
+    private void cut(final AbstractEntityCitizen worker, final ServerLevel level, final long now)
+    {
+        if (cutJob == null)
+        {
+            failed(LabourPlanner.Why.WRONG_VARIANT);
+            end(false);
+            return;
+        }
+        if (post == null)
+        {
+            post = board.sites().cutter(worker.blockPosition(), board.takenCutters());
+            if (post == null)
+            {
+                failed(LabourPlanner.Why.NO_CUTTER);
+                end(false);
+                return;
+            }
+            board.takenCutters().add(post);
+        }
+        if (!LabourSites.cutterBlock(level.getBlockState(post)))
+        {
+            releasePost();
+            go(Phase.THINK, now);
+            return;
+        }
+        if (!EntityNavigationUtils.walkToPos(worker, post, 2, true))
+        {
+            return;
+        }
+        WorkerUtil.faceBlock(post, worker);
+        if (cutUntil == 0L)
+        {
+            cutUntil = now + Math.max(5, (long) ((20 + 10 * cutRuns) / LabourSettings.workScale()));
+        }
+        if (now < cutUntil)
+        {
+            if (now - lastSwing >= 15)
+            {
+                lastSwing = now;
+                CitizenItemUtils.hitBlockWithToolInHand(worker, post, false);
+            }
+            return;
+        }
+        cutUntil = 0L;
+        final int made = cutNow(worker, level);
+        releasePost();
+        if (made <= 0)
+        {
+            if (++strikes >= 3)
+            {
+                failed(LabourPlanner.Why.WRONG_VARIANT);
+                end(false);
+                return;
+            }
+        }
+        board.heartbeat(claim);
+        go(Phase.THINK, now);
+    }
+
+    /**
+     * @return how many of the exact stack were made.
+     */
+    private int cutNow(final AbstractEntityCitizen worker, final ServerLevel level)
+    {
+        final List<ItemStack> actual = new ArrayList<>();
+        for (final Item slot : cutJob.slots())
+        {
+            actual.add(slot == net.minecraft.world.item.Items.AIR ? ItemStack.EMPTY : firstMaterial(slot));
+        }
+        final ItemStack result = LabourCutter.assemble(level, cutJob, actual, claim.exact());
+        final LabourCutter.Batch<Item> batch = LabourCutter.batch(cutJob.slots(), materialsOf(citizen, claim), cutRuns, result.isEmpty() ? 0 : result.getCount(), !result.isEmpty(),
+          net.minecraft.world.item.Items.AIR);
+        if (batch.runs() <= 0)
+        {
+            LabourStats.log("citizen {} could not cut {} (result {})", citizen.getId(), claim.exact(), result);
+            return 0;
+        }
+        for (final Map.Entry<Item, Integer> entry : batch.take().entrySet())
+        {
+            takeMaterial(entry.getKey(), entry.getValue());
+        }
+        int left = batch.produced();
+        while (left > 0)
+        {
+            final int n = Math.min(left, result.getMaxStackSize());
+            keep(worker, result.copyWithCount(n));
+            left -= n;
+        }
+        LabourStats.log("citizen {} cut {} runs: {}x {}", citizen.getId(), batch.runs(), batch.produced(), claim.exact());
+        return batch.produced();
+    }
+
+    private ItemStack firstMaterial(final Item item)
+    {
+        final var inventory = citizen.getInventory();
+        for (int slot = 0; slot < inventory.getSlots(); slot++)
+        {
+            final ItemStack stack = inventory.getStackInSlot(slot);
+            if (stack.is(item) && !claim.accepts(stack) && stack.getComponentsPatch().isEmpty())
+            {
+                return stack.copyWithCount(1);
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    /**
+     * Takes plain material stacks of the item (never the claim's own made stacks).
+     */
+    private void takeMaterial(final Item item, final int amount)
+    {
+        int left = amount;
+        final var inventory = citizen.getInventory();
+        for (int slot = 0; slot < inventory.getSlots() && left > 0; slot++)
+        {
+            final ItemStack stack = inventory.getStackInSlot(slot);
+            if (stack.is(item) && !claim.accepts(stack) && stack.getComponentsPatch().isEmpty())
+            {
+                left -= inventory.extractItem(slot, Math.min(left, stack.getCount()), false).getCount();
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ hand in
 
     @Nullable
@@ -873,14 +1243,14 @@ public final class LabourSession implements IIdleTaskSession
         {
             return;
         }
-        final int have = count(claim.target());
+        final int have = countClaimed();
         final int give = Math.min(have, claim.amount());
         if (give <= 0)
         {
             go(Phase.THINK, now);
             return;
         }
-        final int moved = ItemMover.move(citizen.getInventory(), building.getItemHandlerCap(), stack -> stack.is(claim.target()), give);
+        final int moved = ItemMover.move(citizen.getInventory(), building.getItemHandlerCap(), claim::accepts, give);
         if (moved <= 0)
         {
             end(false);
@@ -901,7 +1271,8 @@ public final class LabourSession implements IIdleTaskSession
         for (int slot = 0; slot < inventory.getSlots(); slot++)
         {
             final ItemStack stack = inventory.getStackInSlot(slot);
-            if (!stack.isEmpty() && (LabourRules.craftable(stack.getItem()) || LabourRules.looseItem(stack) || LabourRules.smeltable(stack.getItem(), com.minecolonies.api.colony.labour.LabourModes.SmeltMode.IRON))
+            if (!stack.isEmpty() && (LabourRules.craftable(stack.getItem()) || LabourRules.looseItem(stack) || LabourRules.stripResult(stack.getItem()) || claim.accepts(stack)
+                                       || LabourRules.smeltable(stack.getItem(), com.minecolonies.api.colony.labour.LabourModes.SmeltMode.IRON))
                   && !LabourRules.isTool("pickaxe", stack.getItem()) && !LabourRules.isTool("axe", stack.getItem()) && !LabourRules.isTool("shovel", stack.getItem()))
             {
                 surplus.add(stack);
@@ -920,8 +1291,10 @@ public final class LabourSession implements IIdleTaskSession
         }
         for (final ItemStack stack : surplus)
         {
-            final Item item = stack.getItem();
-            ItemMover.move(inventory, warehouse.getItemHandlerCap(), s -> s.is(item), count(item));
+            // the same item and components only: a made variant never travels as another
+            final ItemStack sample = stack.copyWithCount(1);
+            ItemMover.move(inventory, warehouse.getItemHandlerCap(), s -> ItemStack.isSameItemSameComponents(s, sample),
+              InventoryUtils.getItemCountInItemHandler(inventory, s -> ItemStack.isSameItemSameComponents(s, sample)));
         }
         end(true);
     }

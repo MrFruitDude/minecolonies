@@ -47,7 +47,19 @@ public final class LabourPlanner<K>
         COVERED,
         NO_RECIPE,
         TOO_DEEP,
-        SMELT_OFF
+        SMELT_OFF,
+        /**
+         * No Architect's Cutter of the colony is free (appended: the wire keeps the ordinals).
+         */
+        NO_CUTTER,
+        /**
+         * A material the cutter needs is not a basic one (wood, stone): labour does not get it.
+         */
+        CUTTER_INPUT,
+        /**
+         * No loaded recipe makes exactly the requested variant (its materials and components).
+         */
+        WRONG_VARIANT
     }
 
     /**
@@ -103,7 +115,11 @@ public final class LabourPlanner<K>
         /**
          * Pick up an item lying on the ground.
          */
-        LOOSE
+        LOOSE,
+        /**
+         * Strip the logs of a natural tree with an axe (the axe's own block transformer), then fell them: stripped logs of the tree's species.
+         */
+        STRIP
     }
 
     /**
@@ -266,6 +282,31 @@ public final class LabourPlanner<K>
     {
         final LabourPlanner<K> planner = new LabourPlanner<>(env, inventory);
         return planner.need(target, count, new HashMap<>(inventory), 0);
+    }
+
+    /**
+     * The next step toward holding all the inputs, {@code times} over (each group {@code count * times} of any of its alternatives): what a machine recipe outside the
+     * planner's own recipes takes (the Architect's Cutter). DONE once everything is held; one item never counts for two groups.
+     *
+     * @param env       the colony.
+     * @param inputs    the inputs of one run.
+     * @param times     how many runs.
+     * @param inventory what the labourer holds now.
+     * @return the next action, DONE if he holds everything, or why he cannot.
+     */
+    public static <K> Result<K> nextInputs(final Env<K> env, final List<Group<K>> inputs, final int times, final Map<K, Integer> inventory)
+    {
+        final LabourPlanner<K> planner = new LabourPlanner<>(env, inventory);
+        final Map<K, Integer> work = new HashMap<>(inventory);
+        for (final Group<K> group : inputs)
+        {
+            final Result<K> r = planner.needAny(group.alternatives(), group.count() * Math.max(1, times), work, 1);
+            if (!(r instanceof Done<K>))
+            {
+                return r;
+            }
+        }
+        return new Done<>();
     }
 
     private Result<K> need(final K item, final int n, final Map<K, Integer> have, final int depth)
