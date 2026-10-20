@@ -2,6 +2,7 @@
   "replace": false,
   "values": [
     "#minecraft:logs", "#minecraft:planks", "minecraft:stick", "minecraft:cobblestone",
-    "minecraft:sand", "minecraft:red_sand", "minecraft:dirt", "minecraft:gravel"
+    "minecraft:sand", "minecraft:red_sand", "minecraft:dirt", "minecraft:gravel",
+    "#minecolonies:labour/craft_results", "#minecolonies:labour/strip_results"
   ]
 }

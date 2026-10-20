@@ -141,8 +141,14 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     private com.minecolonies.core.colony.labour.LabourSession supply;
 
     /**
+     * The order the supply session fetches for (it ends when the hut's order changes).
+     */
+    private int supplyOrder;
+
+    /**
      * Whether the builder, who leads or has an active order, waits for basic materials of his own build that no building makes: one of the requests of his own hut has
-     * waited at the player or the retrying resolver for the grace time, and the basics are on the self-supply list. Asked every 100 ticks.
+     * waited at the player or the retrying resolver for the grace time, and the goods are on the self-supply list. Asked every 100 ticks; after an episode that brought
+     * nothing he waits a while, then tries again (never given up for good, see LabourSelfSupply).
      */
     private boolean wantsToSupply()
     {
@@ -165,12 +171,14 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return START_WORKING;
         }
-        final var claim = colony.getLabourBoard().claimForBuilder(worker.getCitizenData(), building.getID(), building.getWorkOrder() == null ? 0 : building.getWorkOrder().getID());
+        final int orderId = building.getWorkOrder() == null ? 0 : building.getWorkOrder().getID();
+        final var claim = colony.getLabourBoard().claimForBuilder(worker.getCitizenData(), building.getID(), orderId);
         if (claim == null)
         {
             return START_WORKING;
         }
         supply = new com.minecolonies.core.colony.labour.LabourSession("builder_supply", colony, worker.getCitizenData(), colony.getLabourBoard(), claim);
+        supplyOrder = orderId;
         return SUPPLY_RUN;
     }
 
@@ -180,14 +188,64 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return START_WORKING;
         }
-        if (!supply.isValid() || supply.isEnded() || !(building.getColony() instanceof com.minecolonies.core.colony.Colony))
+        if (!(building.getColony() instanceof com.minecolonies.core.colony.Colony colony))
         {
-            supply.stop(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID);
-            supply = null;
+            endSupply(null, com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.NEUTRAL);
+            return START_WORKING;
+        }
+        final var board = colony.getLabourBoard();
+        final var request = supply.claim().request();
+        if (!building.hasWorkOrder() || building.getWorkOrder() == null || building.getWorkOrder().getID() != supplyOrder)
+        {
+            // the order ended or was replaced: what he carries stays with him, the request is not held against
+            endSupply(board, com.minecolonies.api.colony.idle.IdleStopReason.SETTING_OFF, com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.NEUTRAL);
+            return START_WORKING;
+        }
+        if (supply.isEnded())
+        {
+            endSupply(board, com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID,
+              supply.succeeded() ? com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.DELIVERED : com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.FAILED);
+            return START_WORKING;
+        }
+        if (!supply.isValid())
+        {
+            // served or cancelled by somebody else: nothing to hold against him; otherwise (lease gone, time up, setting off) it brought nothing
+            final boolean servedElsewhere = request != null && !board.stillWaiting(request);
+            endSupply(board, servedElsewhere ? com.minecolonies.api.colony.idle.IdleStopReason.SETTING_OFF : com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID,
+              servedElsewhere ? com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.NEUTRAL : com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.FAILED);
             return START_WORKING;
         }
         supply.tick();
         return SUPPLY_RUN;
+    }
+
+    /**
+     * The citizen's AI resets the job's AI each time he goes back to work (after eating, sleeping, being sick): a supply session that was under way ends there, not held
+     * against him, so that he plans again from what he holds instead of keeping a dead session that stops him from waiting for or fetching his materials.
+     */
+    @Override
+    public void resetAI()
+    {
+        if (supply != null)
+        {
+            endSupply(building != null && building.getColony() instanceof com.minecolonies.core.colony.Colony colony ? colony.getLabourBoard() : null,
+              com.minecolonies.api.colony.idle.IdleStopReason.NEEDS, com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.NEUTRAL);
+        }
+        super.resetAI();
+    }
+
+    /**
+     * Stops the supply session and tells the board how the episode went (when it can be told).
+     */
+    private void endSupply(@org.jetbrains.annotations.Nullable final com.minecolonies.core.colony.labour.LabourBoard board, final com.minecolonies.api.colony.idle.IdleStopReason reason,
+      final com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome outcome)
+    {
+        supply.stop(reason);
+        supply = null;
+        if (board != null)
+        {
+            board.selfSupplyEnded(supplyOrder, outcome);
+        }
     }
 
     /**

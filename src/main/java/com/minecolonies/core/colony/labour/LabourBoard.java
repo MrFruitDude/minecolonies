@@ -141,7 +141,7 @@ public final class LabourBoard
     private final Set<Integer>  takenEntities = new HashSet<>();
 
     private final Map<IToken<?>, Long>           firstSeen   = new HashMap<>();
-    private final Map<Integer, Integer>          selfEpisodes = new HashMap<>();
+    private final LabourSelfSupply               selfSupply = new LabourSelfSupply();
 
     private List<Candidate> candidates = List.of();
     private long            builtAt    = Long.MIN_VALUE / 2;
@@ -720,25 +720,41 @@ public final class LabourBoard
 
     private Candidate selfCandidate(final BlockPos hut, final int orderId, final long now)
     {
-        if (!LabourSettings.worldEnabled() || !LabourSettings.selfSupply(colony) || selfEpisodes.getOrDefault(orderId, 0) >= 3)
+        if (!LabourSettings.worldEnabled() || !LabourSettings.selfSupply(colony) || !selfSupply.mayStart(orderId, now))
         {
             return null;
         }
         for (final Candidate candidate : candidates())
         {
             if (candidate.hut().equals(hut) && candidate.importance() == RequestImportance.URGENT && claimsOn(candidate.token()) == 0 && stillWaiting(candidate.token())
-                  && now >= notBefore.getOrDefault(candidate.token(), 0L) && now - waitingSince(candidate.token()) >= LabourSettings.supplyGraceTicks())
+                  && now >= notBefore.getOrDefault(candidate.token(), 0L) && now - waitingSince(candidate.token()) >= LabourSettings.supplyGraceTicks()
+                  && !ownTargets(candidate).isEmpty())
             {
-                for (final Item item : candidate.targets())
-                {
-                    if (LabourRules.selfSupplyItem(item))
-                    {
-                        return candidate;
-                    }
-                }
+                return candidate;
             }
         }
         return null;
+    }
+
+    /**
+     * What the builder may fetch himself of a candidate: the self-supply goods among its targets (basics, what labour crafts, stripped wood), or the exact Architect's
+     * Cutter variant it asks for (made only from that variant's own recipe and materials).
+     */
+    private static List<Item> ownTargets(final Candidate candidate)
+    {
+        if (!candidate.exact().isEmpty())
+        {
+            return candidate.targets();
+        }
+        final List<Item> own = new ArrayList<>();
+        for (final Item item : candidate.targets())
+        {
+            if (LabourRules.selfSupplyItem(item))
+            {
+                own.add(item);
+            }
+        }
+        return own;
     }
 
     /**
@@ -754,7 +770,8 @@ public final class LabourBoard
     /**
      * The idle builder blocked on basic materials for his own build: a claim for one request of his own hut, with the goods he may fetch himself.
      *
-     * @return the claim, or null when none of his requests qualifies (they are not blocked long enough, are covered, have no plan, or he had enough episodes).
+     * @return the claim, or null when none of his requests qualifies (they are not blocked long enough, are covered, have no plan, or his last episode brought nothing a
+     *         short while ago: see {@link LabourSelfSupply}).
      */
     @Nullable
     public LabourClaim claimForBuilder(final ICitizenData builder, final BlockPos hut, final int orderId)
@@ -769,22 +786,30 @@ public final class LabourBoard
         {
             return null;
         }
-        final List<Item> own = new ArrayList<>();
-        for (final Item item : candidate.targets())
-        {
-            if (LabourRules.selfSupplyItem(item))
-            {
-                own.add(item);
-            }
-        }
-        final Candidate restricted = new Candidate(candidate.token(), candidate.hut(), candidate.deliverable(), own, candidate.importance(), candidate.since(), candidate.count(),
-          candidate.minimum(), ItemStack.EMPTY);
+        final Candidate restricted = new Candidate(candidate.token(), candidate.hut(), candidate.deliverable(), ownTargets(candidate), candidate.importance(), candidate.since(),
+          candidate.count(), candidate.minimum(), candidate.exact());
         final LabourClaim claim = tryClaim(builder, restricted, LabourClaim.Source.SELF, new LabourEnv(colony, this, true), LabourSession.inventoryOf(builder), now);
         if (claim != null)
         {
-            selfEpisodes.merge(orderId, 1, Integer::sum);
+            selfSupply.started(orderId, now);
         }
         return claim;
+    }
+
+    /**
+     * The builder's episode for his order ended (his session stopped): when he may go again.
+     */
+    public void selfSupplyEnded(final int orderId, final LabourSelfSupply.Outcome outcome)
+    {
+        selfSupply.ended(orderId, outcome, now());
+    }
+
+    /**
+     * @return the game time from which the builder of the order may fetch materials himself again (0 when he may now; his requests also need their grace time).
+     */
+    public long selfSupplyRetryAt(final int orderId)
+    {
+        return selfSupply.retryAt(orderId);
     }
 
     /**
@@ -1217,6 +1242,7 @@ public final class LabourBoard
             delivered.keySet().removeIf(token -> !stillWaiting(token) && !pendingWake.containsKey(token));
             cooldown.values().removeIf(until -> until < now);
             noOffer.values().removeIf(until -> until < now);
+            selfSupply.sweep(now);
         }
     }
 }

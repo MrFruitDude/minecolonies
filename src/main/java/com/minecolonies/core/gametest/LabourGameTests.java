@@ -516,6 +516,184 @@ final class LabourGameTests
         });
     }
 
+    /**
+     * The builder whose order has three episodes behind it that brought nothing is not given up on (the old limit stopped him for good): he waits the bounded back-off,
+     * makes no claim before it, and then fetches the wood and builds.
+     */
+    public static void builderTriesAgainAfterEmptyEpisodes(final GameTestHelper helper)
+    {
+        begin();
+        LabourSettings.override("graceTicks", 200);
+        LabourSettings.override("total", 0);
+        final RsFixture f = found(helper, "labour builder retry", 2);
+        final Colony colony = (Colony) f.colony;
+        forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
+        tree(helper, 34, 20, 5);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData builder = f.spawn(new BlockPos(12, 1, 8), false);
+            helper.assertTrue(f.builder.getModule(BuildingModules.BUILDER_WORK).assignCitizen(builder), "builder not assigned");
+            final int size = 2;
+            final var order = planksFloor(helper, colony, f.builder, 22, 12, size);
+            for (int i = 0; i < 3; i++)
+            {
+                colony.getLabourBoard().selfSupplyEnded(order.getID(), com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.FAILED);
+            }
+            final long retryAt = colony.getLabourBoard().selfSupplyRetryAt(order.getID());
+            helper.assertTrue(retryAt > f.level.getGameTime(), "no back-off after three empty episodes");
+            helper.assertTrue(retryAt - f.level.getGameTime() <= com.minecolonies.core.colony.labour.LabourSelfSupply.MAX_WAIT, "back-off beyond its bound: " + retryAt);
+            final boolean[] fetched = {false};
+            poll(helper, List.of(colony), 19000, () -> {
+                for (final LabourClaim claim : colony.getLabourBoard().claims())
+                {
+                    helper.assertTrue(claim.source() == LabourClaim.Source.SELF && claim.destination().equals(f.builder.getID()), "a claim of another kind: " + claim.source());
+                    helper.assertTrue(f.level.getGameTime() >= retryAt, "claimed during the back-off at " + f.level.getGameTime() + " < " + retryAt);
+                    fetched[0] = true;
+                }
+                return fetched[0] && floorPlaced(helper, 22, 12, size);
+            }, () -> {
+                end();
+                helper.succeed();
+            }, () -> "builder inv " + LabourSession.inventoryOf(builder) + " claims " + colony.getLabourBoard().claims().size() + " retry at " + retryAt + " now "
+                       + f.level.getGameTime() + " ai " + (builder.getJob() == null || builder.getJob().getWorkerAI() == null ? "-" : builder.getJob().getWorkerAI().getState()));
+        });
+    }
+
+    /**
+     * The order is cancelled while the builder fetches for it: his session ends at once, the claim and its reservation go, he does not start again for the gone order,
+     * and the wood he took is all still there (in his pockets, the hut, or as planks made from it): nothing is made twice or lost.
+     */
+    public static void builderLetsGoWhenTheOrderEnds(final GameTestHelper helper)
+    {
+        begin();
+        LabourSettings.override("graceTicks", 200);
+        LabourSettings.override("total", 0);
+        final RsFixture f = found(helper, "labour builder order gone", 2);
+        final Colony colony = (Colony) f.colony;
+        forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
+        tree(helper, 34, 20, 5);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData builder = f.spawn(new BlockPos(12, 1, 8), false);
+            helper.assertTrue(f.builder.getModule(BuildingModules.BUILDER_WORK).assignCitizen(builder), "builder not assigned");
+            final var order = planksFloor(helper, colony, f.builder, 22, 12, 4);
+            final long[] cancelledAt = {-1L};
+            poll(helper, List.of(colony), 16000, () -> {
+                final long now = f.level.getGameTime();
+                if (cancelledAt[0] < 0)
+                {
+                    final LabourClaim claim = colony.getLabourBoard().claimOf(builder.getId());
+                    if (claim != null && claim.source() == LabourClaim.Source.SELF && logsLeft(helper, 34, 20, 5) < 5)
+                    {
+                        colony.getWorkManager().removeWorkOrder(order.getID());
+                        cancelledAt[0] = now;
+                    }
+                    return false;
+                }
+                final int taken = (5 - logsLeft(helper, 34, 20, 5)) * 4;
+                final int had = (count(LabourSession.inventoryOf(builder), Items.OAK_LOG) + inHut(f.builder, Items.OAK_LOG)) * 4
+                                  + count(LabourSession.inventoryOf(builder), Items.OAK_PLANKS) + inHut(f.builder, Items.OAK_PLANKS)
+                                  + floorCount(helper, 22, 12, 4);
+                helper.assertTrue(had <= taken, "more wood than was felled: " + had + " planks' worth from " + taken);
+                if (now - cancelledAt[0] > 300)
+                {
+                    helper.assertTrue(colony.getLabourBoard().claimOf(builder.getId()) == null, "the claim outlived the order");
+                    helper.assertTrue(labourReservations(f).isEmpty(), "labour reservations outlived the order: " + labourReservations(f).size());
+                    final var state = builder.getJob() == null || builder.getJob().getWorkerAI() == null ? null : builder.getJob().getWorkerAI().getState();
+                    helper.assertTrue(state != com.minecolonies.core.entity.ai.workers.builder.BuilderSupplyState.SUPPLY_RUN, "still fetching for a gone order");
+                }
+                return now - cancelledAt[0] > 900;
+            }, () -> {
+                end();
+                helper.succeed();
+            }, () -> "builder inv " + LabourSession.inventoryOf(builder) + " claims " + colony.getLabourBoard().claims().size() + " cancelled at " + cancelledAt[0]
+                       + " logs left " + logsLeft(helper, 34, 20, 5));
+        });
+    }
+
+    /**
+     * The builder's hut asks for a wooden axe and nobody makes tools: the builder makes it himself (a tree, planks, sticks, a table or his pockets) and hands it in.
+     */
+    public static void builderMakesHisOwnTool(final GameTestHelper helper)
+    {
+        begin();
+        LabourSettings.override("graceTicks", 200);
+        LabourSettings.override("total", 0);
+        final RsFixture f = found(helper, "labour builder tool", 2);
+        final Colony colony = (Colony) f.colony;
+        forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
+        tree(helper, 34, 20, 6);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData builder = f.spawn(new BlockPos(12, 1, 8), false);
+            helper.assertTrue(f.builder.getModule(BuildingModules.BUILDER_WORK).assignCitizen(builder), "builder not assigned");
+            planksFloor(helper, colony, f.builder, 22, 12, 1);
+            final IToken<?> axe = ask(f.builder, new ItemStack(Items.WOODEN_AXE));
+            final boolean[] forAxe = {false};
+            poll(helper, List.of(colony), 16000, () -> {
+                for (final LabourClaim claim : colony.getLabourBoard().claims())
+                {
+                    helper.assertTrue(claim.source() == LabourClaim.Source.SELF && claim.destination().equals(f.builder.getID()), "a claim of another kind: " + claim.source());
+                    forAxe[0] |= claim.target() == Items.WOODEN_AXE && axe.equals(claim.request());
+                }
+                return forAxe[0] && !f.isWithPlayer(axe) && !f.isRetrying(axe);
+            }, () -> {
+                end();
+                helper.succeed();
+            }, () -> describe(f, axe, builder));
+        });
+    }
+
+    /**
+     * Scaffolding takes bamboo and string; there is none and labour does not invent them. The builder makes no claim for it, the request stays with the player and
+     * says why labour is blocked.
+     */
+    public static void builderMakesNoScaffoldingFromNothing(final GameTestHelper helper)
+    {
+        begin();
+        LabourSettings.override("graceTicks", 200);
+        LabourSettings.override("total", 0);
+        final RsFixture f = found(helper, "labour builder scaffolding", 2);
+        final Colony colony = (Colony) f.colony;
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData builder = f.spawn(new BlockPos(12, 1, 8), false);
+            helper.assertTrue(f.builder.getModule(BuildingModules.BUILDER_WORK).assignCitizen(builder), "builder not assigned");
+            planksFloor(helper, colony, f.builder, 22, 12, 1);
+            final IToken<?> scaffolding = ask(f.builder, new ItemStack(Items.SCAFFOLDING, 4));
+            poll(helper, List.of(colony), 6000, () -> {
+                for (final LabourClaim claim : colony.getLabourBoard().claims())
+                {
+                    helper.assertTrue(!scaffolding.equals(claim.request()), "a claim for scaffolding without bamboo: " + claim.target());
+                }
+                return colony.getLabourBoard().blockedWhy(scaffolding) != null;
+            }, () -> {
+                helper.assertTrue(f.isWithPlayer(scaffolding) || f.isRetrying(scaffolding), "scaffolding was served: " + f.describe(scaffolding));
+                end();
+                helper.succeed();
+            }, () -> describe(f, scaffolding, builder));
+        });
+    }
+
+    private static int count(final java.util.Map<Item, Integer> inventory, final Item item)
+    {
+        return inventory.getOrDefault(item, 0);
+    }
+
+    private static int floorCount(final GameTestHelper helper, final int x, final int z, final int size)
+    {
+        int planks = 0;
+        for (int dx = 0; dx < size; dx++)
+        {
+            for (int dz = 0; dz < size; dz++)
+            {
+                planks += helper.getBlockState(new BlockPos(x + dx, 1, z + dz)).is(Blocks.OAK_PLANKS) ? 1 : 0;
+            }
+        }
+        return planks;
+    }
+
+    private static boolean floorPlaced(final GameTestHelper helper, final int x, final int z, final int size)
+    {
+        return floorCount(helper, x, z, size) == size * size;
+    }
+
     // ------------------------------------------------------------------ the whitelist, tools that wear
 
     /**

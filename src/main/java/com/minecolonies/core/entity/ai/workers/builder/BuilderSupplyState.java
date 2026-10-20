@@ -3,7 +3,7 @@ package com.minecolonies.core.entity.ai.workers.builder;
 import com.minecolonies.api.entity.ai.statemachine.states.IAIState;
 
 /**
- * States of a builder who fetches basic materials for his own build while he is blocked on them (LABOURERS.md 6).
+ * States of a builder who fetches materials for his own build while he is blocked on them (LABOURERS.md 6).
  */
 public enum BuilderSupplyState implements IAIState
 {
@@ -12,9 +12,9 @@ public enum BuilderSupplyState implements IAIState
      */
     SUPPLY_PLAN(true),
     /**
-     * Gathers, crafts and brings the goods: the labourer's session runs inside the builder's AI.
+     * Gathers, crafts and brings the goods: the labourer's session runs inside the builder's AI. Hunger may interrupt it: the claim then lapses and he plans again later.
      */
-    SUPPLY_RUN(false);
+    SUPPLY_RUN(true);
 
     private final boolean okayToEat;
 

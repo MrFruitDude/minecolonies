@@ -1206,7 +1206,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     {
         for (final String name : new String[] {"labour_crafts_wooden_tools", "labour_covered_left_alone", "labour_stops_on_job", "labour_setting_off", "labour_colonies_isolated",
           "labour_builder_self_supply", "labour_stone_tools", "labour_withdraw_covered", "labour_stockpile", "labour_charcoal", "labour_furnace_taken", "labour_natural_trees",
-          "labour_coverage", "labour_ledger_sweep", "labour_caps", "labour_retrying_held", "labour_night"})
+          "labour_coverage", "labour_ledger_sweep", "labour_caps", "labour_retrying_held", "labour_night", "labour_builder_self_supply_retry",
+          "labour_builder_self_supply_order_gone", "labour_builder_self_supply_tool", "labour_builder_self_supply_no_bamboo"})
         {
             if (skipped(name))
             {
@@ -1230,6 +1231,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "labour_caps" -> LabourGameTests::capsAndExclusiveClaims;
                 case "labour_retrying_held" -> LabourGameTests::retryingHeldRequestIsServed;
                 case "labour_night" -> LabourGameTests::nightEndsTheWork;
+                case "labour_builder_self_supply_retry" -> LabourGameTests::builderTriesAgainAfterEmptyEpisodes;
+                case "labour_builder_self_supply_order_gone" -> LabourGameTests::builderLetsGoWhenTheOrderEnds;
+                case "labour_builder_self_supply_tool" -> LabourGameTests::builderMakesHisOwnTool;
+                case "labour_builder_self_supply_no_bamboo" -> LabourGameTests::builderMakesNoScaffoldingFromNothing;
                 default -> LabourGameTests::coloniesAreIsolated;
             };
             event.registerTest(

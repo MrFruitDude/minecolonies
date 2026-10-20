@@ -140,7 +140,8 @@ public final class LabourRules
     }
 
     /**
-     * @return whether an idle builder may fetch the item himself for his own build (logs, planks, sticks, cobblestone, sand, dirt, gravel).
+     * @return whether an idle builder may fetch the item himself for his own build: the basics (logs, planks, sticks, cobblestone, sand, dirt, gravel), what labour
+     *         crafts and stripped wood. Only the plan decides whether it can be had: ground is dug only where digging is allowed, a recipe only from inputs that are there.
      */
     public static boolean selfSupplyItem(final Item item)
     {
