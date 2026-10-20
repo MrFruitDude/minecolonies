@@ -80,6 +80,8 @@ final class NaturalSafetyGameTests
     private static RsFixture found(final GameTestHelper helper, final String name)
     {
         final RsFixture f = RsFixture.found(helper, name, 2);
+        // (the fixture's player places blocks in the claim: a stranger's placement there is cancelled by the colony's protection, so he is made an officer)
+        helper.assertTrue(f.colony.getPermissions().addPlayer(f.player.nameAndId(), f.colony.getPermissions().getRankOfficer()), "the player could not join the colony");
         final var hiring = f.colony.getSettings().getSetting(BuildingTownHall.AUTO_HIRING_MODE);
         if (hiring.getValue())
         {
@@ -387,6 +389,9 @@ final class NaturalSafetyGameTests
         place(helper, new BlockPos(30, 1, 20), Blocks.DIRT.defaultBlockState(), f.player);
         place(helper, new BlockPos(35, 1, 23), Blocks.DIRT.defaultBlockState(), FakePlayerFactory.getMinecraft(f.level));
         helper.assertTrue(placed(colony, helper, new BlockPos(30, 1, 20)) && placed(colony, helper, new BlockPos(35, 1, 23)), "a placement was not recorded");
+        // a stranger's placement in the claim is cancelled by the colony's protection (the game takes the block back): nothing is recorded for it
+        place(helper, new BlockPos(32, 1, 21), Blocks.DIRT.defaultBlockState(), MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper));
+        helper.assertTrue(!placed(colony, helper, new BlockPos(32, 1, 21)), "a cancelled placement was recorded");
         helper.runAfterDelay(100, () -> {
             final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
             final IToken<?> token = ask(f.builder, new ItemStack(Items.DIRT), 4);
