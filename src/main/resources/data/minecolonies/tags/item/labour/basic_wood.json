@@ -5,6 +5,7 @@
     "#minecraft:planks",
     "minecraft:stick",
     "#c:stripped_logs",
-    "#c:stripped_woods"
+    "#c:stripped_woods",
+    "#minecraft:bamboo_blocks"
   ]
 }
