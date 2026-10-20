@@ -112,6 +112,20 @@ final class DirectedLabourGameTests
                 f.level.setChunkForced(cx, cz, true);
             }
         }
+        // (the test box has a barrier roof: the directed area scan, which looks from the sky down, would see only that; as in LabourGameTests)
+        for (int x = 26; x <= 46; x++)
+        {
+            for (int z = 12; z <= 36; z++)
+            {
+                for (int y = 20; y <= 60; y++)
+                {
+                    if (helper.getBlockState(new BlockPos(x, y, z)).is(Blocks.BARRIER))
+                    {
+                        helper.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState());
+                    }
+                }
+            }
+        }
         return f;
     }
 
