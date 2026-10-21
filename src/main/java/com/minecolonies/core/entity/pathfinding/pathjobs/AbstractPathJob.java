@@ -169,6 +169,17 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     private int visitedLevel = 1;
 
     /**
+     * The job's turn in the fair queue (its colony), null for none. Set on the submitting thread before the job is queued.
+     */
+    @Nullable
+    private volatile Object queueKey = null;
+
+    /**
+     * Order in which this job's search started (1 = first since the counters were reset), 0 before it starts.
+     */
+    private volatile long startOrder = 0;
+
+    /**
      * Whether the heuristic was already scaled down for roads (see {@link #scaleHeuristicOnRoads()}).
      */
     private boolean roadSeen = false;
@@ -299,7 +310,7 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     @Override
     public final Path call()
     {
-        Pathfinding.Stats.searchStarted();
+        startOrder = Pathfinding.Stats.searchStarted();
         try
         {
             return search();
@@ -314,6 +325,33 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
         }
 
         return null;
+    }
+
+    /**
+     * @return the job's queue key (its colony), null for none.
+     */
+    @Nullable
+    public Object getQueueKey()
+    {
+        return queueKey;
+    }
+
+    /**
+     * Sets the job's turn in the fair queue; normally its entity's colony, set when it is submitted.
+     *
+     * @param queueKey the key, null for none.
+     */
+    public void setQueueKey(@Nullable final Object queueKey)
+    {
+        this.queueKey = queueKey;
+    }
+
+    /**
+     * @return order in which this job's search started since the counters were reset, 0 before it starts.
+     */
+    public long getStartOrder()
+    {
+        return startOrder;
     }
 
     /**

@@ -812,6 +812,72 @@ public final class PathfindingGameTests
         }));
     }
 
+    // ------------------------------------------------------------------ round 10: fair queue
+
+    /** Fair queue: jobs of the flooding colony, jobs of the quiet colony, and the start-order bar for the quiet ones. */
+    private static final int FLOOD_JOBS = 150, QUIET_JOBS = 10, QUIET_START_BAR = 2 * QUIET_JOBS + 10;
+
+    /**
+     * path_queue_fair_colonies: colony 1 floods the shared queue with 150 failing searches (a sealed target 102 blocks
+     * away), then colony 2 queues 10 short ones. Colonies take turns, so every colony 2 search must start among the first
+     * 2 x 10 + 10 searches (one queue in order would start them after all 150). Nothing may be rejected.
+     */
+    public static void pathQueueFairColonies(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        final BlockPos farTarget = new BlockPos(55, 1, 35);
+        sealTarget(helper, farTarget);
+        final Pathfinding.ColonyKey flooding = new Pathfinding.ColonyKey(helper.getLevel().dimension(), 1);
+        final Pathfinding.ColonyKey quiet = new Pathfinding.ColonyKey(helper.getLevel().dimension(), 2);
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            Pathfinding.Stats.reset();
+            final List<PathJobMoveToLocation> flood = new ArrayList<>();
+            final List<PathJobMoveToLocation> calm = new ArrayList<>();
+            for (int i = 0; i < FLOOD_JOBS; i++)
+            {
+                final PathJobMoveToLocation job =
+                  new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(-6, 1, -6)), helper.absolutePos(farTarget), 48, null);
+                job.setQueueKey(flooding);
+                flood.add(job);
+                Pathfinding.enqueue(job);
+            }
+            for (int i = 0; i < QUIET_JOBS; i++)
+            {
+                final PathJobMoveToLocation job =
+                  new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(0, 1, 2 * i)), helper.absolutePos(new BlockPos(12, 1, 2 * i)), 48, null);
+                job.setQueueKey(quiet);
+                calm.add(job);
+                Pathfinding.enqueue(job);
+            }
+            final List<PathResult<?>> all = new ArrayList<>();
+            flood.forEach(j -> all.add(j.getResult()));
+            calm.forEach(j -> all.add(j.getResult()));
+            final long t0 = System.nanoTime();
+            waitAll(helper, all, t0, 0, () -> {
+                long quietLast = 0;
+                int quietReached = 0;
+                for (final PathJobMoveToLocation j : calm)
+                {
+                    quietLast = Math.max(quietLast, j.getStartOrder());
+                    quietReached += j.getResult().isPathReachingDestination() ? 1 : 0;
+                }
+                long floodLast = 0;
+                for (final PathJobMoveToLocation j : flood)
+                {
+                    floodLast = Math.max(floodLast, j.getStartOrder());
+                }
+                final String s = String.format("R10 fair queue: %d + %d jobs, last quiet start %d (bar %d), last flood start %d, quiet reached %d, rejected %d, all done after %d ms",
+                  FLOOD_JOBS, QUIET_JOBS, quietLast, QUIET_START_BAR, floodLast, quietReached, Pathfinding.Stats.rejected.get(), (System.nanoTime() - t0) / 1_000_000L);
+                Log.getLogger().info(s);
+                helper.assertTrue(Pathfinding.Stats.rejected.get() == 0, "jobs were rejected. " + s);
+                helper.assertTrue(quietReached == QUIET_JOBS, "fixture: a quiet colony job did not reach. " + s);
+                helper.assertTrue(quietLast > 0 && quietLast <= QUIET_START_BAR, "the quiet colony waited behind the flooding one. " + s);
+                helper.succeed();
+            });
+        }));
+    }
+
     // ------------------------------------------------------------------ real citizen
 
     /**

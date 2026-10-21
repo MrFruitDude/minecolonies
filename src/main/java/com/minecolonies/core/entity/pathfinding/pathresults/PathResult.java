@@ -228,6 +228,11 @@ public class PathResult<T extends AbstractPathJob>
             {
                 observer.accept(job);
             }
+            if (job.getQueueKey() == null)
+            {
+                // the colony's turn in the fair queue, resolved here on the submitting (server) thread
+                job.setQueueKey(com.minecolonies.core.entity.pathfinding.Pathfinding.colonyKeyOf(job.getEntity()));
+            }
             com.minecolonies.core.entity.pathfinding.Pathfinding.Stats.submitted.incrementAndGet();
             pathCalculation = executorService.submit(job);
         }
@@ -366,6 +371,10 @@ public class PathResult<T extends AbstractPathJob>
         if (pathCalculation != null)
         {
             pathCalculation.cancel(true);
+            if (pathCalculation instanceof Runnable task)
+            {
+                com.minecolonies.core.entity.pathfinding.Pathfinding.removeQueued(task);
+            }
             pathCalculation = null;
         }
 

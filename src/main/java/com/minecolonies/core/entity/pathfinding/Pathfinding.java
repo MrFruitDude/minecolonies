@@ -10,10 +10,12 @@ import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.RunnableFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -27,7 +29,10 @@ import java.util.function.Function;
  */
 public final class Pathfinding
 {
-    private static final ArrayBlockingQueue<Runnable> jobQueue = new ArrayBlockingQueue<>(10000, false);
+    /**
+     * The shared job queue: colonies take turns (see {@link FairPathQueue}); one colony may hold half of it at most.
+     */
+    private static final FairPathQueue jobQueue = new FairPathQueue(10000, 5000);
     private static       ThreadPoolExecutor           executor;
 
     /**
@@ -40,6 +45,7 @@ public final class Pathfinding
         public static final AtomicLong    rejected    = new AtomicLong();
         public static final AtomicInteger running     = new AtomicInteger();
         public static final AtomicInteger peakRunning = new AtomicInteger();
+        public static final AtomicLong    started     = new AtomicLong();
 
         private Stats()
         {
@@ -52,16 +58,20 @@ public final class Pathfinding
         {
             submitted.set(0);
             rejected.set(0);
+            started.set(0);
             peakRunning.set(running.get());
         }
 
         /**
          * Called on the worker thread when a search starts.
+         *
+         * @return the start order of this search since the last reset.
          */
-        public static void searchStarted()
+        public static long searchStarted()
         {
             final int now = running.incrementAndGet();
             peakRunning.accumulateAndGet(now, Math::max);
+            return started.incrementAndGet();
         }
 
         /**
@@ -222,7 +232,56 @@ public final class Pathfinding
      */
     public static ThreadPoolExecutor createExecutor(final int threads, final BlockingQueue<Runnable> queue)
     {
-        return new ThreadPoolExecutor(threads, threads, 10, TimeUnit.SECONDS, queue, new MinecoloniesThreadFactory(), new RejectAsFailed());
+        return new PathExecutor(threads, queue);
+    }
+
+    /**
+     * A queued path job that carries its colony, so a {@link FairPathQueue} can give each colony its turn.
+     */
+    private static final class KeyedTask<T> extends FutureTask<T> implements FairPathQueue.Keyed
+    {
+        @Nullable
+        private final Object key;
+
+        private KeyedTask(final Callable<T> callable, @Nullable final Object key)
+        {
+            super(callable);
+            this.key = key;
+        }
+
+        @Nullable
+        @Override
+        public Object queueKey()
+        {
+            return key;
+        }
+    }
+
+    /**
+     * The pathfinding executor: wraps each path job in a task that names the job's colony.
+     */
+    private static final class PathExecutor extends ThreadPoolExecutor
+    {
+        private PathExecutor(final int threads, final BlockingQueue<Runnable> queue)
+        {
+            super(threads, threads, 10, TimeUnit.SECONDS, queue, new MinecoloniesThreadFactory(), new RejectAsFailed());
+        }
+
+        @Override
+        protected <T> RunnableFuture<T> newTaskFor(final Callable<T> callable)
+        {
+            return new KeyedTask<>(callable, callable instanceof AbstractPathJob job ? job.getQueueKey() : null);
+        }
+    }
+
+    /**
+     * Takes a cancelled job's task out of the shared queue at once, so it no longer counts against its colony's share.
+     *
+     * @param task the task, may be one of another executor (then nothing happens).
+     */
+    public static void removeQueued(final Runnable task)
+    {
+        jobQueue.remove(task);
     }
 
     /**
