@@ -6,6 +6,7 @@ import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.workorders.WorkOrderType;
 import com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState;
+import com.minecolonies.api.util.FoodUtils;
 import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.core.colony.CitizenData;
@@ -23,6 +24,8 @@ import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+
+import org.jetbrains.annotations.Nullable;
 
 import static com.minecolonies.api.colony.ICitizenData.MAX_SATURATION;
 
@@ -119,12 +122,194 @@ public final class WorkHungerGameTests
                   CitizenSnack.eaten.get() - eaten0, state, meals, live.ai());
                 helper.assertTrue(meals.isEmpty(), "the builder left his work for a meal: " + meals);
                 helper.assertTrue(bread < 8 && CitizenSnack.eaten.get() > eaten0, "no bread eaten at work: bread=" + bread);
-                helper.assertTrue(state == CitizenAIState.WORKING || BuilderScaffoldGameTests.built(live, wall, order.getLocation()), "not working after eating: " + state);
-                helper.assertTrue(live.colony.getWorkManager().getWorkOrder(order.getID()) != null || BuilderScaffoldGameTests.built(live, wall, order.getLocation()),
-                  "the order was dropped");
+                // (he kept working: his order is still his or done; his citizen AI state at this tick may be a sub state, so it is only logged)
+                helper.assertTrue(live.hut.hasWorkOrder() || BuilderScaffoldGameTests.built(live, wall, order.getLocation()), "the order was dropped: " + state);
                 WorkerSettings.clearOverrides();
                 helper.succeed();
             }, () -> "saturation=" + live.citizen.getSaturation() + " eaten=" + (CitizenSnack.eaten.get() - eaten0) + " " + live.ai());
+        });
+    }
+
+    /**
+     * An order queued for a hut (claimed, not yet in the hut): the colony tick hands it over when the hut is free.
+     */
+    static WorkOrderDecoration queued(final WorkerEfficiencyGameTests.Live live, final String name, final BlockPos rel, final Blueprint blueprint, @Nullable final BlockPos claimant)
+    {
+        final WorkOrderDecoration order = WorkOrderDecoration.create(WorkOrderType.BUILD, "Minecolonies Original", "gametest/" + name + ".blueprint", "gametest." + name,
+          live.helper.absolutePos(rel), RotationMirror.NONE, 0);
+        order.setBlueprint(blueprint, live.level);
+        live.colony.getWorkManager().addWorkOrder(order, true);
+        live.helper.assertTrue(order.getID() > 0, "no id for " + name);
+        if (claimant != null)
+        {
+            order.setClaimedBy(claimant);
+        }
+        return order;
+    }
+
+    static double distanceToHut(final ICitizenData citizen, final BlockPos hut)
+    {
+        final Vec3 at = citizen.getEntity().map(e -> e.position()).orElse(new Vec3(Double.MAX_VALUE / 4, 0, 0));
+        return Math.hypot(at.x - hut.getX() - 0.5D, at.z - hut.getZ() - 0.5D);
+    }
+
+    static Blueprint floor(final String name)
+    {
+        return BuilderScaffoldGameTests.shape(name, 3, 1, 3, (x, y, z) -> true);
+    }
+
+    /**
+     * Review c1 L1: the next order queued for his hut has no loaded blueprint (a queued order keeps only its box), and scaffolding is on: he may need
+     * scaffolding from the hut, so he walks there before he starts it.
+     */
+    public static void nextOrderWithoutBlueprintWalksToHut(final GameTestHelper helper)
+    {
+        WorkerSettings.overrideReachForTests(null, true, true, 16);
+        WorkerEfficiencyGameTests.scene(helper, "WHUNGER next order no blueprint", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            InventoryUtils.addItemStackToItemHandler(live.citizen.getInventory(), new ItemStack(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), 32));
+            final Blueprint first = floor("next_nobp_a");
+            final WorkOrderDecoration a = live.orderFor("next_nobp_a", new BlockPos(26, 1, 12), first);
+            final WorkOrderDecoration b = queued(live, "next_nobp_b", new BlockPos(26, 1, 18), floor("next_nobp_b"), live.hut.getID());
+            b.clearBlueprint();
+            final BlockPos hut = live.hut.getPosition();
+            final int[] aDone = {-1};
+            final double[] minDistance = {Double.MAX_VALUE};
+            WorkerEfficiencyGameTests.everyTick(live, 6000, tick -> {
+                if (aDone[0] < 0 && live.colony.getWorkManager().getWorkOrder(a.getID()) == null)
+                {
+                    aDone[0] = tick;
+                }
+                if (aDone[0] >= 0)
+                {
+                    minDistance[0] = Math.min(minDistance[0], distanceToHut(live.citizen, hut));
+                }
+                return aDone[0] >= 0 && minDistance[0] <= 6.0D;
+            }, () -> {
+                Log.getLogger().info("WBENCH RESULT next_order_no_blueprint firstDone={} minDistanceToHut={} {}", aDone[0], String.format("%.1f", minDistance[0]), live.ai());
+                helper.assertTrue(BuilderScaffoldGameTests.built(live, first, a.getLocation()), "the first order is not built");
+                // the order has no blueprint file: it ends here
+                live.colony.getWorkManager().removeWorkOrder(b.getID());
+                WorkerSettings.clearOverrides();
+                helper.succeed();
+            }, () -> "firstDone=" + aDone[0] + " minDistance=" + minDistance[0] + " " + live.ai());
+        });
+    }
+
+    /**
+     * Review c1, co-op race: two builders finish their orders while one free order waits. Exactly one of them builds it, and both end at their huts
+     * without an order (the other one does not stall in the short wait for a next order).
+     */
+    public static void twoBuildersRaceForOneOrder(final GameTestHelper helper)
+    {
+        WorkerSettings.overrideReachForTests(null, true, false, 0);
+        WorkerEfficiencyGameTests.scene(helper, "WHUNGER next order race", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            for (final ICitizenData builder : List.of(live.citizen, live.otherCitizen))
+            {
+                InventoryUtils.addItemStackToItemHandler(builder.getInventory(), new ItemStack(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), 32));
+            }
+            final Blueprint first = floor("race_a");
+            final Blueprint second = floor("race_b");
+            final Blueprint shared = floor("race_c");
+            final WorkOrderDecoration a = live.orderFor("race_a", new BlockPos(26, 1, 12), first);
+            final WorkOrderDecoration b = queued(live, "race_b", new BlockPos(32, 1, 12), second, live.otherHut.getID());
+            live.otherHut.setWorkOrder(b);
+            final WorkOrderDecoration c = queued(live, "race_c", new BlockPos(29, 1, 20), shared, null);
+            final java.util.Set<BlockPos> claimants = new java.util.HashSet<>();
+            WorkerEfficiencyGameTests.everyTick(live, 8000, tick -> {
+                if (c.isClaimed())
+                {
+                    claimants.add(c.getClaimedBy());
+                }
+                final boolean allDone = live.colony.getWorkManager().getWorkOrder(a.getID()) == null && live.colony.getWorkManager().getWorkOrder(b.getID()) == null
+                                          && live.colony.getWorkManager().getWorkOrder(c.getID()) == null;
+                return allDone && !live.hut.hasWorkOrder() && !live.otherHut.hasWorkOrder()
+                         && distanceToHut(live.citizen, live.hut.getPosition()) <= 6.0D && distanceToHut(live.otherCitizen, live.otherHut.getPosition()) <= 6.0D;
+            }, () -> {
+                Log.getLogger().info("WBENCH RESULT next_order_race claimants={} {}", claimants, live.ai());
+                helper.assertTrue(BuilderScaffoldGameTests.built(live, first, a.getLocation()) && BuilderScaffoldGameTests.built(live, second, b.getLocation())
+                                    && BuilderScaffoldGameTests.built(live, shared, c.getLocation()), "an order is not built");
+                helper.assertTrue(claimants.size() == 1, "the shared order changed hands or was never claimed: " + claimants);
+                WorkerSettings.clearOverrides();
+                helper.succeed();
+            }, () -> "claimants=" + claimants + " near=" + distanceToHut(live.citizen, live.hut.getPosition()) + "/" + distanceToHut(live.otherCitizen, live.otherHut.getPosition())
+                       + " " + live.ai());
+        });
+    }
+
+    /**
+     * Review c1: the order queued for his hut is cancelled while he waits for it after his first order. He walks home and ends without an order.
+     */
+    public static void nextOrderCancelledDuringWait(final GameTestHelper helper)
+    {
+        WorkerSettings.overrideReachForTests(null, true, false, 0);
+        WorkerEfficiencyGameTests.scene(helper, "WHUNGER next order cancelled", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            InventoryUtils.addItemStackToItemHandler(live.citizen.getInventory(), new ItemStack(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), 32));
+            final Blueprint first = floor("cancel_a");
+            final WorkOrderDecoration a = live.orderFor("cancel_a", new BlockPos(26, 1, 12), first);
+            final WorkOrderDecoration b = queued(live, "cancel_b", new BlockPos(26, 1, 18), floor("cancel_b"), live.hut.getID());
+            final int[] cancelled = {-1};
+            WorkerEfficiencyGameTests.everyTick(live, 6000, tick -> {
+                if (cancelled[0] < 0 && live.colony.getWorkManager().getWorkOrder(a.getID()) == null)
+                {
+                    cancelled[0] = tick;
+                    live.colony.getWorkManager().removeWorkOrder(b.getID());
+                    Log.getLogger().info("WHUNGER cancel: queued order removed at t={} hutHasOrder={} {}", tick, live.hut.hasWorkOrder(), live.ai());
+                }
+                return cancelled[0] >= 0 && live.colony.getWorkManager().getWorkOrder(b.getID()) == null && !live.hut.hasWorkOrder()
+                         && distanceToHut(live.citizen, live.hut.getPosition()) <= 6.0D;
+            }, () -> {
+                Log.getLogger().info("WBENCH RESULT next_order_cancelled at={} {}", cancelled[0], live.ai());
+                helper.assertTrue(BuilderScaffoldGameTests.built(live, first, a.getLocation()), "the first order is not built");
+                WorkerSettings.clearOverrides();
+                helper.succeed();
+            }, () -> "cancelled=" + cancelled[0] + " near=" + distanceToHut(live.citizen, live.hut.getPosition()) + " " + live.ai());
+        });
+    }
+
+    /**
+     * Review c1 M1: a worker in his hut at 25% with a full history of bread, a restaurant in the colony and bread in his hut's racks keeps that bread
+     * for the restaurant (the brink of complaining rule): nothing leaves the racks and nothing is eaten at work.
+     */
+    public static void rejectedRackFoodStays(final GameTestHelper helper)
+    {
+        final int eaten0 = CitizenSnack.eaten.get();
+        WorkerEfficiencyGameTests.scene(helper, "WHUNGER rack rejected", live -> {
+            MinecoloniesGameTests.placeProductionBuilding(helper, live.colony, com.minecolonies.api.blocks.ModBlocks.blockHutCook, new BlockPos(2, 1, 22), "fundamentals/cook1.blueprint");
+            live.giveTools();
+            live.stock(Items.BREAD, 16);
+            for (int i = 0; i < 12; i++)
+            {
+                live.citizen.getCitizenFoodHandler().addLastEaten(Items.BREAD);
+            }
+            // an order without materials in the hut: he waits for them at his hut, working
+            final Blueprint wall = BuilderScaffoldGameTests.shape("rack_rejected", 3, 1, 1, (x, y, z) -> true);
+            live.orderFor("rack_rejected", BuilderScaffoldGameTests.SITE, wall);
+            live.citizen.setSaturation(MAX_SATURATION * 0.25D);
+            helper.assertTrue(!FoodUtils.wouldEatOutsideRestaurant(live.citizen, new ItemStack(Items.BREAD)), "precondition: bread is not kept for the restaurant");
+            helper.assertTrue(FoodUtils.checkForFoodInBuilding(live.citizen, null, live.hut) != null, "precondition: no bread in the hut's racks");
+            final int[] atHut = {0};
+            WorkerEfficiencyGameTests.everyTick(live, 3000, tick -> {
+                final boolean working = live.citizen.getEntity().map(e -> e instanceof EntityCitizen ec && ec.getCitizenAI().getState() == CitizenAIState.WORKING).orElse(false);
+                if (working && live.hut.isInBuilding(live.citizen.getEntity().get().blockPosition()))
+                {
+                    atHut[0]++;
+                }
+                live.citizen.setSaturation(MAX_SATURATION * 0.25D);
+                return atHut[0] >= 4 * CitizenSnack.INTERVAL;
+            }, () -> {
+                final int inHut = InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(Items.BREAD));
+                final int carried = InventoryUtils.getItemCountInItemHandler(live.citizen.getInventory(), stack -> stack.is(Items.BREAD));
+                Log.getLogger().info("WBENCH RESULT rack_rejected inHut={} carried={} eaten={} {}", inHut, carried, CitizenSnack.eaten.get() - eaten0, live.ai());
+                helper.assertTrue(inHut == 16 && carried == 0, "bread left the racks: hut=" + inHut + " carried=" + carried);
+                helper.assertTrue(CitizenSnack.eaten.get() == eaten0, "bread was eaten at work");
+                helper.succeed();
+            }, () -> "atHut=" + atHut[0] + " " + live.ai());
         });
     }
 

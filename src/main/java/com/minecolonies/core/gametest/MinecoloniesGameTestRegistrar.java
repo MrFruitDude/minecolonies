@@ -1307,7 +1307,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           "scaffold_lamp_top", "scaffold_flooded_cell", "scaffold_tall_no_scaffold", "scaffold_slow_delivery",
           "scaffold_pillar_undelivered", "scaffold_flooded_pool", "scaffold_tall_hut_no_scaffold",
           "scaffold_path_blocked", "scaffold_default_no_place_while_pathing", "scaffold_path_blocked_lava",
-          "scaffold_path_blocked_13th", "scaffold_path_blocked_clear", "scaffold_next_order_no_hut"})
+          "scaffold_path_blocked_13th", "scaffold_path_blocked_clear", "scaffold_next_order_no_hut", "scaffold_next_order_no_blueprint", "scaffold_next_order_race", "scaffold_next_order_cancelled"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -1359,6 +1359,9 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_path_blocked_clear" -> BuilderScaffoldGameTests::pathBlockedClear;
                 case "scaffold_default_no_place_while_pathing" -> BuilderScaffoldGameTests::noDefaultPlacementWhilePathing;
                 case "scaffold_next_order_no_hut" -> WorkHungerGameTests::nextOrderWithoutHutWalk;
+                case "scaffold_next_order_no_blueprint" -> WorkHungerGameTests::nextOrderWithoutBlueprintWalksToHut;
+                case "scaffold_next_order_race" -> WorkHungerGameTests::twoBuildersRaceForOneOrder;
+                case "scaffold_next_order_cancelled" -> WorkHungerGameTests::nextOrderCancelledDuringWait;
                 default -> BuilderScaffoldGameTests::stockArrives;
             };
             if (!nameWanted(name))
@@ -1384,11 +1387,12 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
      */
     private void registerHunger(final RegisterGameTestsEvent event)
     {
-        for (final String name : new String[] {"hunger_eat_at_work", "hunger_start_spread"})
+        for (final String name : new String[] {"hunger_eat_at_work", "hunger_start_spread", "hunger_rack_rejected"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
                 case "hunger_eat_at_work" -> WorkHungerGameTests::eatsCarriedFoodAtWork;
+                case "hunger_rack_rejected" -> WorkHungerGameTests::rejectedRackFoodStays;
                 default -> WorkHungerGameTests::startingSaturationSpread;
             };
             event.registerTest(
