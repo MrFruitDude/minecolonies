@@ -377,6 +377,7 @@ final class BuilderScaffoldGameTests
     {
         WorkerSettings.overrideReachForTests(null, physical, null, 16);
         ReachAudit.enable(true);
+        tickHook = null;
         BuilderScaffolding.resetCounters();
         WorkerEfficiencyGameTests.scene(helper, "WSCAF " + name, live -> {
             live.setSkills(40, 40);
@@ -405,6 +406,11 @@ final class BuilderScaffoldGameTests
                 last[0] = now;
                 watch(live, watch, origin, scaffoldStock, tick);
                 trace(live, name, tick, origin);
+                final java.util.function.IntConsumer hook = tickHook;
+                if (hook != null)
+                {
+                    hook.accept(tick);
+                }
                 if (tick == 1)
                 {
                     Log.getLogger().info("WSCAF {} start gameTime={} origin={} size={}x{}x{} hut={} unsetState={}", name, live.level.getGameTime(), origin, blueprint.getSizeX(), blueprint.getSizeY(), blueprint.getSizeZ(), live.hut.getPosition(), blueprint.getBlockState(new BlockPos(blueprint.getSizeX() - 1, 1, blueprint.getSizeZ() - 1)));
@@ -476,6 +482,9 @@ final class BuilderScaffoldGameTests
         }, 0);
     }
 
+    /** Called on every tick of {@link #tallStructure} (a test's own look at the world), or null; reset when the next structure starts. */
+    static volatile java.util.function.IntConsumer tickHook = null;
+
     /** Whether the cells of the flooded-cell test held water at some point while it built (the clear stage opened them, the water flowed in). */
     private static volatile boolean floodSeen = false;
 
@@ -498,7 +507,8 @@ final class BuilderScaffoldGameTests
             // the source sits in the rim beside the middle of the west side, walled in on its other three sides
             live.level.setBlock(origin.offset(-2, 0, 1), Blocks.STONE.defaultBlockState(), 3);
             live.level.setBlock(origin.offset(-1, 0, 1), Blocks.WATER.defaultBlockState(), 3);
-            helper.onEachTick(() -> {
+            // (looked at from the test's own tick loop: a task scheduled from inside a scheduled task crashed the server in round 8 launch c4)
+            tickHook = tick -> {
                 if (!floodSeen)
                 {
                     for (int x = 0; x <= 2 && !floodSeen; x++)
@@ -514,7 +524,7 @@ final class BuilderScaffoldGameTests
                         }
                     }
                 }
-            });
+            };
         }, () -> helper.assertTrue(floodSeen, "the cleared cells never flooded: the test did not test a flooded cell"), 0);
     }
 
