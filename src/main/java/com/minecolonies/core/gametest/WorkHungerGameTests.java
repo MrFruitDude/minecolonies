@@ -165,6 +165,7 @@ public final class WorkHungerGameTests
     public static void nextOrderWithoutBlueprintWalksToHut(final GameTestHelper helper)
     {
         WorkerSettings.overrideReachForTests(null, true, true, 16);
+        final int skipped0 = EntityAIStructureBuilder.hutWalksSkipped.get();
         WorkerEfficiencyGameTests.scene(helper, "WHUNGER next order no blueprint", live -> {
             live.setSkills(40, 40);
             live.giveTools();
@@ -189,6 +190,8 @@ public final class WorkHungerGameTests
             }, () -> {
                 Log.getLogger().info("WBENCH RESULT next_order_no_blueprint firstDone={} minDistanceToHut={} {}", aDone[0], String.format("%.1f", minDistance[0]), live.ai());
                 helper.assertTrue(BuilderScaffoldGameTests.built(live, first, a.getLocation()), "the first order is not built");
+                // he walked because of the missing blueprint, not because the order failed to load after a skip
+                helper.assertTrue(EntityAIStructureBuilder.hutWalksSkipped.get() == skipped0, "the hut walk was skipped for an order without a blueprint");
                 // the order has no blueprint file: it ends here
                 live.colony.getWorkManager().removeWorkOrder(b.getID());
                 WorkerSettings.clearOverrides();
@@ -310,6 +313,62 @@ public final class WorkHungerGameTests
                 helper.assertTrue(CitizenSnack.eaten.get() == eaten0, "bread was eaten at work");
                 helper.succeed();
             }, () -> "atHut=" + atHut[0] + " " + live.ai());
+        });
+    }
+
+    /**
+     * Review c2 M1-residual: he carries bread the rule keeps for the restaurant (full history of vanilla food, a restaurant in the colony), and his hut's
+     * racks hold cheese the rule accepts (MineColonies food). He takes cheese from the racks once, eats exactly that, and never takes again; the bread
+     * stays in his pockets.
+     */
+    public static void rackFoodEatenOnceWithRejectedPocketFood(final GameTestHelper helper)
+    {
+        final int eaten0 = CitizenSnack.eaten.get();
+        final int pulls0 = CitizenSnack.pulls.get();
+        WorkerEfficiencyGameTests.scene(helper, "WHUNGER rack once", live -> {
+            MinecoloniesGameTests.placeProductionBuilding(helper, live.colony, com.minecolonies.api.blocks.ModBlocks.blockHutCook, new BlockPos(2, 1, 22), "fundamentals/cook1.blueprint");
+            live.giveTools();
+            live.stock(com.minecolonies.api.items.ModItems.cheddar_cheese, 16);
+            InventoryUtils.addItemStackToItemHandler(live.citizen.getInventory(), new ItemStack(Items.BREAD, 8));
+            for (int i = 0; i < 12; i++)
+            {
+                live.citizen.getCitizenFoodHandler().addLastEaten(Items.COOKED_BEEF);
+            }
+            final Blueprint wall = BuilderScaffoldGameTests.shape("rack_once", 3, 1, 1, (x, y, z) -> true);
+            live.orderFor("rack_once", BuilderScaffoldGameTests.SITE, wall);
+            live.citizen.setSaturation(MAX_SATURATION * 0.25D);
+            helper.assertTrue(!FoodUtils.wouldEatOutsideRestaurant(live.citizen, new ItemStack(Items.BREAD)), "precondition: the bread is not kept for the restaurant");
+            helper.assertTrue(FoodUtils.wouldEatOutsideRestaurant(live.citizen, new ItemStack(com.minecolonies.api.items.ModItems.cheddar_cheese)), "precondition: the cheese is not accepted");
+            helper.assertTrue(FoodUtils.getBestFoodForCitizen(live.citizen.getInventory(), live.citizen, null) == -1, "precondition: the pocket bread is eaten anyway");
+            final java.util.function.IntSupplier rack = () -> InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(com.minecolonies.api.items.ModItems.cheddar_cheese));
+            final int[] last = {rack.getAsInt()};
+            final int[] drops = {0};
+            final int[] after = {0};
+            WorkerEfficiencyGameTests.everyTick(live, 4000, tick -> {
+                final int now = rack.getAsInt();
+                if (now < last[0])
+                {
+                    drops[0]++;
+                }
+                last[0] = now;
+                if (live.citizen.getSaturation() >= CitizenSnack.UNTIL)
+                {
+                    after[0]++;
+                }
+                // a few more checks after he is fed: no further take
+                return after[0] >= 3 * CitizenSnack.INTERVAL;
+            }, () -> {
+                // (a dump at the hut may move some of his bread into the racks: count both)
+                final int bread = InventoryUtils.getItemCountInItemHandler(live.citizen.getInventory(), stack -> stack.is(Items.BREAD))
+                                    + InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(Items.BREAD));
+                final int cheese = InventoryUtils.getItemCountInItemHandler(live.citizen.getInventory(), stack -> stack.is(com.minecolonies.api.items.ModItems.cheddar_cheese));
+                Log.getLogger().info("WBENCH RESULT rack_once rack={} drops={} pulls={} eaten={} bread={} cheeseCarried={} saturation={} {}", last[0], drops[0],
+                  CitizenSnack.pulls.get() - pulls0, CitizenSnack.eaten.get() - eaten0, bread, cheese, live.citizen.getSaturation(), live.ai());
+                helper.assertTrue(drops[0] == 1 && CitizenSnack.pulls.get() - pulls0 == 1, "the racks were taken from more than once: drops=" + drops[0]);
+                helper.assertTrue(16 - last[0] == CitizenSnack.eaten.get() - eaten0 && cheese == 0, "taken cheese was not eaten: taken=" + (16 - last[0]) + " carried=" + cheese);
+                helper.assertTrue(bread == 8, "the bread kept for the restaurant was eaten: " + bread);
+                helper.succeed();
+            }, () -> "rack=" + last[0] + " drops=" + drops[0] + " saturation=" + live.citizen.getSaturation() + " " + live.ai());
         });
     }
 

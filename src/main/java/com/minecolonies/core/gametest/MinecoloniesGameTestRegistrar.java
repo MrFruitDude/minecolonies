@@ -1387,12 +1387,13 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
      */
     private void registerHunger(final RegisterGameTestsEvent event)
     {
-        for (final String name : new String[] {"hunger_eat_at_work", "hunger_start_spread", "hunger_rack_rejected"})
+        for (final String name : new String[] {"hunger_eat_at_work", "hunger_start_spread", "hunger_rack_rejected", "hunger_rack_once"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
                 case "hunger_eat_at_work" -> WorkHungerGameTests::eatsCarriedFoodAtWork;
                 case "hunger_rack_rejected" -> WorkHungerGameTests::rejectedRackFoodStays;
+                case "hunger_rack_once" -> WorkHungerGameTests::rackFoodEatenOnceWithRejectedPocketFood;
                 default -> WorkHungerGameTests::startingSaturationSpread;
             };
             event.registerTest(
