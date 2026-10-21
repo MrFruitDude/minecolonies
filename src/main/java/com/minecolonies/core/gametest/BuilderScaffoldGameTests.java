@@ -449,6 +449,75 @@ final class BuilderScaffoldGameTests
         });
     }
 
+    /**
+     * Round 8 (roads): a decoration whose top block is 3 above its ground (a lamp post on a 3 by 3 floor), with the ground around it of bottom slabs (a builder
+     * there stands half a block lower than the spot search used to think) and no scaffolding at all. The builder finishes it from stand spots he reaches: no
+     * tower, no stall waiting for scaffolding, no fallback to MineColonies' working range, nothing placed out of reach.
+     */
+    public static void lampTopFromAStandSpot(final GameTestHelper helper)
+    {
+        final int fallbacks0 = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks;
+        tallStructure(helper, "lamp_top", () -> shape("lamp_top", 3, 4, 3, (x, y, z) -> y == 0 || (x == 1 && z == 1)), true, 6000, false, (live, origin) -> {
+            // a ring of bottom slabs on the ground around the footprint, where the builder stands to work
+            for (int x = -2; x <= 4; x++)
+            {
+                for (int z = -2; z <= 4; z++)
+                {
+                    if (x < 0 || z < 0 || x > 2 || z > 2)
+                    {
+                        live.level.setBlock(origin.offset(x, 0, z), Blocks.STONE_SLAB.defaultBlockState(), 3);
+                    }
+                }
+            }
+        }, () -> {
+            helper.assertTrue(BuilderScaffolding.towersBuilt == 0, "a tower was planned for a lamp top 3 above the ground: " + BuilderScaffolding.towersBuilt);
+            helper.assertTrue(com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks == fallbacks0,
+              "the builder fell back to the working range: no stand spot worked for a lamp top 3 above the ground");
+        }, 0);
+    }
+
+    /** Whether the cells of the flooded-cell test held water at some point while it built (the clear stage opened them, the water flowed in). */
+    private static volatile boolean floodSeen = false;
+
+    /**
+     * Round 8 (roads): a 3 by 3 floor laid where dirt stands, next to a water source held in by a rim of stone. The clear stage digs the dirt out, the water
+     * flows into the open cells, and the builder places the floor into the water (the block replaces it). He finishes; the water was seen in the cells.
+     */
+    public static void floodedCellIsFilled(final GameTestHelper helper)
+    {
+        floodSeen = false;
+        tallStructure(helper, "flooded_cell", () -> shape("flooded_cell", 3, 1, 3, (x, y, z) -> true), true, 12_000, false, (live, origin) -> {
+            for (int x = -1; x <= 3; x++)
+            {
+                for (int z = -1; z <= 3; z++)
+                {
+                    final boolean inside = x >= 0 && z >= 0 && x <= 2 && z <= 2;
+                    live.level.setBlock(origin.offset(x, 0, z), inside ? Blocks.DIRT.defaultBlockState() : Blocks.STONE.defaultBlockState(), 3);
+                }
+            }
+            // the source sits in the rim beside the middle of the west side, walled in on its other three sides
+            live.level.setBlock(origin.offset(-2, 0, 1), Blocks.STONE.defaultBlockState(), 3);
+            live.level.setBlock(origin.offset(-1, 0, 1), Blocks.WATER.defaultBlockState(), 3);
+            helper.onEachTick(() -> {
+                if (!floodSeen)
+                {
+                    for (int x = 0; x <= 2 && !floodSeen; x++)
+                    {
+                        for (int z = 0; z <= 2; z++)
+                        {
+                            if (!live.level.getFluidState(origin.offset(x, 0, z)).isEmpty())
+                            {
+                                floodSeen = true;
+                                Log.getLogger().info("WSCAF flooded_cell: water in the cell {} at {}", origin.offset(x, 0, z).toShortString(), live.level.getGameTime());
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        }, () -> helper.assertTrue(floodSeen, "the cleared cells never flooded: the test did not test a flooded cell"), 0);
+    }
+
     public static void tallWall8(final GameTestHelper helper)
     {
         tallStructure(helper, "tall8", () -> ring("tall8", 8), true, 20_000, true);

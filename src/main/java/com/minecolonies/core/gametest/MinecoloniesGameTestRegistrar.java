@@ -146,6 +146,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerPace(event);
             }
+            if (only.contains("scaffold"))
+            {
+                // the builder reach and scaffolding tests (also -Dminecolonies.gametest.only=scaffold), with the other groups in one JVM
+                registerBuilderScaffolding(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -1293,7 +1298,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     {
         for (final String name : new String[] {"scaffold_reach_box_l40", "scaffold_reach_box_l1", "scaffold_reach_clear_l40", "scaffold_legacy_box_l40", "scaffold_legacy_box_l1",
           "scaffold_tall_wall8", "scaffold_tall_tower14", "scaffold_sealed_roof", "scaffold_overhang", "scaffold_tall_tower14_legacy", "scaffold_tall_wall8_legacy",
-          "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held", "scaffold_bridge", "scaffold_overhang_legacy", "scaffold_sealed_legacy", "scaffold_two_builders_big", "scaffold_escape_pit", "scaffold_supply_delivery", "scaffold_supply_crafters", "scaffold_clear_ledge", "scaffold_climb_arm_twice", "scaffold_probe_arm", "scaffold_probe_descend", "scaffold_probe_wall5", "scaffold_probe_top1", "scaffold_probe_top3", "scaffold_probe_top8", "scaffold_probe_inside5", "scaffold_stock_arrives", "scaffold_sealed_no_items"})
+          "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held", "scaffold_bridge", "scaffold_overhang_legacy", "scaffold_sealed_legacy", "scaffold_two_builders_big", "scaffold_escape_pit", "scaffold_supply_delivery", "scaffold_supply_crafters", "scaffold_clear_ledge", "scaffold_climb_arm_twice", "scaffold_probe_arm", "scaffold_probe_descend", "scaffold_probe_wall5", "scaffold_probe_top1", "scaffold_probe_top3", "scaffold_probe_top8", "scaffold_probe_inside5", "scaffold_stock_arrives", "scaffold_sealed_no_items",
+          "scaffold_lamp_top", "scaffold_flooded_cell"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -1332,6 +1338,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_probe_top3" -> BuilderScaffoldGameTests::climbTop3;
                 case "scaffold_probe_top8" -> BuilderScaffoldGameTests::climbTop8;
                 case "scaffold_probe_inside5" -> BuilderScaffoldGameTests::climbInside5;
+                case "scaffold_lamp_top" -> BuilderScaffoldGameTests::lampTopFromAStandSpot;
+                case "scaffold_flooded_cell" -> BuilderScaffoldGameTests::floodedCellIsFilled;
                 default -> BuilderScaffoldGameTests::stockArrives;
             };
             if (!nameWanted(name))

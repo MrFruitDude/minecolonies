@@ -22,6 +22,9 @@ public final class ReachAudit
     private static volatile int     violations = 0;
     private static volatile double  worst = 0.0D;
     private static final List<String> examples = Collections.synchronizedList(new ArrayList<>());
+    /** The block a builder works on from MineColonies' working range (the physical reach found no spot for it in time): not counted as a violation. */
+    private static volatile BlockPos excused = null;
+    private static volatile int      fallbackActions = 0;
 
     public static void enable(final boolean on)
     {
@@ -30,6 +33,24 @@ public final class ReachAudit
         violations = 0;
         worst = 0.0D;
         examples.clear();
+        excused = null;
+        fallbackActions = 0;
+    }
+
+    /**
+     * The block a builder now works on from MineColonies' working range (null: none): its placement is counted apart, not as a violation.
+     */
+    public static void excuse(final BlockPos block)
+    {
+        excused = block == null ? null : block.immutable();
+    }
+
+    /**
+     * @return the blocks placed or broken from MineColonies' working range (the reach fallback).
+     */
+    public static int fallbackActions()
+    {
+        return fallbackActions;
     }
 
     public static boolean isEnabled()
@@ -47,6 +68,11 @@ public final class ReachAudit
             return;
         }
         actions++;
+        if (block.equals(excused))
+        {
+            fallbackActions++;
+            return;
+        }
         final double dist = Math.sqrt(BuildReach.distSq(worker.getX(), worker.getEyeY(), worker.getZ(), block));
         final double reach = WorkerSettings.reach();
         if (dist > reach + 0.05D)

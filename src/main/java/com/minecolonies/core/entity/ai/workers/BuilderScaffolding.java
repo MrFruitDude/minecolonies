@@ -192,6 +192,26 @@ public final class BuilderScaffolding
     }
 
     /**
+     * Whether a tower is planned and waits for scaffolding items that are not there yet.
+     */
+    public boolean waitingForStock()
+    {
+        return phase == Phase.WAIT_STOCK;
+    }
+
+    /**
+     * A tower that only waits for items is dropped (the builder works on the block another way; nothing of it stands yet). A tower under way is left alone.
+     */
+    public void cancelWaiting()
+    {
+        if (phase == Phase.WAIT_STOCK)
+        {
+            log("the tower that waited for items is dropped");
+            abort();
+        }
+    }
+
+    /**
      * Whether the settings let builders use scaffolding at all.
      */
     public static boolean enabled()

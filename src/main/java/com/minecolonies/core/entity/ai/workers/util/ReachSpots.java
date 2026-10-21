@@ -116,9 +116,9 @@ public final class ReachSpots
                 for (int dz = -r; dz <= r; dz++)
                 {
                     final BlockPos feet = target.offset(dx, dy, dz);
-                    // a builder who walks to the top of a column of scaffolding ends up inside its top cell, one lower than the spot on top of it
-                    final BlockPos at = level.getBlockState(feet.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? feet.below() : feet;
-                    if (!BuildReach.inReachFromFeet(at, eyeHeight, target, usable))
+                    final BlockPos at = workingCell(level, feet);
+                    final double offset = at == feet ? StandSpots.standOffset(level, feet) : 0.0D;
+                    if (!BuildReach.inReachFromStand(at, offset, eyeHeight, target, usable))
                     {
                         continue;
                     }
@@ -130,12 +130,33 @@ public final class ReachSpots
                     {
                         continue;
                     }
-                    spots.add(new Spot(feet, anyOrder ? BuildReach.countInReach(at, eyeHeight, blocks, usable) : BuildReach.prefixInReach(at, eyeHeight, blocks, usable), walkCost(from, feet)));
+                    spots.add(new Spot(feet, anyOrder ? BuildReach.countInReach(at, offset, eyeHeight, blocks, usable) : BuildReach.prefixInReach(at, offset, eyeHeight, blocks, usable),
+                      walkCost(from, feet)));
                 }
             }
         }
         spots.sort(Comparator.comparingDouble(Spot::utility).reversed().thenComparingDouble(Spot::walk));
         return spots.size() > limit ? new ArrayList<>(spots.subList(0, limit)) : spots;
+    }
+
+    /**
+     * The cell a builder who walks to the spot ends up in: the spot, or, on top of a column of scaffolding, the top cell of the column (one lower).
+     */
+    public static BlockPos workingCell(final Level level, final BlockPos feet)
+    {
+        return level.getBlockState(feet.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? feet.below() : feet;
+    }
+
+    /**
+     * The one reach rule for a spot: whether a builder who stands on the spot reaches the block, with his eye where it really is (the top of a scaffolding
+     * column: inside its top cell; a slab floor: half a block lower). The spot search ({@link #best}) and the check when he arrives use this same rule.
+     *
+     * @param usable the reach less the margin ({@code reach - MARGIN}).
+     */
+    public static boolean reachesFrom(final Level level, final BlockPos feet, final double eyeHeight, final BlockPos target, final double usable)
+    {
+        final BlockPos at = workingCell(level, feet);
+        return BuildReach.inReachFromStand(at, at == feet ? StandSpots.standOffset(level, feet) : 0.0D, eyeHeight, target, usable);
     }
 
     /**

@@ -65,6 +65,31 @@ public final class BuildReach
     }
 
     /**
+     * Whether a citizen whose soles are {@code standOffset} above the bottom of the feet block (half a block lower on a bottom slab), in the middle of it,
+     * reaches the block.
+     */
+    public static boolean inReachFromStand(final BlockPos feet, final double standOffset, final double eyeHeight, final BlockPos block, final double reach)
+    {
+        return inReach(feet.getX() + 0.5D, feet.getY() + standOffset + eyeHeight, feet.getZ() + 0.5D, block, reach);
+    }
+
+    /**
+     * {@link #prefixInReach} for a citizen who stands {@code standOffset} above the bottom of the feet block.
+     */
+    public static int prefixInReach(final BlockPos feet, final double standOffset, final double eyeHeight, final List<BlockPos> blocks, final double reach)
+    {
+        return prefixInReach(feet, standOffset + eyeHeight, blocks, reach);
+    }
+
+    /**
+     * {@link #countInReach} for a citizen who stands {@code standOffset} above the bottom of the feet block.
+     */
+    public static int countInReach(final BlockPos feet, final double standOffset, final double eyeHeight, final List<BlockPos> blocks, final double reach)
+    {
+        return countInReach(feet, standOffset + eyeHeight, blocks, reach);
+    }
+
+    /**
      * How many of the blocks, from the first on and without a gap, are within reach of a citizen standing on the feet block.
      */
     public static int prefixInReach(final BlockPos feet, final double eyeHeight, final List<BlockPos> blocks, final double reach)

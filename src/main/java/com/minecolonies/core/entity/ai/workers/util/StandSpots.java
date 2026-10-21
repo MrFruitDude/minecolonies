@@ -49,6 +49,33 @@ public final class StandSpots
         return isFree(level, feet) && isFree(level, feet.above());
     }
 
+    /**
+     * How far above or below the bottom of the feet block a citizen who stands there really stands: the top of the floor's collision box minus one (a
+     * bottom slab as floor: half a block lower; a fence or wall: half a block higher; a full block: 0).
+     *
+     * @param level the world.
+     * @param feet  the block the feet are in.
+     * @return the offset of the soles from {@code feet.getY()}.
+     */
+    public static double standOffset(final Level level, final BlockPos feet)
+    {
+        final BlockPos floor = feet.below();
+        final net.minecraft.world.phys.shapes.VoxelShape shape = level.getBlockState(floor).getCollisionShape(level, floor, CollisionContext.empty());
+        return shape.isEmpty() ? 0.0D : standOffsetForFloorTop(shape.max(net.minecraft.core.Direction.Axis.Y));
+    }
+
+    /**
+     * {@link #standOffset} from the top of the floor's collision box (0 to 1.5 above the floor block's bottom); an empty or full floor gives 0.
+     */
+    public static double standOffsetForFloorTop(final double floorTop)
+    {
+        if (floorTop <= 0.0D)
+        {
+            return 0.0D;
+        }
+        return Math.max(-1.0D, Math.min(0.5D, floorTop - 1.0D));
+    }
+
     public static boolean isFree(final Level level, final BlockPos pos)
     {
         final BlockState state = level.getBlockState(pos);

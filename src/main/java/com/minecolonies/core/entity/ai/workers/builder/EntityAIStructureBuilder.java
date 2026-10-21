@@ -502,6 +502,26 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     private final ReachWalk mainWalk     = new ReachWalk();
     private final ReachWalk scaffoldWalk = new ReachWalk();
 
+    /** Spots tried for one block (picked, walked to, the block still out of reach) before he works from MineColonies' working range instead. */
+    static final int REACH_FALLBACK_MISSES = 4;
+    /** Ticks on one block while no tower can come (no scaffolding, none in time) before he works from MineColonies' working range instead. */
+    static final long REACH_FALLBACK_STARVED_TICKS = 1200L;
+    /** Ticks on one block in any case before he works from MineColonies' working range instead. */
+    static final long REACH_FALLBACK_TICKS = 4800L;
+    /** Ticks on a flooded block (water in the cell to fill) before he places into it from MineColonies' working range: the stand spots around it are in water. */
+    static final long REACH_FALLBACK_FLOODED_TICKS = 200L;
+    /** MineColonies' own working range around the block (horizontal, and up or down), as the builder without physical reach uses it. */
+    static final int FALLBACK_RANGE = 5;
+
+    /** The block the builder tries to get into reach of, since when, and how many spots for it did not work. */
+    private BlockPos reachTry      = null;
+    private long     reachTrySince = 0L;
+    private int      reachTryMisses = 0;
+    /** The block he works on from MineColonies' working range (the physical reach found no spot for it in time), or null. */
+    private BlockPos reachFallback = null;
+    /** How often the builder fell back to MineColonies' working range (for the tests and the logs). */
+    public static volatile int reachFallbacks = 0;
+
     private final BuilderScaffolding scaffold = new BuilderScaffolding(this);
 
     @Override
@@ -513,7 +533,105 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     @Override
     protected boolean canReachNow(final BlockPos pos)
     {
-        return !usesPhysicalReach() || BuildReach.inReach(worker.getX(), worker.getEyeY(), worker.getZ(), pos, WorkerSettings.reach());
+        if (!usesPhysicalReach() || standingReaches(pos))
+        {
+            return true;
+        }
+        return pos.equals(reachFallback) && inFallbackRange(pos);
+    }
+
+    /**
+     * Whether the builder reaches the block from where he stands: from his eye, or by the one spot rule ({@link ReachSpots#reachesFrom}) for the cell he
+     * stands in, the rule the spot search used to send him there.
+     */
+    private boolean standingReaches(final BlockPos pos)
+    {
+        final double reach = WorkerSettings.reach();
+        return BuildReach.inReach(worker.getX(), worker.getEyeY(), worker.getZ(), pos, reach)
+                 || ReachSpots.reachesFrom(world, standCell(), worker.getEyeHeight(), pos, reach - ReachSpots.MARGIN);
+    }
+
+    /**
+     * The spot (feet cell) the builder stands on: his block, or, when he stands on a partial block (a bottom slab) inside that block's cell, the cell above it.
+     */
+    private BlockPos standCell()
+    {
+        final BlockPos at = worker.blockPosition();
+        return worker.getY() > at.getY() + 0.01D && !world.getBlockState(at).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? at.above() : at;
+    }
+
+    /**
+     * Whether the block lies in MineColonies' own working range of the builder (as without physical reach): a few blocks around, up or down.
+     */
+    private boolean inFallbackRange(final BlockPos pos)
+    {
+        return BlockPosUtil.getDistance2D(worker.blockPosition(), pos) <= FALLBACK_RANGE && Math.abs(worker.getBlockY() - pos.getY()) <= FALLBACK_RANGE;
+    }
+
+    /**
+     * Whether the cell to fill holds water (a cleared cell that flooded): placing the block there removes it.
+     */
+    private boolean flooded(final BlockPos pos)
+    {
+        final net.minecraft.world.level.block.state.BlockState state = world.getBlockState(pos);
+        return state.getBlock() instanceof net.minecraft.world.level.block.LiquidBlock && !state.getFluidState().isEmpty();
+    }
+
+    /**
+     * Counts the tries for the block the builder has to reach and decides whether he works on it from MineColonies' working range instead: after
+     * {@link #REACH_FALLBACK_MISSES} spots that did not work, {@link #REACH_FALLBACK_STARVED_TICKS} while no tower can come, {@link #REACH_FALLBACK_TICKS} in
+     * any case, or {@link #REACH_FALLBACK_FLOODED_TICKS} on a flooded cell. The reason is logged once per block.
+     *
+     * @return true if the block is now worked on from the working range.
+     */
+    private boolean reachFallbackDue(final BlockPos target)
+    {
+        final long now = world.getGameTime();
+        if (!target.equals(reachTry))
+        {
+            reachTry = target.immutable();
+            reachTrySince = now;
+            reachTryMisses = 0;
+        }
+        if (target.equals(reachFallback))
+        {
+            return true;
+        }
+        final long age = now - reachTrySince;
+        final boolean starved = scaffold.unavailable() || scaffold.hasNoItems() || scaffold.waitingForStock();
+        final boolean flooded = flooded(target);
+        final String why;
+        if (reachTryMisses >= REACH_FALLBACK_MISSES)
+        {
+            why = reachTryMisses + " spots did not reach it";
+        }
+        else if (flooded && age >= REACH_FALLBACK_FLOODED_TICKS)
+        {
+            why = "the cell is flooded";
+        }
+        else if (starved && age >= REACH_FALLBACK_STARVED_TICKS)
+        {
+            why = "no tower can come (scaffolding " + (scaffold.hasNoItems() ? "none" : scaffold.waitingForStock() ? "not delivered" : "unavailable") + ")";
+        }
+        else if (age >= REACH_FALLBACK_TICKS || age < 0)
+        {
+            why = "no spot reached it in " + age + " ticks";
+        }
+        else
+        {
+            return false;
+        }
+        reachFallback = target.immutable();
+        reachFallbacks++;
+        com.minecolonies.api.util.Log.getLogger().warn("Builder {} cannot reach {} with the physical reach ({}; {} ticks, {} spots missed): works on it from MineColonies' working range",
+          worker.getName().getString(), target.toShortString(), why, age, reachTryMisses);
+        scaffold.note("reach fallback for " + target + ": " + why);
+        scaffold.cancelWaiting();
+        mainWalk.spot = null;
+        workFrom = null;
+        worker.getNavigation().stop();
+        com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(reachFallback);
+        return true;
     }
 
     @Override
@@ -614,8 +732,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
       final boolean mayScaffold)
     {
         final double reach = WorkerSettings.reach();
-        if (BuildReach.inReach(worker.getX(), worker.getEyeY(), worker.getZ(), target, reach)
-              && (accept == null || accept.test(worker.blockPosition())))
+        if (standingReaches(target) && (accept == null || accept.test(worker.blockPosition())))
         {
             if (walk.spot != null && !world.getBlockState(worker.blockPosition()).is(net.minecraft.tags.BlockTags.CLIMBABLE))
             {
@@ -657,8 +774,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 walk.lastMoved = now;
             }
             final boolean timedOut = now - walk.since > walk.budget || now - walk.lastMoved > 60L;
-            final BlockPos effective = world.getBlockState(walk.spot.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? walk.spot.below() : walk.spot;
-            if (!timedOut && StandSpots.canStandAt(world, walk.spot) && !BuildReach.inReachFromFeet(effective, worker.getEyeHeight(), target, margin)
+            if (!timedOut && StandSpots.canStandAt(world, walk.spot) && !ReachSpots.reachesFrom(world, walk.spot, worker.getEyeHeight(), target, margin)
                   && !(worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate nav0 && nav0.isStuck()))
             {
                 // the block the spot was picked for is not the one he works on now: another spot (this one is no worse for it)
@@ -669,13 +785,17 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             {
                 scaffold.note("spot " + walk.spot + " for " + target + " does not work (timedOut=" + timedOut + ") builder at " + worker.blockPosition());
                 walk.markBad(walk.spot, now);
+                if (walk == mainWalk && target.equals(reachTry))
+                {
+                    reachTryMisses++;
+                }
                 walk.spot = null;
                 worker.getNavigation().stop();
             }
         }
         if (walk == mainWalk && walk.spot == null && workFrom != null && !workFrom.equals(worker.blockPosition()) && !walk.bad.contains(workFrom)
               && StandSpots.canStandAt(world, workFrom)
-              && BuildReach.inReachFromFeet(world.getBlockState(workFrom.below()).is(net.minecraft.world.level.block.Blocks.SCAFFOLDING) ? workFrom.below() : workFrom, worker.getEyeHeight(), target, margin))
+              && ReachSpots.reachesFrom(world, workFrom, worker.getEyeHeight(), target, margin))
         {
             // a spot the unstuck ladder or a tower picked
             walk.spot = workFrom;
@@ -739,14 +859,28 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             workFrom = walk.spot;
         }
-        // walk to the very spot (the usual walk stops a block and a half short, and that is a block below the top of a tower)
-        final int walked = EntityNavigationUtils.walkToBlock(worker, walk.spot);
+        // walk to the very spot (the usual walk stops a block and a half short, and that is a block below the top of a tower); on a slab floor he stands in
+        // the slab's cell, half a block below the spot: that is the spot too
+        final int walked = standCell().equals(walk.spot) ? 1 : EntityNavigationUtils.walkToBlock(worker, walk.spot);
         if (walked != 0)
         {
             scaffold.note("walk to " + walk.spot + " ended (" + walked + ") at " + worker.blockPosition() + " for " + target + " nav stuck=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n && n.isStuck())
                             + " path=" + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate n2 && n2.getPathResult() != null ? n2.getPathResult().getStatus() + " " + pathDescription(n2) : "-") + columnDescription(walk.spot));
+            if (walked == 1 && standingReaches(target) && (accept == null || accept.test(worker.blockPosition())))
+            {
+                // he is on the spot, and by the rule the spot was picked with he reaches the block: he works from here
+                worker.getNavigation().stop();
+                walk.spot = null;
+                workFrom = worker.blockPosition();
+                prevBlockPosition = target;
+                return true;
+            }
             // the walk is over, and the block is still out of reach: this spot does not work
             walk.markBad(walk.spot, now);
+            if (walk == mainWalk && target.equals(reachTry))
+            {
+                reachTryMisses++;
+            }
             walk.spot = null;
         }
         return false;
@@ -791,7 +925,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     public String debugInfo()
     {
         return "pos=" + worker.blockPosition().toShortString() + " eye=" + String.format("%.1f", worker.getEyeY()) + " workFrom=" + (workFrom == null ? "-" : workFrom.toShortString())
-                 + " mine=" + (blockToMine == null ? "-" : blockToMine.toShortString()) + " spot=" + (mainWalk.spot == null ? "-" : mainWalk.spot.toShortString())
+                 + " mine=" + (blockToMine == null ? "-" : blockToMine.toShortString()) + " spot=" + (mainWalk.spot == null ? "-" : mainWalk.spot.toShortString()) + " fallback=" + (reachFallback == null ? "-" : reachFallback.toShortString())
+                 + " tries=" + reachTryMisses
                  + " bad=" + mainWalk.bad.size() + " reachTarget=" + (reachTarget == null ? "-" : reachTarget.toShortString()) + " nav=" + (worker.getNavigation().isDone() ? "done" : "busy")
                  + " stuck=" + debugStuck() + " scaffold=" + scaffold.debug()
                  + (worker.getNavigation() instanceof MinecoloniesAdvancedPathNavigate pn && pn.getPathResult() != null && !worker.getNavigation().isDone() ? " path=" + pn.getPathResult().getStatus() + " " + pathDescription(pn) : "");
@@ -894,14 +1029,31 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         scaffold.returnStock();
         mainWalk.reset();
         scaffoldWalk.reset();
+        reachTry = null;
+        reachFallback = null;
+        com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(null);
     }
 
     @Override
     public boolean walkToConstructionSite(final BlockPos currentBlock)
     {
-        if (usesPhysicalReach() && currentBlock.equals(reachTarget))
+        if (reachFallback != null && !reachFallback.equals(currentBlock))
+        {
+            // the block he worked on from the working range is done: the physical reach again
+            com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(null);
+            reachFallback = null;
+        }
+        if (usesPhysicalReach() && currentBlock.equals(reachTarget) && !reachFallbackDue(currentBlock))
         {
             return walkIntoReach(mainWalk, currentBlock, () -> workAhead(currentBlock), false, null, true);
+        }
+        if (usesPhysicalReach() && currentBlock.equals(reachFallback) && inFallbackRange(currentBlock))
+        {
+            // MineColonies' own builder: in the working range of the block, he places it from where he stands
+            worker.getNavigation().stop();
+            workFrom = worker.blockPosition();
+            prevBlockPosition = currentBlock;
+            return true;
         }
 
         // A builder that is already within the normal working radius does not
