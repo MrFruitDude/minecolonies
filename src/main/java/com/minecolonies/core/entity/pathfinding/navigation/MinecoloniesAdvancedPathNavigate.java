@@ -180,9 +180,12 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     @Nullable
     private       BlockPos            routeAbandoned      = null;
     private       long                routeAbandonedUntil = 0;
-    @Nullable
-    private       BlockPos            routeQueried        = null;
-    private       long                routeQueriedAt      = 0;
+    /**
+     * The last two destinations the providers were asked about and when (game time), so an AI that alternates two far
+     * targets does not ask on every switch.
+     */
+    private final BlockPos[]          routeQueried        = new BlockPos[2];
+    private final long[]              routeQueriedAt      = new long[2];
 
     /**
      * Temporary block position
@@ -896,15 +899,15 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             unreachableTicks = UNREACHABLE_BACKOFF[Math.min(unreachableLevel, UNREACHABLE_BACKOFF.length - 1)];
             unreachableLevel++;
         }
-        // Shared with the colony only as strong proof: the search tried every node it could reach (not just the start's
-        // pocket), and only for starts near this one. The back-off above stays this citizen's own.
-        ColonyUnreachableCache.markUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest, pathResult.getJob().getStart(),
-          pathResult.searchExhausted, pathResult.searchedNodes);
+        // Shared with the colony only as strong proof: the search tried every node it could reach (500+), and only for
+        // walkers standing on one of those positions with the same abilities. The back-off above stays this citizen's own.
+        ColonyUnreachableCache.markUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest,
+          pathResult.getJob().getPathingOptions().abilityFlags(), pathResult.reachablePositions);
     }
 
     /**
      * Whether move-to jobs for this destination are currently refused because it kept failing (CA-11), or because a
-     * search of the same colony from near here just proved it unreachable (colony cache). AI code can use this to treat the target as
+     * search of the same colony that reached where this entity stands just proved it unreachable (colony cache). AI code can use this to treat the target as
      * "can't reach" instead of asking again.
      *
      * @param dest the destination.
@@ -917,7 +920,7 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             return false;
         }
         return unreachableTicks > 0 && dest.equals(unreachableDest)
-                 || ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest, ourEntity.blockPosition());
+                 || ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest, getOptionsForPathJob().abilityFlags(), PathfindingUtils.prepareStart(ourEntity));
     }
 
     /**
@@ -971,13 +974,18 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
                 return null;
             }
             final long now = level.getGameTime();
-            if (dest.equals(routeQueried) && now - routeQueriedAt < ROUTE_REQUERY_TICKS && now >= routeQueriedAt)
+            for (int i = 0; i < routeQueried.length; i++)
             {
-                // asked for this destination moments ago (the route is done or was refused): plain search
-                return null;
+                if (dest.equals(routeQueried[i]) && now - routeQueriedAt[i] < ROUTE_REQUERY_TICKS && now >= routeQueriedAt[i])
+                {
+                    // asked for this destination moments ago (the route is done or was refused): plain search
+                    return null;
+                }
             }
-            routeQueried = dest;
-            routeQueriedAt = now;
+            // remember it in the older slot
+            final int slot = routeQueried[0] == null || routeQueried[1] != null && routeQueriedAt[0] <= routeQueriedAt[1] ? 0 : 1;
+            routeQueried[slot] = dest;
+            routeQueriedAt[slot] = now;
             Pathfinding.Stats.routeHintQueries.incrementAndGet();
             final List<BlockPos> waypoints =
               RouteHints.query(level, citizen ? ((AbstractEntityCitizen) ourEntity).getCitizenColonyHandler().getColony() : null, start, dest);
@@ -1071,7 +1079,7 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         {
             return true;
         }
-        if (ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest, ourEntity.blockPosition()))
+        if (ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest, getOptionsForPathJob().abilityFlags(), PathfindingUtils.prepareStart(ourEntity)))
         {
             Pathfinding.Stats.unreachableCacheHits.incrementAndGet();
             return true;
@@ -1663,6 +1671,18 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     public double getAvgHeuristicModifier()
     {
         return heuristicAvg;
+    }
+
+    /**
+     * GameTests only (-Dneoforge.enableGameTest=true): sets the learned heuristic average, to measure searches with a
+     * value a long-lived citizen may have.
+     *
+     * @param value the average cost per block.
+     */
+    public void setAvgHeuristicModifierForTests(final double value)
+    {
+        Pathfinding.requireGameTest();
+        heuristicAvg = value;
     }
 
     @Override

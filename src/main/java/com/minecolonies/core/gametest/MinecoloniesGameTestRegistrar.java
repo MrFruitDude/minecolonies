@@ -961,7 +961,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           "path_queue_reject_marks_failed", "path_queue_parallel", "path_routes_identical", "path_citizen_walks_home", "path_road_preference",
           "path_unreachable_colony_cache", "path_failed_search_cap", "path_queue_fair_colonies",
           "path_route_hints_followed", "path_route_hints_fallback", "path_colony_cache_boxed_citizen", "path_long_detour_reaches",
-          "path_road_heuristic_nodes"})
+          "path_road_heuristic_nodes", "path_colony_cache_walled_yard", "path_road_heuristic_citizen"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -980,6 +980,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "path_colony_cache_boxed_citizen" -> PathfindingGameTests::pathColonyCacheBoxedCitizen;
                 case "path_long_detour_reaches" -> PathfindingGameTests::pathLongDetourReaches;
                 case "path_road_heuristic_nodes" -> PathfindingGameTests::pathRoadHeuristicNodes;
+                case "path_colony_cache_walled_yard" -> PathfindingGameTests::pathColonyCacheWalledYard;
+                case "path_road_heuristic_citizen" -> PathfindingGameTests::pathRoadHeuristicCitizen;
                 default -> PathfindingGameTests::pathCitizenWalksHome;
             };
             event.registerTest(

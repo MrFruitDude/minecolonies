@@ -6,26 +6,28 @@ import net.minecraft.world.level.block.Block;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Per-colony "cannot reach" cache, keyed by target block and the area the search started from, shared by the citizens
- * of one colony. Only strong proof is shared: a search that tried every node it could reach (at least
- * {@link #MIN_PROOF_NODES} of them, so a citizen boxed in at its start proves nothing about the target) without reaching
- * the target. Such a result says "unreachable from around this start", so another citizen of the colony is refused only
- * when it starts within {@link #START_RADIUS} blocks of a start that proved it; citizens elsewhere still search. A
- * citizen's own failed tries (the CA-11 back-off) are never shared. An entry ends after {@link #EXPIRY_TICKS} game
- * ticks, or as soon as a block in the small box around the target changes (checked on lookup, loaded chunks only).
- * Colonies never share entries: the key is the walker's dimension and colony id ({@link Pathfinding.ColonyKey}).
- * Server thread only.
+ * Per-colony "cannot reach" cache, shared by the citizens of one colony. Only strong proof is shared: a search that tried
+ * every node it could reach (at least {@link #MIN_PROOF_NODES}, at most {@link #MAX_PROOF_POSITIONS}) without reaching
+ * the target. Such a search knows every standing position reachable from its start, so it proves the target unreachable
+ * exactly for walkers standing on one of those positions (same world, same pathing abilities): a citizen behind a wall,
+ * above a ravine or outside a closed yard is not in the set and still searches. Each proof keeps its own positions and
+ * expiry ({@link #EXPIRY_TICKS} game ticks); a new proof never refreshes an older one. All proofs of a target end as soon
+ * as a block in the small box around it changes (checked on lookup, loaded chunks only). Entries are keyed by colony
+ * (walker's dimension and colony id, {@link Pathfinding.ColonyKey}), target block and pathing ability flags
+ * ({@link PathingOptions#abilityFlags()}), so colonies and citizens with other abilities never share. A citizen's own
+ * failed tries (the CA-11 back-off) are never shared. Server thread only.
  */
 public final class ColonyUnreachableCache
 {
     /**
-     * Game ticks an entry lasts.
+     * Game ticks a proof lasts.
      */
     public static final int EXPIRY_TICKS = 400;
 
@@ -35,117 +37,143 @@ public final class ColonyUnreachableCache
     public static final int MIN_PROOF_NODES = 500;
 
     /**
-     * A start proves the target unreachable for other starts within this distance (blocks, straight line).
+     * A proof keeps at most this many reachable positions (8 bytes each); a larger search is not shared.
      */
-    public static final int START_RADIUS = 16;
+    public static final int MAX_PROOF_POSITIONS = 8192;
 
     /**
-     * Entries per colony at most; the oldest are dropped first.
+     * Targets per colony, and proofs per target, at most; the oldest are dropped first.
      */
-    private static final int MAX_ENTRIES_PER_COLONY = 256;
+    private static final int MAX_TARGETS_PER_COLONY = 32;
+    private static final int MAX_PROOFS             = 4;
 
     /**
-     * Proving starts kept per target.
+     * One proof: its time window and the sorted packed positions reachable from its start.
      */
-    private static final int MAX_STARTS = 4;
+    private record Proof(long created, long expires, long[] reachable)
+    {
+        boolean live(final long now)
+        {
+            return now < expires && now >= created;
+        }
+    }
 
-    private record Entry(long created, long expires, int blocks, List<BlockPos> starts)
+    private record TargetKey(BlockPos target, int abilities)
     {
     }
 
-    private static final Map<Pathfinding.ColonyKey, Map<BlockPos, Entry>> CACHE = new HashMap<>();
+    private record Entry(int blocks, List<Proof> proofs)
+    {
+    }
+
+    private static final Map<Pathfinding.ColonyKey, Map<TargetKey, Entry>> CACHE = new HashMap<>();
 
     private ColonyUnreachableCache()
     {
     }
 
     /**
-     * Records a target as unreachable from around a start, if the search is strong proof (see the class comment).
+     * Records a proof that the target cannot be reached from the given reachable positions.
      *
      * @param level     the level of the target.
      * @param colony    the colony key, null does nothing.
      * @param target    the target block.
-     * @param start     where the search started.
-     * @param exhausted whether the search tried every node it could reach.
-     * @param nodes     nodes the search visited.
+     * @param abilities the searching walker's pathing ability flags.
+     * @param reachable sorted packed positions the exhausted search reached (see AbstractPathJob), null when it is no proof.
      * @return true if recorded.
      */
     public static synchronized boolean markUnreachable(
-      final Level level, @Nullable final Pathfinding.ColonyKey colony, final BlockPos target, final BlockPos start, final boolean exhausted, final int nodes)
+      final Level level, @Nullable final Pathfinding.ColonyKey colony, final BlockPos target, final int abilities, @Nullable final long[] reachable)
     {
-        if (colony == null || target == null || start == null || !exhausted || nodes < MIN_PROOF_NODES)
+        if (colony == null || target == null || reachable == null || reachable.length == 0 || reachable.length > MAX_PROOF_POSITIONS)
         {
             return false;
         }
-        final Map<BlockPos, Entry> entries = CACHE.computeIfAbsent(colony, k -> new HashMap<>());
+        final Map<TargetKey, Entry> entries = CACHE.computeIfAbsent(colony, k -> new HashMap<>());
         final long now = level.getGameTime();
         final int blocks = blocksAround(level, target);
-        final Entry old = entries.get(target);
-        final List<BlockPos> starts = new ArrayList<>();
-        if (old != null && now < old.expires() && now >= old.created() && old.blocks() == blocks)
+        final TargetKey key = new TargetKey(target.immutable(), abilities);
+        final Entry old = entries.get(key);
+        final List<Proof> proofs = new ArrayList<>();
+        if (old != null && old.blocks() == blocks)
         {
-            starts.addAll(old.starts());
+            for (final Proof p : old.proofs())
+            {
+                if (p.live(now))
+                {
+                    proofs.add(p);
+                }
+            }
         }
-        if (starts.size() >= MAX_STARTS)
+        if (proofs.size() >= MAX_PROOFS)
         {
-            starts.remove(0);
+            proofs.remove(0);
         }
-        starts.add(start.immutable());
-        if (old == null && entries.size() >= MAX_ENTRIES_PER_COLONY)
+        proofs.add(new Proof(now, now + EXPIRY_TICKS, reachable));
+        if (old == null && entries.size() >= MAX_TARGETS_PER_COLONY)
         {
             prune(now, entries);
-            if (entries.size() >= MAX_ENTRIES_PER_COLONY)
+            if (entries.size() >= MAX_TARGETS_PER_COLONY)
             {
                 entries.remove(entries.keySet().iterator().next());
             }
         }
-        entries.put(target.immutable(), new Entry(now, now + EXPIRY_TICKS, blocks, List.copyOf(starts)));
+        entries.put(key, new Entry(blocks, List.copyOf(proofs)));
         return true;
     }
 
     /**
-     * Whether the colony currently knows the target as unreachable from this start: a proving start lies within
-     * {@link #START_RADIUS}. An expired entry, or one whose surrounding blocks changed, is removed and reported as
-     * reachable.
+     * Whether a live proof of the colony shows the target unreachable from this start (the start is one of the proof's
+     * reachable positions). Expired proofs, and every proof when the blocks around the target changed, are removed.
      *
-     * @param level  the level of the target.
-     * @param colony the colony key, null is never cached.
-     * @param target the target block.
-     * @param start  where the walker would start.
-     * @return true while cached for this start.
+     * @param level     the level of the target.
+     * @param colony    the colony key, null is never cached.
+     * @param target    the target block.
+     * @param abilities the walker's pathing ability flags.
+     * @param start     where the walker would start.
+     * @return true while proven for this start.
      */
-    public static synchronized boolean isUnreachable(final Level level, @Nullable final Pathfinding.ColonyKey colony, final BlockPos target, final BlockPos start)
+    public static synchronized boolean isUnreachable(
+      final Level level, @Nullable final Pathfinding.ColonyKey colony, final BlockPos target, final int abilities, final BlockPos start)
     {
         if (colony == null || target == null || start == null)
         {
             return false;
         }
-        final Map<BlockPos, Entry> entries = CACHE.get(colony);
+        final Map<TargetKey, Entry> entries = CACHE.get(colony);
         if (entries == null)
         {
             return false;
         }
-        final Entry entry = entries.get(target);
+        final TargetKey key = new TargetKey(target, abilities);
+        final Entry entry = entries.get(key);
         if (entry == null)
         {
             return false;
         }
         final long now = level.getGameTime();
-        if (now >= entry.expires() || now < entry.created() || blocksAround(level, target) != entry.blocks())
+        if (blocksAround(level, target) != entry.blocks())
         {
-            entries.remove(target);
-            if (entries.isEmpty())
-            {
-                CACHE.remove(colony);
-            }
+            remove(colony, entries, key);
             return false;
         }
-        for (final BlockPos proved : entry.starts())
+        final long packed = start.asLong();
+        boolean anyLive = false;
+        for (final Proof p : entry.proofs())
         {
-            if (proved.distSqr(start) <= START_RADIUS * START_RADIUS)
+            if (!p.live(now))
+            {
+                continue;
+            }
+            anyLive = true;
+            if (Arrays.binarySearch(p.reachable(), packed) >= 0)
             {
                 return true;
             }
+        }
+        if (!anyLive)
+        {
+            remove(colony, entries, key);
         }
         return false;
     }
@@ -158,12 +186,20 @@ public final class ColonyUnreachableCache
         CACHE.clear();
     }
 
-    private static void prune(final long now, final Map<BlockPos, Entry> entries)
+    private static void remove(final Pathfinding.ColonyKey colony, final Map<TargetKey, Entry> entries, final TargetKey key)
+    {
+        entries.remove(key);
+        if (entries.isEmpty())
+        {
+            CACHE.remove(colony);
+        }
+    }
+
+    private static void prune(final long now, final Map<TargetKey, Entry> entries)
     {
         for (final Iterator<Entry> it = entries.values().iterator(); it.hasNext(); )
         {
-            final Entry e = it.next();
-            if (now >= e.expires() || now < e.created())
+            if (it.next().proofs().stream().noneMatch(p -> p.live(now)))
             {
                 it.remove();
             }

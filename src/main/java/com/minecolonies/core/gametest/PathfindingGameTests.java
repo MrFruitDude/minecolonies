@@ -744,9 +744,9 @@ public final class PathfindingGameTests
 
     /**
      * path_unreachable_colony_cache: host A of colony 1 searches for the sealed target from the far corner; the search
-     * tries every node of the bordered floor (strong proof) and shares the target for starts near A. Host B of colony 1,
-     * 10 blocks from A's start, then asks for 100 ticks and must not search once. Host D of colony 1, far from A's
-     * start, and host C of colony 2 must search. Then the shell is opened: the block change clears the entry and B
+     * tries every node of the bordered floor (strong proof, with every reachable position). Hosts B (10 blocks from A)
+     * and D (far, but on the same open floor) of colony 1 then ask for it and must not search once. Host C of colony 2
+     * must search. Then the shell is opened: the block change clears the entry and B
      * must reach the target.
      */
     public static void pathUnreachableColonyCache(final GameTestHelper helper)
@@ -783,19 +783,64 @@ public final class PathfindingGameTests
                         restore.run();
                         final PathResult<?> first = a.jobs.isEmpty() ? null : a.jobs.get(0).getResult();
                         final String s = String.format("R10 colony cache: A first search exhausted %s (%d nodes), B (same colony, near A) %d jobs while cached then %d, "
-                                                         + "D (same colony, far) %d jobs, C (other colony) %d jobs, B reached %s, cache refusals %d",
+                                                         + "D (same colony, far, same floor) %d jobs, C (other colony) %d jobs, B reached %s, cache refusals %d",
                           first != null && first.searchExhausted, first == null ? 0 : first.searchedNodes, bBlocked, b.jobs.size(), d.jobs.size(), c.jobs.size(),
                           b.anyReached(target), Pathfinding.Stats.unreachableCacheHits.get() - hitsBefore[0]);
                         Log.getLogger().info(s);
                         helper.assertTrue(first != null && first.searchExhausted && first.searchedNodes >= 500, "fixture: A's search was not strong proof. " + s);
                         helper.assertTrue(bBlocked == 0, "a citizen of the same colony starting near A searched the proven unreachable target. " + s);
                         helper.assertTrue(Pathfinding.Stats.unreachableCacheHits.get() > hitsBefore[0], "no refusal by the colony cache was counted. " + s);
-                        helper.assertTrue(d.jobs.size() >= 1, "a citizen of the same colony starting far from A was blocked. " + s);
+                        helper.assertTrue(d.jobs.isEmpty(), "a citizen of the same colony on a position A's search reached (same proof) still searched. " + s);
                         helper.assertTrue(c.jobs.size() >= 1, "a citizen of another colony was blocked by colony 1's cache. " + s);
                         helper.assertTrue(b.anyReached(target), "the target was not reached after the blocks around it changed. " + s);
                         helper.succeed();
                     });
                 }))))));
+    }
+
+    /**
+     * path_colony_cache_walled_yard: host T of colony 1 stands in a walled yard (26 x 26, 3 high, closed) and asks for an
+     * open target outside; its search exhausts the yard (500+ nodes, strong proof for positions inside the yard). Host U
+     * of colony 1, inside the yard, must be refused. Host B of colony 1, 10 blocks from T on the other side of the wall,
+     * must still search and reach the target.
+     */
+    public static void pathColonyCacheWalledYard(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        final BlockState stone = Blocks.STONE.defaultBlockState();
+        fill(helper, new BlockPos(-1, 1, -1), new BlockPos(26, 3, -1), stone);
+        fill(helper, new BlockPos(-1, 1, 26), new BlockPos(26, 3, 26), stone);
+        fill(helper, new BlockPos(-1, 1, -1), new BlockPos(-1, 3, 26), stone);
+        fill(helper, new BlockPos(26, 1, -1), new BlockPos(26, 3, 26), stone);
+        final Host t = new Host(helper, new BlockPos(12, 1, 22));
+        final Host u = new Host(helper, new BlockPos(15, 1, 22));
+        final Host b = new Host(helper, new BlockPos(12, 1, 32));
+        final BlockPos target = helper.absolutePos(new BlockPos(50, 1, 30));
+        final Map<Mob, Integer> ids = new java.util.HashMap<>();
+        ids.put(t.mob, 1);
+        ids.put(u.mob, 1);
+        ids.put(b.mob, 1);
+        final AutoCloseable colonies = testColonies(helper.getLevel(), ids);
+        observeAll(t, u, b);
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () ->
+          drive(helper, t, () -> target, 0, 100, t2 -> t.jobs.size() >= 2, () ->
+            drive(helper, u, () -> target, 0, 100, t2 -> false, () ->
+              drive(helper, b, () -> target, 0, 300, t2 -> b.anyReached(target), () -> {
+                  Pathfinding.submitObserver = null;
+                  close(colonies);
+                  final PathResult<?> first = t.jobs.isEmpty() ? null : t.jobs.get(0).getResult();
+                  final String s = String.format("R10 walled yard: T first search exhausted %s (%d nodes, proof %d positions), U (inside) %d jobs, "
+                                                   + "B (10 blocks, other side of the wall) %d jobs, B reached %s",
+                    first != null && first.searchExhausted, first == null ? 0 : first.searchedNodes,
+                    first == null || first.reachablePositions == null ? 0 : first.reachablePositions.length, u.jobs.size(), b.jobs.size(), b.anyReached(target));
+                  Log.getLogger().info(s);
+                  helper.assertTrue(first != null && first.searchExhausted && first.reachablePositions != null, "fixture: the yard search was no proof. " + s);
+                  helper.assertTrue(u.jobs.isEmpty(), "a citizen inside the proven yard searched again. " + s);
+                  helper.assertTrue(b.jobs.size() >= 1, "a citizen outside the yard was blocked by the yard's proof. " + s);
+                  helper.assertTrue(b.anyReached(target), "the citizen outside the yard did not reach the target. " + s);
+                  helper.succeed();
+              })))));
     }
 
     /**
@@ -946,6 +991,104 @@ public final class PathfindingGameTests
                 helper.succeed();
             });
         }));
+    }
+
+    /**
+     * path_road_heuristic_citizen (M3): a real citizen's navigator gives the heuristic. A road grid with 5 x 5 stone
+     * buildings in its cells, 8 trips between building sides, each searched with and without the road scale, once with the
+     * citizen's own learned average and once with it set to 0.3 (multiplier 1.3). Logged: nodes, walk time, how often the
+     * scale fired. Every trip must reach.
+     */
+    public static void pathRoadHeuristicCitizen(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = foundGameTestColony(helper, "R10 road heuristic");
+        final int x0 = 10, x1 = 59, z0 = -8, z1 = 39;
+        final BlockPos a = helper.absolutePos(new BlockPos(x0, 0, z0));
+        final BlockPos b = helper.absolutePos(new BlockPos(x1, 0, z1));
+        for (int cx = Math.min(a.getX(), b.getX()) >> 4; cx <= Math.max(a.getX(), b.getX()) >> 4; cx++)
+        {
+            for (int cz = Math.min(a.getZ(), b.getZ()) >> 4; cz <= Math.max(a.getZ(), b.getZ()) >> 4; cz++)
+            {
+                level.setChunkForced(cx, cz, true);
+            }
+        }
+        keepClock(helper, 6000L);
+        final BlockState stone = Blocks.STONE.defaultBlockState();
+        for (int x = x0; x <= x1; x++)
+        {
+            for (int z = z0; z <= z1; z++)
+            {
+                helper.setBlock(new BlockPos(x, -1, z), stone);
+                final boolean border = x == x0 || x == x1 || z == z0 || z == z1;
+                final boolean road = (x - x0) % 8 == 4 || (z - z0) % 8 == 4;
+                helper.setBlock(new BlockPos(x, 0, z), road && !border ? Blocks.STONE_BRICKS.defaultBlockState() : stone);
+                final boolean building = !road && !border && Math.floorMod(x - x0, 8) >= 6 - 4 && Math.floorMod(x - x0, 8) <= 6
+                                           && Math.floorMod(z - z0, 8) >= 2 && Math.floorMod(z - z0, 8) <= 6;
+                for (int y = 1; y <= 5; y++)
+                {
+                    helper.setBlock(new BlockPos(x, y, z), (border || building) && y <= 3 ? stone : Blocks.AIR.defaultBlockState());
+                }
+            }
+        }
+        final int[][] trips = {{x0 + 1, z0 + 1, x1 - 1, z1 - 1}, {x1 - 1, z0 + 1, x0 + 1, z1 - 1}, {x0 + 9, z0 + 1, x1 - 9, z1 - 1}, {x0 + 1, z1 - 9, x1 - 1, z0 + 9},
+          {x0 + 17, z0 + 1, x0 + 33, z1 - 1}, {x0 + 1, z0 + 17, x1 - 1, z0 + 17}, {x1 - 1, z0 + 25, x0 + 1, z0 + 9}, {x0 + 25, z1 - 1, x0 + 9, z0 + 1}};
+        helper.runAfterDelay(20, () -> {
+            final BlockPos spawn = helper.absolutePos(new BlockPos(x0 + 1, 1, z0 + 1));
+            final ICitizenData data = colony.getCitizenManager().spawnOrCreateCivilian(null, level, List.of(spawn), true);
+            helper.assertTrue(data != null && data.getEntity().isPresent(), "citizen did not spawn");
+            final AbstractEntityCitizen citizen = data.getEntity().get();
+            final MinecoloniesAdvancedPathNavigate nav = (MinecoloniesAdvancedPathNavigate) citizen.getNavigation();
+            final double learned = nav.getAvgHeuristicModifier();
+            final StringBuilder out = new StringBuilder("R10 road heuristic citizen:");
+            final boolean[] allReached = {true};
+            final long[] scaleFired = {0};
+            final Runnable[] round = new Runnable[1];
+            final double[] avgs = {learned, 0.3D};
+            final int[] index = {0};
+            round[0] = () -> {
+                if (index[0] >= avgs.length)
+                {
+                    final String s = out.append(" (avg ").append(String.format("%.2f", learned)).append(" learned at spawn)").toString();
+                    Log.getLogger().info(s);
+                    helper.assertTrue(allReached[0], "a road grid trip did not reach. " + s);
+                    helper.assertTrue(scaleFired[0] > 0, "fixture: the road scale never fired. " + s);
+                    helper.succeed();
+                    return;
+                }
+                final double avg = avgs[index[0]++];
+                nav.setAvgHeuristicModifierForTests(avg);
+                final List<PathJobMoveToLocation> on = new ArrayList<>();
+                final List<PathJobMoveToLocation> off = new ArrayList<>();
+                for (final int[] trip : trips)
+                {
+                    for (final boolean scale : new boolean[] {true, false})
+                    {
+                        final PathJobMoveToLocation job = new PathJobMoveToLocation(level, helper.absolutePos(new BlockPos(trip[0], 1, trip[1])),
+                          helper.absolutePos(new BlockPos(trip[2], 1, trip[3])), 48, citizen);
+                        job.getPathingOptions().randomnessFactor = 0.0D;
+                        job.getPathingOptions().roadHeuristicScale = scale;
+                        (scale ? on : off).add(job);
+                        Pathfinding.enqueue(job);
+                    }
+                }
+                final List<PathResult<?>> all = new ArrayList<>();
+                on.forEach(j -> all.add(j.getResult()));
+                off.forEach(j -> all.add(j.getResult()));
+                waitAll(helper, all, System.nanoTime(), 0, () -> {
+                    final double[] onNums = roadTotals(helper, on);
+                    final double[] offNums = roadTotals(helper, off);
+                    final long fired = on.stream().filter(AbstractPathJob::isRoadScaled).count();
+                    scaleFired[0] += fired;
+                    allReached[0] &= onNums[0] == trips.length && offNums[0] == trips.length;
+                    out.append(String.format(" | multiplier %.2f: scale on %.0f nodes (fired in %d of %d), walk %.1f, road %.2f; off %.0f nodes, walk %.1f, road %.2f; "
+                                               + "nodes on/off %.2f", on.get(0).getStartHeuristicMod(), onNums[1], fired, trips.length, onNums[2], onNums[3], offNums[1],
+                      offNums[2], offNums[3], onNums[1] / Math.max(1, offNums[1])));
+                    round[0].run();
+                });
+            };
+            round[0].run();
+        });
     }
 
     /** Reached count, total nodes searched, total walk time, share of steps on road. */

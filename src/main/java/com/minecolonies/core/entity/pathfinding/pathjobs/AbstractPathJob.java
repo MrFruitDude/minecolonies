@@ -197,6 +197,16 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     private boolean roadSeen = false;
 
     /**
+     * Whether this search did scale its heuristic for roads.
+     */
+    private volatile boolean roadScaled = false;
+
+    /**
+     * The heuristic multiplier at the start of the search, for logs.
+     */
+    private volatile double startHeuristicMod = 0;
+
+    /**
      * AbstractPathJob constructor.
      *
      * @param world  the world within which to path.
@@ -345,6 +355,22 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     }
 
     /**
+     * @return true if this search scaled its heuristic for roads.
+     */
+    public boolean isRoadScaled()
+    {
+        return roadScaled;
+    }
+
+    /**
+     * @return the heuristic multiplier the search started with (from its entity's navigator, or the default 2).
+     */
+    public double getStartHeuristicMod()
+    {
+        return startHeuristicMod;
+    }
+
+    /**
      * @return the job's queue key (its colony), null for none.
      */
     @Nullable
@@ -413,6 +439,7 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
      */
     private MNode getAndSetupStartNode()
     {
+        startHeuristicMod = heuristicMod;
         final MNode startNode = new MNode(null, start.getX(), start.getY(), start.getZ(), 0, computeHeuristic(start.getX(), start.getY(), start.getZ()) * heuristicMod);
 
         if (PathfindingUtils.isLadder(cachedBlockLookup.getBlockState(start.getX(), start.getY(), start.getZ()), pathingOptions))
@@ -542,6 +569,18 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
         if (!reachesDestination && nodesToVisit.isEmpty())
         {
             result.searchExhausted = true;
+            if (totalNodesVisited >= ColonyUnreachableCache.MIN_PROOF_NODES && nodes.size() <= ColonyUnreachableCache.MAX_PROOF_POSITIONS)
+            {
+                // every node was visited: these are all the positions reachable from the start (proof for the colony cache)
+                final long[] reachable = new long[nodes.size()];
+                int i = 0;
+                for (final MNode n : nodes.values())
+                {
+                    reachable[i++] = BlockPos.asLong(n.x, n.y, n.z);
+                }
+                Arrays.sort(reachable);
+                result.reachablePositions = reachable;
+            }
         }
 
         // Explore additional possible endnodes after reaching, if we got extra nodes to search
@@ -1006,6 +1045,8 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
             if (scaleHeuristicOnRoads() && pathingOptions.roadHeuristicScale && pathingOptions.onPathCost < 1)
             {
                 scaleHeuristic(pathingOptions.onPathCost);
+                roadScaled = true;
+                Pathfinding.Stats.roadScaleApplied.incrementAndGet();
             }
         }
         final boolean onRails = pathingOptions.canUseRails() && (corner ? belowState : state).getBlock() instanceof BaseRailBlock;

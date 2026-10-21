@@ -17,9 +17,9 @@ import java.util.List;
  * {@link RouteHints#MIN_DISTANCE} blocks away (straight line), once per new destination, not every tick.</li>
  * <li>Must return within {@link RouteHints#BUDGET_NANOS} (1 ms); slower calls are counted and logged. Work from a
  * snapshot prepared beforehand, not from a search done here. A provider that is slow again and again
- * ({@link RouteHints#MAX_OVERRUNS} overruns within {@link RouteHints#WINDOW_CALLS} calls) or once very slow (over
- * {@link RouteHints#HARD_LIMIT_NANOS}, 20 ms) is switched off for {@link RouteHints#DISABLE_MILLIS} (5 minutes),
- * logged once. A single occasional overrun is tolerated.</li>
+ * ({@link RouteHints#MAX_OVERRUNS} overruns among its last {@link RouteHints#WINDOW_CALLS} calls), or very slow twice
+ * among them (over {@link RouteHints#HARD_LIMIT_NANOS}, 20 ms), is switched off for 5 minutes, logged once. A single
+ * occasional overrun is tolerated.</li>
  * <li>Must not load chunks: no world reads of positions whose chunk may be unloaded (no {@code getBlockState},
  * {@code getChunk}, {@code getHeight} on arbitrary positions).</li>
  * <li>Waypoints must be inside the build height, with at most 96 blocks (straight line) from the start to the first
@@ -27,7 +27,7 @@ import java.util.List;
  * <li>Must only describe the given colony in the given level. Two colonies in one world, or one colony's citizens in
  * another dimension, must never get each other's routes.</li>
  * <li>Must not throw. Anything thrown (except a VirtualMachineError) is caught, logged at most every 10 s per provider,
- * and treated as {@code null}; {@link RouteHints#MAX_FAILURES} throws in a row switch the provider off like slowness.</li>
+ * and treated as {@code null}; {@link RouteHints#MAX_FAILURES} throws or broken lists in a row switch the provider off like slowness.</li>
  * </ul>
  * How the result is used: the citizen walks to each waypoint in order, each leg by a normal path search, then from the
  * last waypoint to the destination by a normal search. A waypoint within 4 blocks of where the citizen stands is

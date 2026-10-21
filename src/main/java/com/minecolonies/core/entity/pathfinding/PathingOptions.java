@@ -375,6 +375,18 @@ public class PathingOptions
     }
 
     /**
+     * The abilities that decide where a walker can go (swim, doors, gates, rails, climbing, danger, under water, drops) as
+     * bit flags, so results are shared only between walkers with the same abilities.
+     *
+     * @return the flags.
+     */
+    public int abilityFlags()
+    {
+        return (canSwim ? 1 : 0) | (enterDoors ? 2 : 0) | (canOpenDoors ? 4 : 0) | (enterGates ? 8 : 0) | (canUseRails ? 16 : 0)
+                 | (canClimbAdvanced ? 32 : 0) | (canPassDanger ? 64 : 0) | (walkUnderWater ? 128 : 0) | (canDrop ? 256 : 0);
+    }
+
+    /**
      * Imports all options from the given other pathing options
      * @param pathingOptions
      */
