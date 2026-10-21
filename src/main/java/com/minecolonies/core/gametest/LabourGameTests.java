@@ -599,6 +599,10 @@ final class LabourGameTests
                 {
                     helper.assertTrue(colony.getLabourBoard().claimOf(builder.getId()) == null, "the claim outlived the order");
                     helper.assertTrue(labourReservations(f).isEmpty(), "labour reservations outlived the order: " + labourReservations(f).size());
+                    final var board = colony.getLabourBoard();
+                    helper.assertTrue(board.takenTrees().isEmpty() && board.takenSurface().isEmpty() && board.takenTables().isEmpty() && board.takenFurnaces().isEmpty()
+                                        && board.takenCutters().isEmpty() && board.takenEntities().isEmpty(),
+                      "taken sites outlived the order: trees " + board.takenTrees() + " tables " + board.takenTables());
                     final var state = builder.getJob() == null || builder.getJob().getWorkerAI() == null ? null : builder.getJob().getWorkerAI().getState();
                     helper.assertTrue(state != com.minecolonies.core.entity.ai.workers.builder.BuilderSupplyState.SUPPLY_RUN, "still fetching for a gone order");
                 }

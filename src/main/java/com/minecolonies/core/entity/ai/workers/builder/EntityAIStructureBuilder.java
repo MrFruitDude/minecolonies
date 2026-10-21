@@ -249,6 +249,27 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
 
     /**
+     * His hut's order was cancelled or replaced: a supply session for it ends now, not held against him, whether or not his job AI ticks again (called from the hut).
+     */
+    public void onOrderGone()
+    {
+        if (supply != null)
+        {
+            endSupply(building != null && building.getColony() instanceof com.minecolonies.core.colony.Colony colony ? colony.getLabourBoard() : null,
+              com.minecolonies.api.colony.idle.IdleStopReason.SETTING_OFF, com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.NEUTRAL);
+        }
+    }
+
+    /**
+     * A leisure break never interrupts a supply run (hunger may: the run is okay-to-eat).
+     */
+    @Override
+    public boolean canTakeLeisure()
+    {
+        return supply == null && super.canTakeLeisure();
+    }
+
+    /**
      * While he fetches the wood himself the open request for it must not pull him back to waiting for the delivery (the base AI does that every second).
      */
     @Override
@@ -1058,7 +1079,9 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     public boolean canGoIdle()
     {
         // a builder who helps or still has materials to bring back keeps his work AI running (the citizen AI ticks it only if he cannot idle)
-        return !building.hasWorkOrder() && !building.hasCarry() && assistOrder == null && building.getColony().getWorkManager().getAssistedOrder(building.getID()) == null;
+        // (and one who fetches his own materials: his job AI must run to end the session, whatever ticks first after his order is gone)
+        return supply == null && !building.hasWorkOrder() && !building.hasCarry() && assistOrder == null
+                 && building.getColony().getWorkManager().getAssistedOrder(building.getID()) == null;
     }
 
     @Override

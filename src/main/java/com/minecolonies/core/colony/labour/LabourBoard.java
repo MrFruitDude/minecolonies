@@ -133,6 +133,9 @@ public final class LabourBoard
     private final Map<IToken<?>, Long>           pendingWake = new HashMap<>();
     private final Map<IToken<?>, LabourPlanner.Why> blockedWhy = new HashMap<>();
 
+    /** What frees the sites a claim's session took (registered by the session; run when the claim is released). */
+    private final Map<LabourClaim, Runnable> sitesOf = new java.util.IdentityHashMap<>();
+
     private final Set<BlockPos> takenTrees    = new HashSet<>();
     private final Set<BlockPos> takenSurface  = new HashSet<>();
     private final Set<BlockPos> takenTables   = new HashSet<>();
@@ -390,6 +393,17 @@ public final class LabourBoard
         }
         colony.markDirty();
         return true;
+    }
+
+    /**
+     * A session took sites (trees, blocks, posts, items) for the claim: {@code free} gives them back when the claim is released, whoever releases it.
+     */
+    public void holdSites(final LabourClaim claim, final Runnable free)
+    {
+        if (alive(claim))
+        {
+            sitesOf.put(claim, free);
+        }
     }
 
     // ------------------------------------------------------------------ caps
@@ -811,7 +825,8 @@ public final class LabourBoard
     {
         if (!candidate.exact().isEmpty())
         {
-            return candidate.targets();
+            // the exact Architect's Cutter variant, unless a pack vetoes it for labour
+            return candidate.exact().is(LabourRules.NEVER) ? List.of() : candidate.targets();
         }
         final List<Item> own = new ArrayList<>();
         for (final Item item : candidate.targets())
@@ -1085,6 +1100,12 @@ public final class LabourBoard
         }
         LabourStats.log("claim of citizen {} released: success {} penalize {}", claim.citizenId(), success, penalize);
         byCitizen.remove(claim.citizenId());
+        // the trees, blocks, posts and items the claim's session had taken are free again, however the claim ends (a lease that ran out included)
+        final Runnable sites = sitesOf.remove(claim);
+        if (sites != null)
+        {
+            sites.run();
+        }
         (success ? LabourStats.CLAIMS_OK : LabourStats.CLAIMS_FAILED).incrementAndGet();
         count(-1);
         final long now = now();

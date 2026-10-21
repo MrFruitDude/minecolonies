@@ -551,6 +551,11 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
                 {
                     abstractEntityAIStructure.resetCurrentStructure();
                 }
+                if (abstractJobStructure.getWorkerAI() instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder builderAI)
+                {
+                    // a builder fetching materials for this order stops now (his claim, reservations and taken sites go), not when his job AI next runs
+                    builderAI.onOrderGone();
+                }
             }
         }
 
@@ -581,6 +586,11 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
                 if (abstractJobStructure.getWorkerAI() instanceof AbstractEntityAIStructureWithWorkOrder<?, ?> abstractEntityAIStructure)
                 {
                     abstractEntityAIStructure.resetCurrentStructure();
+                }
+                if (abstractJobStructure.getWorkerAI() instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder builderAI)
+                {
+                    // a builder fetching materials for this order stops now (his claim, reservations and taken sites go), not when his job AI next runs
+                    builderAI.onOrderGone();
                 }
             }
         }

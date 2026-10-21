@@ -130,6 +130,8 @@ public final class LabourSession implements IIdleTaskSession
         this.board = board;
         this.claim = claim;
         this.actionStart = colony.getWorld() == null ? 0L : colony.getWorld().getGameTime();
+        // (the board frees what this session took when the claim ends, also when the session is never stopped: a lease that runs out)
+        board.holdSites(claim, this::cleanup);
     }
 
     // ------------------------------------------------------------------ the session contract
