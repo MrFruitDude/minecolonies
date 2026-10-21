@@ -192,6 +192,21 @@ public final class BuilderScaffolding
     }
 
     /**
+     * Whether scaffolding is asked for: the builder's hut has an open request for it (a delivery that may still come; a cancelled request is not open).
+     */
+    public boolean stockAsked()
+    {
+        for (final IRequest<? extends Stack> request : ai.building.getOpenRequestsOfType(-1, TypeToken.of(Stack.class)))
+        {
+            if (request.getRequest().getStack().is(Items.SCAFFOLDING))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Whether a tower is planned and waits for scaffolding items that are not there yet.
      */
     public boolean waitingForStock()
