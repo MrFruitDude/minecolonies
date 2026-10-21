@@ -17,7 +17,7 @@
     {
       "type": "minecolonies:building",
       "building": "minecolonies:residence",
-      "level": 3
+      "level": 2
     }
   ],
   "researchLevel": 1,

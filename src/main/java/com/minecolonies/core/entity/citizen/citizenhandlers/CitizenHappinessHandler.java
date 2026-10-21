@@ -8,6 +8,7 @@ import com.minecolonies.api.entity.citizen.citizenhandlers.ICitizenFoodHandler;
 import com.minecolonies.api.entity.citizen.citizenhandlers.ICitizenHappinessHandler;
 import com.minecolonies.api.entity.citizen.happiness.*;
 import com.ldtteam.structurize.api.util.Tuple;
+import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.AbstractJobGuard;
 import net.minecraft.core.HolderLookup;
@@ -255,8 +256,8 @@ public class CitizenHappinessHandler implements ICitizenHappinessHandler
      */
     public static double getGuardFactor(final IColony colony)
     {
-        double guards = 1;
-        double workers = 1;
+        int guards = 0;
+        int others = 0;
         for (final ICitizenData citizen : colony.getCitizenManager().getCitizens())
         {
             if (citizen.getJob() instanceof AbstractJobGuard)
@@ -265,10 +266,25 @@ public class CitizenHappinessHandler implements ICitizenHappinessHandler
             }
             else
             {
-                workers++;
+                others++;
             }
         }
-        return Math.min(guards / (workers * 2 / 3), 2);
+        return guardFactor(guards, others, MineColonies.getConfig().getServer().securityGraceCitizens.get());
+    }
+
+    /**
+     * The guard security factor from the colony's counts: {@code min((guards + 1) / ((others + 1) * 2 / 3), 2)}. A colony with fewer than
+     * {@code graceCitizens} citizens never goes below neutral (1.0, which leaves happiness alone), so a young colony is not unhappy for lacking guards.
+     *
+     * @param guards        citizens with a guard job.
+     * @param others        all other citizens.
+     * @param graceCitizens the citizen count from which a lack of guards counts (0 = always).
+     * @return the factor, 0..2.
+     */
+    public static double guardFactor(final int guards, final int others, final int graceCitizens)
+    {
+        final double factor = Math.min((guards + 1.0) / ((others + 1.0) * 2 / 3), 2);
+        return guards + others < graceCitizens ? Math.max(1.0, factor) : factor;
     }
 
     /**

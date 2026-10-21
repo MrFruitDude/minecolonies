@@ -300,7 +300,7 @@ public class DefaultResearchProvider extends AbstractResearchProvider
         final Research keen = new Research(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "civilian/keen"), CIVIL).setTranslatedName("Keen")
                                 .setSortOrder(2)
                                 .setIcon(ModBlocks.blockHutLibrary.asItem())
-                                .addBuildingRequirement(Identifier.fromNamespaceAndPath(Constants.MOD_ID, ModBuildings.HOME_ID), 3)
+                                .addBuildingRequirement(Identifier.fromNamespaceAndPath(Constants.MOD_ID, ModBuildings.HOME_ID), 2)
                                 .addItemCost(Items.BOOK, 3, provider)
                                 .addEffect(ModBuildings.library.get().getBuildingBlock(), 1)
                                 .addToList(r);
@@ -597,7 +597,7 @@ public class DefaultResearchProvider extends AbstractResearchProvider
                                           .setSortOrder(4)
                                           .setOnlyChild()
                                           .setIcon(ModBlocks.blockHutSchool.asItem())
-                                          .addBuildingRequirement(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "residence"), 3)
+                                          .addBuildingRequirement(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "residence"), 2)
                                           .addItemCost(Items.BOOK, 3, provider)
                                           .addEffect(ModBuildings.school.get().getBuildingBlock(), 1)
                                           .addToList(r);
