@@ -760,61 +760,90 @@ final class BuilderScaffoldGameTests
     }
 
     /**
-     * Builder review c3 R2: one block sealed in a barrier cube (4 thick on every side, built before the order), scaffolding on and stocked. No spot reaches it
-     * and no tower can be planned; the ladder defers it again and again. Every return counts: after {@code LAST_RESORT_KEEPS} returns, with scaffolding there
-     * (no default placement allowed before the 6000-tick wait), the block is left out with a reason and the order ends. c7 launch 1: the old version built
-     * the cube after the order and the order ended on its first tick, so the limit was never reached.
+     * Builder review c4 C4-1: one block in the middle of a ring of bedrock walls (6 out, 4 high), scaffolding on and stocked, the ladder's teleport off. Stand
+     * spots exist inside the ring but no walk gets there, and nothing outside reaches the block. The ladder defers it again and again; the 12 returns count as
+     * the wait, and the 13th is placed the way MineColonies does (its walk ends at the wall, its own rule places from there). No hole, 0 violations.
+     * c7 launches 1 and 2: the barrier cube versions never blocked the builder.
      */
     public static void pathBlockedOrderEnds(final GameTestHelper helper)
     {
+        walledOff(helper, "walled", false);
+    }
+
+    /**
+     * The same ring with lava under the block: never a fallback over lava, so the block is left out and the order ends.
+     */
+    public static void pathBlockedOverLava(final GameTestHelper helper)
+    {
+        walledOff(helper, "walledlava", true);
+    }
+
+    private static void walledOff(final GameTestHelper helper, final String name, final boolean lava)
+    {
         WorkerSettings.overrideReachForTests(null, true, true, 16);
+        WorkerSettings.overrideTeleportForTests(true);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
         final int[] at = reachCounters();
-        WorkerEfficiencyGameTests.scene(helper, "WSCAF sealedcell", live -> {
+        final int keptOut0 = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachKeptOut.get();
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF " + name, live -> {
             live.setSkills(40, 40);
             live.giveTools();
-            final Blueprint blueprint = shape("sealedcell", 1, 2, 1, (x, y, z) -> y == 0);
+            final Blueprint blueprint = shape(name, 1, 2, 1, (x, y, z) -> y == 0);
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
             live.stock(Items.SCAFFOLDING, 32);
             final BlockPos site = helper.absolutePos(SITE);
-            for (int x = -4; x <= 4; x++)
+            for (int x = -6; x <= 6; x++)
             {
-                for (int z = -4; z <= 4; z++)
+                for (int z = -6; z <= 6; z++)
                 {
-                    for (int y = 0; y <= 5; y++)
+                    if (Math.max(Math.abs(x), Math.abs(z)) == 6)
                     {
-                        if (!(x == 0 && z == 0 && y <= 1))
+                        for (int y = 0; y <= 3; y++)
                         {
-                            live.level.setBlock(site.offset(x, y, z), Blocks.BARRIER.defaultBlockState(), 3);
+                            live.level.setBlock(site.offset(x, y, z), Blocks.BEDROCK.defaultBlockState(), 3);
                         }
                     }
                 }
             }
-            final WorkOrderDecoration order = live.orderFor("sealedcell", SITE, blueprint);
+            if (lava)
+            {
+                live.level.setBlock(site.below(), Blocks.LAVA.defaultBlockState(), 3);
+            }
+            final WorkOrderDecoration order = live.orderFor(name, SITE, blueprint);
             final BlockPos origin = order.getLocation();
             final int[] doneTick = {0};
-            WorkerEfficiencyGameTests.everyTick(live, 30_000, tick -> {
+            WorkerEfficiencyGameTests.everyTick(live, 40_000, tick -> {
                 if (tick == 1 || tick % 1000 == 0)
                 {
-                    Log.getLogger().info("WSCAF sealedcell t={} origin={} site={} order={} missing={} reach={} {}", tick, origin.toShortString(), site.toShortString(),
-                      live.colony.getWorkManager().getWorkOrder(order.getID()) != null, missing(live, blueprint, origin), java.util.Arrays.toString(reachDelta(at)), live.ai());
+                    Log.getLogger().info("WSCAF {} t={} origin={} wall={} missing={} reach={} keptOut={} {}", name, tick, origin.toShortString(),
+                      live.level.getBlockState(site.offset(6, 0, 0)).getBlock(), missing(live, blueprint, origin), java.util.Arrays.toString(reachDelta(at)),
+                      com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachKeptOut.get() - keptOut0, live.ai());
                 }
                 doneTick[0] = tick;
                 return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
             }, () -> {
                 final int[] d = reachDelta(at);
-                Log.getLogger().info("WBENCH RESULT sealedcell ticks={} missing={} limited={} default={} refused={} flooded={} towers={} cells={} default2D={} violations={}",
-                  doneTick[0], missing(live, blueprint, origin), d[0], d[1], d[2], d[3], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced, ReachAudit.defaultMax2D(),
-                  ReachAudit.violations());
-                helper.assertTrue(doneTick[0] > 200, "the order ended at once (tick " + doneTick[0] + "): the keep limit was not reached");
-                helper.assertTrue(missing(live, blueprint, origin) == 1 && d[1] == 0,
-                  "not left out through the keep limit: missing " + missing(live, blueprint, origin) + " default placements " + d[1] + " after " + doneTick[0] + " ticks");
+                final int keptOut = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachKeptOut.get() - keptOut0;
+                Log.getLogger().info("WBENCH RESULT {} ticks={} missing={} keptOut={} limited={} default={} refused={} towers={} cells={} default2D={} violations={}", name,
+                  doneTick[0], missing(live, blueprint, origin), keptOut, d[0], d[1], d[2], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced,
+                  ReachAudit.defaultMax2D(), ReachAudit.violations());
                 helper.assertTrue(ReachAudit.violations() == 0, "placed out of range: " + ReachAudit.examples());
+                if (lava)
+                {
+                    helper.assertTrue(missing(live, blueprint, origin) == 1 && keptOut == 0, "over lava: missing " + missing(live, blueprint, origin) + " keptOut " + keptOut);
+                }
+                else
+                {
+                    helper.assertTrue(doneTick[0] > 200, "the order ended at once (tick " + doneTick[0] + "): the walls did not block him");
+                    helper.assertTrue(missing(live, blueprint, origin) == 0, "a hole: missing " + missing(live, blueprint, origin));
+                    helper.assertTrue(keptOut > 0, "not placed by the 13th-return default try (keptOut 0, default " + d[1] + ")");
+                }
                 WorkerSettings.clearOverrides();
                 ReachAudit.enable(false);
                 helper.succeed();
-            }, () -> "the order did not end: missing=" + missing(live, blueprint, origin) + " reach=" + java.util.Arrays.toString(reachDelta(at)) + " " + live.ai());
+            }, () -> "the order did not end: missing=" + missing(live, blueprint, origin) + " reach=" + java.util.Arrays.toString(reachDelta(at)) + " keptOut="
+                       + (com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachKeptOut.get() - keptOut0) + " " + live.ai());
         });
     }
 
