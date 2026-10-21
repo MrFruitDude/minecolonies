@@ -89,7 +89,7 @@ public class ReproductionManager implements IReproductionManager
     public void trySpawnChild()
     {
         // Spawn a child when adults are present
-        if (colony.getSettings().getSetting(BuildingTownHall.MOVE_IN).getValue() && colony.getCitizenManager().getCurrentCitizenCount() < colony.getCitizenManager().getMaxCitizens() && colony.getCitizenManager().getCurrentCitizenCount() >= Math.min(MIN_SIZE_FOR_REPRO, MinecoloniesAPIProxy.getInstance().getConfig().getServer().initialCitizenAmount.get()))
+        if (colony.getSettings().getSetting(BuildingTownHall.MOVE_IN).getValue() && colony.getCitizenManager().getCurrentCitizenCount() < colony.getCitizenManager().getMaxCitizens() && colony.getCitizenManager().getCurrentCitizenCount() >= Math.min(MIN_SIZE_FOR_REPRO, MinecoloniesAPIProxy.getInstance().getConfig().getServer().respawnCitizenAmount.get()))
         {
             if (!checkForBioParents())
             {

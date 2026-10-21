@@ -532,7 +532,8 @@ public class CitizenData implements ICitizenData
         saturation = MAX_SATURATION;
 
         int levelCap = (int) colony.getOverallHappiness() * 2;
-        if (colony.getCitizenManager().getCitizens().size() < IMinecoloniesAPI.getInstance().getConfig().getServer().initialCitizenAmount.get())
+        // the free citizens (the starting ones, then the free floor) are skilled at least to 5
+        if (colony.getCitizenManager().getCitizens().size() < com.minecolonies.core.colony.managers.CitizenManager.freeCitizenTarget(colony))
         {
             levelCap = Math.max(5, levelCap);
         }

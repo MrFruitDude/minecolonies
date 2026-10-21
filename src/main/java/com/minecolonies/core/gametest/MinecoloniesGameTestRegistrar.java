@@ -142,6 +142,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 EmptyBlueprintGameTests.register(event);
             }
+            if (only.contains("pace"))
+            {
+                registerPace(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -577,26 +581,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "fletcher_saddle_harness"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::fletcherSaddleHarness),
           data);
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_provider_scales_ai_delay"),
-          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderScalesAiDelay),
-          isolatedColonyData(event, "pace_provider_scales_ai_delay"));
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_provider_scales_action_cycle"),
-          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderScalesActionCycle),
-          isolatedColonyData(event, "pace_provider_scales_action_cycle"));
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_provider_composes_with_worker_speed"),
-          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderComposesWithWorkerSpeed),
-          isolatedColonyData(event, "pace_provider_composes_with_worker_speed"));
+        registerPace(event);
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "crafter_records_inputs_as_used"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::crafterRecordsItsInputsAsUsed),
           isolatedColonyData(event, "crafter_records_inputs_as_used"));
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_default_provider_unchanged"),
-          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceDefaultProviderUnchanged),
-          isolatedColonyData(event, "pace_default_provider_unchanged"));
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "upgrade_request_event_cancels"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::upgradeRequestEventCancels),
@@ -1182,6 +1171,30 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               info -> new MinecoloniesGameTestInstance(info, test),
               longIsolatedColonyData(event, name, 20_000));
         }
+    }
+
+    /**
+     * The colony pace provider hooks (pace_*): the provider scales AI delays and action cycles, composes with worker speed, and the default changes nothing.
+     * Run on their own with {@code MINECOLONIES_GAMETEST_ONLY=pace}; the full suite registers them too.
+     */
+    private void registerPace(final RegisterGameTestsEvent event)
+    {
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_provider_scales_ai_delay"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderScalesAiDelay),
+          isolatedColonyData(event, "pace_provider_scales_ai_delay"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_provider_scales_action_cycle"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderScalesActionCycle),
+          isolatedColonyData(event, "pace_provider_scales_action_cycle"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_provider_composes_with_worker_speed"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceProviderComposesWithWorkerSpeed),
+          isolatedColonyData(event, "pace_provider_composes_with_worker_speed"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_default_provider_unchanged"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceDefaultProviderUnchanged),
+          isolatedColonyData(event, "pace_default_provider_unchanged"));
     }
 
     /**

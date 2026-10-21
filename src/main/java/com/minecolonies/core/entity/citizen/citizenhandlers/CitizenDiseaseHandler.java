@@ -78,11 +78,12 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
 
 
     /**
-     * The initial citizen count
+     * The population at or below which citizens do not fall sick: the free citizen floor (respawncitizenamount), not the starting count.
      */
-    private static final int initialCitizenCount = IMinecoloniesAPI.getInstance()
-      .getConfig()
-      .getServer().initialCitizenAmount.get();
+    private static int minPopulationForDisease()
+    {
+        return IMinecoloniesAPI.getInstance().getConfig().getServer().respawnCitizenAmount.get();
+    }
 
     /**
      * Constructor for the experience handler.
@@ -142,7 +143,7 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
             && citizenData.getColony().isActive()
             && !(citizenData.getJob() instanceof JobHealer)
                  && immunityTicks <= 0
-            && citizenData.getColony().getCitizenManager().getCurrentCitizenCount() > initialCitizenCount;
+            && citizenData.getColony().getCitizenManager().getCurrentCitizenCount() > minPopulationForDisease();
     }
 
     @Override

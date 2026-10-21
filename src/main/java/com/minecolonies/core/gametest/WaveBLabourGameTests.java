@@ -603,6 +603,9 @@ final class WaveBLabourGameTests
         final RsFixture f = found(helper, "waveb hut loan");
         final Colony colony = (Colony) f.colony;
         f.place(ModBlocks.blockHutBuilder, new BlockPos(36, 1, 24), "fundamentals/builder1.blueprint");
+        // (a work order is only accepted while some builder's hut has a worker, and auto-hiring is off here: the fixture's builder gets one, held still)
+        final ICitizenData worker = f.spawn(new BlockPos(10, 1, 6), true);
+        helper.assertTrue(f.builder.getModule(BuildingModules.BUILDER_WORK).assignCitizen(worker), "builder not assigned");
         final BlockPos relA = new BlockPos(8, 1, 24);
         final BlockPos relB = new BlockPos(24, 1, 32);
         final IBuilding a = f.place(ModBlocks.blockHutLumberjack, relA, "fundamentals/lumberjack1.blueprint");

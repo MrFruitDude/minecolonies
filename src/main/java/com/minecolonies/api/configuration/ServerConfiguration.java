@@ -21,6 +21,12 @@ public class ServerConfiguration extends AbstractConfiguration
      *  --------------------------------------------------------------------------- */
 
     public final IntValue     initialCitizenAmount;
+
+    /**
+     * The free citizen floor: once a colony has had its starting citizens, deaths are refilled for free (no bed needed) up to this many. Also the population below which
+     * citizens neither fall sick nor need two to reproduce. {@link #initialCitizenAmount} is only the starting count.
+     */
+    public final IntValue     respawnCitizenAmount;
     public final BooleanValue allowInfiniteSupplyChests;
     public final BooleanValue allowInfiniteColonies;
 
@@ -283,6 +289,7 @@ public class ServerConfiguration extends AbstractConfiguration
         createCategory("gameplay");
 
         initialCitizenAmount = defineInteger("initialcitizenamount", 8, 1, 10);
+        respawnCitizenAmount = defineInteger("respawncitizenamount", 4, 1, 10);
         allowInfiniteSupplyChests = defineBoolean("allowinfinitesupplychests", false);
         allowInfiniteColonies = defineBoolean("allowinfinitecolonies", false);
         allowOtherDimColonies = defineBoolean("allowotherdimcolonies", true);

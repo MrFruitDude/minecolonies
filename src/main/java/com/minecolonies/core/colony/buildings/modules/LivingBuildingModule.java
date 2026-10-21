@@ -5,6 +5,7 @@ import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.HiringMode;
 import com.minecolonies.api.colony.buildings.modules.*;
 import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
+import com.minecolonies.api.util.Log;
 import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingTownHall;
 import net.minecraft.core.HolderLookup;
@@ -25,30 +26,46 @@ public class LivingBuildingModule extends AbstractAssignedCitizenModule implemen
     public void deserializeNBT(@NotNull final HolderLookup.Provider provider, final CompoundTag compound)
     {
         super.deserializeNBT(provider, compound);
-        if (compound.contains(TAG_RESIDENTS))
+        if (compound.contains(TAG_RESIDENTS) || compound.contains(TAG_LIVING_RESIDENTS))
         {
-            final int[] residentIds = compound.getIntArray(TAG_RESIDENTS).orElse(new int[0]);
+            final int[] residentIds = compound.getIntArray(compound.contains(TAG_RESIDENTS) ? TAG_RESIDENTS : TAG_LIVING_RESIDENTS).orElse(new int[0]);
+            final List<ICitizenData> residents = new ArrayList<>();
             for (final int citizenId : residentIds)
             {
                 final ICitizenData citizen = building.getColony().getCitizenManager().getCivilian(citizenId);
                 if (citizen != null)
                 {
-                    assignCitizen(citizen);
+                    residents.add(citizen);
                 }
             }
-        }
-        else if (compound.contains(TAG_LIVING_RESIDENTS))
-        {
-            final int[] residentIds = compound.getIntArray(TAG_RESIDENTS).orElse(new int[0]);
-            for (final int citizenId : residentIds)
+            final int beds = getModuleMax();
+            if (restoreResidents(residents) > beds)
             {
-                final ICitizenData citizen = building.getColony().getCitizenManager().getCivilian(citizenId);
-                if (citizen != null)
-                {
-                    assignCitizen(citizen);
-                }
+                Log.getLogger().info("Residence {} keeps {} saved residents with {} beds (fewer beds than when saved); no new resident moves in until one leaves",
+                  building.getID(), assignedCitizen.size(), beds);
             }
         }
+    }
+
+    /**
+     * Puts the saved residents back on load, all of them: a residence with fewer beds than when it was saved (a lower residenceextrabeds, or a save from a
+     * jar with more beds) keeps its residents rather than leaving the extra ones homeless. It takes no new resident until it is below its beds again.
+     *
+     * @param residents the saved residents, in saved order.
+     * @return the residents it holds afterwards.
+     */
+    int restoreResidents(final List<ICitizenData> residents)
+    {
+        for (final ICitizenData citizen : residents)
+        {
+            if (citizen != null && !assignedCitizen.contains(citizen))
+            {
+                assignedCitizen.add(citizen);
+                onAssignment(citizen);
+                markDirty();
+            }
+        }
+        return assignedCitizen.size();
     }
 
     @Override

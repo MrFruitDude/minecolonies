@@ -101,6 +101,17 @@ public class CitizenManager implements ICitizenManager
     private int respawnInterval = 30 * TICKS_SECOND;
 
     /**
+     * Whether the colony has had its starting citizens (server config initialcitizenamount). Until then free citizens spawn up to the starting count, afterwards
+     * only up to the free floor (respawncitizenamount).
+     */
+    private boolean startingCitizensDone = false;
+
+    /**
+     * Save tag of {@link #startingCitizensDone}.
+     */
+    private static final String TAG_STARTING_CITIZENS_DONE = "startingCitizensDone";
+
+    /**
      * The citizen spawn interval
      */
     private int citizenRespawnTimer = 5 * 60 * TICKS_SECOND;
@@ -184,6 +195,7 @@ public class CitizenManager implements ICitizenManager
         citizens.putAll(NBTUtils.streamCompound(compound.getListOrEmpty(TAG_CITIZENS))
                           .map(s -> deserializeCitizen(provider, s))
                           .collect(Collectors.toMap(ICitizenData::getId, Function.identity())));
+        startingCitizensDone = startingDoneOnLoad(compound.contains(TAG_STARTING_CITIZENS_DONE), compound.getBooleanOr(TAG_STARTING_CITIZENS_DONE, false));
 
         // Update child state after loading citizen data
         colony.updateHasChilds();
@@ -207,6 +219,49 @@ public class CitizenManager implements ICitizenManager
     {
         @NotNull final ListTag citizenTagList = citizens.values().stream().map(citizen -> citizen.serializeNBT(provider)).collect(NBTUtils.toListNBT());
         compoundNBT.put(TAG_CITIZENS, citizenTagList);
+        compoundNBT.putBoolean(TAG_STARTING_CITIZENS_DONE, startingCitizensDone);
+    }
+
+    /**
+     * @param hasTag whether the save has the flag.
+     * @param saved  the saved flag.
+     * @return whether a loaded colony has had its starting citizens: a save from before the flag existed is an existing colony, so it has.
+     */
+    public static boolean startingDoneOnLoad(final boolean hasTag, final boolean saved)
+    {
+        return !hasTag || saved;
+    }
+
+    /**
+     * How many citizens the colony gets for free (spawned at the town hall without a bed): the starting count until it has had them, then the free floor.
+     *
+     * @param startingDone whether the colony has had its starting citizens.
+     * @param starting     the starting count (server config initialcitizenamount).
+     * @param floor        the free floor (server config respawncitizenamount).
+     * @return the free citizen target.
+     */
+    public static int freeCitizenTarget(final boolean startingDone, final int starting, final int floor)
+    {
+        return startingDone ? floor : starting;
+    }
+
+    /**
+     * @return this colony's free citizen target now (see {@link #freeCitizenTarget(boolean, int, int)}).
+     */
+    public int getFreeCitizenTarget()
+    {
+        return freeCitizenTarget(startingCitizensDone, MineColonies.getConfig().getServer().initialCitizenAmount.get(),
+          MineColonies.getConfig().getServer().respawnCitizenAmount.get());
+    }
+
+    /**
+     * @param colony a colony.
+     * @return its free citizen target; the starting count for a manager that is not this class.
+     */
+    public static int freeCitizenTarget(final IColony colony)
+    {
+        return colony.getCitizenManager() instanceof CitizenManager manager ? manager.getFreeCitizenTarget()
+                 : MineColonies.getConfig().getServer().initialCitizenAmount.get();
     }
 
     @Override
@@ -619,8 +674,14 @@ public class CitizenManager implements ICitizenManager
             getCitizens().stream().filter(Objects::nonNull).forEach(ICitizenData::updateEntityIfNecessary);
         }
 
-        //  Spawn initial Citizens
-        if (colony.getSettings().getSetting(BuildingTownHall.MOVE_IN).getValue() && colony.getServerBuildingManager().hasTownHall() && getCitizens().size() < MineColonies.getConfig().getServer().initialCitizenAmount.get())
+        if (!startingCitizensDone && getCitizens().size() >= MineColonies.getConfig().getServer().initialCitizenAmount.get())
+        {
+            startingCitizensDone = true;
+            colony.markDirty();
+        }
+
+        //  Spawn initial Citizens (the starting count once, then deaths are refilled up to the free floor)
+        if (colony.getSettings().getSetting(BuildingTownHall.MOVE_IN).getValue() && colony.getServerBuildingManager().hasTownHall() && getCitizens().size() < getFreeCitizenTarget())
         {
             respawnInterval -= 500 + (SECONDS_A_MINUTE * colony.getServerBuildingManager().getTownHall().getBuildingLevel());
 

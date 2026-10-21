@@ -152,11 +152,24 @@ public class CitizenHappinessHandler implements ICitizenHappinessHandler
                 totalWeight += happinessModifier.getWeight();
             }
 
-            final double happinessResult = (total / totalWeight) * (1 + colony.getResearchManager().getResearchEffects().getEffectStrength(HAPPINESS));
-
-            cachedHappiness = Math.min(10.0 * happinessResult, 10);
+            cachedHappiness = happiness(total, totalWeight, colony.getResearchManager().getResearchEffects().getEffectStrength(HAPPINESS));
         }
         return cachedHappiness;
+    }
+
+    /**
+     * Happiness from the weighted factors that are not neutral: {@code min(10 * total / totalWeight * (1 + research), 10)}. When every factor is neutral (1.0, so
+     * none is counted, which the security grace makes common in a young colony) the colony is content: 10, not 0 / 0.
+     *
+     * @param total       the sum of factor * weight over the counted factors.
+     * @param totalWeight the sum of their weights.
+     * @param research    the happiness research effect.
+     * @return the happiness, at most 10.
+     */
+    public static double happiness(final double total, final double totalWeight, final double research)
+    {
+        final double average = totalWeight > 0 ? total / totalWeight : 1.0;
+        return Math.min(10.0 * average * (1 + research), 10);
     }
 
     @Override
@@ -245,7 +258,24 @@ public class CitizenHappinessHandler implements ICitizenHappinessHandler
             }
         }
 
-        return (total - (unemployment + homelessness + sickPeople + hungryPeople)) / total;
+        return socialFactor(total, unemployment + homelessness + sickPeople + hungryPeople);
+    }
+
+    /**
+     * The social factor from the colony's counts: the share of citizens with no problem. One citizen can be counted for several problems (jobless, homeless,
+     * sick, hungry), so the plain share can go below 0, which made a young colony's happiness negative: it is kept within 0..1, and an empty colony is neutral.
+     *
+     * @param citizens the colony's citizens.
+     * @param problems the problems counted over them (a citizen may add several).
+     * @return the factor, 0..1.
+     */
+    public static double socialFactor(final double citizens, final double problems)
+    {
+        if (citizens <= 0)
+        {
+            return 1.0;
+        }
+        return Math.max(0.0, Math.min(1.0, (citizens - problems) / citizens));
     }
 
     /**
