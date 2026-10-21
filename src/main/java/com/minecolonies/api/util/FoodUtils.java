@@ -167,9 +167,7 @@ public class FoodUtils
                 final int localScore = foodHandler.checkLastEaten(invStack.getItem()) * (isMinecolfood ? 1 : 2);
 
                 // If the quality and diversity requirement would be fulfilled, already go ahead with this food. Don't need to check others.
-                if ((localScore < 0 && isMinecolfood)
-                || (localScore < 0 && foodStats.quality() > qualityRequirement * 2)
-                || (isMinecolfood && foodStats.diversity() > diversityRequirement * 2))
+                if (greatFood(isMinecolfood, localScore, foodStats, diversityRequirement, qualityRequirement))
                 {
                     return i;
                 }
@@ -190,6 +188,16 @@ public class FoodUtils
         }
 
         return bestSlot;
+    }
+
+    /**
+     * The early choice of {@link #getBestFoodForCitizen}: food good enough for the citizen's diversity and quality to eat at once (shared with
+     * {@link #wouldEatOutsideRestaurant}, so the eat task and eating at work choose alike).
+     */
+    private static boolean greatFood(final boolean isMinecolfood, final int score, final ICitizenFoodHandler.CitizenFoodStats foodStats, final int diversityRequirement,
+      final int qualityRequirement)
+    {
+        return (score < 0 && isMinecolfood) || (score < 0 && foodStats.quality() > qualityRequirement * 2) || (isMinecolfood && foodStats.diversity() > diversityRequirement * 2);
     }
 
     /**
@@ -223,8 +231,7 @@ public class FoodUtils
         final int homeLevel = citizenData.getHomeBuilding() == null ? 0 : citizenData.getHomeBuilding().getBuildingLevelEquivalent();
         final boolean isMinecolfood = stack.getItem() instanceof IMinecoloniesFoodItem;
         final int score = citizenData.getCitizenFoodHandler().checkLastEaten(stack.getItem()) * (isMinecolfood ? 1 : 2);
-        if ((score < 0 && isMinecolfood) || (score < 0 && foodStats.quality() > getMinFoodQualityRequirement(homeLevel) * 2)
-              || (isMinecolfood && foodStats.diversity() > getMinFoodDiversityRequirement(homeLevel) * 2))
+        if (greatFood(isMinecolfood, score, foodStats, getMinFoodDiversityRequirement(homeLevel), getMinFoodQualityRequirement(homeLevel)))
         {
             return true;
         }

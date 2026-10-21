@@ -49,6 +49,11 @@ public class CitizenSnack
      */
     public static final AtomicInteger eaten = new AtomicInteger();
 
+    /**
+     * Takes of food from the racks of a work hut (for the tests).
+     */
+    public static final AtomicInteger pulls = new AtomicInteger();
+
     private final EntityCitizen citizen;
 
     /**
@@ -59,6 +64,22 @@ public class CitizenSnack
     public CitizenSnack(final EntityCitizen citizen)
     {
         this.citizen = citizen;
+    }
+
+    /**
+     * A slot of food he carries that the rule lets him eat outside a restaurant, or -1.
+     */
+    private int acceptedFoodSlot(final ICitizenData data)
+    {
+        for (int i = 0; i < citizen.getInventoryCitizen().getSlots(); i++)
+        {
+            final ItemStack stack = citizen.getInventoryCitizen().getStackInSlot(i);
+            if (!stack.isEmpty() && FoodUtils.wouldEatOutsideRestaurant(data, stack))
+            {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -98,15 +119,24 @@ public class CitizenSnack
         int slot = FoodUtils.getBestFoodForCitizen(citizen.getInventoryCitizen(), data, null);
         if (slot == -1)
         {
+            // the best scored food in his pockets is kept for the restaurant: another item he carries may still pass the rule (also what is left of an
+            // earlier rack take); while he carries such food he does not go to the racks
+            slot = acceptedFoodSlot(data);
+        }
+        if (slot == -1)
+        {
             final IBuilding work = data.getWorkBuilding();
             if (work != null && work.isInBuilding(citizen.blockPosition()))
             {
-                // decided before anything moves (the food rules and the restaurant choice), and he takes only what this snack needs, never a whole slot
+                // decided before anything moves (the food rules and the restaurant choice), and he takes only what this snack needs, never a whole slot;
+                // then he eats exactly that item
                 final ItemStorage food = FoodUtils.checkForFoodInBuilding(data, null, work);
                 if (food != null && FoodUtils.wouldEatOutsideRestaurant(data, food.getItemStack())
                       && InventoryUtils.transferItemStackIntoNextBestSlotInItemHandler(work, food, itemsNeeded(food.getItemStack(), saturation), citizen.getInventoryCitizen()))
                 {
-                    slot = FoodUtils.getBestFoodForCitizen(citizen.getInventoryCitizen(), data, null);
+                    slot = InventoryUtils.findFirstSlotInItemHandlerWith(citizen.getInventoryCitizen(),
+                      stack -> !stack.isEmpty() && food.equals(new ItemStorage(stack)));
+                    pulls.incrementAndGet();
                 }
             }
         }
