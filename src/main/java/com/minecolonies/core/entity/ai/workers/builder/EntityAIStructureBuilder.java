@@ -157,6 +157,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return false;
         }
+        // (only where entities tick: walking out of that, he would stop and the session could not end, builder review c3 R3)
+        if (!(world instanceof net.minecraft.server.level.ServerLevel level) || !com.minecolonies.core.colony.labour.LabourSites.simulated(level, worker.blockPosition()))
+        {
+            return false;
+        }
         final var state = getState();
         if (state == ASSIST_PLAN || state == ASSIST_GATHER || state == ASSIST_WORK || state == ASSIST_MINE || state == ASSIST_RETURN || state == SUPPLY_PLAN || state == SUPPLY_RUN)
         {
@@ -209,8 +214,9 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         }
         if (!supply.isValid())
         {
-            // served or cancelled by somebody else: nothing to hold against him; otherwise (lease gone, time up, setting off) it brought nothing
-            final boolean servedElsewhere = request != null && !board.stillWaiting(request);
+            // served or cancelled by somebody else, or given back while he did not tick (builder review c3 R3): nothing to hold against him; otherwise (lease
+            // gone, time up, setting off) it brought nothing
+            final boolean servedElsewhere = board.releasedUnticked(supply.claim()) || (request != null && !board.stillWaiting(request));
             endSupply(board, servedElsewhere ? com.minecolonies.api.colony.idle.IdleStopReason.SETTING_OFF : com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID,
               servedElsewhere ? com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.NEUTRAL : com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.FAILED);
             return START_WORKING;
@@ -543,8 +549,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     private final java.util.Map<BlockPos, Long> noSpotFirst = new java.util.HashMap<>();
     /** Blocks of this order the unstuck ladder would have left out (holes): kept, and placed the way MineColonies places them once that is allowed. */
     private final java.util.Map<BlockPos, Integer> lastResort = new java.util.HashMap<>();
-    /** How often a block may come back as a last resort before it is left out after all (MineColonies' own placement could not get to it either). */
-    static final int LAST_RESORT_KEEPS = 6;
+    /** How often a block may come back as a last resort before it is left out after all (every return counts, waiting for a tower too). */
+    static final int LAST_RESORT_KEEPS = 12;
+    /** Blocks kept {@link #LAST_RESORT_KEEPS} times: they get one more return, placed the way MineColonies places them (builder review c3 R2). */
+    private final java.util.Set<BlockPos> keptOut = new java.util.HashSet<>();
     /** Ticks between two searches for a spot in the working range. */
     static final long FALLBACK_SPOT_RETRY = 20L;
 
@@ -589,8 +597,21 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return true;
         }
-        // (MineColonies' default placement has no reach gate: its own walk decides)
-        return pos.equals(reachFallback) && (reachFallbackMode == FallbackMode.DEFAULT || inFallbackRange(worker.blockPosition(), worker.getEyeY(), pos));
+        if (!pos.equals(reachFallback) || fluidHazard(pos))
+        {
+            // (lava that flowed in after the fallback started: never placed from the working range)
+            return false;
+        }
+        // MineColonies' default placement: within its own walk radius only, so a stale fallback block is walked to first (builder review c3 R1)
+        return reachFallbackMode == FallbackMode.DEFAULT ? inDefaultRange(worker.blockPosition(), pos) : inFallbackRange(worker.blockPosition(), worker.getEyeY(), pos);
+    }
+
+    /**
+     * Whether the block lies in MineColonies' default working radius of the builder: 5 around (x plus z), any height.
+     */
+    static boolean inDefaultRange(final BlockPos feet, final BlockPos pos)
+    {
+        return BlockPosUtil.getDistance2D(feet, pos) <= FALLBACK_RANGE;
     }
 
     /**
@@ -662,11 +683,32 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         fallbackWalkFails = 0;
         fallbackFailAt = null;
         fallbackSpotFor = null;
+        dropReachFallback();
+    }
+
+    /**
+     * Ends the fallback of the block he worked on from the working range: the physical reach again.
+     */
+    private void dropReachFallback()
+    {
         if (reachFallback != null)
         {
             com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(worker, null, false);
         }
         reachFallback = null;
+    }
+
+    /**
+     * A deferred fallback block comes again with a walk first: its fallback ends here, so it is never placed from where he stands when it comes up out of order
+     * (builder review c3 R1).
+     */
+    @Override
+    protected void onBlockDeferred(final BlockPos pos)
+    {
+        if (pos.equals(reachFallback))
+        {
+            dropReachFallback();
+        }
     }
 
     /**
@@ -699,14 +741,48 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return false;
         }
-        // (while the tower for it can still come, waiting does not use up the returns)
-        final int keeps = defaultAllowed(pos, world.getGameTime()) ? lastResort.merge(pos.immutable(), 1, Integer::sum) : lastResort.merge(pos.immutable(), 0, Integer::sum);
-        if (keeps > LAST_RESORT_KEEPS)
+        // every return counts (also while a tower is waited for), so an order always ends (builder review c3 R2)
+        final int keeps = lastResort.merge(pos.immutable(), 1, Integer::sum);
+        final boolean allowed = defaultAllowed(pos, world.getGameTime());
+        final KeepStep step = keepStep(keeps, allowed);
+        if (step == KeepStep.LEAVE_OUT)
         {
+            if (keeps == LAST_RESORT_KEEPS + 1)
+            {
+                logFallback("blocked", "Builder {} leaves {} out: he could not get to it {} times, and scaffolding is there, so it is not placed from MineColonies' working "
+                                         + "range instead (a path or the block itself is blocked)", worker.getName().getString(), pos.toShortString(), LAST_RESORT_KEEPS);
+            }
+            else
+            {
+                logFallback("blocked", "Builder {} leaves {} out: he could not get to it {} times, and MineColonies' own placement did not reach it either",
+                  worker.getName().getString(), pos.toShortString(), LAST_RESORT_KEEPS);
+            }
             return false;
         }
-        scaffold.note("last resort for " + pos + " (" + keeps + ")");
+        if (step == KeepStep.DEFAULT)
+        {
+            keptOut.add(pos.immutable());
+        }
+        scaffold.note("last resort for " + pos + " (" + keeps + ", " + step + ")");
         return true;
+    }
+
+    enum KeepStep
+    {
+        KEEP, DEFAULT, LEAVE_OUT
+    }
+
+    /**
+     * What the n-th return of a block the ladder would leave out brings: up to {@link #LAST_RESORT_KEEPS} plain returns, then one return placed the way MineColonies
+     * places it if that is allowed ({@link #defaultAllowed}), then it is left out with the reason.
+     */
+    static KeepStep keepStep(final int keeps, final boolean defaultPossible)
+    {
+        if (keeps <= LAST_RESORT_KEEPS)
+        {
+            return KeepStep.KEEP;
+        }
+        return keeps == LAST_RESORT_KEEPS + 1 && defaultPossible ? KeepStep.DEFAULT : KeepStep.LEAVE_OUT;
     }
 
     private int currentOrderId()
@@ -756,6 +832,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             waitedOrder = -1;
             noSpotFirst.clear();
             lastResort.clear();
+            keptOut.clear();
         }
         if (!target.equals(reachTry))
         {
@@ -769,6 +846,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         }
         if (target.equals(reachFallback))
         {
+            if (fluidHazard(target))
+            {
+                // lava flowed in after the fallback started: no fallback any more
+                dropReachFallback();
+                return false;
+            }
             return true;
         }
         if (fluidHazard(target))
@@ -821,6 +904,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             kind = "waited";
             waitedOrder = order;
             why = "no stand spot reaches it and the scaffolding asked for has not come in " + noSpotFor + " ticks";
+            mode = FallbackMode.DEFAULT;
+        }
+        else if (keptOut.contains(target))
+        {
+            kind = "kept-out";
+            why = "it came back " + LAST_RESORT_KEEPS + " times";
             mode = FallbackMode.DEFAULT;
         }
         else if (lastResort.containsKey(target))
@@ -1245,6 +1334,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     @Override
     protected boolean cannotReachAtAll(final BlockPos target)
     {
+        if (target.equals(reachFallback) && reachFallbackMode == FallbackMode.DEFAULT)
+        {
+            // MineColonies' own walk to it is under way: not deferred meanwhile (builder review c3 R4)
+            return false;
+        }
         // no spot for 40 ticks and no tower under way: nothing to wait for
         return usesPhysicalReach() && mainWalk.noSpotSince != 0L && world.getGameTime() - mainWalk.noSpotSince >= 40L && !scaffold.busy() && scaffold.denied();
     }
@@ -1260,6 +1354,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     {
         scaffold.clearDenial();
         mainWalk.reset();
+        dropReachFallback();
     }
 
     @Override
@@ -1348,6 +1443,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         waitedOrder = -1;
         noSpotFirst.clear();
         lastResort.clear();
+        keptOut.clear();
     }
 
     @Override
@@ -1356,8 +1452,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         if (reachFallback != null && !reachFallback.equals(currentBlock))
         {
             // the block he worked on from the working range is done: the physical reach again
-            com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(worker, null, false);
-            reachFallback = null;
+            dropReachFallback();
         }
         if (usesPhysicalReach() && currentBlock.equals(reachTarget) && !reachFallbackDue(currentBlock))
         {

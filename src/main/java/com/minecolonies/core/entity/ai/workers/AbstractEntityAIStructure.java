@@ -1202,6 +1202,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             {
                 blockToMine = null;
             }
+            onBlockDeferred(pos);
         }
         workFrom = null;
         gotoPos = null;
@@ -1222,6 +1223,15 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     protected boolean keepInsteadOfAbandoning(final BlockPos worldPos)
     {
         return false;
+    }
+
+    /**
+     * A block was deferred (or kept for later, or left out). Nothing by default.
+     *
+     * @param worldPos the block.
+     */
+    protected void onBlockDeferred(final BlockPos worldPos)
+    {
     }
 
     /**

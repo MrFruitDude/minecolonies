@@ -128,6 +128,12 @@ public final class LabourBoard
     private final Map<IToken<?>, Long>           notBefore = new HashMap<>();
     private final Map<IToken<?>, Integer>        failures  = new HashMap<>();
     private final Map<Integer, Long>             cooldown  = new HashMap<>();
+    /** Since when the citizen of a claim stands where entities do not tick (he does not move or act there; builder review c3 R3). */
+    private final Map<Integer, Long>             frozenSince = new HashMap<>();
+    /** Claims given back because their citizen stopped ticking: their session ends without a back-off ({@link #releasedUnticked}). */
+    private final java.util.Set<LabourClaim>     releasedFrozen = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    /** How long a citizen may stand where entities do not tick before his claim is given back. */
+    static final long FROZEN_TICKS = 200L;
     private final Map<Integer, Long>             noOffer   = new HashMap<>();
     private final Map<String, Boolean>           goalActive = new HashMap<>();
     private final Map<IToken<?>, Long>           pendingWake = new HashMap<>();
@@ -1086,6 +1092,36 @@ public final class LabourBoard
     }
 
     /**
+     * @return whether the citizen has stood for {@link #FROZEN_TICKS} where entities do not tick (the clock starts on the first such tick).
+     */
+    private boolean frozen(final int citizenId, final ICitizenData citizen, final long now)
+    {
+        final var entity = citizen.getEntity().orElse(null);
+        if (entity == null || !(entity.level() instanceof net.minecraft.server.level.ServerLevel level) || LabourSites.simulated(level, entity.blockPosition()))
+        {
+            frozenSince.remove(citizenId);
+            return false;
+        }
+        return frozenUntilNow(frozenSince.computeIfAbsent(citizenId, k -> now), now);
+    }
+
+    /**
+     * @return whether a citizen not ticking since {@code since} is frozen at {@code now}.
+     */
+    static boolean frozenUntilNow(final long since, final long now)
+    {
+        return now - since >= FROZEN_TICKS;
+    }
+
+    /**
+     * Whether the claim was given back because its citizen stopped ticking (asked once by the session that held it: it ends neutrally, no back-off).
+     */
+    public boolean releasedUnticked(final LabourClaim claim)
+    {
+        return releasedFrozen.remove(claim);
+    }
+
+    /**
      * Ends a claim: its ledger entries go, the citizen rests, and a failed claim puts the request on back-off.
      *
      * @param claim    the claim.
@@ -1100,6 +1136,7 @@ public final class LabourBoard
         }
         LabourStats.log("claim of citizen {} released: success {} penalize {}", claim.citizenId(), success, penalize);
         byCitizen.remove(claim.citizenId());
+        frozenSince.remove(claim.citizenId());
         // the trees, blocks, posts and items the claim's session had taken are free again, however the claim ends (a lease that ran out included)
         final Runnable sites = sitesOf.remove(claim);
         if (sites != null)
@@ -1311,6 +1348,14 @@ public final class LabourBoard
                     }
                     release(claim, false, !needs);
                     continue;
+                }
+                if (frozen(claim.citizenId(), citizen, now))
+                {
+                    // he stands where entities do not tick (simulation distance, a player walked away): his session cannot end by itself, so the
+                    // claim goes back now, without back-off; the session ends neutrally when he ticks again (releasedUnticked)
+                    LabourStats.log("claim of citizen {} given back: he stopped ticking at {}", claim.citizenId(), citizen.getEntity().get().blockPosition().toShortString());
+                    releasedFrozen.add(claim);
+                    release(claim, false, false);
                 }
             }
         }

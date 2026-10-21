@@ -29,6 +29,10 @@ public final class ReachAudit
     private static final java.util.Set<Integer> limitedIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** The largest distance up or down from the eye to a block placed from the limited working range. */
     private static volatile double fallbackMaxVertical = 0.0D;
+    /** The largest distance around (x plus z, MineColonies' measure) to a block placed by the default placement. */
+    private static volatile long   defaultMax2D = 0L;
+    /** MineColonies' default working radius around the builder. */
+    static final int DEFAULT_RANGE = 5;
 
     public static void enable(final boolean on)
     {
@@ -41,6 +45,7 @@ public final class ReachAudit
         limitedIds.clear();
         fallbackActions.set(0);
         fallbackMaxVertical = 0.0D;
+        defaultMax2D = 0L;
     }
 
     /**
@@ -83,6 +88,14 @@ public final class ReachAudit
         return fallbackMaxVertical;
     }
 
+    /**
+     * @return the largest distance around (x plus z) to a block placed by the default placement.
+     */
+    public static long defaultMax2D()
+    {
+        return defaultMax2D;
+    }
+
     public static boolean isEnabled()
     {
         return enabled;
@@ -103,6 +116,17 @@ public final class ReachAudit
             fallbackActions.incrementAndGet();
             if (!limitedIds.contains(worker.getId()))
             {
+                // MineColonies' default placement: 5 around (its own walk radius), any height. Further away is a leak, not excused (builder review c3 R1)
+                final long around = com.minecolonies.api.util.BlockPosUtil.getDistance2D(worker.blockPosition(), block);
+                defaultMax2D = Math.max(defaultMax2D, around);
+                if (around > DEFAULT_RANGE)
+                {
+                    violations++;
+                    if (examples.size() < 5)
+                    {
+                        examples.add(block.toShortString() + " from " + worker.blockPosition().toShortString() + " default placement 2D=" + around);
+                    }
+                }
                 return;
             }
             final double eye = worker.getEyeY();

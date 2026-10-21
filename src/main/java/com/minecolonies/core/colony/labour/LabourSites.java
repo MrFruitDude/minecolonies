@@ -166,13 +166,22 @@ public final class LabourSites
     }
 
     /**
+     * Whether a labourer may go there: the chunk is loaded and entities tick in it. A chunk that is only loaded (at the edge of the simulation distance, or
+     * a player walked away) stops the labourer who walks in: his session would never end (builder review c3 R3).
+     */
+    public static boolean simulated(final ServerLevel level, final BlockPos pos)
+    {
+        return level.isLoaded(pos) && level.isPositionEntityTicking(pos);
+    }
+
+    /**
      * @param pos a position.
-     * @return whether it lies inside this colony's claim (and in a loaded chunk).
+     * @return whether it lies inside this colony's claim (and in a chunk where entities tick: see {@link #simulated}).
      */
     public boolean ownedBy(final BlockPos pos)
     {
         final ServerLevel level = level();
-        if (level == null || !level.isLoaded(pos))
+        if (level == null || !simulated(level, pos))
         {
             return false;
         }
@@ -1401,7 +1410,7 @@ public final class LabourSites
         double bestDistance = Double.MAX_VALUE;
         for (final BlockPos pos : posts)
         {
-            if (taken.contains(pos) || level == null || !level.isLoaded(pos) || !block.test(level.getBlockState(pos)))
+            if (taken.contains(pos) || level == null || !simulated(level, pos) || !block.test(level.getBlockState(pos)))
             {
                 continue;
             }
@@ -1594,7 +1603,7 @@ public final class LabourSites
         final Set<Item> logs = new HashSet<>();
         for (final TreeSite tree : scan.trees())
         {
-            if (level != null && level.isLoaded(tree.base()) && LabourRules.log(level.getBlockState(tree.base())))
+            if (level != null && simulated(level, tree.base()) && LabourRules.log(level.getBlockState(tree.base())))
             {
                 logs.add(tree.log());
             }
@@ -1648,7 +1657,7 @@ public final class LabourSites
         double bestDistance = Double.MAX_VALUE;
         for (final TreeSite tree : scanArea(key, area, DirectedOrder.Resource.WOOD, DirectedOrder.NO_FLOOR).trees())
         {
-            if ((log != null && tree.log() != log) || taken.contains(tree.base()) || level == null || !level.isLoaded(tree.base()) || !LabourRules.log(level.getBlockState(tree.base())))
+            if ((log != null && tree.log() != log) || taken.contains(tree.base()) || level == null || !simulated(level, tree.base()) || !LabourRules.log(level.getBlockState(tree.base())))
             {
                 continue;
             }
@@ -1692,7 +1701,7 @@ public final class LabourSites
         double bestDistance = Double.MAX_VALUE;
         for (final BlockPos pos : scanArea(orderId, area, resource, floor).blocks())
         {
-            if (taken.contains(pos) || !level.isLoaded(pos) || !groundAllowedAt(pos) || !directedBlock(resource, level.getBlockState(pos)) || !level.getBlockState(pos.above()).isAir())
+            if (taken.contains(pos) || !simulated(level, pos) || !groundAllowedAt(pos) || !directedBlock(resource, level.getBlockState(pos)) || !level.getBlockState(pos.above()).isAir())
             {
                 continue;
             }

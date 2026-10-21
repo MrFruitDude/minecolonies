@@ -652,9 +652,9 @@ public final class LabourSession implements IIdleTaskSession
         // (a log in a chunk that is not loaded is not read: that would load it; the tree is left)
         for (final BlockPos pos : logsLeft)
         {
-            if (!level.isLoaded(pos))
+            if (!LabourSites.simulated(level, pos))
             {
-                leaveTree("a log lies in a chunk that is not loaded", now);
+                leaveTree("a log lies in a chunk that is not loaded or where entities do not tick", now);
                 return;
             }
         }
