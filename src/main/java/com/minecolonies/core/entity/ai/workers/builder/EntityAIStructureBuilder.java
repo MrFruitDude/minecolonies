@@ -1771,7 +1771,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     {
         // a builder who helps or still has materials to bring back keeps his work AI running (the citizen AI ticks it only if he cannot idle)
         // (and one who fetches his own materials: his job AI must run to end the session, whatever ticks first after his order is gone)
-        return supply == null && !building.hasWorkOrder() && !building.hasCarry() && assistOrder == null
+        // (and one who just finished an order and waits a moment for the next one: going idle would reset his AI and send him to his hut first)
+        return supply == null && !building.hasWorkOrder() && !building.hasCarry() && assistOrder == null && world.getGameTime() > nextOrderWithoutHutUntil
                  && building.getColony().getWorkManager().getAssistedOrder(building.getID()) == null;
     }
 
