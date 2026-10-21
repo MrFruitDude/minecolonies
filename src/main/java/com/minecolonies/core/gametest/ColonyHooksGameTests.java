@@ -347,6 +347,14 @@ public final class ColonyHooksGameTests
                         stub.work = paces[phase[0]];
                         ai.setDelay(waitTicks);
                     }
+                    else if (ticks[0] % 500 == 0 && ticks[0] < 6_000)
+                    {
+                        // (c7 launch 1: the 1x wait took 4300 ticks; this says what the citizen did meanwhile)
+                        Log.getLogger().info("[pace_provider_scales_ai_delay] still waiting at {}x after {} ticks: delay {}, ai {}, citizen {}", paces[phase[0]], ticks[0],
+                          delayOf(ai), ai.getState(), worker.getEntity().map(e -> (e instanceof com.minecolonies.core.entity.citizen.EntityCitizen ec ? String.valueOf(ec.getCitizenAI().getState()) : "?")
+                            + " at " + e.blockPosition().toShortString() + " ticking=" + ((ServerLevel) e.level()).isPositionEntityTicking(e.blockPosition())
+                            + " raining=" + e.level().isRaining()).orElse("no entity"));
+                    }
                     else if (ticks[0] >= 6_000)
                     {
                         throw helper.assertionException("live wait at " + paces[phase[0]] + "x never finished: delay " + delayOf(ai)

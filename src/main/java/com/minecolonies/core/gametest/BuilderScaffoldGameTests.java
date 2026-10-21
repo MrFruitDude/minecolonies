@@ -760,9 +760,10 @@ final class BuilderScaffoldGameTests
     }
 
     /**
-     * Builder review c3 R2: one block sealed in a barrier cube (4 thick on every side), scaffolding on and stocked. No spot reaches it and no tower can be
-     * planned; the ladder defers it again and again. The order must end: either placed the way MineColonies does after the wait, or left out with a reason
-     * after the hard limit of returns. Nothing is placed further than 5 around (the audit counts that).
+     * Builder review c3 R2: one block sealed in a barrier cube (4 thick on every side, built before the order), scaffolding on and stocked. No spot reaches it
+     * and no tower can be planned; the ladder defers it again and again. Every return counts: after {@code LAST_RESORT_KEEPS} returns, with scaffolding there
+     * (no default placement allowed before the 6000-tick wait), the block is left out with a reason and the order ends. c7 launch 1: the old version built
+     * the cube after the order and the order ended on its first tick, so the limit was never reached.
      */
     public static void pathBlockedOrderEnds(final GameTestHelper helper)
     {
@@ -776,8 +777,7 @@ final class BuilderScaffoldGameTests
             final Blueprint blueprint = shape("sealedcell", 1, 2, 1, (x, y, z) -> y == 0);
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
             live.stock(Items.SCAFFOLDING, 32);
-            final WorkOrderDecoration order = live.orderFor("sealedcell", SITE, blueprint);
-            final BlockPos origin = order.getLocation();
+            final BlockPos site = helper.absolutePos(SITE);
             for (int x = -4; x <= 4; x++)
             {
                 for (int z = -4; z <= 4; z++)
@@ -786,28 +786,54 @@ final class BuilderScaffoldGameTests
                     {
                         if (!(x == 0 && z == 0 && y <= 1))
                         {
-                            live.level.setBlock(origin.offset(x, y, z), Blocks.BARRIER.defaultBlockState(), 3);
+                            live.level.setBlock(site.offset(x, y, z), Blocks.BARRIER.defaultBlockState(), 3);
                         }
                     }
                 }
             }
+            final WorkOrderDecoration order = live.orderFor("sealedcell", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            final int[] doneTick = {0};
             WorkerEfficiencyGameTests.everyTick(live, 30_000, tick -> {
-                if (tick % 1000 == 0)
+                if (tick == 1 || tick % 1000 == 0)
                 {
-                    Log.getLogger().info("WSCAF sealedcell t={} missing={} reach={} {}", tick, missing(live, blueprint, origin), java.util.Arrays.toString(reachDelta(at)), live.ai());
+                    Log.getLogger().info("WSCAF sealedcell t={} origin={} site={} order={} missing={} reach={} {}", tick, origin.toShortString(), site.toShortString(),
+                      live.colony.getWorkManager().getWorkOrder(order.getID()) != null, missing(live, blueprint, origin), java.util.Arrays.toString(reachDelta(at)), live.ai());
                 }
+                doneTick[0] = tick;
                 return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
             }, () -> {
                 final int[] d = reachDelta(at);
-                Log.getLogger().info("WBENCH RESULT sealedcell missing={} limited={} default={} refused={} flooded={} towers={} cells={} default2D={} violations={}",
-                  missing(live, blueprint, origin), d[0], d[1], d[2], d[3], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced, ReachAudit.defaultMax2D(),
+                Log.getLogger().info("WBENCH RESULT sealedcell ticks={} missing={} limited={} default={} refused={} flooded={} towers={} cells={} default2D={} violations={}",
+                  doneTick[0], missing(live, blueprint, origin), d[0], d[1], d[2], d[3], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced, ReachAudit.defaultMax2D(),
                   ReachAudit.violations());
+                helper.assertTrue(doneTick[0] > 200, "the order ended at once (tick " + doneTick[0] + "): the keep limit was not reached");
+                helper.assertTrue(missing(live, blueprint, origin) == 1 && d[1] == 0,
+                  "not left out through the keep limit: missing " + missing(live, blueprint, origin) + " default placements " + d[1] + " after " + doneTick[0] + " ticks");
                 helper.assertTrue(ReachAudit.violations() == 0, "placed out of range: " + ReachAudit.examples());
                 WorkerSettings.clearOverrides();
                 ReachAudit.enable(false);
                 helper.succeed();
             }, () -> "the order did not end: missing=" + missing(live, blueprint, origin) + " reach=" + java.util.Arrays.toString(reachDelta(at)) + " " + live.ai());
         });
+    }
+
+    /**
+     * c7 launch 1 (flooded_pool): a default-placement block was placed 23 around while MineColonies' path to it was still worked out (its "previous block
+     * within 10" shortcut). Here: block A on the ground, block B 7 to the east and 7 up (9.9 from A, out of the physical reach of every ground spot), scaffolding
+     * off, so B falls back to the default placement. B must be walked to: the audit counts a default placement further than 5 around before MineColonies'
+     * walk ended as a violation.
+     */
+    public static void noDefaultPlacementWhilePathing(final GameTestHelper helper)
+    {
+        final int[] at = reachCounters();
+        tallStructure(helper, "pathcalc", () -> shape("pathcalc", 8, 9, 1, (x, y, z) -> (x == 0 && y == 0) || (x == 7 && y == 7)), true, 15_000, false,
+          (live, origin) -> WorkerSettings.overrideReachForTests(null, true, false, 0), () -> {
+              final int[] d = reachDelta(at);
+              Log.getLogger().info("WBENCH RESULT pathcalc limited={} default={} refused={} default2D={} violations={}", d[0], d[1], d[2], ReachAudit.defaultMax2D(),
+                ReachAudit.violations());
+              helper.assertTrue(d[1] > 0, "B was not placed by the default placement: the test did not test it (limited " + d[0] + ")");
+          }, 0);
     }
 
     public static void tallWall8(final GameTestHelper helper)

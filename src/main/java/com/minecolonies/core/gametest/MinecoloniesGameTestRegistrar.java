@@ -1301,7 +1301,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held", "scaffold_bridge", "scaffold_overhang_legacy", "scaffold_sealed_legacy", "scaffold_two_builders_big", "scaffold_escape_pit", "scaffold_supply_delivery", "scaffold_supply_crafters", "scaffold_clear_ledge", "scaffold_climb_arm_twice", "scaffold_probe_arm", "scaffold_probe_descend", "scaffold_probe_wall5", "scaffold_probe_top1", "scaffold_probe_top3", "scaffold_probe_top8", "scaffold_probe_inside5", "scaffold_stock_arrives", "scaffold_sealed_no_items",
           "scaffold_lamp_top", "scaffold_flooded_cell", "scaffold_tall_no_scaffold", "scaffold_slow_delivery",
           "scaffold_pillar_undelivered", "scaffold_flooded_pool", "scaffold_tall_hut_no_scaffold",
-          "scaffold_path_blocked"})
+          "scaffold_path_blocked", "scaffold_default_no_place_while_pathing"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -1348,6 +1348,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_flooded_pool" -> BuilderScaffoldGameTests::floodedPoolFallback;
                 case "scaffold_tall_hut_no_scaffold" -> BuilderScaffoldGameTests::tallHutWithoutScaffolding;
                 case "scaffold_path_blocked" -> BuilderScaffoldGameTests::pathBlockedOrderEnds;
+                case "scaffold_default_no_place_while_pathing" -> BuilderScaffoldGameTests::noDefaultPlacementWhilePathing;
                 default -> BuilderScaffoldGameTests::stockArrives;
             };
             if (!nameWanted(name))
