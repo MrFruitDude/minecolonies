@@ -114,6 +114,11 @@ final class LabourGameTests
         final int minZ = Math.min(min.getZ(), max.getZ());
         final int maxZ = Math.max(min.getZ(), max.getZ());
         final int id = colony.getID();
+        if (plotOnly != null)
+        {
+            // (an earlier test that failed or timed out did not reach end(): its veto goes now)
+            com.minecolonies.api.colony.labour.LabourExclusions.unregister(plotOnly);
+        }
         plotOnly = (c, pos) -> c.getID() == id && (pos.getX() < minX || pos.getX() > maxX || pos.getZ() < minZ || pos.getZ() > maxZ);
         com.minecolonies.api.colony.labour.LabourExclusions.register(plotOnly);
     }

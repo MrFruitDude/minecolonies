@@ -44,6 +44,8 @@ public final class LabourSites
      * How long a scan is reused.
      */
     public static final int CACHE_TICKS = 600;
+    /** Longest side (blocks, without margin) of a decoration controller's box that is taken as a decoration. */
+    public static final int MAX_DECORATION_SIDE = 128;
 
     /**
      * The biggest tree (logs) a labourer fells.
@@ -345,7 +347,11 @@ public final class LabourSites
                 {
                     if (entity instanceof com.minecolonies.core.tileentities.TileEntityDecorationController controller && ownedBy(entity.getBlockPos()))
                     {
-                        list.add(decorationBox(controller));
+                        final BoundingBox box = decorationBox(controller);
+                        if (box != null)
+                        {
+                            list.add(box);
+                        }
                     }
                 }
             }
@@ -356,8 +362,10 @@ public final class LabourSites
     }
 
     /**
-     * @return the decoration's box from its controller's blueprint corners (relative to the controller), with a 1 block margin; the controller alone when it has none.
+     * @return the decoration's box from its controller's blueprint corners (relative to the controller), with a 1 block margin; the controller alone when it has none;
+     *   null when a side is longer than {@link #MAX_DECORATION_SIDE} (not taken as a decoration).
      */
+    @Nullable
     static BoundingBox decorationBox(final com.minecolonies.core.tileentities.TileEntityDecorationController controller)
     {
         final BlockPos at = controller.getBlockPos();
@@ -367,10 +375,18 @@ public final class LabourSites
             // (no corners kept: getSchematicCorners answers the controller's own position)
             return new BoundingBox(at.getX() - 1, at.getY() - 1, at.getZ() - 1, at.getX() + 1, at.getY() + 1, at.getZ() + 1);
         }
-        final BlockPos a = at.offset(corners.getA());
-        final BlockPos b = at.offset(corners.getB());
-        return new BoundingBox(Math.min(a.getX(), b.getX()) - 1, Math.min(a.getY(), b.getY()) - 1, Math.min(a.getZ(), b.getZ()) - 1,
-          Math.max(a.getX(), b.getX()) + 1, Math.max(a.getY(), b.getY()) + 1, Math.max(a.getZ(), b.getZ()) + 1);
+        final long[] a = {(long) at.getX() + corners.getA().getX(), (long) at.getY() + corners.getA().getY(), (long) at.getZ() + corners.getA().getZ()};
+        final long[] b = {(long) at.getX() + corners.getB().getX(), (long) at.getY() + corners.getB().getY(), (long) at.getZ() + corners.getB().getZ()};
+        for (int i = 0; i < 3; i++)
+        {
+            if (Math.abs(a[i] - b[i]) + 1 > MAX_DECORATION_SIDE)
+            {
+                // (corners no decoration has: corrupted data; not taken as a decoration, so it cannot freeze a whole quarry zone)
+                return null;
+            }
+        }
+        return new BoundingBox((int) Math.min(a[0], b[0]) - 1, (int) Math.min(a[1], b[1]) - 1, (int) Math.min(a[2], b[2]) - 1,
+          (int) Math.max(a[0], b[0]) + 1, (int) Math.max(a[1], b[1]) + 1, (int) Math.max(a[2], b[2]) + 1);
     }
 
     /**
@@ -984,14 +1000,25 @@ public final class LabourSites
             QuarryZones.Zone zone = old;
             if (quarries.pending(zone.id()))
             {
-                // a zone saved before the tops were kept: its tops are sampled once, when all of it is loaded and owned; until then nothing is dug there
-                if (!areaUsable(zone.area()) || !quarries.migrate(zone.id(), columnTops(zone.area()), depth))
+                // a zone saved before the tops were kept: its tops are sampled once, when all of it is loaded and owned; until then nothing is dug there.
+                // An uneven sample is remembered and tried again only after MIGRATION_RETRY_TICKS, or at once after the area was not all loaded.
+                if (!areaUsable(zone.area()))
                 {
+                    quarries.areaNotLoaded(zone.id());
+                    continue;
+                }
+                if (!quarries.migrationDue(zone.id(), now()))
+                {
+                    continue;
+                }
+                if (!quarries.migrate(zone.id(), columnTops(zone.area()), depth, now()))
+                {
+                    LabourStats.log("quarry zone {} of colony {}: saved before the tops were kept and its ground is uneven; mark it again", zone.id(), colony.getID());
                     continue;
                 }
                 colony.markDirty();
                 LabourStats.log("quarry zone {} of colony {}: tops sampled from the ground (saved before the tops were kept)", zone.id(), colony.getID());
-                zone = quarries.at(new BlockPos(zone.area().minX(), 0, zone.area().minZ()));
+                zone = quarries.byId(zone.id());
                 if (zone == null)
                 {
                     continue;

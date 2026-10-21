@@ -199,7 +199,7 @@ public class QuarryZonesTest
         final QuarryZones zones = legacy(64);
         final int[] sampled = flat(AREA, 66);
         set(sampled, AREA, 2, 2, 61);
-        assertTrue(zones.migrate(3, sampled, 8));
+        assertTrue(zones.migrate(3, sampled, 8, 100L));
         assertFalse(zones.pending(3));
         final QuarryZones.Zone zone = zones.zones().get(0);
         assertEquals(64, zone.top(2, 2));
@@ -216,7 +216,7 @@ public class QuarryZonesTest
         loaded.read(zones.write());
         assertFalse(loaded.pending(3));
         assertEquals(zone, loaded.zones().get(0));
-        assertFalse(loaded.migrate(3, sampled, 8));
+        assertFalse(loaded.migrate(3, sampled, 8, 100L));
     }
 
     @Test
@@ -225,9 +225,54 @@ public class QuarryZonesTest
         final QuarryZones zones = legacy(64);
         final int[] sampled = flat(AREA, 64);
         set(sampled, AREA, 9, 9, 80);
-        assertFalse(zones.migrate(3, sampled, 8));
+        assertEquals(QuarryZones.ZoneState.PENDING, zones.state(3));
+        assertTrue(zones.migrationDue(3, 100L));
+        final long revision = zones.revision();
+        assertFalse(zones.migrate(3, sampled, 8, 100L));
         assertTrue(zones.pending(3));
+        assertEquals(QuarryZones.ZoneState.MARK_AGAIN, zones.state(3));
+        assertTrue(zones.revision() > revision);
         assertTrue(zones.remove(3));
         assertFalse(zones.pending(3));
+        assertEquals(QuarryZones.ZoneState.ACTIVE, zones.state(3));
+    }
+
+    @Test
+    public void anUnevenSampleIsTriedAgainRarelyOrWhenTheAreaLoadsAgain()
+    {
+        final QuarryZones zones = legacy(64);
+        final int[] uneven = flat(AREA, 64);
+        set(uneven, AREA, 9, 9, 80);
+        assertFalse(zones.migrate(3, uneven, 8, 1000L));
+        // not every scan: only after the retry time
+        assertFalse(zones.migrationDue(3, 1000L + 600));
+        assertFalse(zones.migrationDue(3, 1000L + QuarryZones.MIGRATION_RETRY_TICKS - 1));
+        assertTrue(zones.migrationDue(3, 1000L + QuarryZones.MIGRATION_RETRY_TICKS));
+        // the clock went back: due
+        assertTrue(zones.migrationDue(3, 10L));
+        // the area was not all loaded since: due at once when it is, still shown as mark again until a sample works
+        assertFalse(zones.migrate(3, uneven, 8, 2000L));
+        zones.areaNotLoaded(3);
+        assertTrue(zones.migrationDue(3, 2001L));
+        assertEquals(QuarryZones.ZoneState.MARK_AGAIN, zones.state(3));
+        // the ground was levelled: the next sample migrates it
+        assertTrue(zones.migrate(3, flat(AREA, 66), 8, 2001L));
+        assertEquals(QuarryZones.ZoneState.ACTIVE, zones.state(3));
+        assertFalse(zones.migrationDue(3, 99_999L));
+        assertNotNull(zones.byId(3));
+        assertNull(zones.byId(4));
+    }
+
+    @Test
+    public void aLoadForgetsTheUnevenSample()
+    {
+        final QuarryZones zones = legacy(64);
+        final int[] uneven = flat(AREA, 64);
+        set(uneven, AREA, 9, 9, 80);
+        assertFalse(zones.migrate(3, uneven, 8, 1000L));
+        final QuarryZones loaded = new QuarryZones();
+        loaded.read(zones.write());
+        assertEquals(QuarryZones.ZoneState.PENDING, loaded.state(3));
+        assertTrue(loaded.migrationDue(3, 1001L));
     }
 }

@@ -21,8 +21,9 @@ import java.util.List;
  * <p>
  * A zone saved before the tops were kept (one surface for all columns, the lowest) is {@link #pending}: labour digs nothing in it until its columns are loaded and
  * owned, then each column's top is sampled once from the ground there and raised to at least the old surface ({@link #migrate}), so no column is ever dug deeper than
- * the old rule allowed. If the sampled tops differ by more than the depth (a zone that marking would now refuse as {@link Refusal#UNEVEN}) the zone stays pending:
- * labour leaves it alone until a manager removes and marks it again. Saved with the colony ({@link LabourData}); a zone belongs to one colony and is only ever read by its own labour. Server thread only.
+ * the old rule allowed. If the sampled tops differ by more than the depth (a zone that marking would now refuse as {@link Refusal#UNEVEN}) the zone stays pending
+ * and reads {@link ZoneState#MARK_AGAIN} ({@link #state}): labour leaves it alone until a manager removes and marks it again. A failed sample is remembered: it is
+ * tried again after {@link #MIGRATION_RETRY_TICKS}, or at once when the zone was not all loaded and is now. Saved with the colony ({@link LabourData}); a zone belongs to one colony and is only ever read by its own labour. Server thread only.
  */
 public final class QuarryZones
 {
@@ -92,6 +93,20 @@ public final class QuarryZones
         }
     }
 
+    /** What labour does with a zone now (what a manager is shown). */
+    public enum ZoneState
+    {
+        /** Dug in terraces from its columns' tops. */
+        ACTIVE,
+        /** Saved before the tops were kept and not sampled yet (not all of it was loaded and owned): nothing is dug until it is. */
+        PENDING,
+        /** Saved before the tops were kept, and its sampled tops differ by more than the quarry depth: nothing is dug; a manager must remove and mark it again. */
+        MARK_AGAIN
+    }
+
+    /** A pending zone whose sample was uneven is sampled again after this many ticks (the ground may have been levelled). */
+    public static final long MIGRATION_RETRY_TICKS = 6000L;
+
     /** Why a zone was not marked or removed. */
     public enum Refusal
     {
@@ -117,6 +132,8 @@ public final class QuarryZones
     private final List<Zone> zones = new ArrayList<>();
     /** The zones saved before the tops were kept, by id, with their old single surface: not dug until {@link #migrate} kept their tops. */
     private final java.util.Map<Integer, Integer> legacy = new java.util.HashMap<>();
+    /** Pending zones whose last sample was uneven, by id, with the game time of that sample (runtime only: a load samples again). */
+    private final java.util.Map<Integer, Long> unevenAt = new java.util.HashMap<>();
     private int  next = 1;
     private long revision;
 
@@ -161,12 +178,67 @@ public final class QuarryZones
     }
 
     /**
+     * @return what labour does with the zone of the id now ({@link ZoneState#ACTIVE} for an id with no zone too: nothing to show).
+     */
+    public ZoneState state(final int id)
+    {
+        if (!legacy.containsKey(id))
+        {
+            return ZoneState.ACTIVE;
+        }
+        return unevenAt.containsKey(id) ? ZoneState.MARK_AGAIN : ZoneState.PENDING;
+    }
+
+    /**
+     * @return the zone of the id, or null.
+     */
+    @Nullable
+    public Zone byId(final int id)
+    {
+        for (final Zone zone : zones)
+        {
+            if (zone.id() == id)
+            {
+                return zone;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether a {@link #pending} zone whose area is loaded and owned now should be sampled now: never sampled yet, its area was not all loaded since the last uneven
+     * sample, or {@link #MIGRATION_RETRY_TICKS} passed since it (or the clock went back).
+     */
+    public boolean migrationDue(final int id, final long now)
+    {
+        if (!legacy.containsKey(id))
+        {
+            return false;
+        }
+        final Long at = unevenAt.get(id);
+        return at == null || now - at >= MIGRATION_RETRY_TICKS || now < at;
+    }
+
+    /**
+     * The pending zone's area is not all loaded and owned now: its next sample is due as soon as it is (an uneven zone still reads {@link ZoneState#MARK_AGAIN}).
+     */
+    public void areaNotLoaded(final int id)
+    {
+        if (unevenAt.containsKey(id))
+        {
+            unevenAt.put(id, Long.MIN_VALUE / 2);
+        }
+    }
+
+    /**
      * Gives a {@link #pending} zone the tops of its columns, sampled from the ground now (the caller checked the area is loaded and owned): every column's top is at
      * least the old surface, so its floor is never deeper than the old rule's.
      *
-     * @return true if the zone was migrated; false if it was not pending, or its tops differ by more than the depth (it stays pending: it must be marked again).
+     * @param now the game time (an uneven sample is remembered with it: {@link #migrationDue}).
+     * @return true if the zone was migrated; false if it was not pending, or its tops differ by more than the depth (it stays pending and reads
+     *   {@link ZoneState#MARK_AGAIN}: it must be marked again).
      */
-    boolean migrate(final int id, final int[] sampled, final int depth)
+    boolean migrate(final int id, final int[] sampled, final int depth, final long now)
     {
         final Integer surface = legacy.get(id);
         if (surface == null)
@@ -183,10 +255,16 @@ public final class QuarryZones
             final int[] tops = migratedTops(sampled, surface);
             if (tops.length != zone.tops().length || spread(tops) > Math.max(1, depth))
             {
+                if (unevenAt.put(id, now) == null)
+                {
+                    // (the zone's state changed to MARK_AGAIN: a client must read again)
+                    revision++;
+                }
                 return false;
             }
             zones.set(i, new Zone(id, zone.area(), tops));
             legacy.remove(id);
+            unevenAt.remove(id);
             revision++;
             return true;
         }
@@ -307,6 +385,7 @@ public final class QuarryZones
         if (zones.removeIf(zone -> zone.id() == id))
         {
             legacy.remove(id);
+            unevenAt.remove(id);
             revision++;
             return true;
         }
@@ -345,6 +424,7 @@ public final class QuarryZones
     {
         zones.clear();
         legacy.clear();
+        unevenAt.clear();
         int highest = 0;
         final ListTag list = tag.getListOrEmpty(TAG_ZONES);
         for (int i = 0; i < list.size() && zones.size() < MAX_ZONES; i++)
