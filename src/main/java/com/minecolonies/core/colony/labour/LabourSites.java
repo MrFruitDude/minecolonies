@@ -176,17 +176,44 @@ public final class LabourSites
 
     /**
      * @param pos a position.
-     * @return whether it lies inside this colony's claim (and in a chunk where entities tick: see {@link #simulated}).
+     * @return whether it lies inside this colony's claim, in a loaded chunk. Enough to mark a zone or an order there (a player may mark from the overview
+     * beyond the simulation distance); labour works there only once entities tick ({@link #workable}).
      */
     public boolean ownedBy(final BlockPos pos)
     {
         final ServerLevel level = level();
-        if (level == null || !simulated(level, pos))
+        if (level == null || !level.isLoaded(pos))
         {
             return false;
         }
         final IColony owner = IColonyManager.getInstance().getColonyByPosFromWorld(level, pos);
-        return owner != null && owner.getID() == colony.getID() && owner.getDimension().equals(colony.getDimension());
+        return mayMark(true, owner != null && owner.getID() == colony.getID() && owner.getDimension().equals(colony.getDimension()));
+    }
+
+    /**
+     * @param pos a position.
+     * @return whether a labourer may pick it as a site or walk there to work: owned ({@link #ownedBy}) and where entities tick ({@link #simulated}).
+     */
+    public boolean workable(final BlockPos pos)
+    {
+        final ServerLevel level = level();
+        return level != null && mayWork(level.isLoaded(pos), level.isLoaded(pos) && level.isPositionEntityTicking(pos), ownedBy(pos));
+    }
+
+    /**
+     * The marking rule: a loaded chunk inside this colony's claim (entity ticking is not needed).
+     */
+    static boolean mayMark(final boolean loaded, final boolean owned)
+    {
+        return loaded && owned;
+    }
+
+    /**
+     * The working rule: marked ground ({@link #mayMark}) where entities tick, so a labourer who walks there does not stop (builder review c3 R3).
+     */
+    static boolean mayWork(final boolean loaded, final boolean ticking, final boolean owned)
+    {
+        return mayMark(loaded, owned) && ticking;
     }
 
     // ------------------------------------------------------------------ scanning
@@ -468,7 +495,7 @@ public final class LabourSites
     public boolean safeNow(@Nullable final DirectedOrder.Area area, final BlockPos pos)
     {
         final ServerLevel level = level();
-        if (level == null || (area != null && !area.contains(pos)) || level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) == null || !ownedBy(pos))
+        if (level == null || (area != null && !area.contains(pos)) || level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) == null || !workable(pos))
         {
             return false;
         }
@@ -574,7 +601,7 @@ public final class LabourSites
             }
             final long key = ((long) (current.getX() >> 4) << 32) ^ ((current.getZ() >> 4) & 0xffffffffL);
             // every log, not just the base: a natural tree that touches a building's logs is the building's
-            if (!owned.computeIfAbsent(key, k -> ownedBy(current)) || (fresh ? protectedNow(current) : protectedBlock(current)))
+            if (!owned.computeIfAbsent(key, k -> workable(current)) || (fresh ? protectedNow(current) : protectedBlock(current)))
             {
                 return null;
             }
@@ -960,7 +987,7 @@ public final class LabourSites
                         continue;
                     }
                     final long key = ((long) (x >> 4) << 32) ^ ((z >> 4) & 0xffffffffL);
-                    if (!chunkOwned.computeIfAbsent(key, k -> ownedBy(pos)))
+                    if (!chunkOwned.computeIfAbsent(key, k -> workable(pos)))
                     {
                         continue;
                     }
@@ -1053,7 +1080,7 @@ public final class LabourSites
                         continue;
                     }
                     final long key = ((long) (x >> 4) << 32) ^ ((z >> 4) & 0xffffffffL);
-                    if (!chunkOwned.computeIfAbsent(key, k -> ownedBy(pos)))
+                    if (!chunkOwned.computeIfAbsent(key, k -> workable(pos)))
                     {
                         continue;
                     }
@@ -1236,7 +1263,7 @@ public final class LabourSites
         double bestDistance = Double.MAX_VALUE;
         for (final ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, box, e -> e.isAlive() && e.getItem().is(item) && !taken.contains(e.getId())))
         {
-            if (entity.getOwner() != null || entity.tickCount < 600 || !ownedBy(entity.blockPosition()))
+            if (entity.getOwner() != null || entity.tickCount < 600 || !workable(entity.blockPosition()))
             {
                 continue;
             }
@@ -1265,7 +1292,7 @@ public final class LabourSites
         final List<BlockPos> everyFurnace = new ArrayList<>();
         final int range = LabourSettings.postRange();
         scan(range, state -> state.is(Blocks.CRAFTING_TABLE), pos -> {
-            if (ownedBy(pos))
+            if (workable(pos))
             {
                 everyTable.add(pos);
                 if (usablePost(pos))
@@ -1275,7 +1302,7 @@ public final class LabourSites
             }
         });
         scan(range, state -> state.is(Blocks.FURNACE), pos -> {
-            if (ownedBy(pos))
+            if (workable(pos))
             {
                 everyFurnace.add(pos);
                 if (usablePost(pos))
@@ -1287,7 +1314,7 @@ public final class LabourSites
         final List<BlockPos> foundCutters = new ArrayList<>();
         final List<BlockPos> everyCutter = new ArrayList<>();
         scan(range, LabourSites::cutterBlock, pos -> {
-            if (ownedBy(pos))
+            if (workable(pos))
             {
                 everyCutter.add(pos);
                 if (usablePost(pos))
@@ -1542,7 +1569,7 @@ public final class LabourSites
                     }
                     final BlockPos top = new BlockPos(x, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1, z);
                     final long key = ((long) (x >> 4) << 32) ^ ((z >> 4) & 0xffffffffL);
-                    if (!chunkOwned.computeIfAbsent(key, k -> ownedBy(top)))
+                    if (!chunkOwned.computeIfAbsent(key, k -> workable(top)))
                     {
                         continue;
                     }
