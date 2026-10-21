@@ -59,6 +59,9 @@ public final class WorkerEfficiencyGameTests
         IColony colony;
         BuildingBuilder hut;
         ICitizenData citizen;
+        /** The second builder hut of the scene and its builder (idle unless a test gives it work). */
+        BuildingBuilder otherHut;
+        ICitizenData otherCitizen;
 
         Live(final GameTestHelper helper)
         {
@@ -227,6 +230,8 @@ public final class WorkerEfficiencyGameTests
               + live.hut.getModule(BuildingModules.BUILDER_WORK).getAssignedCitizen() + " full=" + live.hut.getModule(BuildingModules.BUILDER_WORK).isFull() + " job=" + live.citizen.getJob());
             helper.assertTrue(other.getModule(BuildingModules.BUILDER_WORK).assignCitizen(second), "second builder not assigned");
             live.citizen.getEntity().ifPresent(e -> e.setPos(live.hut.getID().getX() + 0.5D, live.hut.getID().getY(), live.hut.getID().getZ() + 0.5D));
+            live.otherHut = other;
+            live.otherCitizen = second;
             ready.accept(live);
         });
     }

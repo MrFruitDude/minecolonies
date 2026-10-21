@@ -151,6 +151,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 // the builder reach and scaffolding tests (also -Dminecolonies.gametest.only=scaffold), with the other groups in one JVM
                 registerBuilderScaffolding(event);
             }
+            if (only.contains("hunger"))
+            {
+                registerHunger(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -755,6 +759,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         }
         registerWorkerEfficiency(event);
         registerBuilderScaffolding(event);
+        registerHunger(event);
         registerScaffoldRecipe(event);
         registerIdleHelpers(event);
         // C2 builder collaboration observability and controls (one glob: minecolonies:collab_obs_*).
@@ -1302,7 +1307,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           "scaffold_lamp_top", "scaffold_flooded_cell", "scaffold_tall_no_scaffold", "scaffold_slow_delivery",
           "scaffold_pillar_undelivered", "scaffold_flooded_pool", "scaffold_tall_hut_no_scaffold",
           "scaffold_path_blocked", "scaffold_default_no_place_while_pathing", "scaffold_path_blocked_lava",
-          "scaffold_path_blocked_13th", "scaffold_path_blocked_clear"})
+          "scaffold_path_blocked_13th", "scaffold_path_blocked_clear", "scaffold_next_order_no_hut", "scaffold_next_order_no_blueprint", "scaffold_next_order_race", "scaffold_next_order_cancelled"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -1353,6 +1358,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_path_blocked_13th" -> BuilderScaffoldGameTests::pathBlocked13thReturn;
                 case "scaffold_path_blocked_clear" -> BuilderScaffoldGameTests::pathBlockedClear;
                 case "scaffold_default_no_place_while_pathing" -> BuilderScaffoldGameTests::noDefaultPlacementWhilePathing;
+                case "scaffold_next_order_no_hut" -> WorkHungerGameTests::nextOrderWithoutHutWalk;
+                case "scaffold_next_order_no_blueprint" -> WorkHungerGameTests::nextOrderWithoutBlueprintWalksToHut;
+                case "scaffold_next_order_race" -> WorkHungerGameTests::twoBuildersRaceForOneOrder;
+                case "scaffold_next_order_cancelled" -> WorkHungerGameTests::nextOrderCancelledDuringWait;
                 default -> BuilderScaffoldGameTests::stockArrives;
             };
             if (!nameWanted(name))
@@ -1370,6 +1379,27 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                   info -> new MinecoloniesGameTestInstance(info, test),
                   isolatedColonyData(event, id));
             }
+        }
+    }
+
+    /**
+     * Round 10: eating at work and the spread of starting saturation (one glob: minecolonies:hunger_*).
+     */
+    private void registerHunger(final RegisterGameTestsEvent event)
+    {
+        for (final String name : new String[] {"hunger_eat_at_work", "hunger_start_spread", "hunger_rack_rejected", "hunger_rack_once"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "hunger_eat_at_work" -> WorkHungerGameTests::eatsCarriedFoodAtWork;
+                case "hunger_rack_rejected" -> WorkHungerGameTests::rejectedRackFoodStays;
+                case "hunger_rack_once" -> WorkHungerGameTests::rackFoodEatenOnceWithRejectedPocketFood;
+                default -> WorkHungerGameTests::startingSaturationSpread;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
         }
     }
 

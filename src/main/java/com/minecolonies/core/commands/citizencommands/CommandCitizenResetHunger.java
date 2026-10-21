@@ -2,6 +2,7 @@ package com.minecolonies.core.commands.citizencommands;
 import net.minecraft.server.permissions.Permissions;
 
 import com.minecolonies.api.colony.ICitizenData;
+import com.minecolonies.core.colony.CitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.constant.translation.CommandTranslationConstants;
@@ -24,7 +25,7 @@ import static com.minecolonies.core.commands.CommandArgumentNames.CITIZENID_ARG;
 import static com.minecolonies.core.commands.CommandArgumentNames.COLONYID_ARG;
 
 /**
- * Fills the saturation of every citizen of a colony, or of one citizen, so nobody is hungry.
+ * Fills the saturation of one citizen, or raises every citizen of a colony to a random value between 75% and full (never lower than he is; so their meals do not all come at once).
  */
 public class CommandCitizenResetHunger implements IMCColonyOfficerCommand
 {
@@ -84,9 +85,13 @@ public class CommandCitizenResetHunger implements IMCColonyOfficerCommand
                 citizens = List.of(citizenData);
             }
 
+            // one citizen is filled up; a whole colony gets random values between 75% and full, so its meals spread out again (nobody gets less than he has)
+            final java.util.Random random = new java.util.Random();
             for (final ICitizenData citizen : citizens)
             {
-                citizen.setSaturation(MAX_SATURATION);
+                citizen.setSaturation(citizenId == null
+                                        ? Math.max(citizen.getSaturation(), CitizenData.randomSaturation(random, CitizenData.RESET_SATURATION_MIN_SHARE))
+                                        : MAX_SATURATION);
                 citizen.markDirty(0);
             }
 
