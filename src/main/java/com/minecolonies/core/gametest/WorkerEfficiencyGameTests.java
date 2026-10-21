@@ -172,8 +172,10 @@ public final class WorkerEfficiencyGameTests
             return citizen.getEntity().map(e -> e.getCitizenJobHandler().getWorkAI() == null ? "no-ai"
               : e.getCitizenJobHandler().getWorkAI().getStateAI().getState() + " history=" + e.getCitizenJobHandler().getWorkAI().getStateAI().getHistory().getString()
                   + (e.getCitizenJobHandler().getWorkAI() instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder b ? " " + b.debugInfo() : "")).orElse("no-entity")
-                     + " open=" + hut.getOpenRequests(citizen.getId()).stream().map(r -> String.valueOf(r.getRequest())).toList()
-                     + " buildingOpen=" + hut.getOpenRequests(-1).stream().map(r -> String.valueOf(r.getRequest())).toList();
+                     + " citizenAI=" + citizen.getEntity().map(e -> e instanceof com.minecolonies.core.entity.citizen.EntityCitizen ec ? String.valueOf(ec.getCitizenAI().getState()) : "?").orElse("-")
+                     + " pos=" + citizen.getEntity().map(e -> e.blockPosition().toShortString()).orElse("-")
+                     + " open=" + hut.getOpenRequests(citizen.getId()).stream().map(r -> r.getShortDisplayString().getString()).toList()
+                     + " buildingOpen=" + hut.getOpenRequests(-1).stream().map(r -> r.getShortDisplayString().getString()).toList();
         }
     }
 
@@ -185,6 +187,20 @@ public final class WorkerEfficiencyGameTests
         MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
         final Live live = new Live(helper);
         live.colony = MinecoloniesGameTests.foundGameTestColony(helper, name);
+        // these scenes measure the builder, not labour: no self-supply session. In round 8 c6 one walked the builder of scaffold_sealed_no_items and
+        // scaffold_reach_clear_l40 out of the scene's forced chunks (about 35 blocks north); there he stopped ticking and the session never ended.
+        try
+        {
+            final var selfSupply = live.colony.getSettings().getSetting(com.minecolonies.core.colony.buildings.workerbuildings.BuildingTownHall.LABOUR_SELF_SUPPLY);
+            if (selfSupply.getValue())
+            {
+                selfSupply.trigger();
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            Log.getLogger().warn("WEFF scene {}: could not switch self-supply off: {}", name, e.toString());
+        }
         // the same scene as the builder collaboration tests: two builder huts (the second one stays idle, collaboration is off) with a citizen each
         live.hut = (BuildingBuilder) MinecoloniesGameTests.placeProductionBuilding(helper, live.colony, ModBlocks.blockHutBuilder, new BlockPos(8, 1, 2), "fundamentals/builder1.blueprint");
         final BuildingBuilder other = (BuildingBuilder) MinecoloniesGameTests.placeProductionBuilding(helper, live.colony, ModBlocks.blockHutBuilder, new BlockPos(16, 1, 2), "fundamentals/builder1.blueprint");

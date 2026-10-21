@@ -1237,6 +1237,7 @@ final class BuilderScaffoldGameTests
                 // the two rows out of reach were given up (no scaffolding, no other way up), the rest is built
                 // builder review c2 N2: the requested tower is waited for (6000 ticks), then the top rows are placed the way MineColonies does: no hole
                 helper.assertTrue(missing(live, blueprint, origin) == 0, "a hole: missing " + missing(live, blueprint, origin));
+                // 6000 ticks of waiting for the asked-for tower, then the rest of the ring (about 3000 in the c6 launch: done at 15250 incl. the first walks)
                 helper.assertTrue(doneTick[0] < 20_000, "the builder took too long: " + doneTick[0]);
                 WorkerSettings.clearOverrides();
                 ReachAudit.enable(false);
