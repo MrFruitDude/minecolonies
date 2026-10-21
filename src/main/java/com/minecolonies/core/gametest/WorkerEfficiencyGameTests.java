@@ -187,6 +187,8 @@ public final class WorkerEfficiencyGameTests
         MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
         final Live live = new Live(helper);
         live.colony = MinecoloniesGameTests.foundGameTestColony(helper, name);
+        // (a test that switched a builder's teleport off and failed before its cleanup does not carry it over)
+        com.minecolonies.core.entity.ai.workers.util.WorkerSettings.overrideTeleportForTests(-1);
         // these scenes measure the builder, not labour: no self-supply session. In round 8 c6 one walked the builder of scaffold_sealed_no_items and
         // scaffold_reach_clear_l40 out of the scene's forced chunks (about 35 blocks north); there he stopped ticking and the session never ended.
         try

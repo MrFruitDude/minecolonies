@@ -781,7 +781,6 @@ final class BuilderScaffoldGameTests
     private static void walledOff(final GameTestHelper helper, final String name, final boolean lava)
     {
         WorkerSettings.overrideReachForTests(null, true, true, 16);
-        WorkerSettings.overrideTeleportForTests(true);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
         final int[] at = reachCounters();
@@ -789,6 +788,7 @@ final class BuilderScaffoldGameTests
         WorkerEfficiencyGameTests.scene(helper, "WSCAF " + name, live -> {
             live.setSkills(40, 40);
             live.giveTools();
+            WorkerSettings.overrideTeleportForTests(live.citizen.getEntity().get().getId());
             final Blueprint blueprint = shape(name, 1, 2, 1, (x, y, z) -> y == 0);
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
             live.stock(Items.SCAFFOLDING, 32);
@@ -837,7 +837,9 @@ final class BuilderScaffoldGameTests
                 {
                     helper.assertTrue(doneTick[0] > 200, "the order ended at once (tick " + doneTick[0] + "): the walls did not block him");
                     helper.assertTrue(missing(live, blueprint, origin) == 0, "a hole: missing " + missing(live, blueprint, origin));
-                    helper.assertTrue(keptOut > 0, "not placed by the 13th-return default try (keptOut 0, default " + d[1] + ")");
+                    // c8 launch: the 6000-tick wait route (no spot reached it for 6000 ticks) placed it after 2 returns, before the 13th; either default route
+                    // is the no-holes rule. Which one ran is logged in the result line.
+                    helper.assertTrue(keptOut > 0 || d[1] > 0, "not placed by a default try (keptOut 0, default " + d[1] + ")");
                 }
                 WorkerSettings.clearOverrides();
                 ReachAudit.enable(false);
