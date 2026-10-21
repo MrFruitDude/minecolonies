@@ -106,7 +106,7 @@ public final class WorkHungerGameTests
             live.citizen.setSaturation(MAX_SATURATION * 0.25D);
             final List<String> meals = new ArrayList<>();
             WorkerEfficiencyGameTests.everyTick(live, 1200, tick -> {
-                final CitizenAIState state = live.citizen.getEntity().map(e -> e instanceof EntityCitizen ec ? (CitizenAIState) ec.getCitizenAI().getState() : null).orElse(null);
+                final CitizenAIState state = live.citizen.getEntity().map(e -> e instanceof EntityCitizen ec && ec.getCitizenAI().getState() instanceof CitizenAIState s ? s : null).orElse(null);
                 if (state == CitizenAIState.EATING && meals.isEmpty())
                 {
                     meals.add("t=" + tick + " " + live.ai());
@@ -114,7 +114,7 @@ public final class WorkHungerGameTests
                 return live.citizen.getSaturation() >= CitizenSnack.UNTIL;
             }, () -> {
                 final int bread = InventoryUtils.getItemCountInItemHandler(live.citizen.getInventory(), stack -> stack.is(Items.BREAD));
-                final CitizenAIState state = live.citizen.getEntity().map(e -> e instanceof EntityCitizen ec ? (CitizenAIState) ec.getCitizenAI().getState() : null).orElse(null);
+                final CitizenAIState state = live.citizen.getEntity().map(e -> e instanceof EntityCitizen ec && ec.getCitizenAI().getState() instanceof CitizenAIState s ? s : null).orElse(null);
                 Log.getLogger().info("WBENCH RESULT eat_at_work saturation={} bread={} eaten={} state={} meals={} {}", live.citizen.getSaturation(), bread,
                   CitizenSnack.eaten.get() - eaten0, state, meals, live.ai());
                 helper.assertTrue(meals.isEmpty(), "the builder left his work for a meal: " + meals);
