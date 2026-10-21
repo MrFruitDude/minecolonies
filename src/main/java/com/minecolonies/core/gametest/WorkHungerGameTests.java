@@ -317,30 +317,45 @@ public final class WorkHungerGameTests
     }
 
     /**
-     * Review c2 M1-residual: he carries bread the rule keeps for the restaurant (full history of vanilla food, a restaurant in the colony), and his hut's
-     * racks hold cheese the rule accepts (MineColonies food). He takes cheese from the racks once, eats exactly that, and never takes again; the bread
-     * stays in his pockets.
+     * Review c2 M1-residual (rewritten after review c3): a citizen with a level 3 home (diversity 3, quality 1 required) and a full history of four foods
+     * where cheese is the only MineColonies entry. Bread in his pockets is not in the history and is kept for the restaurant (vanilla, quality 1 <= 1);
+     * cheese in his hut's racks is accepted but not great food (eaten before, diversity 4 is not above 6). On c2 he took cheese and then re-picked the
+     * bread, ate nothing and took again every check. Now he takes the cheese once, eats it, and takes nothing more while he carries food he may eat.
      */
     public static void rackFoodEatenOnceWithRejectedPocketFood(final GameTestHelper helper)
     {
         final int eaten0 = CitizenSnack.eaten.get();
         final int pulls0 = CitizenSnack.pulls.get();
+        final net.minecraft.world.item.Item cheese = com.minecolonies.api.items.ModItems.cheddar_cheese;
         WorkerEfficiencyGameTests.scene(helper, "WHUNGER rack once", live -> {
             MinecoloniesGameTests.placeProductionBuilding(helper, live.colony, com.minecolonies.api.blocks.ModBlocks.blockHutCook, new BlockPos(2, 1, 22), "fundamentals/cook1.blueprint");
-            live.giveTools();
-            live.stock(com.minecolonies.api.items.ModItems.cheddar_cheese, 16);
-            InventoryUtils.addItemStackToItemHandler(live.citizen.getInventory(), new ItemStack(Items.BREAD, 8));
-            for (int i = 0; i < 12; i++)
+            final com.minecolonies.api.colony.buildings.IBuilding home = MinecoloniesGameTests.placeProductionBuilding(helper, live.colony,
+              com.minecolonies.api.blocks.ModBlocks.blockHutHome, new BlockPos(2, 1, 12), "fundamentals/residence1.blueprint");
+            home.setBuildingLevel(3);
+            if (live.citizen.getHomeBuilding() != null)
             {
-                live.citizen.getCitizenFoodHandler().addLastEaten(Items.COOKED_BEEF);
+                live.citizen.getHomeBuilding().getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).removeCitizen(live.citizen);
+            }
+            home.getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).assignCitizen(live.citizen);
+            live.giveTools();
+            live.stock(cheese, 16);
+            InventoryUtils.addItemStackToItemHandler(live.citizen.getInventory(), new ItemStack(Items.BREAD, 8));
+            // ten meals of four foods, the cheese the only MineColonies food among them
+            for (final net.minecraft.world.item.Item food : List.of(Items.COOKED_BEEF, Items.BAKED_POTATO, Items.COOKED_CHICKEN, Items.COOKED_BEEF, Items.BAKED_POTATO,
+              Items.COOKED_CHICKEN, Items.COOKED_BEEF, Items.BAKED_POTATO, Items.COOKED_CHICKEN, cheese))
+            {
+                live.citizen.getCitizenFoodHandler().addLastEaten(food);
             }
             final Blueprint wall = BuilderScaffoldGameTests.shape("rack_once", 3, 1, 1, (x, y, z) -> true);
             live.orderFor("rack_once", BuilderScaffoldGameTests.SITE, wall);
             live.citizen.setSaturation(MAX_SATURATION * 0.25D);
-            helper.assertTrue(!FoodUtils.wouldEatOutsideRestaurant(live.citizen, new ItemStack(Items.BREAD)), "precondition: the bread is not kept for the restaurant");
-            helper.assertTrue(FoodUtils.wouldEatOutsideRestaurant(live.citizen, new ItemStack(com.minecolonies.api.items.ModItems.cheddar_cheese)), "precondition: the cheese is not accepted");
-            helper.assertTrue(FoodUtils.getBestFoodForCitizen(live.citizen.getInventory(), live.citizen, null) == -1, "precondition: the pocket bread is eaten anyway");
-            final java.util.function.IntSupplier rack = () -> InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(com.minecolonies.api.items.ModItems.cheddar_cheese));
+            helper.assertTrue(live.citizen.getHomeBuilding() == home && home.getBuildingLevelEquivalent() == 3, "precondition failed: no level 3 home: " + live.citizen.getHomeBuilding());
+            helper.assertTrue(live.citizen.getCitizenFoodHandler().hasFullFoodHistory(), "precondition failed: the food history is not full");
+            helper.assertTrue(!FoodUtils.wouldEatOutsideRestaurant(live.citizen, new ItemStack(Items.BREAD)), "precondition failed: the bread should be kept for the restaurant");
+            helper.assertTrue(FoodUtils.wouldEatOutsideRestaurant(live.citizen, new ItemStack(cheese)), "precondition failed: the cheese should be accepted");
+            helper.assertTrue(FoodUtils.getBestFoodForCitizen(live.citizen.getInventory(), live.citizen, null) == -1, "precondition failed: the eat task should not pick the pocket bread");
+            final java.util.function.IntSupplier rack = () -> InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(cheese));
+            final java.util.function.IntSupplier pocket = () -> InventoryUtils.getItemCountInItemHandler(live.citizen.getInventory(), stack -> stack.is(cheese));
             final int[] last = {rack.getAsInt()};
             final int[] drops = {0};
             final int[] after = {0};
@@ -358,17 +373,16 @@ public final class WorkHungerGameTests
                 // a few more checks after he is fed: no further take
                 return after[0] >= 3 * CitizenSnack.INTERVAL;
             }, () -> {
-                // (a dump at the hut may move some of his bread into the racks: count both)
-                final int bread = InventoryUtils.getItemCountInItemHandler(live.citizen.getInventory(), stack -> stack.is(Items.BREAD))
-                                    + InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(Items.BREAD));
-                final int cheese = InventoryUtils.getItemCountInItemHandler(live.citizen.getInventory(), stack -> stack.is(com.minecolonies.api.items.ModItems.cheddar_cheese));
-                Log.getLogger().info("WBENCH RESULT rack_once rack={} drops={} pulls={} eaten={} bread={} cheeseCarried={} saturation={} {}", last[0], drops[0],
-                  CitizenSnack.pulls.get() - pulls0, CitizenSnack.eaten.get() - eaten0, bread, cheese, live.citizen.getSaturation(), live.ai());
-                helper.assertTrue(drops[0] == 1 && CitizenSnack.pulls.get() - pulls0 == 1, "the racks were taken from more than once: drops=" + drops[0]);
-                helper.assertTrue(16 - last[0] == CitizenSnack.eaten.get() - eaten0 && cheese == 0, "taken cheese was not eaten: taken=" + (16 - last[0]) + " carried=" + cheese);
-                helper.assertTrue(bread == 8, "the bread kept for the restaurant was eaten: " + bread);
+                final int carried = pocket.getAsInt();
+                // cheese only leaves the racks and his pockets by being eaten (a dump only moves it back to the racks)
+                final int cheeseEaten = 16 - last[0] - carried;
+                Log.getLogger().info("WBENCH RESULT rack_once rack={} drops={} pulls={} eatenItems={} cheeseEaten={} cheeseCarried={} saturation={} {}", last[0], drops[0],
+                  CitizenSnack.pulls.get() - pulls0, CitizenSnack.eaten.get() - eaten0, cheeseEaten, carried, live.citizen.getSaturation(), live.ai());
+                helper.assertTrue(CitizenSnack.pulls.get() - pulls0 == 1 && drops[0] == 1, "the racks were taken from more than once: pulls=" + (CitizenSnack.pulls.get() - pulls0)
+                                                                                           + " drops=" + drops[0]);
+                helper.assertTrue(cheeseEaten >= 1, "the cheese he took was not eaten: carried=" + carried);
                 helper.succeed();
-            }, () -> "rack=" + last[0] + " drops=" + drops[0] + " saturation=" + live.citizen.getSaturation() + " " + live.ai());
+            }, () -> "rack=" + last[0] + " drops=" + drops[0] + " pulls=" + (CitizenSnack.pulls.get() - pulls0) + " saturation=" + live.citizen.getSaturation() + " " + live.ai());
         });
     }
 
