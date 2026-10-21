@@ -616,7 +616,9 @@ final class BuilderScaffoldGameTests
             WorkerEfficiencyGameTests.everyTick(live, 30_000, tick -> {
                 if (requestedAt[0] < 0)
                 {
-                    if (live.hut.getOpenRequests(-1).stream().anyMatch(r -> String.valueOf(r.getRequest()).toLowerCase(java.util.Locale.ROOT).contains("scaffolding")))
+                    // (the same check as BuilderScaffolding.stockAsked: the c6 launch matched on the request text, which does not name the item)
+                    if (live.hut.getOpenRequestsOfType(-1, com.google.common.reflect.TypeToken.of(com.minecolonies.api.colony.requestsystem.requestable.Stack.class)).stream()
+                          .anyMatch(r -> r.getRequest().getStack().is(Items.SCAFFOLDING)))
                     {
                         requestedAt[0] = tick;
                     }
@@ -695,7 +697,7 @@ final class BuilderScaffoldGameTests
     }
 
     /**
-     * Builder review c2: a cell at the bottom of a 7 by 7 pool, 3 deep, on a plateau 3 high (a ramp up from the west). No dry spot reaches the cell by the
+     * Builder review c2: a cell at the bottom of a 7 by 7 pool, 4 deep (c6 launch: 3 deep was reached from the shore), on a plateau 4 high (a ramp up from the west). No dry spot reaches the cell by the
      * physical reach, the shore is within 5. Scaffolding is off (no tower in the water). The builder fills the cell through the flooded fallback.
      */
     public static void floodedPoolFallback(final GameTestHelper helper)
@@ -708,7 +710,7 @@ final class BuilderScaffoldGameTests
                 for (int z = -6; z <= 6; z++)
                 {
                     final int ring = Math.max(Math.abs(x), Math.abs(z));
-                    for (int y = 0; y <= 2; y++)
+                    for (int y = 0; y <= 3; y++)
                     {
                         if (ring <= 3)
                         {
@@ -726,7 +728,10 @@ final class BuilderScaffoldGameTests
             {
                 live.level.setBlock(origin.offset(-6, 0, z), Blocks.STONE.defaultBlockState(), 3);
                 live.level.setBlock(origin.offset(-6, 1, z), Blocks.STONE.defaultBlockState(), 3);
+                live.level.setBlock(origin.offset(-6, 2, z), Blocks.STONE.defaultBlockState(), 3);
                 live.level.setBlock(origin.offset(-7, 0, z), Blocks.STONE.defaultBlockState(), 3);
+                live.level.setBlock(origin.offset(-7, 1, z), Blocks.STONE.defaultBlockState(), 3);
+                live.level.setBlock(origin.offset(-8, 0, z), Blocks.STONE.defaultBlockState(), 3);
             }
         }, () -> {
             final int[] d = reachDelta(at);
@@ -1230,9 +1235,9 @@ final class BuilderScaffoldGameTests
                 helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding without items: " + scaffoldInWorld(live, origin));
                 helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
                 // the two rows out of reach were given up (no scaffolding, no other way up), the rest is built
-                helper.assertTrue(missing(live, blueprint, origin) <= 32, "more than the two top rows missing: " + missing(live, blueprint, origin));
-                helper.assertTrue(missing(live, blueprint, origin) > 0 || BuilderScaffolding.towersBuilt > 0, "the top rows were built without scaffolding: out of reach");
-                helper.assertTrue(doneTick[0] < 12_000, "the builder took too long to give up: " + doneTick[0]);
+                // builder review c2 N2: the requested tower is waited for (6000 ticks), then the top rows are placed the way MineColonies does: no hole
+                helper.assertTrue(missing(live, blueprint, origin) == 0, "a hole: missing " + missing(live, blueprint, origin));
+                helper.assertTrue(doneTick[0] < 20_000, "the builder took too long: " + doneTick[0]);
                 WorkerSettings.clearOverrides();
                 ReachAudit.enable(false);
                 helper.succeed();
