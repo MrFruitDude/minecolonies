@@ -239,24 +239,32 @@ public final class RouteHints
         }
 
         List<BlockPos> copy = null;
-        if (!failed && answer != null && !answer.isEmpty())
+        if (!failed && answer != null)
         {
-            copy = new ArrayList<>(Math.min(answer.size(), MAX_WAYPOINTS));
+            // every access to the provider's list may throw (its own list type): all inside the catch
             try
             {
-                for (final BlockPos pos : answer)
+                if (!answer.isEmpty())
                 {
-                    if (pos != null)
+                    copy = new ArrayList<>(Math.min(answer.size(), MAX_WAYPOINTS));
+                    for (final BlockPos pos : answer)
                     {
-                        copy.add(pos.immutable());
-                        if (copy.size() >= MAX_WAYPOINTS)
+                        if (pos != null)
                         {
-                            break;
+                            copy.add(pos.immutable());
+                            if (copy.size() >= MAX_WAYPOINTS)
+                            {
+                                break;
+                            }
                         }
                     }
                 }
             }
-            catch (final RuntimeException e)
+            catch (final VirtualMachineError e)
+            {
+                throw e;
+            }
+            catch (final Throwable e)
             {
                 failed = true;
                 copy = null;
