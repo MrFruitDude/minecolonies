@@ -175,6 +175,12 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     private volatile Object queueKey = null;
 
     /**
+     * When this job is one leg of a hinted route (see RouteHints), the route's final destination, else null.
+     */
+    @Nullable
+    private BlockPos routeTarget = null;
+
+    /**
      * When the job was handed to the executor (System.nanoTime), and how long it then waited in the queue; 0 / -1 unknown.
      */
     private volatile long submitNanos    = 0;
@@ -355,6 +361,25 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     public void setQueueKey(@Nullable final Object queueKey)
     {
         this.queueKey = queueKey;
+    }
+
+    /**
+     * @return the final destination when this job is one leg of a hinted route, else null.
+     */
+    @Nullable
+    public BlockPos getRouteTarget()
+    {
+        return routeTarget;
+    }
+
+    /**
+     * Marks this job as one leg of a hinted route to the given destination.
+     *
+     * @param routeTarget the route's final destination.
+     */
+    public void setRouteTarget(@Nullable final BlockPos routeTarget)
+    {
+        this.routeTarget = routeTarget;
     }
 
     /**

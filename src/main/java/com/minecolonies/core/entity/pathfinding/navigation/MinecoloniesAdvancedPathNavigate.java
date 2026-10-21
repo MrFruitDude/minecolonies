@@ -9,6 +9,7 @@ import com.minecolonies.api.entity.other.MinecoloniesMinecart;
 import com.minecolonies.api.entity.pathfinding.IDynamicHeuristicNavigator;
 import com.minecolonies.api.entity.pathfinding.IMinecoloniesNavigator;
 import com.minecolonies.api.entity.pathfinding.IStuckHandler;
+import com.minecolonies.api.pathfinding.RouteHints;
 import com.minecolonies.api.util.*;
 import com.minecolonies.api.util.constant.ColonyConstants;
 import com.minecolonies.api.util.constant.GuardConstants;
@@ -20,6 +21,7 @@ import com.minecolonies.core.entity.pathfinding.pathresults.TreePathResult;
 import com.minecolonies.core.util.WorkerUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
@@ -129,6 +131,37 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     private int      unreachableFails  = 0;
     private int      unreachableLevel  = 0;
     private int      unreachableTicks  = 0;
+
+    /**
+     * A waypoint counts as reached when the entity stands within this distance of it (squared blocks); also the
+     * distance under which a hinted waypoint is skipped at the start of a leg.
+     */
+    private static final int ROUTE_WAYPOINT_REACH_SQ = 16;
+
+    /**
+     * Ticks a destination gets no route hints after one of its legs failed.
+     */
+    private static final int ROUTE_ABANDON_TICKS = 1200;
+
+    /**
+     * Test hook: route hints for any entity with this navigator, not only citizens. False in production.
+     */
+    public static volatile boolean routeHintsForAnyMob = false;
+
+    /**
+     * The hinted route being followed (RouteHints): its destination, the waypoints left after the current leg, the
+     * current leg's waypoint and job. A destination whose leg failed gets plain searches until routeAbandonedUntil.
+     */
+    @Nullable
+    private       BlockPos            routeTarget         = null;
+    private final java.util.ArrayDeque<BlockPos> routeWaypoints = new java.util.ArrayDeque<>();
+    @Nullable
+    private       BlockPos            routeLeg            = null;
+    @Nullable
+    private       AbstractPathJob     routeLegJob         = null;
+    @Nullable
+    private       BlockPos            routeAbandoned      = null;
+    private       long                routeAbandonedUntil = 0;
 
     /**
      * Temporary block position
@@ -281,6 +314,13 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         final double speedFactor,
         final boolean safeDestination)
     {
+        final PathJobMoveToLocation leg = nextRouteLeg(PathfindingUtils.prepareStart(ourEntity), desiredPosition);
+        if (leg != null)
+        {
+            // A leg of a hinted route is a move-to job; callers only test it with PathJobMoveCloseToXNearY.isJobFor, which
+            // accepts a leg of a route to the desired position.
+            return (PathResult<PathJobMoveCloseToXNearY>) (PathResult<?>) setPathJob(leg, desiredPosition, speedFactor, safeDestination);
+        }
         PathJobMoveCloseToXNearY pathJob = new PathJobMoveCloseToXNearY(ourEntity.level(), desiredPosition, nearbyPosition, 1, ourEntity);
         return setPathJob(pathJob, desiredPosition, speedFactor, safeDestination);
     }
@@ -591,6 +631,11 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         }
 
         @NotNull final BlockPos start = PathfindingUtils.prepareStart(ourEntity);
+        final PathJobMoveToLocation leg = nextRouteLeg(start, desiredPos);
+        if (leg != null)
+        {
+            return setPathJob(leg, desiredPos, speedFactor, safeDestination);
+        }
         return setPathJob(
             new PathJobMoveToLocation(CompatibilityUtils.getWorldFromEntity(ourEntity),
                 start,
@@ -843,6 +888,107 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         }
         return unreachableTicks > 0 && dest.equals(unreachableDest)
                  || ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest);
+    }
+
+    /**
+     * RouteHints: the next leg of a hinted route for a long walk, or null for a plain search to the destination.
+     * <p>
+     * A new destination more than {@link RouteHints#MIN_DISTANCE} blocks away asks the providers once (citizens only); an
+     * answer is followed waypoint by waypoint, each leg a normal move-to search marked with the route's destination, so
+     * the AI sees it as the walk it asked for. Each later request for the same destination (the AI asks again when a leg
+     * is done) checks that the leg reached its waypoint and gives the next leg; after the last waypoint the walk is a
+     * plain search. A leg that did not reach its waypoint drops the route: plain searches to that destination for
+     * {@link #ROUTE_ABANDON_TICKS}.
+     *
+     * @param start the start of the walk.
+     * @param dest  the destination.
+     * @return the leg job, or null.
+     */
+    @Nullable
+    private PathJobMoveToLocation nextRouteLeg(final BlockPos start, final BlockPos dest)
+    {
+        if (dest == null || !RouteHints.hasProviders() || !(ourEntity.level() instanceof ServerLevel level))
+        {
+            return null;
+        }
+        final boolean citizen = ourEntity instanceof AbstractEntityCitizen;
+        if (!citizen && !routeHintsForAnyMob)
+        {
+            return null;
+        }
+        if (dest.equals(routeAbandoned) && level.getGameTime() < routeAbandonedUntil && level.getGameTime() >= routeAbandonedUntil - ROUTE_ABANDON_TICKS)
+        {
+            return null;
+        }
+
+        // (the current path is this route's last leg, so the leg was accepted and walked; a refused leg starts over)
+        final boolean onThisRoute = routeLegJob != null && dest.equals(routeTarget) && pathResult != null && pathResult.getJob() == routeLegJob;
+        if (onThisRoute)
+        {
+            // the AI asks again: the last leg is over, it must have reached its waypoint
+            if (!pathResult.isPathReachingDestination() || ourEntity.blockPosition().distSqr(routeLeg) > ROUTE_WAYPOINT_REACH_SQ)
+            {
+                abandonRoute(level, dest);
+                return null;
+            }
+        }
+        else
+        {
+            clearRoute();
+            if (start.distSqr(dest) <= (double) RouteHints.MIN_DISTANCE * RouteHints.MIN_DISTANCE)
+            {
+                return null;
+            }
+            Pathfinding.Stats.routeHintQueries.incrementAndGet();
+            final List<BlockPos> waypoints =
+              RouteHints.query(level, citizen ? ((AbstractEntityCitizen) ourEntity).getCitizenColonyHandler().getColony() : null, start, dest);
+            if (waypoints == null)
+            {
+                return null;
+            }
+            routeTarget = dest;
+            routeWaypoints.addAll(waypoints);
+        }
+
+        BlockPos next = routeWaypoints.pollFirst();
+        while (next != null && start.distSqr(next) <= ROUTE_WAYPOINT_REACH_SQ)
+        {
+            next = routeWaypoints.pollFirst();
+        }
+        if (next == null)
+        {
+            // route done (or every waypoint was at hand): the rest is a plain search
+            clearRoute();
+            return null;
+        }
+        if (!WorldUtil.isBlockLoaded(level, next) || isRefused(next))
+        {
+            abandonRoute(level, dest);
+            return null;
+        }
+        routeLeg = next;
+        Pathfinding.Stats.routeLegs.incrementAndGet();
+        final PathJobMoveToLocation leg =
+          new PathJobMoveToLocation(level, start, next, (int) ourEntity.getAttribute(Attributes.FOLLOW_RANGE).getValue(), ourEntity);
+        leg.setRouteTarget(dest);
+        routeLegJob = leg;
+        return leg;
+    }
+
+    private void abandonRoute(final Level level, final BlockPos dest)
+    {
+        Pathfinding.Stats.routeFallbacks.incrementAndGet();
+        clearRoute();
+        routeAbandoned = dest;
+        routeAbandonedUntil = level.getGameTime() + ROUTE_ABANDON_TICKS;
+    }
+
+    private void clearRoute()
+    {
+        routeTarget = null;
+        routeWaypoints.clear();
+        routeLeg = null;
+        routeLegJob = null;
     }
 
     /**

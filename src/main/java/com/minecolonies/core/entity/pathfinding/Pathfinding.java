@@ -53,6 +53,9 @@ public final class Pathfinding
         public static final AtomicLong    queueWaitNanos       = new AtomicLong();
         public static final AtomicLong    queueWaitMaxNanos    = new AtomicLong();
         public static final AtomicLong    unreachableCacheHits = new AtomicLong();
+        public static final AtomicLong    routeHintQueries     = new AtomicLong();
+        public static final AtomicLong    routeLegs            = new AtomicLong();
+        public static final AtomicLong    routeFallbacks       = new AtomicLong();
 
         private Stats()
         {
@@ -72,6 +75,9 @@ public final class Pathfinding
             queueWaitNanos.set(0);
             queueWaitMaxNanos.set(0);
             unreachableCacheHits.set(0);
+            routeHintQueries.set(0);
+            routeLegs.set(0);
+            routeFallbacks.set(0);
             peakRunning.set(running.get());
         }
 
@@ -123,9 +129,11 @@ public final class Pathfinding
         public static String summary()
         {
             final long n = started.get();
-            return String.format("submitted %d, rejected %d, started %d, peak running %d, nodes %d, failed %d (%d nodes), queue wait avg %.2f ms max %.2f ms, cache refusals %d",
+            return String.format("submitted %d, rejected %d, started %d, peak running %d, nodes %d, failed %d (%d nodes), queue wait avg %.2f ms max %.2f ms, "
+                                   + "cache refusals %d, route queries %d legs %d fallbacks %d",
               submitted.get(), rejected.get(), n, peakRunning.get(), nodesSearched.get(), failedSearches.get(), failedSearchNodes.get(),
-              n == 0 ? 0D : queueWaitNanos.get() / 1e6 / n, queueWaitMaxNanos.get() / 1e6, unreachableCacheHits.get());
+              n == 0 ? 0D : queueWaitNanos.get() / 1e6 / n, queueWaitMaxNanos.get() / 1e6, unreachableCacheHits.get(), routeHintQueries.get(), routeLegs.get(),
+              routeFallbacks.get());
         }
     }
 

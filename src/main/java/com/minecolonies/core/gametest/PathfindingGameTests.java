@@ -4,6 +4,8 @@ import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
 import com.minecolonies.api.entity.pathfinding.IStuckHandler;
+import com.minecolonies.api.pathfinding.IRouteHintProvider;
+import com.minecolonies.api.pathfinding.RouteHints;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.WorldUtil;
 import com.minecolonies.core.colony.buildings.modules.settings.BoolSetting;
@@ -887,6 +889,157 @@ public final class PathfindingGameTests
                 helper.assertTrue(quietReached == QUIET_JOBS, "fixture: a quiet colony job did not reach. " + s);
                 helper.assertTrue(quietLast > 0 && quietLast <= QUIET_START_BAR, "the quiet colony waited behind the flooding one. " + s);
                 helper.succeed();
+            });
+        }));
+    }
+
+    // ------------------------------------------------------------------ round 10: route hints
+
+    /** A plain (not a route leg) job of the host for the destination that reached it. */
+    private static boolean plainReached(final Host host, final BlockPos dest)
+    {
+        for (final AbstractPathJob job : host.jobs)
+        {
+            if (job.getRouteTarget() == null && PathJobMoveToLocation.isJobFor(job, dest) && job.getResult().isPathReachingDestination())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The host's route legs for the destination, in order. */
+    private static List<AbstractPathJob> legs(final Host host, final BlockPos dest)
+    {
+        final List<AbstractPathJob> legs = new ArrayList<>();
+        for (final AbstractPathJob job : host.jobs)
+        {
+            if (dest.equals(job.getRouteTarget()))
+            {
+                legs.add(job);
+            }
+        }
+        return legs;
+    }
+
+    private static String legSummary(final GameTestHelper helper, final List<AbstractPathJob> legs)
+    {
+        final StringBuilder sb = new StringBuilder("[");
+        for (final AbstractPathJob leg : legs)
+        {
+            sb.append(helper.relativePos(((PathJobMoveToLocation) leg).getDestination()).toShortString()).append(leg.getResult().isPathReachingDestination() ? " R; " : " F; ");
+        }
+        return sb.append(']').toString();
+    }
+
+    /**
+     * path_route_hints_followed: a test provider answers a 76-block walk with two waypoints on a detour (the plain
+     * search would go diagonally). The host must walk leg to the first, leg to the second, then search plainly to the
+     * destination and reach it; the provider is asked once.
+     */
+    public static void pathRouteHintsFollowed(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        final Host host = new Host(helper, new BlockPos(-6, 1, -6));
+        final BlockPos dest = helper.absolutePos(new BlockPos(57, 1, 37));
+        final BlockPos w1 = helper.absolutePos(new BlockPos(50, 1, -4));
+        final BlockPos w2 = helper.absolutePos(new BlockPos(52, 1, 20));
+        final List<BlockPos> calls = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final IRouteHintProvider provider = (level, colony, from, to) -> {
+            if (!to.equals(dest))
+            {
+                return null;
+            }
+            calls.add(from);
+            return List.of(w1, w2);
+        };
+        observe(host);
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            Pathfinding.Stats.reset();
+            RouteHints.register(provider);
+            MinecoloniesAdvancedPathNavigate.routeHintsForAnyMob = true;
+            drive(helper, host, () -> dest, 0, 1200, t -> plainReached(host, dest), () -> {
+                RouteHints.unregister(provider);
+                MinecoloniesAdvancedPathNavigate.routeHintsForAnyMob = false;
+                Pathfinding.submitObserver = null;
+                final List<AbstractPathJob> legs = legs(host, dest);
+                final String s = String.format("R10 route hints followed: %d provider calls, legs %s, plain reached %s, host at %s; stats: %s", calls.size(),
+                  legSummary(helper, legs), plainReached(host, dest), helper.relativePos(host.mob.blockPosition()).toShortString(), Pathfinding.Stats.summary());
+                Log.getLogger().info(s);
+                helper.assertTrue(calls.size() == 1, "the provider was not asked exactly once. " + s);
+                helper.assertTrue(legs.size() == 2, "not two route legs. " + s);
+                helper.assertTrue(legs.size() == 2 && ((PathJobMoveToLocation) legs.get(0)).getDestination().equals(w1)
+                                    && ((PathJobMoveToLocation) legs.get(1)).getDestination().equals(w2), "the legs do not follow the waypoints in order. " + s);
+                helper.assertTrue(legs.stream().allMatch(l -> l.getResult().isPathReachingDestination()), "a leg did not reach its waypoint. " + s);
+                helper.assertTrue(plainReached(host, dest), "the destination was not reached after the last waypoint. " + s);
+                helper.succeed();
+            });
+        }));
+    }
+
+    /**
+     * path_route_hints_fallback: (1) a provider that throws and one that answers null: the walk is one plain search that
+     * reaches, the throw is caught. (2) a provider whose only waypoint is sealed in stone: the leg fails, the route is
+     * dropped, and a plain search reaches the destination.
+     */
+    public static void pathRouteHintsFallback(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        final Host host = new Host(helper, new BlockPos(-6, 1, -6));
+        final BlockPos dest = helper.absolutePos(new BlockPos(57, 1, 37));
+        final BlockPos dest2 = helper.absolutePos(new BlockPos(-6, 1, 30));
+        final BlockPos sealedRel = new BlockPos(25, 1, 33);
+        final BlockPos sealed = helper.absolutePos(sealedRel);
+        final int[] throwCalls = {0};
+        final int[] nullCalls = {0};
+        final IRouteHintProvider thrower = (level, colony, from, to) -> {
+            throwCalls[0]++;
+            throw new IllegalStateException("R10 test provider throws on purpose");
+        };
+        final IRouteHintProvider none = (level, colony, from, to) -> {
+            nullCalls[0]++;
+            return null;
+        };
+        final IRouteHintProvider sealedRoute = (level, colony, from, to) -> to.equals(dest2) ? List.of(sealed) : null;
+        observe(host);
+        final Runnable restore = () -> {
+            RouteHints.unregister(thrower);
+            RouteHints.unregister(none);
+            RouteHints.unregister(sealedRoute);
+            MinecoloniesAdvancedPathNavigate.routeHintsForAnyMob = false;
+            Pathfinding.submitObserver = null;
+        };
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            Pathfinding.Stats.reset();
+            final long failedBefore = RouteHints.failedCalls.get();
+            RouteHints.register(thrower);
+            RouteHints.register(none);
+            MinecoloniesAdvancedPathNavigate.routeHintsForAnyMob = true;
+            drive(helper, host, () -> dest, 0, 600, t -> plainReached(host, dest), () -> {
+                final int phase1Jobs = host.jobs.size();
+                final boolean phase1Reached = plainReached(host, dest);
+                final int phase1Legs = legs(host, dest).size();
+                RouteHints.unregister(thrower);
+                RouteHints.unregister(none);
+                sealTarget(helper, sealedRel);
+                RouteHints.register(sealedRoute);
+                drive(helper, host, () -> dest2, 0, 1200, t -> plainReached(host, dest2), () -> {
+                    restore.run();
+                    final List<AbstractPathJob> legs2 = legs(host, dest2);
+                    final String s = String.format("R10 route hints fallback: phase 1 throw calls %d, null calls %d, caught %d, %d jobs, %d legs, reached %s; "
+                                                     + "phase 2 legs %s, plain reached %s; stats: %s", throwCalls[0], nullCalls[0], RouteHints.failedCalls.get() - failedBefore,
+                      phase1Jobs, phase1Legs, phase1Reached, legSummary(helper, legs2), plainReached(host, dest2), Pathfinding.Stats.summary());
+                    Log.getLogger().info(s);
+                    helper.assertTrue(throwCalls[0] >= 1 && nullCalls[0] >= 1, "fixture: the providers were not asked. " + s);
+                    helper.assertTrue(RouteHints.failedCalls.get() - failedBefore >= 1, "the provider's exception was not caught and counted. " + s);
+                    helper.assertTrue(phase1Legs == 0 && phase1Reached, "a null answer did not give one plain search that reaches. " + s);
+                    helper.assertTrue(legs2.size() == 1 && !legs2.get(0).getResult().isPathReachingDestination(), "fixture: no failed leg to the sealed waypoint. " + s);
+                    helper.assertTrue(Pathfinding.Stats.routeFallbacks.get() >= 1, "the failed leg did not drop the route. " + s);
+                    helper.assertTrue(plainReached(host, dest2), "no plain search reached the destination after the leg failed. " + s);
+                    helper.succeed();
+                });
             });
         }));
     }

@@ -959,7 +959,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         // worker pool or the submit observer while one is measured.
         for (final String name : new String[] {"path_unreachable_backoff", "path_unreachable_other_target", "path_unreachable_recovers",
           "path_queue_reject_marks_failed", "path_queue_parallel", "path_routes_identical", "path_citizen_walks_home", "path_road_preference",
-          "path_unreachable_colony_cache", "path_failed_search_cap", "path_queue_fair_colonies"})
+          "path_unreachable_colony_cache", "path_failed_search_cap", "path_queue_fair_colonies",
+          "path_route_hints_followed", "path_route_hints_fallback"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -973,6 +974,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "path_unreachable_colony_cache" -> PathfindingGameTests::pathUnreachableColonyCache;
                 case "path_failed_search_cap" -> PathfindingGameTests::pathFailedSearchCap;
                 case "path_queue_fair_colonies" -> PathfindingGameTests::pathQueueFairColonies;
+                case "path_route_hints_followed" -> PathfindingGameTests::pathRouteHintsFollowed;
+                case "path_route_hints_fallback" -> PathfindingGameTests::pathRouteHintsFallback;
                 default -> PathfindingGameTests::pathCitizenWalksHome;
             };
             event.registerTest(

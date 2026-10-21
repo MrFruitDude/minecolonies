@@ -201,12 +201,18 @@ public class PathJobMoveToLocation extends AbstractPathJob implements IDestinati
     }
 
     /**
-     * Helper to compare if the given move to location job matches the input parameters
+     * Helper to compare if the given move to location job matches the input parameters (a leg of a hinted route to the
+     * position matches too)
      *
      * @return true if the given job is the same
      */
     public static boolean isJobFor(final AbstractPathJob job, final BlockPos desiredPosition)
     {
+        if (job != null && job.getRouteTarget() != null)
+        {
+            // one leg of a hinted route to that destination
+            return job.getRouteTarget().equals(desiredPosition);
+        }
         if (job instanceof PathJobMoveToLocation pathJob)
         {
             return pathJob.getDestination().equals(desiredPosition);
