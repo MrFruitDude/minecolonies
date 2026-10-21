@@ -782,6 +782,8 @@ final class BuilderScaffoldGameTests
     /**
      * Builder review c4 L-a: the same ring as {@link #pathBlocked13thReturn}, with a dirt block to clear above the block to place. The block to clear comes
      * back like the one to place, and is mined by the same default rule (from where MineColonies' walk ended) instead of staying standing.
+     * r9 launch: the dirt (one above the wall's reach line) was mined from a scaffolding tower outside the wall, so only "not left standing" was shown, not
+     * the default-rule mining itself (keptOut 1: the block to place). A fixture where no tower reaches the block to clear is still needed for that.
      */
     public static void pathBlockedClear(final GameTestHelper helper)
     {
