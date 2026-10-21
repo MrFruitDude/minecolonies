@@ -622,6 +622,8 @@ final class LabourGameTests
         final RsFixture f = found(helper, "labour builder tool", 2);
         final Colony colony = (Colony) f.colony;
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
+        // (a wooden axe is a 3x3 recipe: the colony needs a table; the first run, Wave B C1, was blocked NO_TABLE without one)
+        helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
         tree(helper, 34, 20, 6);
         helper.runAfterDelay(100, () -> {
             final ICitizenData builder = f.spawn(new BlockPos(12, 1, 8), false);

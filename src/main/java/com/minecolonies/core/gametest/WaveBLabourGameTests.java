@@ -86,6 +86,20 @@ final class WaveBLabourGameTests
         }
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 40)));
         clearPosts(helper);
+        // (the plot's barrier roof would be the top block of every column: taken away over the test's ground, as the natural-safety tests do)
+        for (int x = 18; x <= 46; x++)
+        {
+            for (int z = 12; z <= 36; z++)
+            {
+                for (int y = 20; y <= 60; y++)
+                {
+                    if (helper.getBlockState(new BlockPos(x, y, z)).is(Blocks.BARRIER))
+                    {
+                        helper.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState());
+                    }
+                }
+            }
+        }
         return f;
     }
 
@@ -398,7 +412,8 @@ final class WaveBLabourGameTests
     // ------------------------------------------------------------------ glass
 
     /**
-     * Glass is asked for. The warehouse holds sand and planks; the labourer brings sand and fuel to the colony's furnace and hands in the glass.
+     * Glass is asked for. Sand lies in a quarry zone and an oak stands nearby (labour takes goods it makes itself from the world, not from the warehouse): the labourer
+     * digs the sand, fells wood for fuel, smelts at the colony's furnace and hands in the glass.
      */
     public static void sandIsSmeltedToGlass(final GameTestHelper helper)
     {
@@ -406,9 +421,14 @@ final class WaveBLabourGameTests
         final RsFixture f = found(helper, "waveb glass");
         final Colony colony = (Colony) f.colony;
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.FURNACE.defaultBlockState());
-        f.stock(0, new ItemStack(Items.SAND, 4));
-        f.stock(1, new ItemStack(Items.OAK_PLANKS, 6));
+        ground(helper, 29, 19, 36, 24);
+        for (int x = 30; x <= 33; x++)
+        {
+            helper.setBlock(new BlockPos(x, 1, 21), Blocks.SAND.defaultBlockState());
+        }
+        LabourGameTests.tree(helper, 40, 30, 5);
         helper.runAfterDelay(100, () -> {
+            helper.assertTrue(colony.getLabourBoard().markQuarry(area(helper, 30, 20, 35, 23)).zone() != null, "the zone was refused");
             final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
             final IToken<?> token = ask(f.builder, new ItemStack(Items.GLASS, 2));
             poll(helper, List.of(colony), 9000, () -> inHut(f.builder, Items.GLASS) >= 2, () -> {
@@ -461,8 +481,9 @@ final class WaveBLabourGameTests
     // ------------------------------------------------------------------ a hut on credit
 
     /**
-     * The town hall owes a builder's hut item (a hut was placed on credit). It asks for one; the warehouse holds planks and a cobblestone, so labour crafts the build
-     * tool, a door and the hut at the colony's table and hands it in. The debt takes the hut item out again and the request ends: the colony paid with real goods.
+     * The town hall owes a builder's hut item (a hut was placed on credit). It asks for one; an oak stands in reach and stone lies in a quarry zone, so labour fells wood,
+     * digs a cobblestone and crafts planks, sticks, the build tool, a door and the hut at the colony's table, and hands it in. The debt takes the hut item out again and
+     * the request ends: the colony paid with real goods.
      */
     public static void owedHutItemIsMadeByLabour(final GameTestHelper helper)
     {
@@ -470,12 +491,18 @@ final class WaveBLabourGameTests
         final RsFixture f = found(helper, "waveb hut debt");
         final Colony colony = (Colony) f.colony;
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
-        f.stock(0, new ItemStack(Items.OAK_PLANKS, 24));
-        f.stock(1, new ItemStack(Items.COBBLESTONE, 2));
+        ground(helper, 29, 19, 36, 24);
+        for (int x = 30; x <= 32; x++)
+        {
+            helper.setBlock(new BlockPos(x, 1, 21), Blocks.STONE.defaultBlockState());
+        }
+        LabourGameTests.tree(helper, 40, 30, 6);
         helper.runAfterDelay(100, () -> {
+            helper.assertTrue(colony.getLabourBoard().markQuarry(area(helper, 30, 20, 35, 23)).zone() != null, "the zone was refused");
             final IBuilding hall = colony.getServerBuildingManager().getTownHall();
             final Item hut = ModBlocks.blockHutBuilder.asItem();
             final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            InventoryUtils.addItemStackToItemHandler(idle.getInventory(), new ItemStack(Items.WOODEN_PICKAXE));
             helper.assertTrue(colony.getLabourBoard().oweHut(hall, hut), "the debt was refused");
             helper.assertTrue(asks(hall, hut) && colony.getLabourData().hutDebts().debts().size() == 1, "the town hall does not ask for the hut item");
             final boolean[] claimed = {false};
@@ -485,7 +512,7 @@ final class WaveBLabourGameTests
             }, () -> {
                 helper.assertTrue(claimed[0], "nobody worked on the hut item");
                 helper.assertTrue(inHut(hall, hut) == 0 && !asks(hall, hut), "the hut item stayed in the town hall or it still asks: " + inHut(hall, hut));
-                helper.assertTrue(f.physical(s -> s.is(Items.OAK_PLANKS)) < 24, "the hut item was not made from the warehouse's planks");
+                helper.assertTrue(!helper.getBlockState(new BlockPos(40, 1, 30)).is(Blocks.OAK_LOG), "the hut item was not made from the tree's wood");
                 end();
                 helper.succeed();
             }, () -> "debts " + colony.getLabourData().hutDebts().debts().size() + ", asks " + asks(hall, hut) + ", " + describe(f, null, idle));
