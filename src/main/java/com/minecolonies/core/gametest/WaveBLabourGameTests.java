@@ -583,6 +583,57 @@ final class WaveBLabourGameTests
         }, () -> "debts " + colony.getLabourData().hutDebts().debts()));
     }
 
+    private static int ordersAt(final Colony colony, final BlockPos pos)
+    {
+        int n = 0;
+        for (final com.minecolonies.api.colony.workorders.IServerWorkOrder order : colony.getWorkManager().getWorkOrders().values())
+        {
+            n += pos.equals(order.getLocation()) ? 1 : 0;
+        }
+        return n;
+    }
+
+    /**
+     * Review C2 (M-C1): a hut placed on credit and not built yet (level 0) is not stuck. Its first build is ordered while it owes; and the officer may remove it, by
+     * breaking it or by picking it up: the hut goes with no hut item to anyone, its debt is cleared and so is its work order.
+     */
+    public static void unbuiltOwedHutBuildsOrGoesBack(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "waveb hut loan");
+        final Colony colony = (Colony) f.colony;
+        f.place(ModBlocks.blockHutBuilder, new BlockPos(36, 1, 24), "fundamentals/builder1.blueprint");
+        final BlockPos relA = new BlockPos(8, 1, 24);
+        final BlockPos relB = new BlockPos(24, 1, 32);
+        final IBuilding a = f.place(ModBlocks.blockHutLumberjack, relA, "fundamentals/lumberjack1.blueprint");
+        final IBuilding b = f.place(ModBlocks.blockHutLumberjack, relB, "fundamentals/lumberjack1.blueprint");
+        a.setBuildingLevel(0);
+        b.setBuildingLevel(0);
+        final Item item = ModBlocks.blockHutLumberjack.asItem();
+        f.player.getInventory().clearContent();
+        helper.assertTrue(colony.getLabourBoard().oweHut(a, item) && colony.getLabourBoard().oweHut(b, item), "the debts were refused");
+        // the first build goes ahead while the hut owes
+        a.requestUpgrade(f.player, BlockPos.ZERO);
+        helper.assertTrue(ordersAt(colony, a.getID()) == 1, "the owing hut's first build was refused: " + ordersAt(colony, a.getID()));
+        // break: the loan goes back
+        final BlockPos posA = a.getID();
+        f.player.gameMode.destroyBlock(posA);
+        helper.assertTrue(colony.getServerBuildingManager().getBuilding(posA) == null && helper.getLevel().getBlockState(posA).isAir(), "the unbuilt owing hut was not removed");
+        helper.assertTrue(!colony.getLabourData().hutDebts().owes(posA) && colony.getLabourData().hutDebts().count() == 1, "the broken hut's debt was not cleared: "
+          + colony.getLabourData().hutDebts().debts());
+        helper.assertTrue(ordersAt(colony, posA) == 0, "the broken hut's work order stayed");
+        // pick up: the loan goes back, no item
+        final BlockPos posB = b.getID();
+        b.pickUp(f.player);
+        helper.assertTrue(colony.getServerBuildingManager().getBuilding(posB) == null && helper.getLevel().getBlockState(posB).isAir(), "the unbuilt owing hut was not picked up");
+        helper.assertTrue(colony.getLabourData().hutDebts().isEmpty(), "the picked up hut's debt was not cleared: " + colony.getLabourData().hutDebts().debts());
+        helper.runAfterDelay(20, () -> {
+            helper.assertTrue(heldOrDropped(helper, f, item, relA) == 0 && heldOrDropped(helper, f, item, relB) == 0, "a hut item reached the player or the ground");
+            end();
+            helper.succeed();
+        });
+    }
+
     /**
      * An owed hut item survives a save and load of the colony's labour record: the same debt, and the hut keeps asking for it.
      */
@@ -695,7 +746,8 @@ final class WaveBLabourGameTests
     // ------------------------------------------------------------------ registration
 
     static final String[] NAMES = {"labour_quarry_auto", "labour_quarry_directed", "labour_quarry_isolated", "labour_glass", "labour_early_grace", "labour_hut_debt",
-      "labour_hut_owed_rules", "labour_hut_debt_reload", "labour_quarry_pit", "labour_quarry_road"};
+      "labour_hut_owed_rules", "labour_hut_debt_reload", "labour_quarry_pit", "labour_quarry_road",
+      "labour_hut_loan"};
 
     static java.util.function.Consumer<GameTestHelper> test(final String name)
     {
@@ -710,6 +762,7 @@ final class WaveBLabourGameTests
             case "labour_hut_debt_reload" -> WaveBLabourGameTests::owedHutSurvivesAReload;
             case "labour_quarry_pit" -> WaveBLabourGameTests::aPitDoesNotDeepenTheQuarry;
             case "labour_quarry_road" -> WaveBLabourGameTests::aRoadInAZoneIsLeftAlone;
+            case "labour_hut_loan" -> WaveBLabourGameTests::unbuiltOwedHutBuildsOrGoesBack;
             default -> WaveBLabourGameTests::owedHutItemIsMadeByLabour;
         };
     }

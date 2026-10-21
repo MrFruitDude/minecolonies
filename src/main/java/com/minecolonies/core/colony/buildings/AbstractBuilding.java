@@ -825,7 +825,7 @@ public abstract class AbstractBuilding extends AbstractBuildingContainer
         }
         else if (getBuildingLevel() < getMaxBuildingLevel() && (parentBuilding == null || getBuildingLevel() < parentBuilding.getBuildingLevel() || parentBuilding.getBuildingLevel() >= parentBuilding.getMaxBuildingLevel()))
         {
-            if (com.minecolonies.core.colony.labour.HutDebts.owes(this))
+            if (getBuildingLevel() >= 1 && com.minecolonies.core.colony.labour.HutDebts.owes(this))
             {
                 // a hut placed on credit is built, but not upgraded before its hut item is paid
                 MessageUtils.format(com.minecolonies.core.colony.labour.LabourSettings.HUT_OWED_KEY).sendTo(player);
@@ -882,6 +882,11 @@ public abstract class AbstractBuilding extends AbstractBuildingContainer
     @Override
     public void pickUp(final Player player)
     {
+        if (com.minecolonies.core.colony.labour.HutDebts.returnLoan(this))
+        {
+            // never built: the loan went back, the hut is gone with no item
+            return;
+        }
         if (com.minecolonies.core.colony.labour.HutDebts.owes(this))
         {
             // a hut placed on credit is not picked up before its hut item is paid (it would hand out an item the colony never had)

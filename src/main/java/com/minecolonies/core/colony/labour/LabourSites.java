@@ -100,6 +100,12 @@ public final class LabourSites
      */
     private final Map<Integer, AreaScan> areas = new HashMap<>();
 
+    /** Ticks before a work order whose blueprint did not load is asked for its box again. */
+    private static final long BOX_RETRY_TICKS = 1200L;
+
+    /** Work orders whose box did not load: id to {misses, tick of the last miss}. */
+    private final Map<Integer, long[]> boxMisses = new HashMap<>();
+
     /**
      * What one directed order's area holds of its resource.
      */
@@ -254,21 +260,35 @@ public final class LabourSites
     private List<BoundingBox> orderBoxes()
     {
         final List<BoundingBox> list = new ArrayList<>();
-        try
+        final long now = now();
+        final Map<Integer, com.minecolonies.api.colony.workorders.IServerWorkOrder> orders = colony.getWorkManager().getWorkOrders();
+        boxMisses.keySet().retainAll(orders.keySet());
+        for (final com.minecolonies.api.colony.workorders.IServerWorkOrder order : orders.values())
         {
-            for (final com.minecolonies.api.colony.workorders.IServerWorkOrder order : colony.getWorkManager().getWorkOrders().values())
+            final long[] miss = boxMisses.get(order.getID());
+            if (miss != null && miss[0] >= 2 && now - miss[1] >= 0 && now - miss[1] < BOX_RETRY_TICKS)
+            {
+                // its blueprint did not load: not asked again on every check
+                continue;
+            }
+            try
             {
                 final AABB box = order.getBoundingBox();
-                if (box != null)
+                if (box == null || box == com.minecolonies.api.util.constant.Constants.EMPTY_AABB)
                 {
-                    list.add(new BoundingBox((int) Math.floor(box.minX) - 1, (int) Math.floor(box.minY) - 1, (int) Math.floor(box.minZ) - 1,
-                      (int) Math.ceil(box.maxX) + 1, (int) Math.ceil(box.maxY) + 1, (int) Math.ceil(box.maxZ) + 1));
+                    // the first ask queues the load; a second miss means the blueprint is missing, asked again after BOX_RETRY_TICKS
+                    boxMisses.put(order.getID(), new long[] {miss == null ? 1 : miss[0] + 1, now});
+                    continue;
                 }
+                boxMisses.remove(order.getID());
+                list.add(new BoundingBox((int) Math.floor(box.minX) - 1, (int) Math.floor(box.minY) - 1, (int) Math.floor(box.minZ) - 1,
+                  (int) Math.ceil(box.maxX) + 1, (int) Math.ceil(box.maxY) + 1, (int) Math.ceil(box.maxZ) + 1));
             }
-        }
-        catch (final RuntimeException e)
-        {
-            // an order without a loaded blueprint has no box yet
+            catch (final RuntimeException e)
+            {
+                // one bad order does not drop the others' protection
+                boxMisses.put(order.getID(), new long[] {2, now});
+            }
         }
         return list;
     }

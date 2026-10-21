@@ -325,6 +325,13 @@ public class ColonyPermissionEventHandler
 
             if (!event.getPlayer().isCreative() && com.minecolonies.core.colony.labour.HutDebts.owes(building))
             {
+                if (building.getBuildingLevel() == 0 && building.getColony().getPermissions().hasPermission(event.getPlayer(), Action.BREAK_HUTS))
+                {
+                    // never built: the loan goes back, the hut goes with no drop and the debt is cleared
+                    event.setCanceled(true);
+                    com.minecolonies.core.colony.labour.HutDebts.returnLoan(building);
+                    return;
+                }
                 // a hut placed on credit is not broken before its hut item is paid: its drop would be an item the colony never had
                 event.setCanceled(true);
                 MessageUtils.format(com.minecolonies.core.colony.labour.LabourSettings.HUT_OWED_KEY).sendTo(event.getPlayer());

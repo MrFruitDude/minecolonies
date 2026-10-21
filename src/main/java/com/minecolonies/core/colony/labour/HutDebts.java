@@ -30,7 +30,8 @@ import java.util.Map;
  * the first hut item that lands in the hut's inventory is taken out again: the debt is paid and nothing was made from nothing.
  * <ul>
  *   <li>At most {@link #MAX_DEBTS} open debts per colony: a further placement without a hut item is refused.</li>
- *   <li>A hut that owes cannot be broken by a survival player, picked up, relocated or upgraded (its first build goes ahead).</li>
+ *   <li>A hut that owes cannot be broken by a survival player, picked up, relocated or upgraded (its first build goes ahead). One never built (level 0) may be
+ *   removed by a player allowed to break huts: it goes with no drop and the debt is cleared ({@link #returnLoan}).</li>
  *   <li>A debt is never forgiven when its hut goes some other way (an explosion, a creative player, a demolition): it stays with the colony, the town hall asks for the
  *   item, and the next one in the town hall or a warehouse pays it.</li>
  *   <li>A request that is cancelled is asked again no sooner than {@link #ASK_AGAIN_TICKS}.</li>
@@ -133,6 +134,42 @@ public final class HutDebts
         debts.add(debt);
         ask(building, item);
         askedAt.put(debt, now);
+        return true;
+    }
+
+    /**
+     * Returns the loan of a hut that owes its hut item and was never built (still level 0): the hut and its block go with no drop, its work orders go and the debt
+     * is cleared. Nothing was made from nothing: the colony never had the item and does not keep the hut.
+     *
+     * @return false when the hut owes nothing or is built (nothing changed).
+     */
+    public static boolean returnLoan(@Nullable final IBuilding building)
+    {
+        if (!owes(building) || building.getBuildingLevel() != 0 || !(building.getColony() instanceof com.minecolonies.core.colony.Colony colony))
+        {
+            return false;
+        }
+        final BlockPos pos = building.getID().immutable();
+        final HutDebts debts = colony.getLabourData().hutDebts();
+        for (final Debt debt : new ArrayList<>(debts.debts))
+        {
+            if (!debt.gone() && debt.hut().equals(pos))
+            {
+                debts.debts.remove(debt);
+                debts.askedAt.remove(debt);
+                end(colony, building, debt.item());
+            }
+        }
+        for (final com.minecolonies.api.colony.workorders.IServerWorkOrder order : new ArrayList<>(colony.getWorkManager().getWorkOrders().values()))
+        {
+            if (pos.equals(order.getLocation()))
+            {
+                colony.getWorkManager().removeWorkOrder(order);
+            }
+        }
+        building.destroy();
+        colony.getWorld().destroyBlock(pos, false);
+        colony.markDirty();
         return true;
     }
 
