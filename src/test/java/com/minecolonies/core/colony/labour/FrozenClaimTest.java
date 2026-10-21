@@ -17,4 +17,12 @@ public class FrozenClaimTest
         assertFalse(LabourBoard.frozenUntilNow(1000L, 1000L + LabourBoard.FROZEN_TICKS - 1));
         assertTrue(LabourBoard.frozenUntilNow(1000L, 1000L + LabourBoard.FROZEN_TICKS));
     }
+
+    @Test
+    public void onlyAWalkOutOfTheTickingAreaPutsTheRequestOnBackoff()
+    {
+        // builder review c5 C5-2: his hut still ticks, he walked out: back-off; the hut stopped ticking too (a player walked away): neutral
+        assertTrue(LabourBoard.frozenPenalized(true));
+        assertFalse(LabourBoard.frozenPenalized(false));
+    }
 }

@@ -84,4 +84,16 @@ public class WorkerSettingsTest
         // longer walks take longer
         assertTrue(AbstractWalking.travelTicks(200.0D, 1.5D) > AbstractWalking.travelTicks(60.0D, 1.5D));
     }
+
+    @Test
+    public void towerWaitSwitchIsScopedToOneWorker()
+    {
+        assertFalse(WorkerSettings.towerWaitEndlessForTests(7));
+        assertFalse(WorkerSettings.towerWaitEndlessForTests(-1));
+        WorkerSettings.overrideTowerWaitForTests(7);
+        assertTrue(WorkerSettings.towerWaitEndlessForTests(7));
+        assertFalse(WorkerSettings.towerWaitEndlessForTests(8));
+        WorkerSettings.clearOverrides();
+        assertFalse(WorkerSettings.towerWaitEndlessForTests(7));
+    }
 }

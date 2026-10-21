@@ -1714,6 +1714,18 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     /**
+     * Whether a block to mine for which the walk found no spot to mine from is mined from where the worker stands (MineColonies' default placement, after its
+     * own walk ended). None by default.
+     *
+     * @param target the block.
+     * @return true to mine it from here.
+     */
+    protected boolean minesFromHere(final BlockPos target)
+    {
+        return false;
+    }
+
+    /**
      * Whether scaffolding is no way out for the worker for now (switched off, no items, no room for a tower).
      */
     protected boolean scaffoldUnavailable()
@@ -2261,6 +2273,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return getState();
         }
 
+        if (workFrom == null && minesFromHere(blockToMine))
+        {
+            // MineColonies' own walk to a default-placement block ended: it is worked on from here, as a placed block is
+            workFrom = worker.blockPosition();
+        }
         if (workFrom == null)
         {
             // the walk says "go ahead" but no spot to mine from was found (nothing to stand on within reach): that is being stuck, too

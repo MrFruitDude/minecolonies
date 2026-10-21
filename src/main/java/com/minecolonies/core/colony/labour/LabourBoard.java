@@ -1106,6 +1106,27 @@ public final class LabourBoard
     }
 
     /**
+     * @return whether the hut the claim delivers to (the colony centre if it has none) stands where entities tick.
+     */
+    private boolean destinationTicks(final LabourClaim claim, final ICitizenData citizen)
+    {
+        final var entity = citizen.getEntity().orElse(null);
+        final BlockPos at = claim.destination() != null ? claim.destination() : colony.getCenter();
+        return entity != null && entity.level() instanceof net.minecraft.server.level.ServerLevel level && at != null && LabourSites.simulated(level, at);
+    }
+
+    /**
+     * Whether the release of a frozen claim counts against its request (back-off): only when the citizen walked out of the ticking area while his hut still
+     * ticks, not when the whole area left the simulation (builder review c5 C5-2).
+     *
+     * @param destinationTicks whether the hut the claim delivers to still ticks.
+     */
+    static boolean frozenPenalized(final boolean destinationTicks)
+    {
+        return destinationTicks;
+    }
+
+    /**
      * @return whether a citizen not ticking since {@code since} is frozen at {@code now}.
      */
     static boolean frozenUntilNow(final long since, final long now)
@@ -1114,7 +1135,7 @@ public final class LabourBoard
     }
 
     /**
-     * Whether the claim was given back because its citizen stopped ticking (asked once by the session that held it: it ends neutrally; the request itself is on back-off).
+     * Whether the claim was given back because its citizen stopped ticking (asked once by the session that held it: it ends neutrally; the request is on back-off only if he walked out while his hut still ticks).
      */
     public boolean releasedUnticked(final LabourClaim claim)
     {
@@ -1351,12 +1372,15 @@ public final class LabourBoard
                 }
                 if (frozen(claim.citizenId(), citizen, now))
                 {
-                    // he stands where entities do not tick (simulation distance, a player walked away): his session cannot end by itself, so the
-                    // claim goes back now. The request goes on the normal back-off, so the same site is not picked again at once and he does not walk out
-                    // and freeze again (builder review c4); his own session still ends neutrally when he ticks again (releasedUnticked)
-                    LabourStats.log("claim of citizen {} given back: he stopped ticking at {}", claim.citizenId(), citizen.getEntity().get().blockPosition().toShortString());
+                    // he stands where entities do not tick: his session cannot end by itself, so the claim goes back now; his own session still ends
+                    // neutrally when he ticks again (releasedUnticked). He walked out of the ticking area while his hut still ticks: the request goes on the
+                    // normal back-off, so the same site is not picked again at once and he does not walk out and freeze again (builder review c4). The hut
+                    // stopped ticking too (a player walked away): no failure of the request, no back-off (builder review c5 C5-2)
+                    final boolean walkedOut = destinationTicks(claim, citizen);
+                    LabourStats.log("claim of citizen {} given back: he stopped ticking at {} ({})", claim.citizenId(), citizen.getEntity().get().blockPosition().toShortString(),
+                      walkedOut ? "walked out, back-off" : "area left the simulation, no back-off");
                     releasedFrozen.add(claim);
-                    release(claim, false, true);
+                    release(claim, false, frozenPenalized(walkedOut));
                 }
             }
         }

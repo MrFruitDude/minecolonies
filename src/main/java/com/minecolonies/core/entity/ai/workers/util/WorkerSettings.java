@@ -39,6 +39,8 @@ public final class WorkerSettings
     /** The worker (entity id) whose ladder teleport a test switched off, or -1. Scoped to one worker: a failed test that never resets it does not touch
      * the workers of later tests (c8 launch: a global flag held a builder in labour_early_grace). */
     private static volatile int           teleportOffFor = -1;
+    /** The builder (entity id) for whom a test made the wait for a scaffolding tower endless, or -1. Scoped to one worker like {@link #teleportOffFor}. */
+    private static volatile int           towerWaitEndlessFor = -1;
 
     /**
      * Only for tests: overrides the config. Null values go back to the config.
@@ -75,9 +77,27 @@ public final class WorkerSettings
         return entityId >= 0 && entityId == teleportOffFor;
     }
 
+    /**
+     * Only for tests: the builder's wait for a scaffolding tower (6000 ticks) never ends for one worker (entity id; -1 for none), so only the 13th return of
+     * a block he cannot get to places it the default way (builder review c5 C5-1).
+     */
+    public static void overrideTowerWaitForTests(final int entityId)
+    {
+        towerWaitEndlessFor = entityId;
+    }
+
+    /**
+     * @return whether a test made the wait for a scaffolding tower endless for this worker.
+     */
+    public static boolean towerWaitEndlessForTests(final int entityId)
+    {
+        return entityId >= 0 && entityId == towerWaitEndlessFor;
+    }
+
     public static void clearOverrides()
     {
         teleportOffFor = -1;
+        towerWaitEndlessFor = -1;
         overrideForTests(null, null, null, null, null, null);
         overrideReachForTests(null, null, null, null);
     }

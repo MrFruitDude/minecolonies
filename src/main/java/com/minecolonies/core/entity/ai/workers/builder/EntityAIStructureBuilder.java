@@ -573,6 +573,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     private int      starvedOrder = -1;
     /** The order in which a tower was waited for in vain once: later no-spot blocks of it do not wait again while no scaffolding has come. */
     private int      waitedOrder  = -1;
+    /** The default-placement block whose walk (MineColonies' own) ended more than 5 around: its own rule works on it from there. */
+    private BlockPos defaultWalkedTo;
     /** Fallback reasons this order logged at WARN, and how often each came (later ones at DEBUG). */
     private final java.util.Map<String, Integer> fallbackLog = new java.util.HashMap<>();
     /** How often the builder fell back to the limited working range, to MineColonies' default placement, refused a block out of range, and fell back on a
@@ -698,6 +700,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(worker, null, false);
         }
         reachFallback = null;
+        defaultWalkedTo = null;
     }
 
     /**
@@ -728,7 +731,15 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             return true;
         }
         final Long first = noSpotFirst.get(target);
-        return first != null && now - first >= REACH_FALLBACK_WAITING_TICKS;
+        return first != null && now - first >= towerWaitTicks();
+    }
+
+    /**
+     * @return how long a tower is waited for: {@link #REACH_FALLBACK_WAITING_TICKS}, endless only where a test switched it off for this builder.
+     */
+    private long towerWaitTicks()
+    {
+        return WorkerSettings.towerWaitEndlessForTests(worker.getId()) ? Long.MAX_VALUE : REACH_FALLBACK_WAITING_TICKS;
     }
 
     /**
@@ -900,7 +911,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             starvedOrder = order;
             mode = FallbackMode.DEFAULT;
         }
-        else if (noSpotFor >= 0L && (noSpotFor >= REACH_FALLBACK_WAITING_TICKS || (waitedOrder == order && scaffold.hasNoItems())))
+        else if (noSpotFor >= 0L && (noSpotFor >= towerWaitTicks() || (waitedOrder == order && scaffold.hasNoItems())))
         {
             kind = "waited";
             waitedOrder = order;
@@ -1326,6 +1337,16 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
     // ------------------------------------------------------------------ scaffolding
 
+    /**
+     * Builder review c4 L-a: a block to clear that falls back to MineColonies' default placement is mined from where its walk ended, as a placed block is;
+     * before, the walk ended with no spot to mine from and the block stayed standing after its returns.
+     */
+    @Override
+    protected boolean minesFromHere(final BlockPos target)
+    {
+        return usesPhysicalReach() && target.equals(reachFallback) && reachFallbackMode == FallbackMode.DEFAULT && target.equals(defaultWalkedTo);
+    }
+
     @Override
     protected boolean cannotReachAtAll(final BlockPos target)
     {
@@ -1573,6 +1594,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 {
                     // MineColonies' walk ended as close as it gets: its own rule places from there (the audit allows it after the walk only)
                     com.minecolonies.core.entity.ai.workers.util.ReachAudit.defaultWalked(worker);
+                    defaultWalkedTo = currentBlock.immutable();
                 }
                 prevBlockPosition = currentBlock;
                 workFrom = null;

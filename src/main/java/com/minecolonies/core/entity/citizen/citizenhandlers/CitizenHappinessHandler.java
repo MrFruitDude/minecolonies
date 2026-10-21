@@ -141,20 +141,25 @@ public class CitizenHappinessHandler implements ICitizenHappinessHandler
     {
         if (cachedHappiness == -1)
         {
-            double total = 0.0;
-            double totalWeight = 0.0;
-            for (final IHappinessModifier happinessModifier : happinessFactors.values())
-            {
-                final double factor = happinessModifier.getFactor(citizenData);
-                if (factor == 1.0)
-                    continue;
-                total += factor * happinessModifier.getWeight();
-                totalWeight += happinessModifier.getWeight();
-            }
-
-            cachedHappiness = happiness(total, totalWeight, colony.getResearchManager().getResearchEffects().getEffectStrength(HAPPINESS));
+            cachedHappiness = getLiveHappiness(colony, citizenData);
         }
         return cachedHappiness;
+    }
+
+    @Override
+    public double getLiveHappiness(final IColony colony, final ICitizenData citizenData)
+    {
+        double total = 0.0;
+        double totalWeight = 0.0;
+        for (final IHappinessModifier happinessModifier : happinessFactors.values())
+        {
+            final double factor = happinessModifier.getFactor(citizenData);
+            if (factor == 1.0)
+                continue;
+            total += factor * happinessModifier.getWeight();
+            totalWeight += happinessModifier.getWeight();
+        }
+        return happiness(total, totalWeight, colony.getResearchManager().getResearchEffects().getEffectStrength(HAPPINESS));
     }
 
     /**

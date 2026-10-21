@@ -52,6 +52,20 @@ public interface ICitizenHappinessHandler
     double getHappiness(final IColony colony, final ICitizenData citizenData);
 
     /**
+     * The happiness of the citizen as it is now: computed from the factors at this moment, without reading or changing the cached value that
+     * {@link #getHappiness} returns (that one is only renewed when a modifier changes or a day ends). Server side, for displays that show the live value.
+     * Handlers that keep no cache return {@link #getHappiness}.
+     *
+     * @param colony      the colony.
+     * @param citizenData the citizen.
+     * @return the happiness, 0 to 10.
+     */
+    default double getLiveHappiness(final IColony colony, final ICitizenData citizenData)
+    {
+        return getHappiness(colony, citizenData);
+    }
+
+    /**
      * Read the handler from NBT.
      *
      * @param compound the compound to read it from.
