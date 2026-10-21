@@ -1299,7 +1299,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         for (final String name : new String[] {"scaffold_reach_box_l40", "scaffold_reach_box_l1", "scaffold_reach_clear_l40", "scaffold_legacy_box_l40", "scaffold_legacy_box_l1",
           "scaffold_tall_wall8", "scaffold_tall_tower14", "scaffold_sealed_roof", "scaffold_overhang", "scaffold_tall_tower14_legacy", "scaffold_tall_wall8_legacy",
           "scaffold_cancel", "scaffold_save_load", "scaffold_orphans", "scaffold_two_builders", "scaffold_no_items", "scaffold_lava", "scaffold_held", "scaffold_bridge", "scaffold_overhang_legacy", "scaffold_sealed_legacy", "scaffold_two_builders_big", "scaffold_escape_pit", "scaffold_supply_delivery", "scaffold_supply_crafters", "scaffold_clear_ledge", "scaffold_climb_arm_twice", "scaffold_probe_arm", "scaffold_probe_descend", "scaffold_probe_wall5", "scaffold_probe_top1", "scaffold_probe_top3", "scaffold_probe_top8", "scaffold_probe_inside5", "scaffold_stock_arrives", "scaffold_sealed_no_items",
-          "scaffold_lamp_top", "scaffold_flooded_cell", "scaffold_tall_no_scaffold", "scaffold_slow_delivery"})
+          "scaffold_lamp_top", "scaffold_flooded_cell", "scaffold_tall_no_scaffold", "scaffold_slow_delivery",
+          "scaffold_pillar_undelivered", "scaffold_flooded_pool", "scaffold_tall_hut_no_scaffold"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -1342,6 +1343,9 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_flooded_cell" -> BuilderScaffoldGameTests::floodedCellIsFilled;
                 case "scaffold_tall_no_scaffold" -> BuilderScaffoldGameTests::tallBlockWithoutScaffolding;
                 case "scaffold_slow_delivery" -> BuilderScaffoldGameTests::slowDeliveryNoFallback;
+                case "scaffold_pillar_undelivered" -> BuilderScaffoldGameTests::pillarScaffoldingNeverDelivered;
+                case "scaffold_flooded_pool" -> BuilderScaffoldGameTests::floodedPoolFallback;
+                case "scaffold_tall_hut_no_scaffold" -> BuilderScaffoldGameTests::tallHutWithoutScaffolding;
                 default -> BuilderScaffoldGameTests::stockArrives;
             };
             if (!nameWanted(name))

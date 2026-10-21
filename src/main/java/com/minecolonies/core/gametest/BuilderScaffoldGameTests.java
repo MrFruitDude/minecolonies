@@ -529,8 +529,8 @@ final class BuilderScaffoldGameTests
     }
 
     /**
-     * Builder review c1 H1: a pillar 12 high, scaffolding switched off. Nothing is ever placed out of reach: whatever the reach fallback places lies at most 5
-     * up or down from the eye, and the blocks higher than that are refused with a reason (they need scaffolding), not placed from the ground.
+     * Builder review c1 H1, c2 N2: a pillar 12 high, scaffolding switched off. A limited fallback places at most 5 up or down from the eye; a block no spot
+     * reaches is placed the way MineColonies does (scaffolding off: no refusal). The pillar is whole.
      */
     public static void tallBlockWithoutScaffolding(final GameTestHelper helper)
     {
@@ -563,6 +563,8 @@ final class BuilderScaffoldGameTests
                   live.level.getBlockState(origin.above(11)).getBlock());
                 helper.assertTrue(ReachAudit.violations() == 0, "blocks were placed out of reach: " + ReachAudit.examples());
                 helper.assertTrue(ReachAudit.fallbackMaxVertical() <= 5.0001D, "the fallback placed a block " + ReachAudit.fallbackMaxVertical() + " up or down from the eye");
+                helper.assertTrue(built(live, blueprint, origin), "a hole: missing " + missing(live, blueprint, origin));
+                helper.assertTrue(refusals == 0, "a block was refused with scaffolding off: " + refusals);
                 WorkerSettings.clearOverrides();
                 ReachAudit.enable(false);
                 helper.succeed();
@@ -570,20 +572,42 @@ final class BuilderScaffoldGameTests
         });
     }
 
+    /** A full pillar, one block wide: nothing to stand on near its top but a tower (or its own top, which no path reaches). */
+    static Blueprint pillar(final String name, final int height)
+    {
+        return shape(name, 1, height, 1, (x, y, z) -> true);
+    }
+
+    /** The counters of the reach fallback, read at the start of a test. */
+    private static int[] reachCounters()
+    {
+        return new int[] {com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks.get(),
+          com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachDefaults.get(),
+          com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachRefusals.get(),
+          com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFlooded.get()};
+    }
+
+    /** limited fallbacks, default placements, refusals, flooded fallbacks since {@code at}. */
+    private static int[] reachDelta(final int[] at)
+    {
+        final int[] now = reachCounters();
+        return new int[] {now[0] - at[0], now[1] - at[1], now[2] - at[2], now[3] - at[3]};
+    }
+
     /**
-     * Builder review c1 H2: a ring 10 high whose scaffolding is asked for and arrives only about 3000 ticks later (a slow courier). The builder waits for it
-     * as before: no reach fallback, the ring is built whole, nothing out of reach.
+     * Builder review c2 N1: a pillar 10 high whose scaffolding is asked for and arrives about 3000 ticks later (a slow courier). The tower waits for it (no
+     * 600-tick drop while the request is open) and is built: scaffolding is placed, no fallback, no default placement, the pillar is whole.
      */
     public static void slowDeliveryNoFallback(final GameTestHelper helper)
     {
-        WorkerSettings.overrideReachForTests(null, true, null, 16);
+        WorkerSettings.overrideReachForTests(null, true, true, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
-        final int fallbacks0 = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks.get();
+        final int[] at = reachCounters();
         WorkerEfficiencyGameTests.scene(helper, "WSCAF slow", live -> {
             live.setSkills(40, 40);
             live.giveTools();
-            final Blueprint blueprint = ring("slow", 10);
+            final Blueprint blueprint = pillar("slow", 10);
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
             final WorkOrderDecoration order = live.orderFor("slow", SITE, blueprint);
             final BlockPos origin = order.getLocation();
@@ -592,12 +616,9 @@ final class BuilderScaffoldGameTests
             WorkerEfficiencyGameTests.everyTick(live, 30_000, tick -> {
                 if (requestedAt[0] < 0)
                 {
-                    for (final var request : live.hut.getOpenRequestsOfType(-1, com.google.common.reflect.TypeToken.of(com.minecolonies.api.colony.requestsystem.requestable.Stack.class)))
+                    if (live.hut.getOpenRequests(-1).stream().anyMatch(r -> String.valueOf(r.getRequest()).toLowerCase(java.util.Locale.ROOT).contains("scaffolding")))
                     {
-                        if (request.getRequest().getStack().is(Items.SCAFFOLDING))
-                        {
-                            requestedAt[0] = tick;
-                        }
+                        requestedAt[0] = tick;
                     }
                 }
                 if (requestedAt[0] >= 0 && !delivered[0] && tick - requestedAt[0] >= 3000)
@@ -607,13 +628,19 @@ final class BuilderScaffoldGameTests
                     InventoryUtils.addItemStackToItemHandler(live.hut.getItemHandlerCap(), new ItemStack(Items.SCAFFOLDING, 32));
                     Log.getLogger().info("WSCAF slow: requested at t={}, delivered at t={}", requestedAt[0], tick);
                 }
+                if (tick % 1000 == 0)
+                {
+                    Log.getLogger().info("WSCAF slow t={} missing={} towers={} cells={} reach={} {}", tick, missing(live, blueprint, origin), BuilderScaffolding.towersBuilt,
+                      BuilderScaffolding.cellsPlaced, java.util.Arrays.toString(reachDelta(at)), live.ai());
+                }
                 return delivered[0] && live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
             }, () -> {
-                final int fallbacks = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks.get() - fallbacks0;
-                Log.getLogger().info("WBENCH RESULT slow requestedAt={} towers={} cells={} fallbacks={} violations={}", requestedAt[0], BuilderScaffolding.towersBuilt,
-                  BuilderScaffolding.cellsPlaced, fallbacks, ReachAudit.violations());
+                final int[] d = reachDelta(at);
+                Log.getLogger().info("WBENCH RESULT slow requestedAt={} towers={} cells={} limited={} default={} refused={} flooded={} violations={}", requestedAt[0],
+                  BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced, d[0], d[1], d[2], d[3], ReachAudit.violations());
                 helper.assertTrue(built(live, blueprint, origin), "not built: missing " + missing(live, blueprint, origin));
-                helper.assertTrue(fallbacks == 0, "a late delivery made the builder fall back to the working range: " + fallbacks);
+                helper.assertTrue(BuilderScaffolding.cellsPlaced > 0, "the late tower was not built: towers=" + BuilderScaffolding.towersBuilt + " cells=0");
+                helper.assertTrue(d[0] == 0 && d[1] == 0, "a late delivery made the builder fall back: limited " + d[0] + " default " + d[1]);
                 helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
                 helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left");
                 WorkerSettings.clearOverrides();
@@ -621,6 +648,108 @@ final class BuilderScaffoldGameTests
                 helper.succeed();
             }, () -> "requestedAt=" + requestedAt[0] + " delivered=" + delivered[0] + " missing=" + missing(live, blueprint, origin) + " " + live.ai());
         });
+    }
+
+    /**
+     * Builder review c2 N2: a pillar 10 high, scaffolding on and asked for, but never delivered. While the tower can still come the builder refuses the blocks
+     * out of reach (needs scaffolding) and waits; after the 6000-tick limit he places them the way MineColonies does. The pillar is whole: no hole.
+     */
+    public static void pillarScaffoldingNeverDelivered(final GameTestHelper helper)
+    {
+        WorkerSettings.overrideReachForTests(null, true, true, 16);
+        ReachAudit.enable(true);
+        BuilderScaffolding.resetCounters();
+        final int[] at = reachCounters();
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF undelivered", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            final Blueprint blueprint = pillar("undelivered", 10);
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            final WorkOrderDecoration order = live.orderFor("undelivered", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            final int[] firstDefault = {-1};
+            WorkerEfficiencyGameTests.everyTick(live, 25_000, tick -> {
+                if (firstDefault[0] < 0 && reachDelta(at)[1] > 0)
+                {
+                    firstDefault[0] = tick;
+                }
+                if (tick % 1000 == 0)
+                {
+                    Log.getLogger().info("WSCAF undelivered t={} missing={} reach={} {}", tick, missing(live, blueprint, origin), java.util.Arrays.toString(reachDelta(at)), live.ai());
+                }
+                return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
+            }, () -> {
+                final int[] d = reachDelta(at);
+                Log.getLogger().info("WBENCH RESULT undelivered limited={} default={} refused={} flooded={} firstDefault={} towers={} cells={} violations={}", d[0], d[1], d[2], d[3],
+                  firstDefault[0], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced, ReachAudit.violations());
+                helper.assertTrue(built(live, blueprint, origin), "a hole: missing " + missing(live, blueprint, origin));
+                helper.assertTrue(d[2] > 0, "no block was refused while the tower could still come");
+                helper.assertTrue(d[1] > 0, "no block was placed the way MineColonies does after the limit");
+                helper.assertTrue(firstDefault[0] >= 5000, "the default placement came before the tower was waited for: tick " + firstDefault[0]);
+                helper.assertTrue(ReachAudit.violations() == 0, "out of reach outside the fallback: " + ReachAudit.examples());
+                WorkerSettings.clearOverrides();
+                ReachAudit.enable(false);
+                helper.succeed();
+            }, () -> "missing=" + missing(live, blueprint, origin) + " reach=" + java.util.Arrays.toString(reachDelta(at)) + " " + live.ai());
+        });
+    }
+
+    /**
+     * Builder review c2: a cell at the bottom of a 7 by 7 pool, 3 deep, on a plateau 3 high (a ramp up from the west). No dry spot reaches the cell by the
+     * physical reach, the shore is within 5. Scaffolding is off (no tower in the water). The builder fills the cell through the flooded fallback.
+     */
+    public static void floodedPoolFallback(final GameTestHelper helper)
+    {
+        final int[] at = reachCounters();
+        tallStructure(helper, "flooded_pool", () -> shape("flooded_pool", 1, 2, 1, (x, y, z) -> y == 0), true, 15_000, false, (live, origin) -> {
+            WorkerSettings.overrideReachForTests(null, true, false, 0);
+            for (int x = -6; x <= 6; x++)
+            {
+                for (int z = -6; z <= 6; z++)
+                {
+                    final int ring = Math.max(Math.abs(x), Math.abs(z));
+                    for (int y = 0; y <= 2; y++)
+                    {
+                        if (ring <= 3)
+                        {
+                            live.level.setBlock(origin.offset(x, y, z), Blocks.WATER.defaultBlockState(), 3);
+                        }
+                        else if (ring <= 5)
+                        {
+                            live.level.setBlock(origin.offset(x, y, z), Blocks.STONE.defaultBlockState(), 3);
+                        }
+                    }
+                }
+            }
+            // a ramp up the west side
+            for (int z = -1; z <= 1; z++)
+            {
+                live.level.setBlock(origin.offset(-6, 0, z), Blocks.STONE.defaultBlockState(), 3);
+                live.level.setBlock(origin.offset(-6, 1, z), Blocks.STONE.defaultBlockState(), 3);
+                live.level.setBlock(origin.offset(-7, 0, z), Blocks.STONE.defaultBlockState(), 3);
+            }
+        }, () -> {
+            final int[] d = reachDelta(at);
+            Log.getLogger().info("WBENCH RESULT flooded_pool limited={} default={} refused={} flooded={} maxVertical={}", d[0], d[1], d[2], d[3],
+              String.format("%.2f", ReachAudit.fallbackMaxVertical()));
+            helper.assertTrue(d[3] > 0, "no flooded fallback: limited " + d[0] + " default " + d[1]);
+            helper.assertTrue(ReachAudit.fallbackMaxVertical() <= 5.0001D, "placed " + ReachAudit.fallbackMaxVertical() + " up or down from the eye");
+        }, 0);
+    }
+
+    /**
+     * Builder review c2 N2: an ordinary tall hut shape (a ring 10 high), scaffolding switched off for the colony. Out-of-reach blocks are placed the way
+     * MineColonies does: the ring is built whole, no block missing.
+     */
+    public static void tallHutWithoutScaffolding(final GameTestHelper helper)
+    {
+        final int[] at = reachCounters();
+        tallStructure(helper, "tall_hut_noscaf", () -> ring("tall_hut_noscaf", 10), true, 40_000, false, (live, origin) -> WorkerSettings.overrideReachForTests(null, true, false, 0),
+          () -> {
+              final int[] d = reachDelta(at);
+              Log.getLogger().info("WBENCH RESULT tall_hut_noscaf limited={} default={} refused={} flooded={}", d[0], d[1], d[2], d[3]);
+              helper.assertTrue(d[2] == 0, "a block was refused with scaffolding off: " + d[2]);
+          }, 0);
     }
 
     public static void tallWall8(final GameTestHelper helper)
