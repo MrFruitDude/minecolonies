@@ -1359,10 +1359,30 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 continue;
             }
-            event.registerTest(
-              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
-              info -> new MinecoloniesGameTestInstance(info, test),
-              isolatedColonyData(event, name));
+            // MINECOLONIES_GAMETEST_REPEAT=n registers each test n times as name_r1..name_rn, each in its own environment: the copies run one after another.
+            // (--repeatCount runs its copies side by side, and these scenes share static counters and test switches: r9 c3 launch 1.)
+            final int repeat = repeatCount();
+            for (int r = 1; r <= repeat; r++)
+            {
+                final String id = repeat > 1 ? name + "_r" + r : name;
+                event.registerTest(
+                  Identifier.fromNamespaceAndPath(Constants.MOD_ID, id),
+                  info -> new MinecoloniesGameTestInstance(info, test),
+                  isolatedColonyData(event, id));
+            }
+        }
+    }
+
+    private static int repeatCount()
+    {
+        try
+        {
+            final String value = System.getenv("MINECOLONIES_GAMETEST_REPEAT");
+            return value == null || value.isBlank() ? 1 : Math.max(1, Integer.parseInt(value.trim()));
+        }
+        catch (final NumberFormatException e)
+        {
+            return 1;
         }
     }
 
