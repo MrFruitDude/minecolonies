@@ -825,6 +825,12 @@ public abstract class AbstractBuilding extends AbstractBuildingContainer
         }
         else if (getBuildingLevel() < getMaxBuildingLevel() && (parentBuilding == null || getBuildingLevel() < parentBuilding.getBuildingLevel() || parentBuilding.getBuildingLevel() >= parentBuilding.getMaxBuildingLevel()))
         {
+            if (com.minecolonies.core.colony.labour.HutDebts.owes(this))
+            {
+                // a hut placed on credit is built, but not upgraded before its hut item is paid
+                MessageUtils.format(com.minecolonies.core.colony.labour.LabourSettings.HUT_OWED_KEY).sendTo(player);
+                return;
+            }
             if (isUpgradeRequestAllowed(player, builder, WorkOrderType.UPGRADE))
             {
                 requestWorkOrder(WorkOrderType.UPGRADE, builder);
@@ -876,6 +882,12 @@ public abstract class AbstractBuilding extends AbstractBuildingContainer
     @Override
     public void pickUp(final Player player)
     {
+        if (com.minecolonies.core.colony.labour.HutDebts.owes(this))
+        {
+            // a hut placed on credit is not picked up before its hut item is paid (it would hand out an item the colony never had)
+            MessageUtils.format(com.minecolonies.core.colony.labour.LabourSettings.HUT_OWED_KEY).sendTo(player);
+            return;
+        }
         if (hasParent())
         {
             MessageUtils.format(WARNING_BUILDING_PICKUP_DENIED).sendTo(player);

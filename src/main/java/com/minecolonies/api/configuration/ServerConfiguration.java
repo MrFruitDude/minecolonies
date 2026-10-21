@@ -213,6 +213,7 @@ public class ServerConfiguration extends AbstractConfiguration
     public final IntValue     labourersEarlyBuildings;
     public final IntValue     labourersEarlyGraceTicks;
     public final BooleanValue labourersEarlyAllUnemployed;
+    public final BooleanValue labourersHutCredit;
 
     /**
      * RS1: stock and space are reserved in a per-colony ledger when a delivery is planned, and released when it ends.
@@ -424,6 +425,8 @@ public class ServerConfiguration extends AbstractConfiguration
         labourersEarlyBuildings = defineInteger("earlyBuildings", 10, 0, 100);
         labourersEarlyGraceTicks = defineInteger("earlyGraceTicks", 200, 0, 72000);
         labourersEarlyAllUnemployed = defineBoolean("earlyAllUnemployed", true);
+        // Hut credit: a hut placed from the overview with no hut item in hand and none in the warehouse goes ahead and owes its item (at most 2 open per colony).
+        labourersHutCredit = defineBoolean("hutCredit", true);
 
         finishCategory();
     }

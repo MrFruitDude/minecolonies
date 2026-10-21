@@ -241,8 +241,35 @@ public final class LabourSites
         {
             list.add(box(building));
         }
+        list.addAll(orderBoxes());
         boxes = list;
         boxesAt = now;
+        return list;
+    }
+
+    /**
+     * @return the boxes of the colony's queued and running work orders (decorations and road pieces included), with a 1 block margin: what a builder will place
+     *   there is the colony's own, so labour leaves it alone.
+     */
+    private List<BoundingBox> orderBoxes()
+    {
+        final List<BoundingBox> list = new ArrayList<>();
+        try
+        {
+            for (final com.minecolonies.api.colony.workorders.IServerWorkOrder order : colony.getWorkManager().getWorkOrders().values())
+            {
+                final AABB box = order.getBoundingBox();
+                if (box != null)
+                {
+                    list.add(new BoundingBox((int) Math.floor(box.minX) - 1, (int) Math.floor(box.minY) - 1, (int) Math.floor(box.minZ) - 1,
+                      (int) Math.ceil(box.maxX) + 1, (int) Math.ceil(box.maxY) + 1, (int) Math.ceil(box.maxZ) + 1));
+                }
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            // an order without a loaded blueprint has no box yet
+        }
         return list;
     }
 
@@ -280,6 +307,13 @@ public final class LabourSites
         for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
         {
             if (box(building).isInside(pos))
+            {
+                return true;
+            }
+        }
+        for (final BoundingBox box : orderBoxes())
+        {
+            if (box.isInside(pos))
             {
                 return true;
             }
@@ -1518,6 +1552,38 @@ public final class LabourSites
             }
         }
         return best;
+    }
+
+    /**
+     * @return the ground's top of every column of the area, row by row ({@code (z - minZ) * width + (x - minX)}): the top block, below any logs, leaves, plants and
+     *   other blocks that are not ground (a tree standing in a quarry zone does not lift its column). A column in a chunk that is not loaded reads as the anchor's y.
+     */
+    public int[] columnTops(final DirectedOrder.Area area)
+    {
+        final ServerLevel level = level();
+        final int[] tops = new int[area.width() * area.depth()];
+        for (int z = area.minZ(); z <= area.maxZ(); z++)
+        {
+            for (int x = area.minX(); x <= area.maxX(); x++)
+            {
+                int y = anchor().getY();
+                if (level != null && level.getChunkSource().getChunkNow(x >> 4, z >> 4) != null)
+                {
+                    y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+                    for (int i = 0; i < 64 && y > level.getMinY(); i++)
+                    {
+                        final BlockState state = level.getBlockState(new BlockPos(x, y, z));
+                        if (!state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES) && !state.canBeReplaced() && state.isSolid())
+                        {
+                            break;
+                        }
+                        y--;
+                    }
+                }
+                tops[(z - area.minZ()) * area.width() + (x - area.minX())] = y;
+            }
+        }
+        return tops;
     }
 
     /**

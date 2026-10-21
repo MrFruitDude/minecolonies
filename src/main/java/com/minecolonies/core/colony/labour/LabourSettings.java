@@ -24,6 +24,9 @@ public final class LabourSettings
 {
     private static final Map<String, Object> OVERRIDES = new ConcurrentHashMap<>();
 
+    /** The message a player gets when he would break, pick up or upgrade a hut that still owes its hut item. */
+    public static final String HUT_OWED_KEY = "com.minecolonies.coremod.labour.hut_owed";
+
     private LabourSettings()
     {
     }
@@ -282,6 +285,14 @@ public final class LabourSettings
     }
 
     /**
+     * @return whether a hut may be placed from the overview on credit (it owes its hut item, {@link HutDebts}).
+     */
+    public static boolean hutCredit()
+    {
+        return config(c -> c.labourersHutCredit.get(), true, "hutCredit");
+    }
+
+    /**
      * @return how many layers labour may take off a quarry zone, measured from the zone's surface when it was marked.
      */
     public static int quarryDepth()
@@ -345,18 +356,30 @@ public final class LabourSettings
         return forced instanceof Boolean b ? b : colonyBool(colony, BuildingTownHall.LABOUR, true);
     }
 
+    /** The town hall's labour share when nobody changed it. */
+    public static final int DEFAULT_SHARE = 50;
+
+    /**
+     * @return whether the early pace raises the colony's labour share now (young colony, share at its default).
+     */
+    public static boolean earlyShare(final IColony colony)
+    {
+        return OVERRIDES.get("share") == null && colonyInt(colony, BuildingTownHall.LABOUR_SHARE, DEFAULT_SHARE) == DEFAULT_SHARE && earlyAllUnemployed() && early(colony);
+    }
+
     /**
      * @return the share (0 to 1) of the unemployed that may labour at once.
      */
     public static double share(final IColony colony)
     {
         final Object forced = OVERRIDES.get("share");
-        if (!(forced instanceof Number) && earlyAllUnemployed() && early(colony))
+        final int percent = forced instanceof Number n ? n.intValue() : colonyInt(colony, BuildingTownHall.LABOUR_SHARE, DEFAULT_SHARE);
+        if (!(forced instanceof Number) && percent == DEFAULT_SHARE && earlyAllUnemployed() && early(colony))
         {
-            // a young colony: every unemployed citizen may labour (the colony cap and their needs still apply)
+            // a young colony whose manager left the share at its default: every unemployed citizen may labour (the colony cap and their needs still apply); a
+            // share the manager set, 0 included, is kept
             return 1.0D;
         }
-        final int percent = forced instanceof Number n ? n.intValue() : colonyInt(colony, BuildingTownHall.LABOUR_SHARE, 50);
         return Math.max(0, Math.min(100, percent)) / 100.0D;
     }
 

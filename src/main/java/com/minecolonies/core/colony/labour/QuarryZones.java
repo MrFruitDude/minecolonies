@@ -14,9 +14,10 @@ import java.util.List;
  * {@link LabourSettings#digUnprovenGround} is off. Marking the area is the manager's statement that its ground may go. Everything else still protects a block
  * inside a zone: the record of placed blocks, the buildings' boxes, the vetoes, the claim and the fresh look before each break ({@link LabourSites#safeNow}).
  * <p>
- * A zone is dug top down in terraces: a block {@code d} layers below the zone's surface (the lowest top of its columns when it was marked) may only be taken
- * {@code d} blocks or more inside the zone's edge, and never {@link LabourSettings#quarryDepth} layers or deeper. So every layer is one step lower than the last and a
- * labourer can always walk out. Saved with the colony ({@link LabourData}); a zone belongs to one colony and is only ever read by its own labour. Server thread only.
+ * A zone is dug top down in terraces, measured per column from the top each column had when the zone was marked: a block {@code d} layers below its column's marked
+ * top may only be taken {@code d} blocks or more inside the zone's edge, and never {@link LabourSettings#quarryDepth} layers or deeper below that top. A zone whose
+ * marked tops differ by more than the depth is refused (a hole or a hillside would otherwise make the limit meaningless). So every layer is one step lower than the
+ * last and a labourer can always walk out. Saved with the colony ({@link LabourData}); a zone belongs to one colony and is only ever read by its own labour. Server thread only.
  */
 public final class QuarryZones
 {
@@ -31,24 +32,58 @@ public final class QuarryZones
     private static final String TAG_ID       = "id";
     private static final String TAG_AREA     = "area";
     private static final String TAG_SURFACE  = "surface";
+    private static final String TAG_TOPS     = "tops";
     private static final String TAG_NEXT     = "next";
     private static final String TAG_REVISION = "revision";
 
     /**
      * One zone.
      *
-     * @param id      its id in the colony.
-     * @param area    the marked rectangle.
-     * @param surface the lowest top block of its loaded columns when it was marked.
+     * @param id   its id in the colony.
+     * @param area the marked rectangle.
+     * @param tops the top block's y of every column when it was marked, row by row ({@code (z - minZ) * width + (x - minX)}).
      */
-    public record Zone(int id, DirectedOrder.Area area, int surface)
+    public record Zone(int id, DirectedOrder.Area area, int[] tops)
     {
         /**
-         * @return the lowest y labour may dig in it.
+         * @return the marked top of the column (the column must lie in the area).
          */
-        public int floor(final int depth)
+        public int top(final int x, final int z)
         {
-            return surface - Math.max(1, depth) + 1;
+            return tops[(z - area.minZ()) * area.width() + (x - area.minX())];
+        }
+
+        /**
+         * @return the highest marked top (where the overview draws the zone).
+         */
+        public int surface()
+        {
+            int max = Integer.MIN_VALUE;
+            for (final int top : tops)
+            {
+                max = Math.max(max, top);
+            }
+            return max;
+        }
+
+        /**
+         * @return the lowest y labour may dig in the column.
+         */
+        public int floor(final int x, final int z, final int depth)
+        {
+            return top(x, z) - Math.max(1, depth) + 1;
+        }
+
+        @Override
+        public boolean equals(final Object o)
+        {
+            return o instanceof Zone other && other.id == id && other.area.equals(area) && java.util.Arrays.equals(other.tops, tops);
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return 31 * (31 * id + area.hashCode()) + java.util.Arrays.hashCode(tops);
         }
     }
 
@@ -64,7 +99,9 @@ public final class QuarryZones
         /** The colony has {@link #MAX_ZONES} zones. */
         TOO_MANY,
         /** No zone of that id. */
-        NO_ZONE
+        NO_ZONE,
+        /** The marked tops of the zone's columns differ by more than the quarry depth. */
+        UNEVEN
     }
 
     /** The answer of a mark: the zone, or why there is none. */
@@ -143,11 +180,11 @@ public final class QuarryZones
     public static boolean diggable(final Zone zone, final BlockPos pos, final int depth)
     {
         final DirectedOrder.Area area = zone.area();
-        if (!area.contains(pos) || pos.getY() < zone.floor(depth))
+        if (!area.contains(pos) || pos.getY() < zone.floor(pos.getX(), pos.getZ(), depth))
         {
             return false;
         }
-        final int inset = Math.max(0, zone.surface() - pos.getY());
+        final int inset = Math.max(0, zone.top(pos.getX(), pos.getZ()) - pos.getY());
         return pos.getX() >= area.minX() + inset && pos.getX() <= area.maxX() - inset && pos.getZ() >= area.minZ() + inset && pos.getZ() <= area.maxZ() - inset;
     }
 
@@ -162,11 +199,15 @@ public final class QuarryZones
     /**
      * Marks a zone whose loaded, owned area the caller checked; the size, overlap and count are checked here.
      */
-    Marked add(final DirectedOrder.Area area, final int surface)
+    Marked add(final DirectedOrder.Area area, final int[] tops, final int depth)
     {
-        if (!sizeAllowed(area))
+        if (!sizeAllowed(area) || tops.length != area.width() * area.depth())
         {
             return new Marked(null, Refusal.BAD_AREA);
+        }
+        if (spread(tops) > Math.max(1, depth))
+        {
+            return new Marked(null, Refusal.UNEVEN);
         }
         if (zones.size() >= MAX_ZONES)
         {
@@ -176,10 +217,25 @@ public final class QuarryZones
         {
             return new Marked(null, Refusal.OVERLAP);
         }
-        final Zone zone = new Zone(next++, area, surface);
+        final Zone zone = new Zone(next++, area, tops.clone());
         zones.add(zone);
         revision++;
         return new Marked(zone, null);
+    }
+
+    /**
+     * @return how far the highest and lowest top differ.
+     */
+    public static int spread(final int[] tops)
+    {
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
+        for (final int top : tops)
+        {
+            min = Math.min(min, top);
+            max = Math.max(max, top);
+        }
+        return tops.length == 0 ? 0 : max - min;
     }
 
     /**
@@ -205,7 +261,7 @@ public final class QuarryZones
             final CompoundTag item = new CompoundTag();
             item.putInt(TAG_ID, zone.id());
             item.putIntArray(TAG_AREA, new int[] {zone.area().minX(), zone.area().minZ(), zone.area().maxX(), zone.area().maxZ()});
-            item.putInt(TAG_SURFACE, zone.surface());
+            item.putIntArray(TAG_TOPS, zone.tops());
             list.add(item);
         }
         tag.put(TAG_ZONES, list);
@@ -233,7 +289,14 @@ public final class QuarryZones
             {
                 continue;
             }
-            zones.add(new Zone(id, area, item.getIntOr(TAG_SURFACE, 0)));
+            int[] tops = item.getIntArray(TAG_TOPS).orElse(new int[0]);
+            if (tops.length != area.width() * area.depth())
+            {
+                // (a zone saved with one surface for all columns, before the tops were kept)
+                tops = new int[area.width() * area.depth()];
+                java.util.Arrays.fill(tops, item.getIntOr(TAG_SURFACE, 0));
+            }
+            zones.add(new Zone(id, area, tops));
             highest = Math.max(highest, id);
         }
         next = Math.max(highest + 1, tag.getIntOr(TAG_NEXT, 1));

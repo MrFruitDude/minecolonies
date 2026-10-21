@@ -771,6 +771,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         {
             stuck.progress();
             onBlockProcessed();
+            recordDecorationBlock(result.getBlockResult().getWorldPos());
         }
 
         if (result.getBlockResult().getResult() == BlockPlacementResult.Result.MISSING_ITEMS)
@@ -1811,6 +1812,24 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     /**
      * Places (or starts to break) one block out of the order of the stage.
      */
+    /**
+     * A block a builder placed for a decoration or road piece is the colony's own: it goes on the record of placed blocks, so labour never digs it (a quarry zone
+     * over a road included). Blocks of buildings are protected by the buildings' boxes.
+     */
+    private void recordDecorationBlock(final BlockPos pos)
+    {
+        if (pos == null || !(building.getColony() instanceof com.minecolonies.core.colony.Colony colony)
+              || !(building.getWorkOrder() instanceof com.minecolonies.core.colony.workorders.WorkOrderDecoration))
+        {
+            return;
+        }
+        final net.minecraft.world.level.block.state.BlockState state = world.getBlockState(pos);
+        if (com.minecolonies.core.colony.labour.LabourRules.recordsPlacement(state) && colony.getLabourData().placements().add(pos.asLong()))
+        {
+            colony.markDirty();
+        }
+    }
+
     private StructurePhasePlacementResult placeNearby(final StructurePlacer placer, final BlockPos worldPos)
     {
         final BlockPos local = structurePlacer.getB().getStructurePosFromWorld(worldPos);

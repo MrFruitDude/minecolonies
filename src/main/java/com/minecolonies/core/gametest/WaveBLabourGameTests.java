@@ -519,9 +519,183 @@ final class WaveBLabourGameTests
         });
     }
 
+    // ------------------------------------------------------------------ review C1: debts cannot be laundered
+
+    private static int heldOrDropped(final GameTestHelper helper, final RsFixture f, final Item item, final BlockPos rel)
+    {
+        int n = 0;
+        for (int slot = 0; slot < f.player.getInventory().getContainerSize(); slot++)
+        {
+            n += f.player.getInventory().getItem(slot).is(item) ? f.player.getInventory().getItem(slot).getCount() : 0;
+        }
+        final BlockPos abs = helper.absolutePos(rel);
+        for (final net.minecraft.world.entity.item.ItemEntity entity : f.level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+          new net.minecraft.world.phys.AABB(abs).inflate(16)))
+        {
+            n += entity.getItem().is(item) ? entity.getItem().getCount() : 0;
+        }
+        return n;
+    }
+
+    /**
+     * A hut placed on credit (it owes its hut item). The officer cannot break it (the event is cancelled: no block gone, no hut item dropped), cannot pick it up and
+     * cannot upgrade it; nobody got a hut item. When the hut goes another way (here taken out of the colony directly), the colony still owes the item: the town hall
+     * asks, and a hut item stored in the warehouse pays the debt.
+     */
+    public static void owedHutCannotBeLaundered(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "waveb hut owed");
+        final Colony colony = (Colony) f.colony;
+        final BlockPos rel = new BlockPos(8, 1, 24);
+        final IBuilding hut = f.place(ModBlocks.blockHutLumberjack, rel, "fundamentals/lumberjack1.blueprint");
+        final Item item = ModBlocks.blockHutLumberjack.asItem();
+        hut.setBuildingLevel(1);
+        f.player.getInventory().clearContent();
+        helper.assertTrue(colony.getLabourBoard().oweHut(hut, item), "the debt was refused");
+        helper.assertTrue(com.minecolonies.core.colony.labour.HutDebts.owes(hut), "the hut does not owe");
+        // break
+        final boolean broken = f.player.gameMode.destroyBlock(hut.getID());
+        helper.assertTrue(!broken && colony.getServerBuildingManager().getBuilding(hut.getID()) != null && helper.getLevel().getBlockState(hut.getID()).is(ModBlocks.blockHutLumberjack),
+          "the owing hut was broken: " + broken);
+        // pick up
+        hut.pickUp(f.player);
+        helper.assertTrue(colony.getServerBuildingManager().getBuilding(hut.getID()) != null, "the owing hut was picked up");
+        // upgrade
+        final int orders = colony.getWorkManager().getWorkOrders().size();
+        hut.requestUpgrade(f.player, BlockPos.ZERO);
+        helper.assertTrue(colony.getWorkManager().getWorkOrders().size() == orders, "the owing hut got an upgrade order");
+        helper.assertTrue(heldOrDropped(helper, f, item, rel) == 0, "a hut item reached the player or the ground");
+        // gone another way: the debt stays with the colony
+        hut.destroy();
+        helper.setBlock(rel, Blocks.AIR.defaultBlockState());
+        helper.runAfterDelay(20, () -> poll(helper, List.of(colony), 2000, () -> {
+            final var debts = colony.getLabourData().hutDebts().debts();
+            helper.assertTrue(debts.size() == 1, "the debt was forgiven when the hut went: " + debts);
+            return debts.get(0).gone() && asks(colony.getServerBuildingManager().getTownHall(), item);
+        }, () -> {
+            f.stock(0, new ItemStack(item));
+            poll(helper, List.of(colony), 2000, () -> colony.getLabourData().hutDebts().isEmpty(), () -> {
+                helper.assertTrue(f.physical(s -> s.is(item)) == 0, "the stored hut item was not taken to pay the debt");
+                end();
+                helper.succeed();
+            }, () -> "debts " + colony.getLabourData().hutDebts().debts());
+        }, () -> "debts " + colony.getLabourData().hutDebts().debts()));
+    }
+
+    /**
+     * An owed hut item survives a save and load of the colony's labour record: the same debt, and the hut keeps asking for it.
+     */
+    public static void owedHutSurvivesAReload(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "waveb hut reload");
+        final Colony colony = (Colony) f.colony;
+        final IBuilding hall = colony.getServerBuildingManager().getTownHall();
+        final Item item = ModBlocks.blockHutBuilder.asItem();
+        helper.assertTrue(colony.getLabourBoard().oweHut(hall, item), "the debt was refused");
+        final var before = colony.getLabourData().hutDebts().debts();
+        final net.minecraft.nbt.CompoundTag saved = colony.getLabourData().write();
+        final com.minecolonies.core.colony.labour.LabourData fresh = new com.minecolonies.core.colony.labour.LabourData();
+        fresh.read(saved);
+        helper.assertTrue(fresh.hutDebts().debts().equals(before), "a fresh load reads other debts: " + fresh.hutDebts().debts());
+        colony.getLabourData().read(saved);
+        helper.assertTrue(colony.getLabourData().hutDebts().owes(hall.getID()) && colony.getLabourData().hutDebts().count() == 1, "the debt was lost by the reload");
+        poll(helper, List.of(colony), 400, () -> asks(hall, item) && colony.getLabourData().hutDebts().owes(hall.getID()), () -> {
+            end();
+            helper.succeed();
+        }, () -> "debts " + colony.getLabourData().hutDebts().debts() + " asks " + asks(hall, item));
+    }
+
+    // ------------------------------------------------------------------ review C1: depth per column, roads in zones
+
+    /**
+     * Uneven ground: a 4x3 zone of dirt on stone with one pit column (its dirt missing), quarry depth 1. Every column is measured from its own marked top: the dirt
+     * is taken, the pit's stone is taken, the stone under the dirt columns stays (with the old rule, measured from the pit, it went too).
+     */
+    public static void aPitDoesNotDeepenTheQuarry(final GameTestHelper helper)
+    {
+        begin();
+        LabourSettings.override("quarryDepth", 1);
+        final RsFixture f = found(helper, "waveb quarry pit");
+        final Colony colony = (Colony) f.colony;
+        ground(helper, 29, 19, 35, 24);
+        for (int x = 30; x <= 33; x++)
+        {
+            for (int z = 20; z <= 22; z++)
+            {
+                if (x != 31 || z != 21)
+                {
+                    helper.setBlock(new BlockPos(x, 1, z), Blocks.DIRT.defaultBlockState());
+                }
+            }
+        }
+        // (solid ground under the pit's stone, so that it may be dug)
+        helper.setBlock(new BlockPos(31, -1, 21), Blocks.STONE.defaultBlockState());
+        helper.runAfterDelay(100, () -> {
+            helper.assertTrue(colony.getLabourBoard().markQuarry(area(helper, 30, 20, 33, 22)).zone() != null, "the zone was refused");
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            InventoryUtils.addItemStackToItemHandler(idle.getInventory(), new ItemStack(Items.WOODEN_PICKAXE));
+            final IToken<?> dirt = ask(f.builder, new ItemStack(Items.DIRT, 11));
+            final IToken<?> cobble = ask(f.builder, new ItemStack(Items.COBBLESTONE, 2));
+            final long[] doneAt = {-1L};
+            poll(helper, List.of(colony), 9000, () -> {
+                helper.assertTrue(count(helper, Blocks.STONE, 30, 20, 33, 22, 0) >= 11, "stone under a dirt column was dug: "
+                                                                                             + count(helper, Blocks.STONE, 30, 20, 33, 22, 0));
+                if (doneAt[0] < 0)
+                {
+                    if (inHut(f.builder, Items.DIRT) >= 11 && inHut(f.builder, Items.COBBLESTONE) >= 1)
+                    {
+                        doneAt[0] = helper.getLevel().getGameTime();
+                    }
+                    return false;
+                }
+                return helper.getLevel().getGameTime() - doneAt[0] >= 800;
+            }, () -> {
+                helper.assertTrue(!helper.getBlockState(new BlockPos(31, 0, 21)).is(Blocks.STONE) && count(helper, Blocks.STONE, 30, 20, 33, 22, 0) == 11,
+                  "not exactly the pit's stone was dug: stone left " + count(helper, Blocks.STONE, 30, 20, 33, 22, 0));
+                helper.assertTrue(inHut(f.builder, Items.COBBLESTONE) == 1, "more cobblestone than the pit holds: " + inHut(f.builder, Items.COBBLESTONE));
+                end();
+                helper.succeed();
+            }, () -> "dirt " + describe(f, dirt, idle) + " | cobble " + f.describe(cobble));
+        });
+    }
+
+    /**
+     * A road (a decoration work order) is queued through a quarry zone: labour digs the zone's dirt only outside the order's box.
+     */
+    public static void aRoadInAZoneIsLeftAlone(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "waveb quarry road");
+        final Colony colony = (Colony) f.colony;
+        ground(helper, 29, 19, 36, 24);
+        for (int x = 30; x <= 35; x++)
+        {
+            for (int z = 20; z <= 23; z++)
+            {
+                helper.setBlock(new BlockPos(x, 1, z), Blocks.DIRT.defaultBlockState());
+            }
+        }
+        helper.runAfterDelay(100, () -> {
+            LabourGameTests.planksFloor(helper, colony, f.builder, 33, 20, 3);
+            helper.assertTrue(colony.getLabourBoard().markQuarry(area(helper, 30, 20, 35, 23)).zone() != null, "the zone was refused");
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            final IToken<?> dirt = ask(f.builder, new ItemStack(Items.DIRT, 6));
+            poll(helper, List.of(colony), 9000, () -> {
+                helper.assertTrue(count(helper, Blocks.DIRT, 32, 19, 35, 23, 1) == 16, "dirt of the road's box was dug: " + count(helper, Blocks.DIRT, 32, 19, 35, 23, 1));
+                return inHut(f.builder, Items.DIRT) >= 6;
+            }, () -> {
+                end();
+                helper.succeed();
+            }, () -> describe(f, dirt, idle));
+        });
+    }
+
     // ------------------------------------------------------------------ registration
 
-    static final String[] NAMES = {"labour_quarry_auto", "labour_quarry_directed", "labour_quarry_isolated", "labour_glass", "labour_early_grace", "labour_hut_debt"};
+    static final String[] NAMES = {"labour_quarry_auto", "labour_quarry_directed", "labour_quarry_isolated", "labour_glass", "labour_early_grace", "labour_hut_debt",
+      "labour_hut_owed_rules", "labour_hut_debt_reload", "labour_quarry_pit", "labour_quarry_road"};
 
     static java.util.function.Consumer<GameTestHelper> test(final String name)
     {
@@ -532,6 +706,10 @@ final class WaveBLabourGameTests
             case "labour_quarry_isolated" -> WaveBLabourGameTests::quarryOfAnotherColonyIsIgnored;
             case "labour_glass" -> WaveBLabourGameTests::sandIsSmeltedToGlass;
             case "labour_early_grace" -> WaveBLabourGameTests::earlyGraceLetsTheBuilderFetchSoon;
+            case "labour_hut_owed_rules" -> WaveBLabourGameTests::owedHutCannotBeLaundered;
+            case "labour_hut_debt_reload" -> WaveBLabourGameTests::owedHutSurvivesAReload;
+            case "labour_quarry_pit" -> WaveBLabourGameTests::aPitDoesNotDeepenTheQuarry;
+            case "labour_quarry_road" -> WaveBLabourGameTests::aRoadInAZoneIsLeftAlone;
             default -> WaveBLabourGameTests::owedHutItemIsMadeByLabour;
         };
     }

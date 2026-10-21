@@ -323,6 +323,14 @@ public class ColonyPermissionEventHandler
                 return;
             }
 
+            if (!event.getPlayer().isCreative() && com.minecolonies.core.colony.labour.HutDebts.owes(building))
+            {
+                // a hut placed on credit is not broken before its hut item is paid: its drop would be an item the colony never had
+                event.setCanceled(true);
+                MessageUtils.format(com.minecolonies.core.colony.labour.LabourSettings.HUT_OWED_KEY).sendTo(event.getPlayer());
+                return;
+            }
+
             if (!MineColonies.getConfig().getServer().enableColonyProtection.get())
             {
                 building.destroy();

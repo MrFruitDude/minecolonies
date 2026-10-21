@@ -340,8 +340,8 @@ public final class LabourBoard
     }
 
     /**
-     * A manager marks a quarry zone. The server checks the size, that every chunk of it is loaded and part of THIS colony's claim, the overlap and the count; the zone's
-     * surface is the lowest top of its columns now (the terraces are measured from it).
+     * A manager marks a quarry zone. The server checks the size, that every chunk of it is loaded and part of THIS colony's claim, the overlap and the count; every column's
+     * top now is kept (its depth and terraces are measured from it) and a zone whose tops differ by more than the quarry depth is refused.
      *
      * @return the zone, or why there is none (nothing changed then).
      */
@@ -355,7 +355,7 @@ public final class LabourBoard
         {
             return new QuarryZones.Marked(null, QuarryZones.Refusal.AREA_OUTSIDE);
         }
-        final QuarryZones.Marked marked = quarries().add(area, sites.lowestSurface(area));
+        final QuarryZones.Marked marked = quarries().add(area, sites.columnTops(area), LabourSettings.quarryDepth());
         if (marked.zone() != null)
         {
             colony.markDirty();
@@ -387,7 +387,7 @@ public final class LabourBoard
      */
     public boolean oweHut(final com.minecolonies.api.colony.buildings.IBuilding building, final Item hut)
     {
-        if (!colony.getLabourData().hutDebts().owe(building, hut))
+        if (!colony.getLabourData().hutDebts().owe(building, hut, now()))
         {
             return false;
         }
@@ -1262,10 +1262,10 @@ public final class LabourBoard
     {
         final long now = now();
         directed.tick();
-        if (now - lastDebtSweep >= 100L || now < lastDebtSweep)
+        if (!colony.getLabourData().hutDebts().isEmpty() && (now - lastDebtSweep >= 100L || now < lastDebtSweep))
         {
             lastDebtSweep = now;
-            if (colony.getLabourData().hutDebts().sweep(colony))
+            if (colony.getLabourData().hutDebts().sweep(colony, now))
             {
                 colony.markDirty();
             }
