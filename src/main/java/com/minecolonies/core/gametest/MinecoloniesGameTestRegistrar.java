@@ -1198,7 +1198,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_real_food_drain"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceRealFoodDrainUsesFoodModifier),
-          longIsolatedColonyData(event, "pace_real_food_drain", 6000));
+          longIsolatedColonyData(event, "pace_real_food_drain", 12000));
     }
 
     /**

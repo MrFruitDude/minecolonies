@@ -587,8 +587,9 @@ public final class ColonyHooksGameTests
 
     /**
      * Wave E M4: the real saturation drain of a citizen in an active colony uses the server's foodmodifier (0.6 by default) and, with no pace provider set (Colony
-     * Command absent), the needs multiplier 1.0. Part 1 watches the entity's own once-a-minute drain for two steps (about 2400 ticks of daylight); part 2 runs the
-     * same entity drain method 40 times and checks the summed loss. Each step must equal {@code consumption(home level) * job factor * foodmodifier * needs}.
+     * Command absent), the needs multiplier 1.0. Part 1 runs the entity's own drain method ({@code EntityCitizen.decreaseIdleSaturation}) 40 times and checks the
+     * summed loss exactly. Part 2 watches the entity's own once-a-minute drain for two steps (at least 2400 ticks of daylight): each step lies between the plain
+     * step and the plain step plus the action bonus (at most half), a range that does not meet the one foodmodifier 1.0 would give.
      */
     public static void paceRealFoodDrainUsesFoodModifier(final GameTestHelper helper)
     {
@@ -622,12 +623,15 @@ public final class ColonyHooksGameTests
             final List<String> failures = new ArrayList<>();
             final List<String> steps = new ArrayList<>();
             final double[] last = {-1};
-            final int[] elapsed = {0};
-            final int[] active = {-1};
+            final double[] bulk = {-1, -1};
+            final long begun = level.getGameTime();
+            final long[] activeAt = {-1L};
+            final long[] logged = {begun};
             final Runnable[] tick = new Runnable[1];
             tick[0] = () -> {
-                // daylight (the drain pauses in the dark) and no action bonus on top (the plain drain is measured)
+                // daylight (the drain pauses in the dark); the action bonus is cleared every tick (an idle citizen has next to none)
                 level.getServer().clockManager().setTotalTicks(level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
+                final long now = level.getGameTime();
                 try
                 {
                     cached.setDouble(entity, 0);
@@ -636,62 +640,73 @@ public final class ColonyHooksGameTests
                 {
                     throw helper.assertionException("reflection: " + e);
                 }
-                elapsed[0]++;
-                if (active[0] < 0)
+                if (now - logged[0] >= 1000)
+                {
+                    logged[0] = now;
+                    Log.getLogger().info("[pace_real_food_drain] t={} active {} saturation {} steps {} dark {} asleep {} alive {}", now - begun, colony.isActive(),
+                      citizen.getSaturation(), steps, level.isDarkOutside(), citizen.isAsleep(), entity.isAlive());
+                }
+                if (activeAt[0] < 0)
                 {
                     citizen.setSaturation(20);
-                    if (colony.isActive())
+                    if (!colony.isActive())
                     {
-                        active[0] = elapsed[0];
-                        last[0] = citizen.getSaturation();
+                        if (now - begun > 400)
+                        {
+                            throw helper.assertionException("fixture: colony never became active with a close subscriber");
+                        }
+                        // (a new lambda each time: the helper keys its scheduled tasks by the runnable)
+                        helper.runAfterDelay(1, () -> tick[0].run());
+                        return;
                     }
-                    else if (elapsed[0] > 400)
+                    // part 1: the entity's drain method 40 times in a row, exactly
+                    final double expected = expectedDrainStep(colony, citizen, modifier);
+                    try
                     {
-                        throw helper.assertionException("fixture: colony never became active with a close subscriber");
+                        for (int i = 0; i < 40; i++)
+                        {
+                            cached.setDouble(entity, 0);
+                            drain.invoke(entity);
+                        }
                     }
-                    helper.runAfterDelay(1, tick[0]);
+                    catch (final ReflectiveOperationException e)
+                    {
+                        throw helper.assertionException("reflection: " + e);
+                    }
+                    bulk[0] = 20 - citizen.getSaturation();
+                    bulk[1] = 40 * expected;
+                    if (Math.abs(bulk[0] - bulk[1]) > 1e-6)
+                    {
+                        failures.add("40 drains lost " + bulk[0] + ", expected " + bulk[1]);
+                    }
+                    citizen.setSaturation(20);
+                    activeAt[0] = now;
+                    last[0] = citizen.getSaturation();
+                    helper.runAfterDelay(1, () -> tick[0].run());
                     return;
                 }
-                final double now = citizen.getSaturation();
-                if (now < last[0] - 1e-12)
+                // part 2: the entity's own drain, as it ticks
+                final double saturation = citizen.getSaturation();
+                if (saturation < last[0] - 1e-12)
                 {
-                    final double step = last[0] - now;
+                    final double step = last[0] - saturation;
                     final double expected = expectedDrainStep(colony, citizen, modifier);
-                    steps.add(String.format("t+%d %.6f (expected %.6f)", elapsed[0] - active[0], step, expected));
-                    if (Math.abs(step - expected) > 1e-9)
+                    steps.add(String.format("t+%d %.6f (plain %.6f)", now - activeAt[0], step, expected));
+                    if (step < expected - 1e-9 || step > 1.5 * expected + 1e-9)
                     {
-                        failures.add("natural drain step " + step + ", expected " + expected);
+                        failures.add("natural drain step " + step + ", expected " + expected + " (up to 1.5x with the action bonus)");
                     }
                 }
-                last[0] = now;
+                last[0] = saturation;
                 if (steps.size() < 2)
                 {
-                    if (elapsed[0] - active[0] > 4000)
+                    if (now - activeAt[0] > 6000)
                     {
-                        throw helper.assertionException("only " + steps.size() + " natural drain steps in 4000 ticks of an active colony: " + steps);
+                        throw helper.assertionException("only " + steps.size() + " natural drain steps in 6000 ticks of an active colony: " + steps + "; part 1 lost "
+                                                          + bulk[0] + " of " + bulk[1] + "; failures " + failures);
                     }
-                    helper.runAfterDelay(1, tick[0]);
+                    helper.runAfterDelay(1, () -> tick[0].run());
                     return;
-                }
-                // part 2: the entity's drain method 40 times in a row
-                citizen.setSaturation(20);
-                final double expected = expectedDrainStep(colony, citizen, modifier);
-                try
-                {
-                    for (int i = 0; i < 40; i++)
-                    {
-                        cached.setDouble(entity, 0);
-                        drain.invoke(entity);
-                    }
-                }
-                catch (final ReflectiveOperationException e)
-                {
-                    throw helper.assertionException("reflection: " + e);
-                }
-                final double loss = 20 - citizen.getSaturation();
-                if (Math.abs(loss - 40 * expected) > 1e-6)
-                {
-                    failures.add("40 drains lost " + loss + ", expected " + 40 * expected);
                 }
                 if (modifier != 0.6D)
                 {
@@ -702,14 +717,14 @@ public final class ColonyHooksGameTests
                 {
                     failures.add("no pace provider, but needs is " + pace);
                 }
-                Log.getLogger().info("[pace_real_food_drain] provider {} needs {}, foodmodifier {}, natural steps {}, 40 drains lost {} (expected {}, at foodmodifier 1.0 it would be {}), "
-                                       + "failures {}", provider == IColonyPaceProvider.DEFAULT ? "default (CC absent)" : provider, pace, modifier, steps, loss, 40 * expected,
-                  40 * expected / modifier, failures);
+                Log.getLogger().info("[pace_real_food_drain] provider {} needs {}, foodmodifier {}, 40 drains lost {} (expected {}, at foodmodifier 1.0 it would be {}), "
+                                       + "natural steps {}, failures {}", provider == IColonyPaceProvider.DEFAULT ? "default (CC absent)" : provider, pace, modifier,
+                  bulk[0], bulk[1], bulk[1] / modifier, steps, failures);
                 citizen.setSaturation(20);
                 helper.assertTrue(failures.isEmpty(), "real food drain: " + failures);
                 helper.succeed();
             };
-            helper.runAfterDelay(1, tick[0]);
+            helper.runAfterDelay(1, () -> tick[0].run());
         });
     }
 
