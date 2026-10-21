@@ -5,6 +5,7 @@ import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.HiringMode;
 import com.minecolonies.api.colony.buildings.modules.*;
 import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
+import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingTownHall;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -103,7 +104,19 @@ public class LivingBuildingModule extends AbstractAssignedCitizenModule implemen
     @Override
     public int getModuleMax()
     {
-        return building.getBuildingLevel();
+        return beds(building.getBuildingLevel(), MineColonies.getConfig().getServer().residenceExtraBeds.get());
+    }
+
+    /**
+     * Beds of a residence: its level plus the configured extra beds once it is built, none before.
+     *
+     * @param level the building level.
+     * @param extra the extra beds (server config residenceextrabeds).
+     * @return the number of citizens it can house.
+     */
+    public static int beds(final int level, final int extra)
+    {
+        return level > 0 ? level + Math.max(0, extra) : 0;
     }
 
     @Override

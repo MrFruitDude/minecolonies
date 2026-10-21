@@ -46,6 +46,16 @@ public class ServerConfiguration extends AbstractConfiguration
     public final IntValue     luckyBlockChance;
     public final IntValue     minThLevelToTeleport;
     public final DoubleValue  foodModifier;
+
+    /**
+     * Beds a residence has on top of its level (a level 1 residence with 1 extra holds 2 citizens). Taverns keep their own count.
+     */
+    public final IntValue     residenceExtraBeds;
+
+    /**
+     * Below this many citizens the guard security happiness factor is never below neutral, so a young colony is not unhappy for lacking guards. 0 = off.
+     */
+    public final IntValue     securityGraceCitizens;
     public final IntValue     diseaseModifier;
     public final BooleanValue forceLoadColony;
     public final IntValue     loadtime;
@@ -272,7 +282,7 @@ public class ServerConfiguration extends AbstractConfiguration
 
         createCategory("gameplay");
 
-        initialCitizenAmount = defineInteger("initialcitizenamount", 6, 1, 10);
+        initialCitizenAmount = defineInteger("initialcitizenamount", 8, 1, 10);
         allowInfiniteSupplyChests = defineBoolean("allowinfinitesupplychests", false);
         allowInfiniteColonies = defineBoolean("allowinfinitecolonies", false);
         allowOtherDimColonies = defineBoolean("allowotherdimcolonies", true);
@@ -282,7 +292,9 @@ public class ServerConfiguration extends AbstractConfiguration
         workersAlwaysWorkInRain = defineBoolean("workersalwaysworkinrain", false);
         luckyBlockChance = defineInteger("luckyblockchance", 1, 0, 100);
         minThLevelToTeleport = defineInteger("minthleveltoteleport", 3, 0, 5);
-        foodModifier = defineDouble("foodmodifier", 1.0, 0.1, 100);
+        foodModifier = defineDouble("foodmodifier", 0.6, 0.1, 100);
+        residenceExtraBeds = defineInteger("residenceextrabeds", 1, 0, 5);
+        securityGraceCitizens = defineInteger("securitygracecitizens", 15, 0, 250);
         diseaseModifier = defineInteger("diseasemodifier", 5, 1, 100);
         forceLoadColony = defineBoolean("forceloadcolony", true);
         loadtime = defineInteger("loadtime", 20, 1, 1440);
