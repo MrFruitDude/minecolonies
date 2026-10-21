@@ -776,6 +776,42 @@ public final class PathfindingGameTests
               })))));
     }
 
+    // ------------------------------------------------------------------ round 10: failed-search cap
+
+    /**
+     * path_failed_search_cap: two move-to searches for sealed targets (32 and 102 blocks manhattan) must fail within
+     * their distance cap plus the high-cost allowance (2 x 25^2), instead of stretching towards 16,000 nodes. Logged:
+     * nodes searched per failed search.
+     */
+    public static void pathFailedSearchCap(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        sealTarget(helper, SEALED_TARGET);
+        final BlockPos farTarget = new BlockPos(55, 1, 35);
+        sealTarget(helper, farTarget);
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            final PathJobMoveToLocation near =
+              new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(HOST_START), helper.absolutePos(SEALED_TARGET), 48, null);
+            final PathJobMoveToLocation far =
+              new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(-6, 1, -6)), helper.absolutePos(farTarget), 48, null);
+            Pathfinding.enqueue(near);
+            Pathfinding.enqueue(far);
+            waitAll(helper, List.of(near.getResult(), far.getResult()), System.nanoTime(), 0, () -> {
+                final int allowance = 2 * com.minecolonies.core.entity.pathfinding.PathingOptions.MAX_COST * com.minecolonies.core.entity.pathfinding.PathingOptions.MAX_COST + 1;
+                final String s = String.format("R10 failed cap: near %d nodes (cap %d, exhausted %s), far %d nodes (cap %d, exhausted %s), allowance %d",
+                  near.getResult().searchedNodes, near.getFailedNodeCap(), near.getResult().searchExhausted, far.getResult().searchedNodes, far.getFailedNodeCap(),
+                  far.getResult().searchExhausted, allowance);
+                Log.getLogger().info(s);
+                helper.assertTrue(!near.getResult().isPathReachingDestination() && !far.getResult().isPathReachingDestination(), "fixture: a sealed target was reached. " + s);
+                helper.assertTrue(near.getResult().searchedNodes <= near.getFailedNodeCap() + allowance, "the near failed search ran past its cap. " + s);
+                helper.assertTrue(far.getResult().searchedNodes <= far.getFailedNodeCap() + allowance, "the far failed search ran past its cap. " + s);
+                helper.assertTrue(far.getFailedNodeCap() < 2 * AbstractPathJob.MAX_NODES, "fixture: the far cap is the old ceiling. " + s);
+                helper.succeed();
+            });
+        }));
+    }
+
     // ------------------------------------------------------------------ real citizen
 
     /**
