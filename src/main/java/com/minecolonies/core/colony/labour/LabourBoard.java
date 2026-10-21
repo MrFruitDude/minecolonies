@@ -130,7 +130,7 @@ public final class LabourBoard
     private final Map<Integer, Long>             cooldown  = new HashMap<>();
     /** Since when the citizen of a claim stands where entities do not tick (he does not move or act there; builder review c3 R3). */
     private final Map<Integer, Long>             frozenSince = new HashMap<>();
-    /** Claims given back because their citizen stopped ticking: their session ends without a back-off ({@link #releasedUnticked}). */
+    /** Claims given back because their citizen stopped ticking: the request is on back-off, the session ends neutrally ({@link #releasedUnticked}). */
     private final java.util.Set<LabourClaim>     releasedFrozen = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
     /** How long a citizen may stand where entities do not tick before his claim is given back. */
     static final long FROZEN_TICKS = 200L;
@@ -1114,7 +1114,7 @@ public final class LabourBoard
     }
 
     /**
-     * Whether the claim was given back because its citizen stopped ticking (asked once by the session that held it: it ends neutrally, no back-off).
+     * Whether the claim was given back because its citizen stopped ticking (asked once by the session that held it: it ends neutrally; the request itself is on back-off).
      */
     public boolean releasedUnticked(final LabourClaim claim)
     {
@@ -1352,10 +1352,11 @@ public final class LabourBoard
                 if (frozen(claim.citizenId(), citizen, now))
                 {
                     // he stands where entities do not tick (simulation distance, a player walked away): his session cannot end by itself, so the
-                    // claim goes back now, without back-off; the session ends neutrally when he ticks again (releasedUnticked)
+                    // claim goes back now. The request goes on the normal back-off, so the same site is not picked again at once and he does not walk out
+                    // and freeze again (builder review c4); his own session still ends neutrally when he ticks again (releasedUnticked)
                     LabourStats.log("claim of citizen {} given back: he stopped ticking at {}", claim.citizenId(), citizen.getEntity().get().blockPosition().toShortString());
                     releasedFrozen.add(claim);
-                    release(claim, false, false);
+                    release(claim, false, true);
                 }
             }
         }

@@ -581,6 +581,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     public static final java.util.concurrent.atomic.AtomicInteger reachDefaults  = new java.util.concurrent.atomic.AtomicInteger();
     public static final java.util.concurrent.atomic.AtomicInteger reachRefusals  = new java.util.concurrent.atomic.AtomicInteger();
     public static final java.util.concurrent.atomic.AtomicInteger reachFlooded   = new java.util.concurrent.atomic.AtomicInteger();
+    /** Default-placement tries of blocks that came back {@link #LAST_RESORT_KEEPS} times (builder review c4 C4-1). */
+    public static final java.util.concurrent.atomic.AtomicInteger reachKeptOut   = new java.util.concurrent.atomic.AtomicInteger();
 
     private final BuilderScaffolding scaffold = new BuilderScaffolding(this);
 
@@ -743,20 +745,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         }
         // every return counts (also while a tower is waited for), so an order always ends (builder review c3 R2)
         final int keeps = lastResort.merge(pos.immutable(), 1, Integer::sum);
-        final boolean allowed = defaultAllowed(pos, world.getGameTime());
-        final KeepStep step = keepStep(keeps, allowed);
+        final KeepStep step = keepStep(keeps);
         if (step == KeepStep.LEAVE_OUT)
         {
-            if (keeps == LAST_RESORT_KEEPS + 1)
-            {
-                logFallback("blocked", "Builder {} leaves {} out: he could not get to it {} times, and scaffolding is there, so it is not placed from MineColonies' working "
-                                         + "range instead (a path or the block itself is blocked)", worker.getName().getString(), pos.toShortString(), LAST_RESORT_KEEPS);
-            }
-            else
-            {
-                logFallback("blocked", "Builder {} leaves {} out: he could not get to it {} times, and MineColonies' own placement did not reach it either",
-                  worker.getName().getString(), pos.toShortString(), LAST_RESORT_KEEPS);
-            }
+            logFallback("blocked", "Builder {} leaves {} out: he could not get to it {} times, and MineColonies' own placement did not reach it either",
+              worker.getName().getString(), pos.toShortString(), LAST_RESORT_KEEPS);
             return false;
         }
         if (step == KeepStep.DEFAULT)
@@ -773,16 +766,17 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
 
     /**
-     * What the n-th return of a block the ladder would leave out brings: up to {@link #LAST_RESORT_KEEPS} plain returns, then one return placed the way MineColonies
-     * places it if that is allowed ({@link #defaultAllowed}), then it is left out with the reason.
+     * What the n-th return of a block the ladder would leave out brings: up to {@link #LAST_RESORT_KEEPS} plain returns (they count as the wait), then one return
+     * placed the way MineColonies places it, whether or not scaffolding is there (builder review c4 C4-1: no hole in an ordinary build), then it is left out with
+     * the reason. Lava never comes this far: {@link #keepInsteadOfAbandoning} leaves such a block out at once.
      */
-    static KeepStep keepStep(final int keeps, final boolean defaultPossible)
+    static KeepStep keepStep(final int keeps)
     {
         if (keeps <= LAST_RESORT_KEEPS)
         {
             return KeepStep.KEEP;
         }
-        return keeps == LAST_RESORT_KEEPS + 1 && defaultPossible ? KeepStep.DEFAULT : KeepStep.LEAVE_OUT;
+        return keeps == LAST_RESORT_KEEPS + 1 ? KeepStep.DEFAULT : KeepStep.LEAVE_OUT;
     }
 
     private int currentOrderId()
@@ -881,7 +875,14 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         final String kind;
         final String why;
         FallbackMode mode = FallbackMode.LIMITED;
-        if (reachTryMisses >= REACH_FALLBACK_MISSES)
+        if (keptOut.contains(target))
+        {
+            kind = "kept-out";
+            why = "it came back " + LAST_RESORT_KEEPS + " times";
+            mode = FallbackMode.DEFAULT;
+            reachKeptOut.incrementAndGet();
+        }
+        else if (reachTryMisses >= REACH_FALLBACK_MISSES)
         {
             kind = "missed";
             why = reachTryMisses + " spots did not reach it";
@@ -904,12 +905,6 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             kind = "waited";
             waitedOrder = order;
             why = "no stand spot reaches it and the scaffolding asked for has not come in " + noSpotFor + " ticks";
-            mode = FallbackMode.DEFAULT;
-        }
-        else if (keptOut.contains(target))
-        {
-            kind = "kept-out";
-            why = "it came back " + LAST_RESORT_KEEPS + " times";
             mode = FallbackMode.DEFAULT;
         }
         else if (lastResort.containsKey(target))

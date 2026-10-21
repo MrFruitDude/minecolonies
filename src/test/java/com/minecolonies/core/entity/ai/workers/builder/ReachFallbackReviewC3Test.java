@@ -30,25 +30,22 @@ public class ReachFallbackReviewC3Test
     }
 
     @Test
-    public void keepsEndWithDefaultAllowed()
+    public void thirteenthReturnIsADefaultTry()
     {
+        // builder review c4 C4-1: the 12 returns count as the wait, so the 13th is placed the way MineColonies does, scaffolding there or not
         for (int n = 1; n <= EntityAIStructureBuilder.LAST_RESORT_KEEPS; n++)
         {
-            assertEquals(EntityAIStructureBuilder.KeepStep.KEEP, EntityAIStructureBuilder.keepStep(n, true));
+            assertEquals(EntityAIStructureBuilder.KeepStep.KEEP, EntityAIStructureBuilder.keepStep(n));
         }
-        assertEquals(EntityAIStructureBuilder.KeepStep.DEFAULT, EntityAIStructureBuilder.keepStep(EntityAIStructureBuilder.LAST_RESORT_KEEPS + 1, true));
-        assertEquals(EntityAIStructureBuilder.KeepStep.LEAVE_OUT, EntityAIStructureBuilder.keepStep(EntityAIStructureBuilder.LAST_RESORT_KEEPS + 2, true));
+        assertEquals(EntityAIStructureBuilder.KeepStep.DEFAULT, EntityAIStructureBuilder.keepStep(EntityAIStructureBuilder.LAST_RESORT_KEEPS + 1));
     }
 
     @Test
-    public void keepsEndWithScaffoldingStocked()
+    public void leftOutOnlyAfterTheDefaultTryFailed()
     {
-        // scaffolding there, default not allowed: after the limit the block is left out (the order ends), never kept forever
-        assertEquals(EntityAIStructureBuilder.KeepStep.KEEP, EntityAIStructureBuilder.keepStep(EntityAIStructureBuilder.LAST_RESORT_KEEPS, false));
-        assertEquals(EntityAIStructureBuilder.KeepStep.LEAVE_OUT, EntityAIStructureBuilder.keepStep(EntityAIStructureBuilder.LAST_RESORT_KEEPS + 1, false));
-        for (int n = EntityAIStructureBuilder.LAST_RESORT_KEEPS + 1; n < 1000; n++)
+        for (int n = EntityAIStructureBuilder.LAST_RESORT_KEEPS + 2; n < 1000; n++)
         {
-            assertEquals(EntityAIStructureBuilder.KeepStep.LEAVE_OUT, EntityAIStructureBuilder.keepStep(n, n % 2 == 0));
+            assertEquals(EntityAIStructureBuilder.KeepStep.LEAVE_OUT, EntityAIStructureBuilder.keepStep(n));
         }
     }
 }
