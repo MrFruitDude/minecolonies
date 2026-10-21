@@ -759,6 +759,57 @@ final class BuilderScaffoldGameTests
           }, 0);
     }
 
+    /**
+     * Builder review c3 R2: one block sealed in a barrier cube (4 thick on every side), scaffolding on and stocked. No spot reaches it and no tower can be
+     * planned; the ladder defers it again and again. The order must end: either placed the way MineColonies does after the wait, or left out with a reason
+     * after the hard limit of returns. Nothing is placed further than 5 around (the audit counts that).
+     */
+    public static void pathBlockedOrderEnds(final GameTestHelper helper)
+    {
+        WorkerSettings.overrideReachForTests(null, true, true, 16);
+        ReachAudit.enable(true);
+        BuilderScaffolding.resetCounters();
+        final int[] at = reachCounters();
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF sealedcell", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            final Blueprint blueprint = shape("sealedcell", 1, 2, 1, (x, y, z) -> y == 0);
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            live.stock(Items.SCAFFOLDING, 32);
+            final WorkOrderDecoration order = live.orderFor("sealedcell", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            for (int x = -4; x <= 4; x++)
+            {
+                for (int z = -4; z <= 4; z++)
+                {
+                    for (int y = 0; y <= 5; y++)
+                    {
+                        if (!(x == 0 && z == 0 && y <= 1))
+                        {
+                            live.level.setBlock(origin.offset(x, y, z), Blocks.BARRIER.defaultBlockState(), 3);
+                        }
+                    }
+                }
+            }
+            WorkerEfficiencyGameTests.everyTick(live, 30_000, tick -> {
+                if (tick % 1000 == 0)
+                {
+                    Log.getLogger().info("WSCAF sealedcell t={} missing={} reach={} {}", tick, missing(live, blueprint, origin), java.util.Arrays.toString(reachDelta(at)), live.ai());
+                }
+                return live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
+            }, () -> {
+                final int[] d = reachDelta(at);
+                Log.getLogger().info("WBENCH RESULT sealedcell missing={} limited={} default={} refused={} flooded={} towers={} cells={} default2D={} violations={}",
+                  missing(live, blueprint, origin), d[0], d[1], d[2], d[3], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced, ReachAudit.defaultMax2D(),
+                  ReachAudit.violations());
+                helper.assertTrue(ReachAudit.violations() == 0, "placed out of range: " + ReachAudit.examples());
+                WorkerSettings.clearOverrides();
+                ReachAudit.enable(false);
+                helper.succeed();
+            }, () -> "the order did not end: missing=" + missing(live, blueprint, origin) + " reach=" + java.util.Arrays.toString(reachDelta(at)) + " " + live.ai());
+        });
+    }
+
     public static void tallWall8(final GameTestHelper helper)
     {
         tallStructure(helper, "tall8", () -> ring("tall8", 8), true, 20_000, true);
