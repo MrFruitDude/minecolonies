@@ -592,9 +592,10 @@ public class Colony implements IColony
     {
         workManager.onColonyTick(this);
         com.minecolonies.core.colony.idle.IdleCitizenArbiter.tick(this);
-        if (labourBoard != null)
+        if (labourBoard != null || !getLabourData().hutDebts().debts().isEmpty())
         {
-            labourBoard.tick();
+            // (a colony that owes a hut item after a load is swept even before its labour first ran)
+            getLabourBoard().tick();
         }
         return false;
     }

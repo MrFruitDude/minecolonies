@@ -767,8 +767,9 @@ public final class LabourSites
         surface.clear();
         final ServerLevel level = level();
         // (whether a block of the ground is the world's or a player's own building cannot be told from the block: unless the server owner allows it, automatic labour
-        // digs no ground at all; a directed order digs the area its manager chose)
-        if (level != null && LabourSettings.digUnprovenGround(colony))
+        // digs no ground at all but in the quarry zones its managers marked)
+        final boolean everywhere = LabourSettings.digUnprovenGround(colony);
+        if (level != null && everywhere)
         {
             final BlockPos hall = anchor();
             final int radius = LabourSettings.gatherRadius();
@@ -810,8 +811,98 @@ public final class LabourSites
                 }
             }
         }
+        if (level != null)
+        {
+            scanQuarries(level, everywhere);
+        }
         surfaceAt = now;
         return surface;
+    }
+
+    /**
+     * Adds the top blocks of the colony's quarry zones that labour may dig now ({@link #quarryAllows}): the checks of the automatic scan, in the zone's terraces. With
+     * {@code everywhere} (digging allowed in reach anyway) the columns the reach scan saw are not added twice.
+     */
+    private void scanQuarries(final ServerLevel level, final boolean everywhere)
+    {
+        final List<QuarryZones.Zone> zones = colony.getLabourData().quarries().zones();
+        if (zones.isEmpty())
+        {
+            return;
+        }
+        final Set<BlockPos> known = new HashSet<>();
+        if (everywhere)
+        {
+            surface.values().forEach(known::addAll);
+        }
+        final int depth = LabourSettings.quarryDepth();
+        final Map<Long, Boolean> chunkOwned = new HashMap<>();
+        for (final QuarryZones.Zone zone : zones)
+        {
+            final DirectedOrder.Area area = zone.area();
+            for (int x = area.minX(); x <= area.maxX(); x++)
+            {
+                for (int z = area.minZ(); z <= area.maxZ(); z++)
+                {
+                    if (level.getChunkSource().getChunkNow(x >> 4, z >> 4) == null)
+                    {
+                        continue;
+                    }
+                    final BlockPos pos = new BlockPos(x, level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1, z);
+                    if (known.contains(pos) || !QuarryZones.diggable(zone, pos, depth))
+                    {
+                        continue;
+                    }
+                    final BlockState state = level.getBlockState(pos);
+                    if (!LabourRules.surface(state) && !LabourRules.stone(state))
+                    {
+                        continue;
+                    }
+                    final long key = ((long) (x >> 4) << 32) ^ ((z >> 4) & 0xffffffffL);
+                    if (!chunkOwned.computeIfAbsent(key, k -> ownedBy(pos)))
+                    {
+                        continue;
+                    }
+                    if (!level.getBlockState(pos.above()).isAir() || level.getBlockState(pos.below()).isAir() || !level.getFluidState(pos.below()).isEmpty()
+                          || !sidesLoaded(level, pos) || exposedToFluid(level, pos) || protectedBlock(pos))
+                    {
+                        continue;
+                    }
+                    final List<BlockPos> list = surface.computeIfAbsent(LabourRules.dropOf(state), k -> new ArrayList<>());
+                    if (list.size() < 512)
+                    {
+                        list.add(pos);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @return whether the block lies in one of the colony's quarry zones where labour may dig it now (inside the zone's terraces, above its floor). The other checks
+     *   (claim, buildings, vetoes, placed blocks, the block itself) are the caller's.
+     */
+    public boolean quarryAllows(final BlockPos pos)
+    {
+        final QuarryZones.Zone zone = colony.getLabourData().quarries().at(pos);
+        return zone != null && QuarryZones.diggable(zone, pos, LabourSettings.quarryDepth());
+    }
+
+    /**
+     * @return whether labour may dig the ground at the block: digging is allowed in the whole reach ({@link #groundAllowed}), or the block lies in a quarry zone's
+     *   terraces ({@link #quarryAllows}).
+     */
+    public boolean groundAllowedAt(final BlockPos pos)
+    {
+        return groundAllowed() || quarryAllows(pos);
+    }
+
+    /**
+     * @return whether some of the area lies in a quarry zone of the colony.
+     */
+    public boolean quarryIn(final DirectedOrder.Area area)
+    {
+        return colony.getLabourData().quarries().overlaps(area);
     }
 
     /**
@@ -830,13 +921,14 @@ public final class LabourSites
     }
 
     /**
-     * The last look before automatic labour digs a top block: digging the ground is allowed ({@link LabourSettings#digUnprovenGround}), the block is
+     * The last look before automatic labour digs a top block: digging the ground is allowed there ({@link #groundAllowedAt}: everywhere by the server config, or in a
+     * quarry zone's terraces, read now), the block is
      * {@link #safeNow}, it is still the very block chosen ({@code chosen}) and still a block labour digs, open above, on solid ground, with no fluid under or next to it.
      */
     public boolean surfaceSafeNow(final BlockPos pos, final net.minecraft.world.level.block.Block chosen)
     {
         final ServerLevel level = level();
-        if (level == null || !LabourSettings.digUnprovenGround(colony) || !safeNow(null, pos) || !sidesLoaded(level, pos))
+        if (level == null || !groundAllowedAt(pos) || !safeNow(null, pos) || !sidesLoaded(level, pos))
         {
             return false;
         }
@@ -889,15 +981,23 @@ public final class LabourSites
     {
         final ServerLevel level = level();
         final List<BlockPos> list = scanSurface().get(drop);
-        if (list == null || level == null || !LabourSettings.digUnprovenGround(colony))
+        if (list == null || level == null)
         {
             return null;
         }
+        final boolean everywhere = groundAllowed();
         BlockPos best = null;
         double bestDistance = Double.MAX_VALUE;
+        int bestLayer = Integer.MIN_VALUE;
         for (final BlockPos pos : list)
         {
             if (taken.contains(pos))
+            {
+                continue;
+            }
+            // (a quarry zone is taken off top down: its highest blocks first)
+            final boolean quarry = quarryAllows(pos);
+            if (!everywhere && !quarry)
             {
                 continue;
             }
@@ -906,9 +1006,11 @@ public final class LabourSites
             {
                 continue;
             }
+            final int layer = quarry ? pos.getY() : Integer.MIN_VALUE;
             final double distance = pos.distSqr(from);
-            if (distance < bestDistance)
+            if (layer > bestLayer || (layer == bestLayer && distance < bestDistance))
             {
+                bestLayer = layer;
                 bestDistance = distance;
                 best = pos;
             }
@@ -1228,7 +1330,8 @@ public final class LabourSites
         final ServerLevel level = level();
         final List<TreeSite> trees = new ArrayList<>();
         final List<BlockPos> blocks = new ArrayList<>();
-        // (the manager's area does not make its ground provably natural: a directed order digs only while digging the ground is allowed, like automatic labour)
+        // (the manager's area does not make its ground provably natural: a directed order digs only where digging the ground is allowed, like automatic labour: in the
+        // whole reach by the server config, or in a quarry zone)
         final boolean digGround = groundAllowed();
         if (level != null)
         {
@@ -1273,7 +1376,7 @@ public final class LabourSites
                         }
                         continue;
                     }
-                    if (!digGround || blocks.size() >= AREA_MAX_BLOCKS || !directedBlock(resource, state) || top.getY() < floor || makesPit(level, top))
+                    if ((!digGround && !quarryAllows(top)) || blocks.size() >= AREA_MAX_BLOCKS || !directedBlock(resource, state) || top.getY() < floor || makesPit(level, top))
                     {
                         continue;
                     }
@@ -1395,7 +1498,7 @@ public final class LabourSites
       final Set<BlockPos> taken)
     {
         final ServerLevel level = level();
-        if (level == null || !groundAllowed())
+        if (level == null)
         {
             return null;
         }
@@ -1403,7 +1506,7 @@ public final class LabourSites
         double bestDistance = Double.MAX_VALUE;
         for (final BlockPos pos : scanArea(orderId, area, resource, floor).blocks())
         {
-            if (taken.contains(pos) || !level.isLoaded(pos) || !directedBlock(resource, level.getBlockState(pos)) || !level.getBlockState(pos.above()).isAir())
+            if (taken.contains(pos) || !level.isLoaded(pos) || !groundAllowedAt(pos) || !directedBlock(resource, level.getBlockState(pos)) || !level.getBlockState(pos.above()).isAir())
             {
                 continue;
             }
@@ -1481,12 +1584,12 @@ public final class LabourSites
     }
 
     /**
-     * {@link #directedSafe} for a top block of a directed order: digging the ground is still allowed ({@link #groundAllowed}, read now), still the resource, open above, standing on solid ground above the floor, no fluid next to it and no
+     * {@link #directedSafe} for a top block of a directed order: digging the ground is still allowed there ({@link #groundAllowedAt}, read now), still the resource, open above, standing on solid ground above the floor, no fluid next to it and no
      * pit left by digging it.
      */
     public boolean directedSurfaceSafe(final DirectedOrder.Area area, final DirectedOrder.Resource resource, final int floor, final BlockPos pos)
     {
-        if (!groundAllowed() || !directedSafe(area, pos))
+        if (!groundAllowedAt(pos) || !directedSafe(area, pos))
         {
             return false;
         }

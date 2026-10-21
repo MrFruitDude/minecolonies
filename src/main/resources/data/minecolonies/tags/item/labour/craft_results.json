@@ -21,6 +21,11 @@
     "minecraft:ladder",
     "minecraft:bowl",
     "minecraft:scaffolding",
-    "#minecolonies:labour/woodcraft"
+    "#minecolonies:labour/woodcraft",
+    {
+      "id": "structurize:sceptergold",
+      "required": false
+    },
+    "#minecolonies:labour/hut_items"
   ]
 }

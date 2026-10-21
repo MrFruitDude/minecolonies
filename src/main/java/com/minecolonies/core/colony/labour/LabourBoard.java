@@ -148,6 +148,7 @@ public final class LabourBoard
     private long            lastReassert;
     private boolean         seenSweep;
     private long            lastSweep;
+    private long            lastDebtSweep = Long.MIN_VALUE / 2;
 
     public LabourBoard(final Colony colony)
     {
@@ -322,6 +323,72 @@ public final class LabourBoard
             colony.markDirty();
             sites.invalidate();
         }
+        return true;
+    }
+
+    // ------------------------------------------------------------------ quarry zones and owed hut items (Wave B)
+
+    /**
+     * @return the colony's quarry zones (read-only use; mark and remove through the board).
+     */
+    public QuarryZones quarries()
+    {
+        return colony.getLabourData().quarries();
+    }
+
+    /**
+     * A manager marks a quarry zone. The server checks the size, that every chunk of it is loaded and part of THIS colony's claim, the overlap and the count; the zone's
+     * surface is the lowest top of its columns now (the terraces are measured from it).
+     *
+     * @return the zone, or why there is none (nothing changed then).
+     */
+    public QuarryZones.Marked markQuarry(final DirectedOrder.Area area)
+    {
+        if (!QuarryZones.sizeAllowed(area))
+        {
+            return new QuarryZones.Marked(null, QuarryZones.Refusal.BAD_AREA);
+        }
+        if (!sites.areaUsable(area))
+        {
+            return new QuarryZones.Marked(null, QuarryZones.Refusal.AREA_OUTSIDE);
+        }
+        final QuarryZones.Marked marked = quarries().add(area, sites.lowestSurface(area));
+        if (marked.zone() != null)
+        {
+            colony.markDirty();
+            sites.invalidate();
+        }
+        return marked;
+    }
+
+    /**
+     * A manager removes a quarry zone; labour digs no further in it (a labourer at work there stops at his next fresh look).
+     *
+     * @return false when the colony has no zone of the id.
+     */
+    public boolean removeQuarry(final int id)
+    {
+        if (!quarries().remove(id))
+        {
+            return false;
+        }
+        colony.markDirty();
+        sites.invalidate();
+        return true;
+    }
+
+    /**
+     * A hut was placed on credit: it owes its hut item and asks for it with an ordinary request ({@link HutDebts}).
+     *
+     * @return false when the colony owes too many hut items already (nothing changed).
+     */
+    public boolean oweHut(final com.minecolonies.api.colony.buildings.IBuilding building, final Item hut)
+    {
+        if (!colony.getLabourData().hutDebts().owe(building, hut))
+        {
+            return false;
+        }
+        colony.markDirty();
         return true;
     }
 
@@ -727,7 +794,7 @@ public final class LabourBoard
         for (final Candidate candidate : candidates())
         {
             if (candidate.hut().equals(hut) && candidate.importance() == RequestImportance.URGENT && claimsOn(candidate.token()) == 0 && stillWaiting(candidate.token())
-                  && now >= notBefore.getOrDefault(candidate.token(), 0L) && now - waitingSince(candidate.token()) >= LabourSettings.supplyGraceTicks()
+                  && now >= notBefore.getOrDefault(candidate.token(), 0L) && now - waitingSince(candidate.token()) >= LabourSettings.supplyGraceTicks(colony)
                   && !ownTargets(candidate).isEmpty())
             {
                 return candidate;
@@ -1174,6 +1241,14 @@ public final class LabourBoard
     {
         final long now = now();
         directed.tick();
+        if (now - lastDebtSweep >= 100L || now < lastDebtSweep)
+        {
+            lastDebtSweep = now;
+            if (colony.getLabourData().hutDebts().sweep(colony))
+            {
+                colony.markDirty();
+            }
+        }
         if (!byCitizen.isEmpty())
         {
             for (final LabourClaim claim : new ArrayList<>(byCitizen.values()))

@@ -203,7 +203,8 @@ public final class DirectedOrders
      */
     public boolean groundOff(final DirectedOrder order)
     {
-        return groundOff(order.resource());
+        // (an order whose area reaches into a quarry zone digs there)
+        return groundOff(order.resource()) && !board.sites().quarryIn(order.area());
     }
 
     /**

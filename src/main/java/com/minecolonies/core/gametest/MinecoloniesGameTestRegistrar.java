@@ -134,6 +134,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerNatural(event);
             }
+            if (only.contains("waveb"))
+            {
+                registerWaveB(event);
+            }
             if (only.contains("emptybp"))
             {
                 EmptyBlueprintGameTests.register(event);
@@ -1173,6 +1177,25 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 continue;
             }
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = NaturalSafetyGameTests.test(name);
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              longIsolatedColonyData(event, name, 20_000));
+        }
+    }
+
+    /**
+     * Wave B of the early loop: quarry zones, glass, the early pace and a hut on credit. Run on their own with {@code MINECOLONIES_GAMETEST_ONLY=waveb}.
+     */
+    private void registerWaveB(final RegisterGameTestsEvent event)
+    {
+        for (final String name : WaveBLabourGameTests.NAMES)
+        {
+            if (skipped(name))
+            {
+                continue;
+            }
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = WaveBLabourGameTests.test(name);
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),

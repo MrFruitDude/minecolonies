@@ -209,6 +209,10 @@ public class ServerConfiguration extends AbstractConfiguration
     public final BooleanValue labourersDigUnprovenGround;
     public final IntValue     labourersSupplyGraceTicks;
     public final IntValue     labourersSupplyMaxTicks;
+    public final IntValue     labourersQuarryDepth;
+    public final IntValue     labourersEarlyBuildings;
+    public final IntValue     labourersEarlyGraceTicks;
+    public final BooleanValue labourersEarlyAllUnemployed;
 
     /**
      * RS1: stock and space are reserved in a per-colony ledger when a delivery is planned, and released when it ends.
@@ -267,7 +271,7 @@ public class ServerConfiguration extends AbstractConfiguration
 
         createCategory("gameplay");
 
-        initialCitizenAmount = defineInteger("initialcitizenamount", 4, 1, 10);
+        initialCitizenAmount = defineInteger("initialcitizenamount", 6, 1, 10);
         allowInfiniteSupplyChests = defineBoolean("allowinfinitesupplychests", false);
         allowInfiniteColonies = defineBoolean("allowinfinitecolonies", false);
         allowOtherDimColonies = defineBoolean("allowotherdimcolonies", true);
@@ -414,6 +418,12 @@ public class ServerConfiguration extends AbstractConfiguration
         labourersDigUnprovenGround = defineBoolean("digUnprovenGround", false);
         labourersSupplyGraceTicks = defineInteger("supplyGraceTicks", 1200, 0, 72000);
         labourersSupplyMaxTicks = defineInteger("supplyMaxTicks", 6000, 200, 72000);
+        // Quarry zones: a manager marks an area where labour may dig the ground even with digUnprovenGround off; never deeper than this below the zone's surface.
+        labourersQuarryDepth = defineInteger("quarryDepth", 8, 1, 32);
+        // Early pace: while the colony has fewer built buildings than this, every unemployed citizen may labour and builder requests wait only earlyGraceTicks.
+        labourersEarlyBuildings = defineInteger("earlyBuildings", 10, 0, 100);
+        labourersEarlyGraceTicks = defineInteger("earlyGraceTicks", 200, 0, 72000);
+        labourersEarlyAllUnemployed = defineBoolean("earlyAllUnemployed", true);
 
         finishCategory();
     }

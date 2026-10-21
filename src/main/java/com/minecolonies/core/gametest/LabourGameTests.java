@@ -61,6 +61,8 @@ final class LabourGameTests
     {
         com.minecolonies.core.colony.labour.LabourStats.debug = true;
         LabourSettings.clearOverrides();
+        // (the early pace of a young colony is checked by its own tests)
+        LabourSettings.override("early", false);
         LabourSettings.override("workScale", 8.0D);
         LabourSettings.override("keepTrees", 0);
         // (a test checks one behaviour at a time: the warehouse stock goals are switched on by the test that checks them)
@@ -92,7 +94,7 @@ final class LabourGameTests
     /**
      * An oak tree a labourer may fell: dirt below, a trunk, leaves that nobody placed.
      */
-    private static void tree(final GameTestHelper helper, final int x, final int z, final int height)
+    static void tree(final GameTestHelper helper, final int x, final int z, final int height)
     {
         helper.setBlock(new BlockPos(x, 0, z), Blocks.DIRT.defaultBlockState());
         for (int y = 1; y <= height; y++)
@@ -442,7 +444,7 @@ final class LabourGameTests
 
     // ------------------------------------------------------------------ the idle builder
 
-    private static com.minecolonies.core.colony.workorders.WorkOrderDecoration planksFloor(final GameTestHelper helper, final Colony colony, final IBuilding hut, final int x,
+    static com.minecolonies.core.colony.workorders.WorkOrderDecoration planksFloor(final GameTestHelper helper, final Colony colony, final IBuilding hut, final int x,
       final int z, final int size)
     {
         final com.minecolonies.core.colony.workorders.WorkOrderDecoration order = com.minecolonies.core.colony.workorders.WorkOrderDecoration.create(

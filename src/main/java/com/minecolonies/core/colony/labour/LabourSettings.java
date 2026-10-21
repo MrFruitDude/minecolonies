@@ -31,7 +31,8 @@ public final class LabourSettings
     /**
      * Only for tests: forces a value ({@code enabled}, {@code share}, {@code total}, {@code perRequest}, {@code stockpile}, {@code selfSupply}, {@code postMode},
      * {@code coverageMode}, {@code smelt}, {@code pocket}, {@code workScale}, {@code keepTrees}, {@code leaseTicks}, {@code coverageGrace}, {@code graceTicks},
-     * {@code supplyMaxTicks}, {@code worldMax}). Null removes the override.
+     * {@code supplyMaxTicks}, {@code worldMax}, {@code early}, {@code earlyGraceTicks}, {@code earlyAll}, {@code quarryDepth}). Null removes the
+     * override.
      */
     public static void override(final String key, final Object value)
     {
@@ -219,6 +220,75 @@ public final class LabourSettings
         return config(c -> c.labourersSupplyGraceTicks.get(), 1200, "graceTicks");
     }
 
+    /**
+     * @return how long a builder's request waits before he fetches it himself: {@link #earlyGraceTicks} while the colony is {@link #early}, else
+     *   {@link #supplyGraceTicks()}.
+     */
+    public static int supplyGraceTicks(final IColony colony)
+    {
+        return early(colony) ? Math.min(earlyGraceTicks(), supplyGraceTicks()) : supplyGraceTicks();
+    }
+
+    /**
+     * @return below how many built buildings a colony counts as young ({@link #early}); 0 switches the early pace off.
+     */
+    public static int earlyBuildings()
+    {
+        return config(c -> c.labourersEarlyBuildings.get(), 10, "earlyBuildings");
+    }
+
+    public static int earlyGraceTicks()
+    {
+        return config(c -> c.labourersEarlyGraceTicks.get(), 200, "earlyGraceTicks");
+    }
+
+    public static boolean earlyAllUnemployed()
+    {
+        return config(c -> c.labourersEarlyAllUnemployed.get(), true, "earlyAll");
+    }
+
+    /**
+     * @return whether the colony is young: it has fewer built buildings (level 1 or more) than {@link #earlyBuildings}. A young colony's labour runs at the early pace:
+     *   every unemployed citizen may labour ({@link #share}) and a builder's request waits only {@link #earlyGraceTicks}.
+     */
+    public static boolean early(final IColony colony)
+    {
+        final Object forced = OVERRIDES.get("early");
+        if (forced instanceof Boolean b)
+        {
+            return b;
+        }
+        final int limit = earlyBuildings();
+        if (limit <= 0)
+        {
+            return false;
+        }
+        try
+        {
+            int built = 0;
+            for (final com.minecolonies.api.colony.buildings.IBuilding building : colony.getServerBuildingManager().getBuildings().values())
+            {
+                if (building.getBuildingLevel() > 0 && ++built >= limit)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        catch (final RuntimeException e)
+        {
+            return false;
+        }
+    }
+
+    /**
+     * @return how many layers labour may take off a quarry zone, measured from the zone's surface when it was marked.
+     */
+    public static int quarryDepth()
+    {
+        return config(c -> c.labourersQuarryDepth.get(), 8, "quarryDepth");
+    }
+
     public static int supplyMaxTicks()
     {
         return config(c -> c.labourersSupplyMaxTicks.get(), 6000, "supplyMaxTicks");
@@ -281,6 +351,11 @@ public final class LabourSettings
     public static double share(final IColony colony)
     {
         final Object forced = OVERRIDES.get("share");
+        if (!(forced instanceof Number) && earlyAllUnemployed() && early(colony))
+        {
+            // a young colony: every unemployed citizen may labour (the colony cap and their needs still apply)
+            return 1.0D;
+        }
         final int percent = forced instanceof Number n ? n.intValue() : colonyInt(colony, BuildingTownHall.LABOUR_SHARE, 50);
         return Math.max(0, Math.min(100, percent)) / 100.0D;
     }

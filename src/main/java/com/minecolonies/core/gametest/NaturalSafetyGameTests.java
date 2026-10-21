@@ -60,6 +60,8 @@ final class NaturalSafetyGameTests
     {
         com.minecolonies.core.colony.labour.LabourStats.debug = true;
         LabourSettings.clearOverrides();
+        // (the early pace of a young colony is checked by its own tests)
+        LabourSettings.override("early", false);
         LabourSettings.override("workScale", 8.0D);
         LabourSettings.override("keepTrees", 0);
         LabourSettings.override("stockpile", false);

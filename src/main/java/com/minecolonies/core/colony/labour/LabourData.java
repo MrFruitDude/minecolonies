@@ -10,8 +10,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * What the colony remembers about its labourers (saved with the colony): the flags the managers put on crafting tables and furnaces, and the managers' directed
- * gathering orders ({@link DirectedOrder}; a save without them reads as none).
+ * What the colony remembers about its labourers (saved with the colony): the flags the managers put on crafting tables and furnaces, the managers' directed
+ * gathering orders ({@link DirectedOrder}), their quarry zones ({@link QuarryZones}) and the hut items the colony owes ({@link HutDebts}); a save without them reads as
+ * none.
  * <ul>
  *   <li>{@link TableFlag#EXCLUDE}: labourers never use the table (a decorative one in a house);</li>
  *   <li>{@link TableFlag#PREFER}: labourers use it first (and, in the {@code MARKED} post mode, only these).</li>
@@ -28,6 +29,8 @@ public final class LabourData
     private static final String TAG_REVISION = "directedRevision";
     private static final String TAG_PLACED      = "placed";
     private static final String TAG_PLACED_FULL = "placedFull";
+    private static final String TAG_QUARRIES    = "quarries";
+    private static final String TAG_HUT_DEBTS   = "hutDebts";
 
     /**
      * What a manager says about a table or furnace.
@@ -47,6 +50,28 @@ public final class LabourData
 
     /** Where blocks a labourer could take were placed since this record exists (absent in older saves: nothing on record). */
     private final LabourPlacements placements = new LabourPlacements();
+
+    /** The managers' quarry zones (absent in older saves: none). */
+    private final QuarryZones quarries = new QuarryZones();
+
+    /** The hut items the colony owes for huts placed on credit (absent in older saves: none). */
+    private final HutDebts hutDebts = new HutDebts();
+
+    /**
+     * @return the quarry zones (the live record; {@link LabourBoard} changes it).
+     */
+    public QuarryZones quarries()
+    {
+        return quarries;
+    }
+
+    /**
+     * @return the owed hut items (the live record; {@link LabourBoard} changes it).
+     */
+    public HutDebts hutDebts()
+    {
+        return hutDebts;
+    }
 
     /**
      * @return the record of placed blocks (the live record).
@@ -143,6 +168,14 @@ public final class LabourData
             tag.putLongArray(TAG_PLACED, placements.toArray());
             tag.putBoolean(TAG_PLACED_FULL, placements.full());
         }
+        if (quarries.used())
+        {
+            tag.put(TAG_QUARRIES, quarries.write());
+        }
+        if (!hutDebts.debts().isEmpty())
+        {
+            tag.put(TAG_HUT_DEBTS, hutDebts.write());
+        }
         return tag;
     }
 
@@ -177,5 +210,7 @@ public final class LabourData
         nextOrder = Math.max(highest + 1, tag.getIntOr(TAG_NEXT, 1));
         directedRevision = tag.getLongOr(TAG_REVISION, 0L) + 1;
         placements.read(tag.getLongArray(TAG_PLACED).orElse(new long[0]), tag.getBooleanOr(TAG_PLACED_FULL, false));
+        quarries.read(tag.getCompoundOrEmpty(TAG_QUARRIES));
+        hutDebts.read(tag.getCompoundOrEmpty(TAG_HUT_DEBTS));
     }
 }
