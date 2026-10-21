@@ -62,6 +62,19 @@ public class CitizenSnack
     }
 
     /**
+     * How many items of {@code food} take him from {@code saturation} to {@link #UNTIL} (at least one, at most a stack).
+     */
+    private int itemsNeeded(final ItemStack food, final double saturation)
+    {
+        final double value = FoodUtils.getFoodValue(food, citizen);
+        if (value <= 0)
+        {
+            return 1;
+        }
+        return Math.max(1, Math.min(food.getMaxStackSize(), (int) Math.ceil((UNTIL - saturation) / value)));
+    }
+
+    /**
      * One check: eats one item when he is working, hungry enough and has suitable food at hand.
      *
      * @return false (a ticking transition that never changes the state).
@@ -88,8 +101,10 @@ public class CitizenSnack
             final IBuilding work = data.getWorkBuilding();
             if (work != null && work.isInBuilding(citizen.blockPosition()))
             {
+                // decided before anything moves (the food rules and the restaurant choice), and he takes only what this snack needs, never a whole slot
                 final ItemStorage food = FoodUtils.checkForFoodInBuilding(data, null, work);
-                if (food != null && InventoryUtils.transferItemStackIntoNextBestSlotInItemHandler(work, food, citizen.getInventoryCitizen()))
+                if (food != null && FoodUtils.wouldEatOutsideRestaurant(data, food.getItemStack())
+                      && InventoryUtils.transferItemStackIntoNextBestSlotInItemHandler(work, food, itemsNeeded(food.getItemStack(), saturation), citizen.getInventoryCitizen()))
                 {
                     slot = FoodUtils.getBestFoodForCitizen(citizen.getInventoryCitizen(), data, null);
                 }
@@ -112,6 +127,8 @@ public class CitizenSnack
         {
             foodHandler.addLastEaten(item);
         }
+        // like after a meal: no meal decision until his saturation drops again
+        data.setJustAte(true);
         data.markDirty(0);
         eaten.incrementAndGet();
         eating = data.getSaturation() < UNTIL;

@@ -420,12 +420,13 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
 
     /**
-     * The next order may need scaffolding, which he takes from the hut's racks before he leaves (so he goes there for it).
+     * The next order may need scaffolding, which he takes from the hut's racks before he leaves (so he goes there for it). An order whose blueprint is
+     * not loaded (a queued order keeps only its box) counts as one that may need it.
      */
     private boolean mayNeedScaffoldingFromHut()
     {
-        return usesPhysicalReach() && BuilderScaffolding.enabled() && building.getWorkOrder() != null && building.getWorkOrder().getBlueprint() != null
-                 && mayNeedScaffolding(building.getWorkOrder().getBlueprint());
+        return usesPhysicalReach() && BuilderScaffolding.enabled() && building.getWorkOrder() != null
+                 && (building.getWorkOrder().getBlueprint() == null || mayNeedScaffolding(building.getWorkOrder().getBlueprint()));
     }
 
     /**

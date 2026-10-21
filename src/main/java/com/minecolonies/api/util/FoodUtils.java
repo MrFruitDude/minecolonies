@@ -184,14 +184,53 @@ public class FoodUtils
         }
 
         // If we're not at the restaurant and are the brink of complaining about food, go to the restaurant instead of eating the food you got in the inventory.
-        if (restaurantExists && menu == null && citizenData.getCitizenFoodHandler().hasFullFoodHistory() &&
-              ((bestScore >= 0 && foodStats.diversity() <= diversityRequirement)
-              || (!(bestItem instanceof IMinecoloniesFoodItem) && foodStats.quality() <= qualityRequirement)))
+        if (restaurantExists && menu == null && brinkOfComplaining(citizenData, bestItem, bestScore))
         {
             return -1;
         }
 
         return bestSlot;
+    }
+
+    /**
+     * The rule of {@link #getBestFoodForCitizen} that keeps a citizen with a full food history on the brink of complaining (diversity or quality) from
+     * eating {@code item} outside a restaurant (without the check whether a restaurant exists).
+     */
+    private static boolean brinkOfComplaining(final ICitizenData citizenData, @Nullable final Item item, final int score)
+    {
+        final ICitizenFoodHandler.CitizenFoodStats foodStats = citizenData.getCitizenFoodHandler().getFoodHappinessStats();
+        final int homeLevel = citizenData.getHomeBuilding() == null ? 0 : citizenData.getHomeBuilding().getBuildingLevelEquivalent();
+        return citizenData.getCitizenFoodHandler().hasFullFoodHistory()
+                 && ((score >= 0 && foodStats.diversity() <= getMinFoodDiversityRequirement(homeLevel))
+                       || (!(item instanceof IMinecoloniesFoodItem) && foodStats.quality() <= getMinFoodQualityRequirement(homeLevel)));
+    }
+
+    /**
+     * Whether the citizen would eat {@code stack} outside a restaurant: the food rules ({@link #canEat}) and the same choice as {@link #getBestFoodForCitizen}
+     * for one item (great food goes, on the brink of complaining he keeps it for the restaurant when one exists). Decides before any item is moved.
+     *
+     * @param citizenData the citizen.
+     * @param stack       the food.
+     * @return true if he would eat it.
+     */
+    public static boolean wouldEatOutsideRestaurant(final ICitizenData citizenData, final ItemStack stack)
+    {
+        if (!canEat(stack, citizenData.getHomeBuilding(), citizenData.getWorkBuilding()))
+        {
+            return false;
+        }
+        final ICitizenFoodHandler.CitizenFoodStats foodStats = citizenData.getCitizenFoodHandler().getFoodHappinessStats();
+        final int homeLevel = citizenData.getHomeBuilding() == null ? 0 : citizenData.getHomeBuilding().getBuildingLevelEquivalent();
+        final boolean isMinecolfood = stack.getItem() instanceof IMinecoloniesFoodItem;
+        final int score = citizenData.getCitizenFoodHandler().checkLastEaten(stack.getItem()) * (isMinecolfood ? 1 : 2);
+        if ((score < 0 && isMinecolfood) || (score < 0 && foodStats.quality() > getMinFoodQualityRequirement(homeLevel) * 2)
+              || (isMinecolfood && foodStats.diversity() > getMinFoodDiversityRequirement(homeLevel) * 2))
+        {
+            return true;
+        }
+        final boolean restaurantExists = citizenData.getColony().getServerBuildingManager().getBestBuilding(
+          citizenData.getWorkBuilding() == null ? citizenData.getHomePosition() : citizenData.getWorkBuilding().getPosition(), BuildingCook.class) != null;
+        return !restaurantExists || !brinkOfComplaining(citizenData, stack.getItem(), score);
     }
 
     /**
