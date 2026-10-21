@@ -586,6 +586,151 @@ public final class ColonyHooksGameTests
     }
 
     /**
+     * Wave E M4: the real saturation drain of a citizen in an active colony uses the server's foodmodifier (0.6 by default) and, with no pace provider set (Colony
+     * Command absent), the needs multiplier 1.0. Part 1 watches the entity's own once-a-minute drain for two steps (about 2400 ticks of daylight); part 2 runs the
+     * same entity drain method 40 times and checks the summed loss. Each step must equal {@code consumption(home level) * job factor * foodmodifier * needs}.
+     */
+    public static void paceRealFoodDrainUsesFoodModifier(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = foundGameTestColony(helper, "M4 food drain colony");
+        final BlockPos anchor = helper.absolutePos(new BlockPos(12, 1, 12));
+        level.setChunkForced(anchor.getX() >> 4, anchor.getZ() >> 4, true);
+        final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
+        player.teleportTo(anchor.getX() + 0.5D, anchor.getY(), anchor.getZ() + 0.5D);
+        colony.getPackageManager().addCloseSubscriber(player);
+        helper.runAfterDelay(20, () -> {
+            final ICitizenData citizen = colony.getCitizenManager().spawnOrCreateCivilian(null, level, List.of(anchor), true);
+            helper.assertTrue(citizen != null && citizen.getEntity().isPresent()
+                                && citizen.getEntity().get() instanceof com.minecolonies.core.entity.citizen.EntityCitizen, "citizen did not spawn");
+            final com.minecolonies.core.entity.citizen.EntityCitizen entity = (com.minecolonies.core.entity.citizen.EntityCitizen) citizen.getEntity().get();
+            final Field cached;
+            final Method drain;
+            try
+            {
+                cached = com.minecolonies.core.entity.citizen.EntityCitizen.class.getDeclaredField("cachedActionSaturationDecrease");
+                cached.setAccessible(true);
+                drain = com.minecolonies.core.entity.citizen.EntityCitizen.class.getDeclaredMethod("decreaseIdleSaturation");
+                drain.setAccessible(true);
+            }
+            catch (final ReflectiveOperationException e)
+            {
+                throw helper.assertionException("reflection: " + e);
+            }
+            final double modifier = MineColonies.getConfig().getServer().foodModifier.get();
+            final IColonyPaceProvider provider = IMinecoloniesAPI.getInstance().getColonyPaceProvider();
+            final List<String> failures = new ArrayList<>();
+            final List<String> steps = new ArrayList<>();
+            final double[] last = {-1};
+            final int[] elapsed = {0};
+            final int[] active = {-1};
+            final Runnable[] tick = new Runnable[1];
+            tick[0] = () -> {
+                // daylight (the drain pauses in the dark) and no action bonus on top (the plain drain is measured)
+                level.getServer().clockManager().setTotalTicks(level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
+                try
+                {
+                    cached.setDouble(entity, 0);
+                }
+                catch (final IllegalAccessException e)
+                {
+                    throw helper.assertionException("reflection: " + e);
+                }
+                elapsed[0]++;
+                if (active[0] < 0)
+                {
+                    citizen.setSaturation(20);
+                    if (colony.isActive())
+                    {
+                        active[0] = elapsed[0];
+                        last[0] = citizen.getSaturation();
+                    }
+                    else if (elapsed[0] > 400)
+                    {
+                        throw helper.assertionException("fixture: colony never became active with a close subscriber");
+                    }
+                    helper.runAfterDelay(1, tick[0]);
+                    return;
+                }
+                final double now = citizen.getSaturation();
+                if (now < last[0] - 1e-12)
+                {
+                    final double step = last[0] - now;
+                    final double expected = expectedDrainStep(colony, citizen, modifier);
+                    steps.add(String.format("t+%d %.6f (expected %.6f)", elapsed[0] - active[0], step, expected));
+                    if (Math.abs(step - expected) > 1e-9)
+                    {
+                        failures.add("natural drain step " + step + ", expected " + expected);
+                    }
+                }
+                last[0] = now;
+                if (steps.size() < 2)
+                {
+                    if (elapsed[0] - active[0] > 4000)
+                    {
+                        throw helper.assertionException("only " + steps.size() + " natural drain steps in 4000 ticks of an active colony: " + steps);
+                    }
+                    helper.runAfterDelay(1, tick[0]);
+                    return;
+                }
+                // part 2: the entity's drain method 40 times in a row
+                citizen.setSaturation(20);
+                final double expected = expectedDrainStep(colony, citizen, modifier);
+                try
+                {
+                    for (int i = 0; i < 40; i++)
+                    {
+                        cached.setDouble(entity, 0);
+                        drain.invoke(entity);
+                    }
+                }
+                catch (final ReflectiveOperationException e)
+                {
+                    throw helper.assertionException("reflection: " + e);
+                }
+                final double loss = 20 - citizen.getSaturation();
+                if (Math.abs(loss - 40 * expected) > 1e-6)
+                {
+                    failures.add("40 drains lost " + loss + ", expected " + 40 * expected);
+                }
+                if (modifier != 0.6D)
+                {
+                    failures.add("foodmodifier is " + modifier + ", the shipped default is 0.6");
+                }
+                final double pace = IColonyPaceProvider.sanitize(provider.needs(colony));
+                if (provider == IColonyPaceProvider.DEFAULT && pace != 1.0D)
+                {
+                    failures.add("no pace provider, but needs is " + pace);
+                }
+                Log.getLogger().info("[pace_real_food_drain] provider {} needs {}, foodmodifier {}, natural steps {}, 40 drains lost {} (expected {}, at foodmodifier 1.0 it would be {}), "
+                                       + "failures {}", provider == IColonyPaceProvider.DEFAULT ? "default (CC absent)" : provider, pace, modifier, steps, loss, 40 * expected,
+                  40 * expected / modifier, failures);
+                citizen.setSaturation(20);
+                helper.assertTrue(failures.isEmpty(), "real food drain: " + failures);
+                helper.succeed();
+            };
+            helper.runAfterDelay(1, tick[0]);
+        });
+    }
+
+    /**
+     * @return one drain step of the citizen now: what {@code EntityCitizen.decreaseIdleSaturation} asks for (no action bonus) times foodmodifier and the needs pace.
+     */
+    private static double expectedDrainStep(final IColony colony, final ICitizenData citizen, final double modifier)
+    {
+        double raw = com.minecolonies.api.util.FoodUtils.computeSaturationConsumptionFactor(citizen.getHomeBuilding() == null ? 0 : citizen.getHomeBuilding().getBuildingLevelEquivalent());
+        if (citizen.getJob() != null)
+        {
+            raw *= citizen.getJob().getSaturationFactor();
+        }
+        if (citizen.isChild())
+        {
+            raw /= 2.0;
+        }
+        return Math.abs(raw * modifier) * IColonyPaceProvider.sanitize(IMinecoloniesAPI.getInstance().getColonyPaceProvider().needs(colony));
+    }
+
+    /**
      * The colony the single upgrade-request listener refuses for, or -1 (disarmed). The mod event bus has no
      * unsubscribe, so the listener is registered once and only acts while armed.
      */

@@ -85,10 +85,37 @@ final class LabourGameTests
         return f;
     }
 
+    /**
+     * The veto a test registered to keep its colony's labour inside its own plot (removed at the end of the test).
+     */
+    private static com.minecolonies.api.colony.labour.ILabourExclusion plotOnly;
+
     private static void end()
     {
         com.minecolonies.core.colony.labour.LabourStats.debug = false;
         LabourSettings.clearOverrides();
+        if (plotOnly != null)
+        {
+            com.minecolonies.api.colony.labour.LabourExclusions.unregister(plotOnly);
+            plotOnly = null;
+        }
+    }
+
+    /**
+     * Labour of this colony leaves every block outside the test plot alone: the stone and trees it may take are the plot's own, not what neighbouring tests left (a
+     * far site plus MineColonies' stuck teleport carried a labourer out of the plot, Wave B launch 5).
+     */
+    private static void keepInPlot(final GameTestHelper helper, final Colony colony)
+    {
+        final BlockPos min = helper.absolutePos(new BlockPos(-8, 0, -8));
+        final BlockPos max = helper.absolutePos(new BlockPos(48, 0, 32));
+        final int minX = Math.min(min.getX(), max.getX());
+        final int maxX = Math.max(min.getX(), max.getX());
+        final int minZ = Math.min(min.getZ(), max.getZ());
+        final int maxZ = Math.max(min.getZ(), max.getZ());
+        final int id = colony.getID();
+        plotOnly = (c, pos) -> c.getID() == id && (pos.getX() < minX || pos.getX() > maxX || pos.getZ() < minZ || pos.getZ() > maxZ);
+        com.minecolonies.api.colony.labour.LabourExclusions.register(plotOnly);
     }
 
     /**
@@ -617,6 +644,65 @@ final class LabourGameTests
     }
 
     /**
+     * Self-supply M2: the lease of the builder's supply claim runs out while he eats (his job AI does not run, nothing renews it). The claim is given back, but the
+     * request is put on no back-off: needs are no failure of the request. The same lease running out while he is at work still backs the request off.
+     */
+    public static void builderNeedsDoNotCountAgainstTheRequest(final GameTestHelper helper)
+    {
+        begin();
+        LabourSettings.override("graceTicks", 200);
+        LabourSettings.override("total", 0);
+        final RsFixture f = found(helper, "labour builder needs", 2);
+        final Colony colony = (Colony) f.colony;
+        forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
+        tree(helper, 34, 20, 5);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData builder = f.spawn(new BlockPos(12, 1, 8), false);
+            helper.assertTrue(f.builder.getModule(BuildingModules.BUILDER_WORK).assignCitizen(builder), "builder not assigned");
+            planksFloor(helper, colony, f.builder, 22, 12, 4);
+            final var board = colony.getLabourBoard();
+            final int[] phase = {0};
+            poll(helper, List.of(colony), 16000, () -> {
+                final LabourClaim claim = board.claimOf(builder.getId());
+                if (claim == null || claim.source() != LabourClaim.Source.SELF || claim.request() == null
+                      || !(builder.getEntity().orElse(null) instanceof com.minecolonies.core.entity.citizen.EntityCitizen entity))
+                {
+                    return false;
+                }
+                final IToken<?> request = claim.request();
+                final long before = board.backoffUntil(request);
+                final long expired = com.minecolonies.core.colony.labour.LabourStats.CLAIMS_EXPIRED.get();
+                final var state = phase[0] == 0 ? com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState.EATING
+                                    : com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState.WORKING;
+                // the lease ran out (a heartbeat with a lease in the past) and the board's once a second tick sees him in that state
+                LabourSettings.override("leaseTicks", -10);
+                board.heartbeat(claim);
+                LabourSettings.override("leaseTicks", null);
+                entity.getCitizenAI().transitionToNext(new com.minecolonies.api.entity.ai.statemachine.AIEventTarget<com.minecolonies.api.entity.ai.statemachine.states.IState>(
+                  com.minecolonies.api.entity.ai.statemachine.states.AIBlockingEventType.EVENT, () -> true, state, 1));
+                helper.assertTrue(entity.getCitizenAI().getState() == state, "could not put the builder into " + state + ": " + entity.getCitizenAI().getState());
+                board.tick();
+                helper.assertTrue(!board.alive(claim), "the claim outlived its lease in " + state);
+                helper.assertTrue(com.minecolonies.core.colony.labour.LabourStats.CLAIMS_EXPIRED.get() == expired + 1, "the claim was not given back by its lease in " + state);
+                final long after = board.backoffUntil(request);
+                Log.getLogger().info("[labour_builder_self_supply_needs] {}: back-off until {} before, {} after, now {}", state, before, after, f.level.getGameTime());
+                if (phase[0] == 0)
+                {
+                    helper.assertTrue(after == before, "a lease that ran out while he ate backed the request off: " + before + " -> " + after);
+                    phase[0] = 1;
+                    return false;
+                }
+                helper.assertTrue(after > before && after > f.level.getGameTime(), "a lease that ran out at work put no back-off: " + before + " -> " + after);
+                return true;
+            }, () -> {
+                end();
+                helper.succeed();
+            }, () -> "phase " + phase[0] + " builder inv " + LabourSession.inventoryOf(builder) + " claims " + board.claims().size()
+                       + " ai " + (builder.getJob() == null || builder.getJob().getWorkerAI() == null ? "-" : builder.getJob().getWorkerAI().getState()));
+        });
+    }
+
+    /**
      * The builder's hut asks for a wooden axe and nobody makes tools: the builder makes it himself (a tree, planks, sticks, a table or his pockets) and hands it in.
      */
     public static void builderMakesHisOwnTool(final GameTestHelper helper)
@@ -716,6 +802,8 @@ final class LabourGameTests
         final Colony colony = (Colony) f.colony;
         // (automatic labour digs no ground unless allowed: this colony's own test floor of stone is allowed)
         LabourSettings.allowDiggingForTest(colony.getID(), true);
+        // (the stone site is the pad below, never a neighbouring plot's ground)
+        keepInPlot(helper, colony);
         forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
         tree(helper, 34, 20, 5);

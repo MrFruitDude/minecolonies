@@ -1195,6 +1195,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_default_provider_unchanged"),
           info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceDefaultProviderUnchanged),
           isolatedColonyData(event, "pace_default_provider_unchanged"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "pace_real_food_drain"),
+          info -> new MinecoloniesGameTestInstance(info, ColonyHooksGameTests::paceRealFoodDrainUsesFoodModifier),
+          longIsolatedColonyData(event, "pace_real_food_drain", 6000));
     }
 
     /**
@@ -1243,7 +1247,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         for (final String name : new String[] {"labour_crafts_wooden_tools", "labour_covered_left_alone", "labour_stops_on_job", "labour_setting_off", "labour_colonies_isolated",
           "labour_builder_self_supply", "labour_stone_tools", "labour_withdraw_covered", "labour_stockpile", "labour_charcoal", "labour_furnace_taken", "labour_natural_trees",
           "labour_coverage", "labour_ledger_sweep", "labour_caps", "labour_retrying_held", "labour_night", "labour_builder_self_supply_retry",
-          "labour_builder_self_supply_order_gone", "labour_builder_self_supply_tool", "labour_builder_self_supply_no_bamboo"})
+          "labour_builder_self_supply_order_gone", "labour_builder_self_supply_tool", "labour_builder_self_supply_no_bamboo",
+          "labour_builder_self_supply_needs"})
         {
             if (skipped(name))
             {
@@ -1271,6 +1276,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "labour_builder_self_supply_order_gone" -> LabourGameTests::builderLetsGoWhenTheOrderEnds;
                 case "labour_builder_self_supply_tool" -> LabourGameTests::builderMakesHisOwnTool;
                 case "labour_builder_self_supply_no_bamboo" -> LabourGameTests::builderMakesNoScaffoldingFromNothing;
+                case "labour_builder_self_supply_needs" -> LabourGameTests::builderNeedsDoNotCountAgainstTheRequest;
                 default -> LabourGameTests::coloniesAreIsolated;
             };
             event.registerTest(

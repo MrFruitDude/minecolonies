@@ -746,11 +746,122 @@ final class WaveBLabourGameTests
         });
     }
 
+    // ------------------------------------------------------------------ round 8: finished decorations, zones saved before the tops were kept
+
+    /**
+     * A decoration finished before this build (no work order, no record of placed blocks): only its controller block stands, with the blueprint's corners. Labour digs
+     * the zone's dirt only outside the decoration's box.
+     */
+    public static void aFinishedDecorationInAZoneIsLeftAlone(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "waveb quarry decoration");
+        final Colony colony = (Colony) f.colony;
+        ground(helper, 29, 19, 36, 24);
+        for (int x = 30; x <= 35; x++)
+        {
+            for (int z = 20; z <= 23; z++)
+            {
+                helper.setBlock(new BlockPos(x, 1, z), Blocks.DIRT.defaultBlockState());
+            }
+        }
+        // the controller stands one above the decoration's ground, its corners (relative) span x 33..35, z 20..22 at y 1
+        final BlockPos controllerRel = new BlockPos(33, 2, 20);
+        helper.setBlock(controllerRel, ModBlocks.blockDecorationPlaceholder.defaultBlockState());
+        helper.assertTrue(helper.getLevel().getBlockEntity(helper.absolutePos(controllerRel)) instanceof com.minecolonies.core.tileentities.TileEntityDecorationController,
+          "no decoration controller block entity");
+        final var controller = (com.minecolonies.core.tileentities.TileEntityDecorationController) helper.getLevel().getBlockEntity(helper.absolutePos(controllerRel));
+        final BlockPos a = helper.absolutePos(new BlockPos(33, 1, 20)).subtract(helper.absolutePos(controllerRel));
+        final BlockPos b = helper.absolutePos(new BlockPos(35, 1, 22)).subtract(helper.absolutePos(controllerRel));
+        controller.setSchematicCorners(a, b);
+        helper.runAfterDelay(100, () -> {
+            colony.getLabourBoard().sites().invalidate();
+            helper.assertTrue(colony.getWorkManager().getWorkOrders().isEmpty(), "a work order is queued: " + colony.getWorkManager().getWorkOrders().size());
+            helper.assertTrue(colony.getLabourBoard().sites().protectedBlock(helper.absolutePos(new BlockPos(34, 1, 21))), "the decoration's ground is not protected");
+            helper.assertTrue(!colony.getLabourBoard().sites().protectedBlock(helper.absolutePos(new BlockPos(30, 1, 21))), "ground outside the decoration is protected");
+            helper.assertTrue(colony.getLabourBoard().markQuarry(area(helper, 30, 20, 35, 23)).zone() != null, "the zone was refused");
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            final IToken<?> dirt = ask(f.builder, new ItemStack(Items.DIRT, 6));
+            poll(helper, List.of(colony), 9000, () -> {
+                // the box with its 1 block margin: x 32..36, z 19..23; in the zone that is x 32..35, z 20..23
+                helper.assertTrue(count(helper, Blocks.DIRT, 32, 20, 35, 23, 1) == 16, "dirt of the decoration's box was dug: " + count(helper, Blocks.DIRT, 32, 20, 35, 23, 1));
+                return inHut(f.builder, Items.DIRT) >= 6;
+            }, () -> {
+                end();
+                helper.succeed();
+            }, () -> describe(f, dirt, idle));
+        });
+    }
+
+    /**
+     * A zone saved before the tops were kept (one surface: the lowest, here the stone of a pit, quarry depth 1). On load it is pending; when its columns are loaded
+     * each top is sampled from the ground (the dirt) and never below the old surface: the dirt is dug, the stone under it is not (the old rule took it too).
+     */
+    public static void aZoneSavedBeforeTheTopsIsSampledOnce(final GameTestHelper helper)
+    {
+        begin();
+        LabourSettings.override("quarryDepth", 1);
+        final RsFixture f = found(helper, "waveb quarry legacy");
+        final Colony colony = (Colony) f.colony;
+        ground(helper, 29, 19, 35, 24);
+        for (int x = 30; x <= 33; x++)
+        {
+            for (int z = 20; z <= 22; z++)
+            {
+                helper.setBlock(new BlockPos(x, 1, z), Blocks.DIRT.defaultBlockState());
+                helper.setBlock(new BlockPos(x, -1, z), Blocks.STONE.defaultBlockState());
+            }
+        }
+        helper.runAfterDelay(100, () -> {
+            final DirectedOrder.Area area = area(helper, 30, 20, 33, 22);
+            final net.minecraft.nbt.CompoundTag item = new net.minecraft.nbt.CompoundTag();
+            item.putInt("id", 1);
+            item.putIntArray("area", new int[] {area.minX(), area.minZ(), area.maxX(), area.maxZ()});
+            item.putInt("surface", helper.absolutePos(new BlockPos(30, 0, 20)).getY());
+            final net.minecraft.nbt.ListTag list = new net.minecraft.nbt.ListTag();
+            list.add(item);
+            final net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
+            tag.put("zones", list);
+            tag.putInt("next", 2);
+            final QuarryZones quarries = colony.getLabourData().quarries();
+            quarries.read(tag);
+            colony.getLabourBoard().sites().invalidate();
+            helper.assertTrue(quarries.zones().size() == 1 && quarries.pending(1), "the old zone was not read as pending");
+            helper.assertTrue(!colony.getLabourBoard().sites().quarryAllows(helper.absolutePos(new BlockPos(31, 1, 21))), "a pending zone allows digging");
+            // still the old form when saved before it was sampled
+            helper.assertTrue(quarries.write().getListOrEmpty("zones").getCompoundOrEmpty(0).contains("surface"), "a pending zone was saved in the new form");
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            InventoryUtils.addItemStackToItemHandler(idle.getInventory(), new ItemStack(Items.WOODEN_PICKAXE));
+            final IToken<?> dirt = ask(f.builder, new ItemStack(Items.DIRT, 12));
+            final IToken<?> cobble = ask(f.builder, new ItemStack(Items.COBBLESTONE, 2));
+            final long[] doneAt = {-1L};
+            poll(helper, List.of(colony), 9000, () -> {
+                helper.assertTrue(count(helper, Blocks.STONE, 30, 20, 33, 22, 0) == 12, "stone under the dirt was dug: " + count(helper, Blocks.STONE, 30, 20, 33, 22, 0));
+                if (doneAt[0] < 0)
+                {
+                    if (inHut(f.builder, Items.DIRT) >= 12)
+                    {
+                        doneAt[0] = helper.getLevel().getGameTime();
+                    }
+                    return false;
+                }
+                return helper.getLevel().getGameTime() - doneAt[0] >= 800;
+            }, () -> {
+                helper.assertTrue(!quarries.pending(1), "the zone is still pending");
+                final int top = quarries.zones().get(0).top(area.minX(), area.minZ());
+                helper.assertTrue(top == helper.absolutePos(new BlockPos(30, 1, 20)).getY(), "the sampled top is not the dirt: " + top);
+                helper.assertTrue(quarries.write().getListOrEmpty("zones").getCompoundOrEmpty(0).contains("tops"), "the sampled zone was not saved with its tops");
+                end();
+                helper.succeed();
+            }, () -> "pending " + quarries.pending(1) + " dirt " + describe(f, dirt, idle) + " | cobble " + f.describe(cobble));
+        });
+    }
+
     // ------------------------------------------------------------------ registration
 
     static final String[] NAMES = {"labour_quarry_auto", "labour_quarry_directed", "labour_quarry_isolated", "labour_glass", "labour_early_grace", "labour_hut_debt",
       "labour_hut_owed_rules", "labour_hut_debt_reload", "labour_quarry_pit", "labour_quarry_road",
-      "labour_hut_loan"};
+      "labour_hut_loan", "labour_quarry_decoration", "labour_quarry_legacy"};
 
     static java.util.function.Consumer<GameTestHelper> test(final String name)
     {
@@ -766,6 +877,8 @@ final class WaveBLabourGameTests
             case "labour_quarry_pit" -> WaveBLabourGameTests::aPitDoesNotDeepenTheQuarry;
             case "labour_quarry_road" -> WaveBLabourGameTests::aRoadInAZoneIsLeftAlone;
             case "labour_hut_loan" -> WaveBLabourGameTests::unbuiltOwedHutBuildsOrGoesBack;
+            case "labour_quarry_decoration" -> WaveBLabourGameTests::aFinishedDecorationInAZoneIsLeftAlone;
+            case "labour_quarry_legacy" -> WaveBLabourGameTests::aZoneSavedBeforeTheTopsIsSampledOnce;
             default -> WaveBLabourGameTests::owedHutItemIsMadeByLabour;
         };
     }
