@@ -495,7 +495,7 @@ final class BuilderScaffoldGameTests
     public static void floodedCellIsFilled(final GameTestHelper helper)
     {
         floodSeen = false;
-        tallStructure(helper, "flooded_cell", () -> shape("flooded_cell", 3, 1, 3, (x, y, z) -> true), true, 12_000, false, (live, origin) -> {
+        tallStructure(helper, "flooded_cell", () -> shape("flooded_cell", 3, 2, 3, (x, y, z) -> y == 0), true, 12_000, false, (live, origin) -> {
             for (int x = -1; x <= 3; x++)
             {
                 for (int z = -1; z <= 3; z++)

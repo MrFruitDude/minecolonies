@@ -504,10 +504,9 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
     /** Spots tried for one block (picked, walked to, the block still out of reach) before he works from MineColonies' working range instead. */
     static final int REACH_FALLBACK_MISSES = 4;
-    /** Ticks on one block while no tower can come (no scaffolding, none in time) before he works from MineColonies' working range instead. */
+    /** Ticks on one block while the tower for it waits for scaffolding items that do not come (none at all, or not delivered) before he works from MineColonies'
+     * working range instead. A block no tower can serve (no place for one, over lava) is left to the unstuck ladder, which gives it up. */
     static final long REACH_FALLBACK_STARVED_TICKS = 1200L;
-    /** Ticks on one block in any case before he works from MineColonies' working range instead. */
-    static final long REACH_FALLBACK_TICKS = 4800L;
     /** Ticks on a flooded block (water in the cell to fill) before he places into it from MineColonies' working range: the stand spots around it are in water. */
     static final long REACH_FALLBACK_FLOODED_TICKS = 200L;
     /** MineColonies' own working range around the block (horizontal, and up or down), as the builder without physical reach uses it. */
@@ -541,14 +540,13 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
 
     /**
-     * Whether the builder reaches the block from where he stands: from his eye, or by the one spot rule ({@link ReachSpots#reachesFrom}) for the cell he
-     * stands in, the rule the spot search used to send him there.
+     * Whether the builder reaches the block from where he stands, measured from his real eye. The spot search picks spots by the same eye height
+     * ({@link ReachSpots#reachesFrom}: slab floors, scaffolding tops), with a margin for standing off the middle of the spot.
      */
     private boolean standingReaches(final BlockPos pos)
     {
-        final double reach = WorkerSettings.reach();
-        return BuildReach.inReach(worker.getX(), worker.getEyeY(), worker.getZ(), pos, reach)
-                 || ReachSpots.reachesFrom(world, standCell(), worker.getEyeHeight(), pos, reach - ReachSpots.MARGIN);
+        // (his real eye only: the spot rule measures from the middle of the cell, and a builder off the middle by more than the margin would reach too far)
+        return BuildReach.inReach(worker.getX(), worker.getEyeY(), worker.getZ(), pos, WorkerSettings.reach());
     }
 
     /**
@@ -579,8 +577,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
     /**
      * Counts the tries for the block the builder has to reach and decides whether he works on it from MineColonies' working range instead: after
-     * {@link #REACH_FALLBACK_MISSES} spots that did not work, {@link #REACH_FALLBACK_STARVED_TICKS} while no tower can come, {@link #REACH_FALLBACK_TICKS} in
-     * any case, or {@link #REACH_FALLBACK_FLOODED_TICKS} on a flooded cell. The reason is logged once per block.
+     * {@link #REACH_FALLBACK_MISSES} spots that did not work, {@link #REACH_FALLBACK_STARVED_TICKS} while the tower waits for items that do not come, or
+     * {@link #REACH_FALLBACK_FLOODED_TICKS} on a flooded cell. The reason is logged once per block. Blocks no tower can serve stay with the unstuck ladder.
      *
      * @return true if the block is now worked on from the working range.
      */
@@ -598,7 +596,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             return true;
         }
         final long age = now - reachTrySince;
-        final boolean starved = scaffold.unavailable() || scaffold.hasNoItems() || scaffold.waitingForStock();
+        final boolean starved = scaffold.hasNoItems() || scaffold.waitingForStock();
         final boolean flooded = flooded(target);
         final String why;
         if (reachTryMisses >= REACH_FALLBACK_MISSES)
@@ -611,11 +609,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         }
         else if (starved && age >= REACH_FALLBACK_STARVED_TICKS)
         {
-            why = "no tower can come (scaffolding " + (scaffold.hasNoItems() ? "none" : scaffold.waitingForStock() ? "not delivered" : "unavailable") + ")";
-        }
-        else if (age >= REACH_FALLBACK_TICKS || age < 0)
-        {
-            why = "no spot reached it in " + age + " ticks";
+            why = "no tower can come (scaffolding " + (scaffold.hasNoItems() ? "none" : "not delivered") + ")";
         }
         else
         {
