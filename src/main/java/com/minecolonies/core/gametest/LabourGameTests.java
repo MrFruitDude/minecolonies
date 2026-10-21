@@ -185,6 +185,13 @@ final class LabourGameTests
                 }
             }
         }
+        // (and the loose items: the citizens of an earlier test's deleted colony drop their pockets here, and a labourer gathers loose goods; round 8 launch 2)
+        for (final net.minecraft.world.entity.item.ItemEntity item : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+          new net.minecraft.world.phys.AABB(center.getX() - radius, center.getY() - 2, center.getZ() - radius, center.getX() + radius + 1, center.getY() + 25,
+            center.getZ() + radius + 1)))
+        {
+            item.discard();
+        }
     }
 
     private static void forceArea(final ServerLevel level, final BlockPos min, final BlockPos max)
