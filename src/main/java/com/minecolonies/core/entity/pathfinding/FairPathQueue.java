@@ -10,7 +10,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * The pathfinding job queue: one FIFO per colony, and colonies take turns (round robin). A colony with many stuck
+ * The pathfinding job queue: one FIFO per colony (an insertion-ordered set, so removing a cancelled job is O(1)), and colonies take turns (round robin). A colony with many stuck
  * citizens queues many jobs, but every other colony still gets every other job slot, and one colony may fill at most
  * a part of the queue, so it cannot make every other colony's jobs be rejected. Jobs without a colony share one turn.
  * Bounded; a full queue (or a full colony share) refuses the offer, which the executor turns into a failed result.
@@ -38,7 +38,7 @@ public final class FairPathQueue extends AbstractQueue<Runnable> implements Bloc
     private final Condition     notEmpty = lock.newCondition();
     private final Condition     notFull  = lock.newCondition();
 
-    private final Map<Object, ArrayDeque<Runnable>> queues = new HashMap<>();
+    private final Map<Object, LinkedHashSet<Runnable>> queues = new HashMap<>();
     private final ArrayDeque<Object>                turns  = new ArrayDeque<>();
     private       int                               count  = 0;
 
@@ -71,10 +71,10 @@ public final class FairPathQueue extends AbstractQueue<Runnable> implements Bloc
             return false;
         }
         final Object key = keyOf(task);
-        ArrayDeque<Runnable> queue = queues.get(key);
+        LinkedHashSet<Runnable> queue = queues.get(key);
         if (queue == null)
         {
-            queue = new ArrayDeque<>();
+            queue = new LinkedHashSet<>();
             queues.put(key, queue);
             turns.addLast(key);
         }
@@ -82,7 +82,10 @@ public final class FairPathQueue extends AbstractQueue<Runnable> implements Bloc
         {
             return false;
         }
-        queue.addLast(task);
+        if (!queue.add(task))
+        {
+            return false;
+        }
         count++;
         notEmpty.signal();
         return true;
@@ -94,8 +97,8 @@ public final class FairPathQueue extends AbstractQueue<Runnable> implements Bloc
     private Runnable take0()
     {
         final Object key = turns.pollFirst();
-        final ArrayDeque<Runnable> queue = queues.get(key);
-        final Runnable task = queue.pollFirst();
+        final LinkedHashSet<Runnable> queue = queues.get(key);
+        final Runnable task = queue.removeFirst();
         if (queue.isEmpty())
         {
             queues.remove(key);
@@ -228,7 +231,7 @@ public final class FairPathQueue extends AbstractQueue<Runnable> implements Bloc
         lock.lock();
         try
         {
-            return count == 0 ? null : queues.get(turns.peekFirst()).peekFirst();
+            return count == 0 ? null : queues.get(turns.peekFirst()).getFirst();
         }
         finally
         {
@@ -275,7 +278,7 @@ public final class FairPathQueue extends AbstractQueue<Runnable> implements Bloc
         try
         {
             final Object key = keyOf(task);
-            final ArrayDeque<Runnable> queue = queues.get(key);
+            final LinkedHashSet<Runnable> queue = queues.get(key);
             if (queue == null || !queue.remove(task))
             {
                 return false;
