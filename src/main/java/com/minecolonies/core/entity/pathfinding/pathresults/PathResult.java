@@ -70,8 +70,9 @@ public class PathResult<T extends AbstractPathJob>
     public volatile boolean searchExhausted = false;
 
     /**
-     * When the search exhausted after at least ColonyUnreachableCache.MIN_PROOF_NODES nodes: every position it reached,
-     * packed (BlockPos.asLong) and sorted; null otherwise or when there were more than MAX_PROOF_POSITIONS.
+     * When the search of a colony's walker exhausted after at least ColonyUnreachableCache.MIN_PROOF_NODES nodes: every
+     * position it reached, packed (BlockPos.asLong) and sorted; null otherwise, when there were more than
+     * MAX_PROOF_POSITIONS, or after the navigator handed it to the cache.
      */
     @org.jetbrains.annotations.Nullable
     public volatile long[] reachablePositions = null;

@@ -192,16 +192,6 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     private volatile long startOrder = 0;
 
     /**
-     * Whether the heuristic was already scaled down for roads (see {@link #scaleHeuristicOnRoads()}).
-     */
-    private boolean roadSeen = false;
-
-    /**
-     * Whether this search did scale its heuristic for roads.
-     */
-    private volatile boolean roadScaled = false;
-
-    /**
      * The heuristic multiplier at the start of the search, for logs.
      */
     private volatile double startHeuristicMod = 0;
@@ -352,14 +342,6 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
         }
 
         return null;
-    }
-
-    /**
-     * @return true if this search scaled its heuristic for roads.
-     */
-    public boolean isRoadScaled()
-    {
-        return roadScaled;
     }
 
     /**
@@ -569,7 +551,9 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
         if (!reachesDestination && nodesToVisit.isEmpty())
         {
             result.searchExhausted = true;
-            if (totalNodesVisited >= ColonyUnreachableCache.MIN_PROOF_NODES && nodes.size() <= ColonyUnreachableCache.MAX_PROOF_POSITIONS)
+            // (only for a walker of a colony: nobody else can use the proof)
+            if (queueKey instanceof Pathfinding.ColonyKey
+                  && totalNodesVisited >= ColonyUnreachableCache.MIN_PROOF_NODES && nodes.size() <= ColonyUnreachableCache.MAX_PROOF_POSITIONS)
             {
                 // every node was visited: these are all the positions reachable from the start (proof for the colony cache)
                 final long[] reachable = new long[nodes.size()];
@@ -795,40 +779,6 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     }
 
     /**
-     * Whether the heuristic is scaled by the road step cost once the search sees its first road block. A road step costs
-     * 1 / road speed, so a heuristic of one per block overestimates on roads; scaling it keeps the search close to
-     * admissible there and finds a road a few blocks off the straight line. Searches that never touch a road keep their
-     * old heuristic (and their old routes).
-     *
-     * @return true for jobs with a fixed destination whose end score does not depend on the heuristic.
-     */
-    protected boolean scaleHeuristicOnRoads()
-    {
-        return false;
-    }
-
-    /**
-     * Multiplies the heuristic by a factor and re-queues every open node with its new value (one O(open) rebuild).
-     *
-     * @param factor the factor.
-     */
-    private void scaleHeuristic(final double factor)
-    {
-        heuristicMod *= factor;
-        final List<MNode> open = new ArrayList<>(nodesToVisit);
-        nodesToVisit.clear();
-        for (final MNode recalc : open)
-        {
-            recalcHeuristic(recalc);
-            nodesToVisit.offer(recalc);
-        }
-        if (startNode != null)
-        {
-            recalcHeuristic(startNode);
-        }
-    }
-
-    /**
      * Recalculates the heuristic value for the node
      *
      * @param node given node
@@ -1039,16 +989,6 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
 
         final boolean swimStart = isSwimming && !node.isSwimming();
         final boolean onRoad = WorkerUtil.isPathBlock(belowState.getBlock());
-        if (onRoad && !roadSeen && !isSwimming)
-        {
-            roadSeen = true;
-            if (scaleHeuristicOnRoads() && pathingOptions.roadHeuristicScale && pathingOptions.onPathCost < 1)
-            {
-                scaleHeuristic(pathingOptions.onPathCost);
-                roadScaled = true;
-                Pathfinding.Stats.roadScaleApplied.incrementAndGet();
-            }
-        }
         final boolean onRails = pathingOptions.canUseRails() && (corner ? belowState : state).getBlock() instanceof BaseRailBlock;
         final boolean railsExit = !onRails && node != null && node.isOnRails();
         final boolean ladder = PathfindingUtils.isLadder(state, pathingOptions, nextX, nextY, nextZ, cachedBlockLookup);

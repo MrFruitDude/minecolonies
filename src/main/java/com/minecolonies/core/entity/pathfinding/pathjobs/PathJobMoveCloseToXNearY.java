@@ -53,12 +53,6 @@ public class PathJobMoveCloseToXNearY extends AbstractPathJob implements IDestin
     }
 
     @Override
-    protected boolean scaleHeuristicOnRoads()
-    {
-        return true;
-    }
-
-    @Override
     protected boolean isAtDestination(@NotNull final MNode n)
     {
         if (desiredPosition.getX() == n.x && desiredPosition.getZ() == n.z)

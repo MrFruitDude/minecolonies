@@ -37,8 +37,7 @@ public final class Pathfinding
 
     /**
      * Job counters: what was submitted, rejected and how many searches ran at once; nodes searched, failed searches and
-     * their nodes, time jobs waited in the queue, jobs refused by the colony unreachable cache, route hint use, and
-     * searches whose heuristic was scaled for roads. Cheap atomics,
+     * their nodes, time jobs waited in the queue, jobs refused by the colony unreachable cache, and route hint use. Cheap atomics,
      * readable for perf logging and by GameTests.
      */
     public static final class Stats
@@ -57,7 +56,6 @@ public final class Pathfinding
         public static final AtomicLong    routeHintQueries     = new AtomicLong();
         public static final AtomicLong    routeLegs            = new AtomicLong();
         public static final AtomicLong    routeFallbacks       = new AtomicLong();
-        public static final AtomicLong    roadScaleApplied     = new AtomicLong();
 
         private Stats()
         {
@@ -80,7 +78,6 @@ public final class Pathfinding
             routeHintQueries.set(0);
             routeLegs.set(0);
             routeFallbacks.set(0);
-            roadScaleApplied.set(0);
             peakRunning.set(running.get());
         }
 
@@ -133,10 +130,10 @@ public final class Pathfinding
         {
             final long n = started.get();
             return String.format("submitted %d, rejected %d, started %d, peak running %d, nodes %d, failed %d (%d nodes), queue wait avg %.2f ms max %.2f ms, "
-                                   + "cache refusals %d, route queries %d legs %d fallbacks %d, road scale applied %d",
+                                   + "cache refusals %d, route queries %d legs %d fallbacks %d",
               submitted.get(), rejected.get(), n, peakRunning.get(), nodesSearched.get(), failedSearches.get(), failedSearchNodes.get(),
               n == 0 ? 0D : queueWaitNanos.get() / 1e6 / n, queueWaitMaxNanos.get() / 1e6, unreachableCacheHits.get(), routeHintQueries.get(), routeLegs.get(),
-              routeFallbacks.get(), roadScaleApplied.get());
+              routeFallbacks.get());
         }
     }
 

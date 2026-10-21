@@ -799,6 +799,48 @@ public final class PathfindingGameTests
     }
 
     /**
+     * path_close_to_after_exact_proof (review c3 M1): host A of colony 1 proves the sealed block unreachable with an exact
+     * move-to search (exhausted, 500+ nodes). Host E of the same colony, on A's reachable floor, asks for an exact walk to
+     * it and must be refused. Host Bh of the same colony, also on that floor, starts a builder's close-to walk to the
+     * same block: an exact proof must not refuse it, so its search is submitted and runs.
+     */
+    public static void pathCloseToAfterExactProof(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        sealTarget(helper, SEALED_TARGET);
+        final Host a = new Host(helper, new BlockPos(-6, 1, -6));
+        final Host e = new Host(helper, new BlockPos(-6, 1, 4));
+        final Host bh = new Host(helper, new BlockPos(-4, 1, 4));
+        final BlockPos target = helper.absolutePos(SEALED_TARGET);
+        final Map<Mob, Integer> ids = new java.util.HashMap<>();
+        ids.put(a.mob, 1);
+        ids.put(e.mob, 1);
+        ids.put(bh.mob, 1);
+        final AutoCloseable colonies = testColonies(helper.getLevel(), ids);
+        observeAll(a, e, bh);
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () ->
+          drive(helper, a, () -> target, 0, 100, t -> a.jobs.size() >= 2, () ->
+            drive(helper, e, () -> target, 0, 50, t -> false, () -> {
+                final PathResult<?> closeTo = bh.nav.setPathJob(
+                  new com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveCloseToXNearY(helper.getLevel(), target, target, 1, bh.mob), target, 1.0D, false);
+                waitAll(helper, closeTo == null ? List.of() : List.of(closeTo), System.nanoTime(), 0, () -> {
+                    Pathfinding.submitObserver = null;
+                    close(colonies);
+                    final PathResult<?> first = a.jobs.isEmpty() ? null : a.jobs.get(0).getResult();
+                    final String s = String.format("R10 close-to after exact proof: A first exhausted %s (%d nodes), E exact %d jobs, builder close-to %s, %d jobs (%d nodes)",
+                      first != null && first.searchExhausted, first == null ? 0 : first.searchedNodes, e.jobs.size(), closeTo == null ? "REFUSED" : "submitted",
+                      bh.jobs.size(), closeTo == null ? 0 : closeTo.searchedNodes);
+                    Log.getLogger().info(s);
+                    helper.assertTrue(first != null && first.searchExhausted && first.searchedNodes >= 500, "fixture: A's exact search was no proof. " + s);
+                    helper.assertTrue(e.jobs.isEmpty(), "fixture: the exact proof did not refuse an exact walk. " + s);
+                    helper.assertTrue(closeTo != null && bh.jobs.size() == 1, "an exact move-to proof refused a builder's close-to walk. " + s);
+                    helper.succeed();
+                });
+            }))));
+    }
+
+    /**
      * path_colony_cache_walled_yard: host T of colony 1 stands in a walled yard (26 x 26, 3 high, closed) and asks for an
      * open target outside; its search exhausts the yard (500+ nodes, strong proof for positions inside the yard). Host U
      * of colony 1, inside the yard, must be refused. Host B of colony 1, 10 blocks from T on the other side of the wall,
@@ -945,9 +987,9 @@ public final class PathfindingGameTests
     }
 
     /**
-     * path_road_heuristic_nodes (M3 measurement): a road grid (stone brick lines every 8 blocks both ways) and 8 trips
-     * between off-road points, each searched with and without the road heuristic scale (cost jitter off). Logged: total
-     * nodes, walk time (1 per off-road step, 1/1.3 on road) and road share for both. Every trip must reach both ways.
+     * path_road_heuristic_nodes: a road grid (stone brick lines every 8 blocks both ways) and 8 trips between off-road
+     * points (cost jitter off). Logged: total nodes, walk time (1 per off-road step, 1/1.3 on road) and road share. Every
+     * trip must reach and most steps must be on road.
      */
     public static void pathRoadHeuristicNodes(final GameTestHelper helper)
     {
@@ -963,41 +1005,33 @@ public final class PathfindingGameTests
         }
         final int[][] trips = {{-6, -6, 57, 37}, {57, -6, -6, 37}, {1, 2, 50, 30}, {-2, 30, 54, -2}, {10, 10, 46, 26}, {22, -7, 30, 38}, {-7, 18, 58, 18}, {34, 2, 2, 34}};
         helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
-            final List<PathJobMoveToLocation> on = new ArrayList<>();
-            final List<PathJobMoveToLocation> off = new ArrayList<>();
+            final List<PathJobMoveToLocation> jobs = new ArrayList<>();
             for (final int[] trip : trips)
             {
-                for (final boolean scale : new boolean[] {true, false})
-                {
-                    final PathJobMoveToLocation job = new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(trip[0], 1, trip[1])),
-                      helper.absolutePos(new BlockPos(trip[2], 1, trip[3])), 48, null);
-                    job.getPathingOptions().randomnessFactor = 0.0D;
-                    job.getPathingOptions().roadHeuristicScale = scale;
-                    (scale ? on : off).add(job);
-                    Pathfinding.enqueue(job);
-                }
+                final PathJobMoveToLocation job = new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(trip[0], 1, trip[1])),
+                  helper.absolutePos(new BlockPos(trip[2], 1, trip[3])), 48, null);
+                job.getPathingOptions().randomnessFactor = 0.0D;
+                jobs.add(job);
+                Pathfinding.enqueue(job);
             }
             final List<PathResult<?>> all = new ArrayList<>();
-            on.forEach(j -> all.add(j.getResult()));
-            off.forEach(j -> all.add(j.getResult()));
+            jobs.forEach(j -> all.add(j.getResult()));
             waitAll(helper, all, System.nanoTime(), 0, () -> {
-                final double[] onNums = roadTotals(helper, on);
-                final double[] offNums = roadTotals(helper, off);
-                final String s = String.format("R10 road heuristic: scale on %d reached, %.0f nodes, walk time %.1f, road share %.2f; scale off %d reached, %.0f nodes, "
-                                                 + "walk time %.1f, road share %.2f; nodes ratio on/off %.2f",
-                  (int) onNums[0], onNums[1], onNums[2], onNums[3], (int) offNums[0], offNums[1], offNums[2], offNums[3], onNums[1] / Math.max(1, offNums[1]));
+                final double[] n = roadTotals(helper, jobs);
+                final String s = String.format("R10 road grid: %d of %d reached, %.0f nodes, walk time %.1f, road share %.2f", (int) n[0], trips.length, n[1], n[2], n[3]);
                 Log.getLogger().info(s);
-                helper.assertTrue(onNums[0] == trips.length && offNums[0] == trips.length, "a road grid trip did not reach. " + s);
+                helper.assertTrue(n[0] == trips.length, "a road grid trip did not reach. " + s);
+                helper.assertTrue(n[3] >= 0.5D, "the trips do not use the roads. " + s);
                 helper.succeed();
             });
         }));
     }
 
     /**
-     * path_road_heuristic_citizen (M3): a real citizen's navigator gives the heuristic. A road grid with 5 x 5 stone
-     * buildings in its cells, 8 trips between building sides, each searched with and without the road scale, once with the
-     * citizen's own learned average and once with it set to 0.3 (multiplier 1.3). Logged: nodes, walk time, how often the
-     * scale fired. Every trip must reach.
+     * path_road_heuristic_citizen: a real citizen's navigator gives the heuristic. A road grid with small stone buildings
+     * in its cells, 8 trips between building sides, once with the citizen's own learned average and once with it set to
+     * 0.3 (multiplier 1.3). Logged: nodes, walk time, road share. Every trip must reach. The test removes its citizen,
+     * its colony and its forced chunks at the end.
      */
     public static void pathRoadHeuristicCitizen(final GameTestHelper helper)
     {
@@ -1040,50 +1074,50 @@ public final class PathfindingGameTests
             final AbstractEntityCitizen citizen = data.getEntity().get();
             final MinecoloniesAdvancedPathNavigate nav = (MinecoloniesAdvancedPathNavigate) citizen.getNavigation();
             final double learned = nav.getAvgHeuristicModifier();
-            final StringBuilder out = new StringBuilder("R10 road heuristic citizen:");
+            final StringBuilder out = new StringBuilder("R10 road citizen:");
             final boolean[] allReached = {true};
-            final long[] scaleFired = {0};
             final Runnable[] round = new Runnable[1];
             final double[] avgs = {learned, 0.3D};
             final int[] index = {0};
+            final Runnable cleanup = () -> {
+                citizen.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+                com.minecolonies.api.colony.IColonyManager.getInstance().deleteColonyByWorld(colony.getID(), false, level);
+                for (int cx = Math.min(a.getX(), b.getX()) >> 4; cx <= Math.max(a.getX(), b.getX()) >> 4; cx++)
+                {
+                    for (int cz = Math.min(a.getZ(), b.getZ()) >> 4; cz <= Math.max(a.getZ(), b.getZ()) >> 4; cz++)
+                    {
+                        level.setChunkForced(cx, cz, false);
+                    }
+                }
+            };
             round[0] = () -> {
                 if (index[0] >= avgs.length)
                 {
+                    cleanup.run();
                     final String s = out.append(" (avg ").append(String.format("%.2f", learned)).append(" learned at spawn)").toString();
                     Log.getLogger().info(s);
                     helper.assertTrue(allReached[0], "a road grid trip did not reach. " + s);
-                    helper.assertTrue(scaleFired[0] > 0, "fixture: the road scale never fired. " + s);
                     helper.succeed();
                     return;
                 }
                 final double avg = avgs[index[0]++];
                 nav.setAvgHeuristicModifierForTests(avg);
-                final List<PathJobMoveToLocation> on = new ArrayList<>();
-                final List<PathJobMoveToLocation> off = new ArrayList<>();
+                final List<PathJobMoveToLocation> jobs = new ArrayList<>();
                 for (final int[] trip : trips)
                 {
-                    for (final boolean scale : new boolean[] {true, false})
-                    {
-                        final PathJobMoveToLocation job = new PathJobMoveToLocation(level, helper.absolutePos(new BlockPos(trip[0], 1, trip[1])),
-                          helper.absolutePos(new BlockPos(trip[2], 1, trip[3])), 48, citizen);
-                        job.getPathingOptions().randomnessFactor = 0.0D;
-                        job.getPathingOptions().roadHeuristicScale = scale;
-                        (scale ? on : off).add(job);
-                        Pathfinding.enqueue(job);
-                    }
+                    final PathJobMoveToLocation job = new PathJobMoveToLocation(level, helper.absolutePos(new BlockPos(trip[0], 1, trip[1])),
+                      helper.absolutePos(new BlockPos(trip[2], 1, trip[3])), 48, citizen);
+                    job.getPathingOptions().randomnessFactor = 0.0D;
+                    jobs.add(job);
+                    Pathfinding.enqueue(job);
                 }
                 final List<PathResult<?>> all = new ArrayList<>();
-                on.forEach(j -> all.add(j.getResult()));
-                off.forEach(j -> all.add(j.getResult()));
+                jobs.forEach(j -> all.add(j.getResult()));
                 waitAll(helper, all, System.nanoTime(), 0, () -> {
-                    final double[] onNums = roadTotals(helper, on);
-                    final double[] offNums = roadTotals(helper, off);
-                    final long fired = on.stream().filter(AbstractPathJob::isRoadScaled).count();
-                    scaleFired[0] += fired;
-                    allReached[0] &= onNums[0] == trips.length && offNums[0] == trips.length;
-                    out.append(String.format(" | multiplier %.2f: scale on %.0f nodes (fired in %d of %d), walk %.1f, road %.2f; off %.0f nodes, walk %.1f, road %.2f; "
-                                               + "nodes on/off %.2f", on.get(0).getStartHeuristicMod(), onNums[1], fired, trips.length, onNums[2], onNums[3], offNums[1],
-                      offNums[2], offNums[3], onNums[1] / Math.max(1, offNums[1])));
+                    final double[] n = roadTotals(helper, jobs);
+                    allReached[0] &= n[0] == trips.length;
+                    out.append(String.format(" | multiplier %.2f: %d of %d reached, %.0f nodes, walk %.1f, road share %.2f", jobs.get(0).getStartHeuristicMod(), (int) n[0],
+                      trips.length, n[1], n[2], n[3]));
                     round[0].run();
                 });
             };

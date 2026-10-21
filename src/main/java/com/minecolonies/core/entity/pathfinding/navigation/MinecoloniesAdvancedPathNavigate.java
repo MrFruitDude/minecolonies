@@ -133,6 +133,12 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     private int      unreachableTicks  = 0;
 
     /**
+     * Whether the back-off above came from close-to walks: a close-to back-off refuses exact walks too, an exact one does
+     * not refuse close-to walks (walking next to a block that cannot be stood on still works).
+     */
+    private boolean  unreachableCloseTo = false;
+
+    /**
      * A waypoint counts as reached when the entity stands within this distance of it (squared blocks); also the
      * distance under which a hinted waypoint is skipped at the start of a leg.
      */
@@ -339,7 +345,7 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         final boolean safeDestination)
     {
         // Same refusal as walkTo, before any route query or job: a refused target asks no provider and builds nothing.
-        if (pauseTicks > 0 || isRefused(desiredPosition))
+        if (pauseTicks > 0 || isRefused(desiredPosition, true))
         {
             return null;
         }
@@ -368,7 +374,7 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
 
         // CA-11, now for the "move close to X near Y" jobs of the builders as well: an unreachable target is not searched again and again
         // (also when another citizen of the colony just found it unreachable)
-        if (job instanceof IDestinationPathJob destinationJob && isRefused(destinationJob.getDestination()))
+        if (job instanceof IDestinationPathJob destinationJob && isRefused(destinationJob.getDestination(), job instanceof PathJobMoveCloseToXNearY))
         {
             return null;
         }
@@ -659,7 +665,7 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     protected PathResult<PathJobMoveToLocation> walkTo(final BlockPos desiredPos, final double speedFactor, final boolean safeDestination)
     {
         // Same outcome as setPathJob's refusal, without first building the job's chunk cache on the server thread.
-        if (pauseTicks > 0 || isRefused(desiredPos))
+        if (pauseTicks > 0 || isRefused(desiredPos, false))
         {
             return null;
         }
@@ -883,9 +889,11 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             return;
         }
 
-        if (!dest.equals(unreachableDest))
+        final boolean closeTo = proofKind(pathResult.getJob()) == ColonyUnreachableCache.Kind.CLOSE;
+        if (!dest.equals(unreachableDest) || closeTo != unreachableCloseTo)
         {
             unreachableDest = dest;
+            unreachableCloseTo = closeTo;
             unreachableFails = 0;
             unreachableLevel = 0;
             unreachableTicks = 0;
@@ -901,8 +909,14 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         }
         // Shared with the colony only as strong proof: the search tried every node it could reach (500+), and only for
         // walkers standing on one of those positions with the same abilities. The back-off above stays this citizen's own.
-        ColonyUnreachableCache.markUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest,
-          pathResult.getJob().getPathingOptions().abilityFlags(), pathResult.reachablePositions);
+        final ColonyUnreachableCache.Kind kind = proofKind(pathResult.getJob());
+        if (kind != null)
+        {
+            ColonyUnreachableCache.markUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest,
+              pathResult.getJob().getPathingOptions().abilityFlags(), kind, pathResult.reachablePositions);
+        }
+        // the proof array can be large; the cache keeps its own reference
+        pathResult.reachablePositions = null;
     }
 
     /**
@@ -920,7 +934,8 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             return false;
         }
         return unreachableTicks > 0 && dest.equals(unreachableDest)
-                 || ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest, getOptionsForPathJob().abilityFlags(), PathfindingUtils.prepareStart(ourEntity));
+                 || ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest, getOptionsForPathJob().abilityFlags(),
+          ColonyUnreachableCache.Kind.EXACT, PathfindingUtils.prepareStart(ourEntity));
     }
 
     /**
@@ -1013,7 +1028,7 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             clearRoute();
             return null;
         }
-        if (!WorldUtil.isBlockLoaded(level, next) || isRefused(next))
+        if (!WorldUtil.isBlockLoaded(level, next) || isRefused(next, false))
         {
             abandonRoute(level, dest);
             return null;
@@ -1067,19 +1082,36 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     }
 
     /**
-     * {@link #isDestinationUnreachable}, counting refusals by the colony cache in {@link Pathfinding.Stats}.
+     * The goal kind of a job for the colony cache: exact for plain move-to jobs, close for close-to jobs, null for the
+     * rest (their goals differ, they are not shared).
      */
-    private boolean isRefused(final BlockPos dest)
+    @Nullable
+    private static ColonyUnreachableCache.Kind proofKind(final AbstractPathJob job)
+    {
+        if (job instanceof PathJobMoveCloseToXNearY)
+        {
+            return ColonyUnreachableCache.Kind.CLOSE;
+        }
+        return job != null && job.getClass() == PathJobMoveToLocation.class ? ColonyUnreachableCache.Kind.EXACT : null;
+    }
+
+    /**
+     * {@link #isDestinationUnreachable} for one goal kind, counting refusals by the colony cache in
+     * {@link Pathfinding.Stats}. A close-to walk is refused only by close-to proof (its own back-off from close-to
+     * walks, or a close-to proof of the colony).
+     */
+    private boolean isRefused(final BlockPos dest, final boolean closeTo)
     {
         if (dest == null)
         {
             return false;
         }
-        if (unreachableTicks > 0 && dest.equals(unreachableDest))
+        if (unreachableTicks > 0 && dest.equals(unreachableDest) && (unreachableCloseTo || !closeTo))
         {
             return true;
         }
-        if (ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest, getOptionsForPathJob().abilityFlags(), PathfindingUtils.prepareStart(ourEntity)))
+        if (ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest, getOptionsForPathJob().abilityFlags(),
+          closeTo ? ColonyUnreachableCache.Kind.CLOSE : ColonyUnreachableCache.Kind.EXACT, PathfindingUtils.prepareStart(ourEntity)))
         {
             Pathfinding.Stats.unreachableCacheHits.incrementAndGet();
             return true;
