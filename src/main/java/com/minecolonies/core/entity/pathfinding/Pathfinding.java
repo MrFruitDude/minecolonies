@@ -149,19 +149,58 @@ public final class Pathfinding
     }
 
     /**
-     * Maps an entity to its colony key: a citizen gives its colony, anything else null. Tests may wrap it; production
-     * code must not change it.
+     * GameTest override of the colony key: tried first, a null answer falls back to the citizen's colony. Null in
+     * production; only settable in a GameTest run.
      */
-    public static volatile Function<Mob, ColonyKey> colonyKeyResolver = Pathfinding::citizenColonyKey;
+    @Nullable
+    private static volatile Function<Mob, ColonyKey> testColonyKeys = null;
 
     /**
      * @param mob the entity, may be null.
-     * @return the colony key of the entity, or null when it belongs to no colony.
+     * @return the colony key of the entity (a citizen's colony, in the citizen's current dimension), or null when it
+     * belongs to no colony.
      */
     @Nullable
     public static ColonyKey colonyKeyOf(@Nullable final Mob mob)
     {
-        return mob == null ? null : colonyKeyResolver.apply(mob);
+        if (mob == null)
+        {
+            return null;
+        }
+        final Function<Mob, ColonyKey> override = testColonyKeys;
+        if (override != null)
+        {
+            final ColonyKey key = override.apply(mob);
+            if (key != null)
+            {
+                return key;
+            }
+        }
+        return citizenColonyKey(mob);
+    }
+
+    /**
+     * GameTests only (-Dneoforge.enableGameTest=true): gives entities that are not citizens a colony key.
+     *
+     * @param keys the override.
+     * @return closing it removes the override.
+     */
+    public static AutoCloseable overrideColonyKeysForTests(final Function<Mob, ColonyKey> keys)
+    {
+        requireGameTest();
+        testColonyKeys = keys;
+        return () -> testColonyKeys = null;
+    }
+
+    /**
+     * Throws unless this is a GameTest run, so test hooks cannot change a normal server.
+     */
+    public static void requireGameTest()
+    {
+        if (!Boolean.getBoolean("neoforge.enableGameTest"))
+        {
+            throw new IllegalStateException("pathfinding test hook outside a GameTest run");
+        }
     }
 
     @Nullable

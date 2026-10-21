@@ -2,6 +2,7 @@ package com.minecolonies.core.entity.pathfinding.pathjobs;
 
 import com.minecolonies.api.util.BlockPosUtil;
 import com.minecolonies.api.util.ShapeUtil;
+import com.minecolonies.api.util.constant.ColonyConstants;
 import com.minecolonies.core.entity.pathfinding.MNode;
 import com.minecolonies.core.entity.pathfinding.PathfindingUtils;
 import com.minecolonies.core.entity.pathfinding.SurfaceType;
@@ -27,17 +28,22 @@ public class PathJobMoveToLocation extends AbstractPathJob implements IDestinati
     private              float    destinationSlack           = DESTINATION_SLACK_NONE;
 
     /**
-     * Failed-search cap: a search that has not reached its destination never runs past this many nodes, so
-     * {@link #stopOnNodeLimit} may extend the node limit only up to it. Nodes per block of manhattan distance, a floor
-     * and a ceiling of twice {@link #MAX_NODES}.
+     * Retry cap: a search for a destination that already failed for this walker (see {@link #limitToFailedCap()}) never
+     * runs past this many nodes. Nodes per block of manhattan distance, a floor and a ceiling of twice
+     * {@link #MAX_NODES}. Normal searches keep the old budget, so long walks that succeed are not cut short.
      */
     public static final int FAILED_NODES_PER_BLOCK = 64;
     public static final int FAILED_NODES_MIN       = 2000;
 
     /**
-     * This job's failed-search cap (see {@link #failedSearchCap(int)}), scaled by the node limit config like maxNodes.
+     * This job's retry cap (see {@link #failedSearchCap(int)}), scaled by the node limit config like maxNodes.
      */
     private final int failedNodeCap;
+
+    /**
+     * Whether this search is a retry for a destination that already failed, so the retry cap applies.
+     */
+    private volatile boolean retryCapped = false;
 
     /**
      * Prepares the PathJob for the path finding system.
@@ -157,10 +163,26 @@ public class PathJobMoveToLocation extends AbstractPathJob implements IDestinati
     @Override
     protected boolean stopOnNodeLimit(final int totalNodesVisited, final MNode bestNode, final int nodesSinceEndNode)
     {
-        // While the search still finds better end nodes it may go on, but only up to a cap that grows with the distance.
-        // (It used to stretch to about 16,000 nodes, plus a random +1000 near the start: a failed search was the most
-        // expensive kind.)
-        if (nodesSinceEndNode < 200 && totalNodesVisited + 500 <= failedNodeCap)
+        if (retryCapped)
+        {
+            // A retry for a destination that failed before: it may go on while it still finds better end nodes, but only
+            // up to a cap that grows with the distance (instead of stretching to about 16,000 nodes again).
+            if (nodesSinceEndNode < 200 && totalNodesVisited + 500 <= failedNodeCap)
+            {
+                maxNodes += 500;
+                return false;
+            }
+            return true;
+        }
+
+        // Small chance to go full limit to maybe find a path still, when we did not find any good nodes to move towards
+        if (totalNodesVisited < MAX_NODES && BlockPosUtil.distManhattan(start, bestNode.x, bestNode.y, bestNode.z) < 10 && ColonyConstants.rand.nextInt(100) <= 20)
+        {
+            maxNodes += 1000;
+            return false;
+        }
+        // 10k limit for progressing
+        else if (nodesSinceEndNode < 200 && totalNodesVisited < MAX_NODES * 2)
         {
             maxNodes += 500;
             return false;
@@ -170,7 +192,24 @@ public class PathJobMoveToLocation extends AbstractPathJob implements IDestinati
     }
 
     /**
-     * The node cap of a failed move-to search over the given distance, before the node limit config.
+     * Marks this search as a retry for a destination that already failed: the retry cap applies. Call before the job is
+     * queued.
+     */
+    public void limitToFailedCap()
+    {
+        retryCapped = true;
+    }
+
+    /**
+     * @return true if the retry cap applies to this search.
+     */
+    public boolean isRetryCapped()
+    {
+        return retryCapped;
+    }
+
+    /**
+     * The node cap of a retried move-to search over the given distance, before the node limit config.
      *
      * @param manhattanDistance start to destination.
      * @return the cap.
@@ -181,7 +220,7 @@ public class PathJobMoveToLocation extends AbstractPathJob implements IDestinati
     }
 
     /**
-     * @return this job's failed-search cap, never below its starting node limit.
+     * @return this job's retry cap, never below its starting node limit.
      */
     public int getFailedNodeCap()
     {

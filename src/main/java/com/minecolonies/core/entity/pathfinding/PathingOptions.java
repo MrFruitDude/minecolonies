@@ -35,6 +35,12 @@ public class PathingOptions
     public double onPathCost = 1 / ROAD_SPEED;
 
     /**
+     * Whether move-to and close-to searches scale their heuristic by onPathCost once they touch a road (finds roads a
+     * few blocks off the straight line). On by default; GameTests switch it off to measure its node cost.
+     */
+    public boolean roadHeuristicScale = true;
+
+    /**
      * Cost improvement of paths - base 1.
      */
     public double onRailCost = 1 / 10D;
@@ -377,6 +383,7 @@ public class PathingOptions
         jumpCost = pathingOptions.jumpCost;
         dropCost = pathingOptions.dropCost;
         onPathCost = pathingOptions.onPathCost;
+        roadHeuristicScale = pathingOptions.roadHeuristicScale;
         onRailCost = pathingOptions.onRailCost;
         railsExitCost = pathingOptions.railsExitCost;
         swimCost = pathingOptions.swimCost;

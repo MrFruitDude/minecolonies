@@ -1003,7 +1003,7 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
         if (onRoad && !roadSeen && !isSwimming)
         {
             roadSeen = true;
-            if (scaleHeuristicOnRoads() && pathingOptions.onPathCost < 1)
+            if (scaleHeuristicOnRoads() && pathingOptions.roadHeuristicScale && pathingOptions.onPathCost < 1)
             {
                 scaleHeuristic(pathingOptions.onPathCost);
             }
