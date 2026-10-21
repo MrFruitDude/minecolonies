@@ -146,6 +146,15 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerPace(event);
             }
+            if (only.contains("path"))
+            {
+                registerPathfinding(event);
+            }
+            if (only.contains("workereff"))
+            {
+                // the worker efficiency tests (also -Dminecolonies.gametest.only=worker_eff), with the other groups in one JVM
+                registerWorkerEfficiency(event);
+            }
             if (only.contains("scaffold"))
             {
                 // the builder reach and scaffolding tests (also -Dminecolonies.gametest.only=scaffold), with the other groups in one JVM
@@ -214,26 +223,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
               info -> new MinecoloniesGameTestInstance(info, test),
               isolatedColonyData(event, name));
         }
-        // CA-10 / CA-11 pathfinding: each in its own batch (own environment), so no other test's path jobs share the
-        // worker pool or the submit observer while one is measured.
-        for (final String name : new String[] {"path_unreachable_backoff", "path_unreachable_other_target", "path_unreachable_recovers",
-          "path_queue_reject_marks_failed", "path_queue_parallel", "path_routes_identical", "path_citizen_walks_home"})
-        {
-            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
-            {
-                case "path_unreachable_backoff" -> PathfindingGameTests::unreachableTargetBackoff;
-                case "path_unreachable_other_target" -> PathfindingGameTests::unreachableTargetOtherTarget;
-                case "path_unreachable_recovers" -> PathfindingGameTests::unreachableTargetRecovers;
-                case "path_queue_reject_marks_failed" -> PathfindingGameTests::pathQueueRejectMarksFailed;
-                case "path_queue_parallel" -> PathfindingGameTests::pathQueueParallel;
-                case "path_routes_identical" -> PathfindingGameTests::pathRoutesIdentical;
-                default -> PathfindingGameTests::pathCitizenWalksHome;
-            };
-            event.registerTest(
-              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
-              info -> new MinecoloniesGameTestInstance(info, test),
-              isolatedColonyData(event, name));
-        }
+        registerPathfinding(event);
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rack_inventory_round_trip"),
           info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::rackInventoryRoundTrip),
@@ -962,6 +952,50 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_old_save"),
           info -> new MinecoloniesGameTestInstance(info, RequestPriorityGameTests::oldSaveLoadsWithDefaults),
           isolatedColonyData(event, "rs_prio_old_save"));
+    }
+
+    /**
+     * The pathfinding tests (CA-10 / CA-11 and round 10). Part of the full suite; run on their own with
+     * {@code MINECOLONIES_GAMETEST_ONLY=path}.
+     */
+    private void registerPathfinding(final RegisterGameTestsEvent event)
+    {
+        // CA-10 / CA-11 pathfinding: each in its own batch (own environment), so no other test's path jobs share the
+        // worker pool or the submit observer while one is measured.
+        for (final String name : new String[] {"path_unreachable_backoff", "path_unreachable_other_target", "path_unreachable_recovers",
+          "path_queue_reject_marks_failed", "path_queue_parallel", "path_routes_identical", "path_citizen_walks_home", "path_road_preference",
+          "path_unreachable_colony_cache", "path_failed_search_cap", "path_queue_fair_colonies",
+          "path_route_hints_followed", "path_route_hints_fallback", "path_colony_cache_boxed_citizen", "path_long_detour_reaches",
+          "path_road_heuristic_nodes", "path_colony_cache_walled_yard", "path_road_heuristic_citizen",
+          "path_close_to_after_exact_proof"})
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
+            {
+                case "path_unreachable_backoff" -> PathfindingGameTests::unreachableTargetBackoff;
+                case "path_unreachable_other_target" -> PathfindingGameTests::unreachableTargetOtherTarget;
+                case "path_unreachable_recovers" -> PathfindingGameTests::unreachableTargetRecovers;
+                case "path_queue_reject_marks_failed" -> PathfindingGameTests::pathQueueRejectMarksFailed;
+                case "path_queue_parallel" -> PathfindingGameTests::pathQueueParallel;
+                case "path_routes_identical" -> PathfindingGameTests::pathRoutesIdentical;
+                case "path_road_preference" -> PathfindingGameTests::pathRoadPreference;
+                case "path_unreachable_colony_cache" -> PathfindingGameTests::pathUnreachableColonyCache;
+                case "path_failed_search_cap" -> PathfindingGameTests::pathFailedSearchCap;
+                case "path_queue_fair_colonies" -> PathfindingGameTests::pathQueueFairColonies;
+                case "path_route_hints_followed" -> PathfindingGameTests::pathRouteHintsFollowed;
+                case "path_route_hints_fallback" -> PathfindingGameTests::pathRouteHintsFallback;
+                case "path_colony_cache_boxed_citizen" -> PathfindingGameTests::pathColonyCacheBoxedCitizen;
+                case "path_long_detour_reaches" -> PathfindingGameTests::pathLongDetourReaches;
+                case "path_road_heuristic_nodes" -> PathfindingGameTests::pathRoadHeuristicNodes;
+                case "path_colony_cache_walled_yard" -> PathfindingGameTests::pathColonyCacheWalledYard;
+                case "path_road_heuristic_citizen" -> PathfindingGameTests::pathRoadHeuristicCitizen;
+                case "path_close_to_after_exact_proof" -> PathfindingGameTests::pathCloseToAfterExactProof;
+                default -> PathfindingGameTests::pathCitizenWalksHome;
+            };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
     }
 
     /**

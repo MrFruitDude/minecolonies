@@ -64,6 +64,20 @@ public class PathResult<T extends AbstractPathJob>
     public int searchedNodes = 0;
 
     /**
+     * True when the search tried every node it could reach without reaching the destination (not stopped by its node
+     * limit): the destination cannot be reached from the start inside the job's search area.
+     */
+    public volatile boolean searchExhausted = false;
+
+    /**
+     * When the search of a colony's walker exhausted after at least ColonyUnreachableCache.MIN_PROOF_NODES nodes: every
+     * position it reached, packed (BlockPos.asLong) and sorted; null otherwise, when there were more than
+     * MAX_PROOF_POSITIONS, or after the navigator handed it to the cache.
+     */
+    @org.jetbrains.annotations.Nullable
+    public volatile long[] reachablePositions = null;
+
+    /**
      * The players getting debug information
      */
     private List<UUID> debugWatchers = null;
@@ -222,7 +236,13 @@ public class PathResult<T extends AbstractPathJob>
             {
                 observer.accept(job);
             }
+            if (job.getQueueKey() == null)
+            {
+                // the colony's turn in the fair queue, resolved here on the submitting (server) thread
+                job.setQueueKey(com.minecolonies.core.entity.pathfinding.Pathfinding.colonyKeyOf(job.getEntity()));
+            }
             com.minecolonies.core.entity.pathfinding.Pathfinding.Stats.submitted.incrementAndGet();
+            job.markSubmitted();
             pathCalculation = executorService.submit(job);
         }
     }
@@ -360,6 +380,10 @@ public class PathResult<T extends AbstractPathJob>
         if (pathCalculation != null)
         {
             pathCalculation.cancel(true);
+            if (pathCalculation instanceof Runnable task)
+            {
+                com.minecolonies.core.entity.pathfinding.Pathfinding.removeQueued(task);
+            }
             pathCalculation = null;
         }
 

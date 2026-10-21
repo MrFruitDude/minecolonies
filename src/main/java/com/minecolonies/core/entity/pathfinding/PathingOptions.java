@@ -13,6 +13,12 @@ public class PathingOptions
     public static final int MAX_COST = 25;
 
     /**
+     * Walk speed factor of a citizen on a road (a block in the minecolonies:pathblocks tag). The navigator applies it,
+     * and the road step cost is its inverse, so search cost and walk time agree.
+     */
+    public static final double ROAD_SPEED = 1.3D;
+
+    /**
      * Additional cost of jumping
      */
     public double jumpCost = 2D;
@@ -23,9 +29,10 @@ public class PathingOptions
     public double dropCost = 1D;
 
     /**
-     * Cost improvement of paths - base 1.
+     * Cost factor of a step on a road - base 1. The inverse of the road walk speed: a road detour is taken only when
+     * it is really faster (it used to be 1/6, which made 6x longer road detours look cheaper than they walk).
      */
-    public double onPathCost = 1 / 6d;
+    public double onPathCost = 1 / ROAD_SPEED;
 
     /**
      * Cost improvement of paths - base 1.
@@ -359,6 +366,18 @@ public class PathingOptions
     {
         this.turnPenalty = turnPenalty;
         return this;
+    }
+
+    /**
+     * The abilities that decide where a walker can go (swim, doors, gates, rails, climbing, danger, under water, drops) as
+     * bit flags, so results are shared only between walkers with the same abilities.
+     *
+     * @return the flags.
+     */
+    public int abilityFlags()
+    {
+        return (canSwim ? 1 : 0) | (enterDoors ? 2 : 0) | (canOpenDoors ? 4 : 0) | (enterGates ? 8 : 0) | (canUseRails ? 16 : 0)
+                 | (canClimbAdvanced ? 32 : 0) | (canPassDanger ? 64 : 0) | (walkUnderWater ? 128 : 0) | (canDrop ? 256 : 0);
     }
 
     /**

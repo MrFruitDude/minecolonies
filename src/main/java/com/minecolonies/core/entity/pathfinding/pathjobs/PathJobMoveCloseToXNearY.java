@@ -113,6 +113,11 @@ public class PathJobMoveCloseToXNearY extends AbstractPathJob implements IDestin
      */
     public static boolean isJobFor(final AbstractPathJob job, final BlockPos desiredPosition, final BlockPos nearbyPosition, final int distance)
     {
+        if (job != null && job.getRouteTarget() != null)
+        {
+            // one leg of a hinted route to that destination
+            return job.getRouteTarget().equals(desiredPosition);
+        }
         if (job instanceof PathJobMoveCloseToXNearY pathJob)
         {
             return pathJob.desiredPosition.equals(desiredPosition) && pathJob.nearbyPosition.equals(nearbyPosition) && pathJob.distToDesired == distance;

@@ -4,6 +4,8 @@ import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
 import com.minecolonies.api.entity.pathfinding.IStuckHandler;
+import com.minecolonies.api.pathfinding.IRouteHintProvider;
+import com.minecolonies.api.pathfinding.RouteHints;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.WorldUtil;
 import com.minecolonies.core.colony.buildings.modules.settings.BoolSetting;
@@ -644,6 +646,737 @@ public final class PathfindingGameTests
                 Log.getLogger().info(s.toString());
                 helper.assertTrue(wrong.isEmpty(), "routes differ from the pre-change node lists: " + wrong + ". " + s);
                 helper.succeed();
+            });
+        }));
+    }
+
+    // ------------------------------------------------------------------ round 10: road cost
+
+    /** Road lanes: a near road (3 blocks off the line, faster) and a far road (10 off, slower than the line). */
+    private static final int NEAR_LINE_Z = 4, NEAR_ROAD_Z = 7, FAR_LINE_Z = 24, FAR_ROAD_Z = 34;
+
+    /** Path nodes standing on a road block. */
+    private static int roadNodes(final GameTestHelper helper, final Path path)
+    {
+        int n = 0;
+        for (int i = 0; i < path.getNodeCount(); i++)
+        {
+            final Node node = path.getNode(i);
+            if (com.minecolonies.core.util.WorkerUtil.isPathBlock(helper.getLevel().getBlockState(new BlockPos(node.x, node.y - 1, node.z)).getBlock()))
+            {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /**
+     * path_road_preference: road cost is 1 / road speed. A stone brick road 3 blocks off a 63-block straight line walks in
+     * about 3 + 63 / 1.3 + 3 = 54.5 against 63, so the path must use it. A road 10 blocks off takes about 68.5, slower than
+     * the line, so that path must not use it (with the old cost of 1/6 it looked like 30.5).
+     */
+    public static void pathRoadPreference(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        fill(helper, new BlockPos(-4, 0, NEAR_ROAD_Z), new BlockPos(55, 0, NEAR_ROAD_Z), Blocks.STONE_BRICKS.defaultBlockState());
+        fill(helper, new BlockPos(-4, 0, FAR_ROAD_Z), new BlockPos(55, 0, FAR_ROAD_Z), Blocks.STONE_BRICKS.defaultBlockState());
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            final PathJobMoveToLocation near = new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(-6, 1, NEAR_LINE_Z)),
+              helper.absolutePos(new BlockPos(57, 1, NEAR_LINE_Z)), 48, null);
+            final PathJobMoveToLocation far = new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(-6, 1, FAR_LINE_Z)),
+              helper.absolutePos(new BlockPos(57, 1, FAR_LINE_Z)), 48, null);
+            near.getPathingOptions().randomnessFactor = 0.0D;
+            far.getPathingOptions().randomnessFactor = 0.0D;
+            Pathfinding.enqueue(near);
+            Pathfinding.enqueue(far);
+            waitAll(helper, List.of(near.getResult(), far.getResult()), System.nanoTime(), 0, () -> {
+                final Path nearPath = near.getResult().getPath();
+                final Path farPath = far.getResult().getPath();
+                final int nearRoad = nearPath == null ? -1 : roadNodes(helper, nearPath);
+                final int farRoad = farPath == null ? -1 : roadNodes(helper, farPath);
+                final String s = String.format("R10 road: near %s road nodes %d of %d (%d searched), far %s road nodes %d of %d (%d searched)",
+                  near.getResult().isPathReachingDestination() ? "reach" : "NOREACH", nearRoad, nearPath == null ? 0 : nearPath.getNodeCount(),
+                  near.getResult().searchedNodes, far.getResult().isPathReachingDestination() ? "reach" : "NOREACH", farRoad,
+                  farPath == null ? 0 : farPath.getNodeCount(), far.getResult().searchedNodes);
+                Log.getLogger().info(s);
+                helper.assertTrue(near.getResult().isPathReachingDestination() && far.getResult().isPathReachingDestination(), "a road route did not reach. " + s);
+                helper.assertTrue(nearRoad >= 40, "the faster road 3 blocks off the line was not used. " + s);
+                helper.assertTrue(farRoad == 0, "the slower road 10 blocks off the line was used. " + s);
+                helper.succeed();
+            });
+        }));
+    }
+
+    // ------------------------------------------------------------------ round 10: colony unreachable cache
+
+    /** Installs a submit observer that records the jobs of every host. */
+    private static void observeAll(final Host... hosts)
+    {
+        Pathfinding.submitObserver = job -> {
+            for (final Host host : hosts)
+            {
+                if (job.getEntity() == host.mob)
+                {
+                    host.jobs.add(job);
+                }
+            }
+        };
+    }
+
+    /** Maps the given hosts to colony keys for the test (the hosts are villagers, not citizens); close() restores. */
+    private static AutoCloseable testColonies(final ServerLevel level, final Map<Mob, Integer> ids)
+    {
+        return Pathfinding.overrideColonyKeysForTests(mob -> ids.containsKey(mob) ? new Pathfinding.ColonyKey(level.dimension(), ids.get(mob)) : null);
+    }
+
+    private static void close(final AutoCloseable hook)
+    {
+        try
+        {
+            hook.close();
+        }
+        catch (final Exception e)
+        {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * path_unreachable_colony_cache: host A of colony 1 searches for the sealed target from the far corner; the search
+     * tries every node of the bordered floor (strong proof, with every reachable position). Hosts B (10 blocks from A)
+     * and D (far, but on the same open floor) of colony 1 then ask for it and must not search once. Host C of colony 2
+     * must search. Then the shell is opened: the block change clears the entry and B
+     * must reach the target.
+     */
+    public static void pathUnreachableColonyCache(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        sealTarget(helper, SEALED_TARGET);
+        final Host a = new Host(helper, new BlockPos(-6, 1, -6));
+        final Host b = new Host(helper, new BlockPos(-6, 1, 4));
+        final Host c = new Host(helper, new BlockPos(-2, 1, -6));
+        final Host d = new Host(helper, new BlockPos(50, 1, 30));
+        final BlockPos target = helper.absolutePos(SEALED_TARGET);
+        final Map<Mob, Integer> ids = new java.util.HashMap<>();
+        ids.put(a.mob, 1);
+        ids.put(b.mob, 1);
+        ids.put(d.mob, 1);
+        ids.put(c.mob, 2);
+        final AutoCloseable colonies = testColonies(helper.getLevel(), ids);
+        observeAll(a, b, c, d);
+        final long[] hitsBefore = {Pathfinding.Stats.unreachableCacheHits.get()};
+        final Runnable restore = () -> {
+            Pathfinding.submitObserver = null;
+            close(colonies);
+        };
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () ->
+          drive(helper, a, () -> target, 0, 100, t -> a.jobs.size() >= 2, () ->
+            drive(helper, b, () -> target, 0, 100, t -> false, () ->
+              drive(helper, c, () -> target, 0, 100, t -> c.jobs.size() > 0, () ->
+                drive(helper, d, () -> target, 0, 100, t -> d.jobs.size() > 0, () -> {
+                    final int bBlocked = b.jobs.size();
+                    helper.setBlock(SEALED_TARGET.west(), Blocks.AIR.defaultBlockState());
+                    helper.setBlock(SEALED_TARGET.west().above(), Blocks.AIR.defaultBlockState());
+                    drive(helper, b, () -> target, 0, 300, t -> b.anyReached(target), () -> {
+                        restore.run();
+                        final PathResult<?> first = a.jobs.isEmpty() ? null : a.jobs.get(0).getResult();
+                        final String s = String.format("R10 colony cache: A first search exhausted %s (%d nodes), B (same colony, near A) %d jobs while cached then %d, "
+                                                         + "D (same colony, far, same floor) %d jobs, C (other colony) %d jobs, B reached %s, cache refusals %d",
+                          first != null && first.searchExhausted, first == null ? 0 : first.searchedNodes, bBlocked, b.jobs.size(), d.jobs.size(), c.jobs.size(),
+                          b.anyReached(target), Pathfinding.Stats.unreachableCacheHits.get() - hitsBefore[0]);
+                        Log.getLogger().info(s);
+                        helper.assertTrue(first != null && first.searchExhausted && first.searchedNodes >= 500, "fixture: A's search was not strong proof. " + s);
+                        helper.assertTrue(bBlocked == 0, "a citizen of the same colony starting near A searched the proven unreachable target. " + s);
+                        helper.assertTrue(Pathfinding.Stats.unreachableCacheHits.get() > hitsBefore[0], "no refusal by the colony cache was counted. " + s);
+                        helper.assertTrue(d.jobs.isEmpty(), "a citizen of the same colony on a position A's search reached (same proof) still searched. " + s);
+                        helper.assertTrue(c.jobs.size() >= 1, "a citizen of another colony was blocked by colony 1's cache. " + s);
+                        helper.assertTrue(b.anyReached(target), "the target was not reached after the blocks around it changed. " + s);
+                        helper.succeed();
+                    });
+                }))))));
+    }
+
+    /**
+     * path_close_to_after_exact_proof (review c3 M1): host A of colony 1 proves the sealed block unreachable with an exact
+     * move-to search (exhausted, 500+ nodes). Host E of the same colony, on A's reachable floor, asks for an exact walk to
+     * it and must be refused. Host Bh of the same colony, also on that floor, starts a builder's close-to walk to the
+     * same block: an exact proof must not refuse it, so its search is submitted and runs.
+     */
+    public static void pathCloseToAfterExactProof(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        sealTarget(helper, SEALED_TARGET);
+        final Host a = new Host(helper, new BlockPos(-6, 1, -6));
+        final Host e = new Host(helper, new BlockPos(-6, 1, 4));
+        final Host bh = new Host(helper, new BlockPos(-4, 1, 4));
+        final BlockPos target = helper.absolutePos(SEALED_TARGET);
+        final Map<Mob, Integer> ids = new java.util.HashMap<>();
+        ids.put(a.mob, 1);
+        ids.put(e.mob, 1);
+        ids.put(bh.mob, 1);
+        final AutoCloseable colonies = testColonies(helper.getLevel(), ids);
+        observeAll(a, e, bh);
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () ->
+          drive(helper, a, () -> target, 0, 100, t -> a.jobs.size() >= 2, () ->
+            drive(helper, e, () -> target, 0, 50, t -> false, () -> {
+                final PathResult<?> closeTo = bh.nav.setPathJob(
+                  new com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveCloseToXNearY(helper.getLevel(), target, target, 1, bh.mob), target, 1.0D, false);
+                waitAll(helper, closeTo == null ? List.of() : List.of(closeTo), System.nanoTime(), 0, () -> {
+                    Pathfinding.submitObserver = null;
+                    close(colonies);
+                    final PathResult<?> first = a.jobs.isEmpty() ? null : a.jobs.get(0).getResult();
+                    final String s = String.format("R10 close-to after exact proof: A first exhausted %s (%d nodes), E exact %d jobs, builder close-to %s, %d jobs (%d nodes)",
+                      first != null && first.searchExhausted, first == null ? 0 : first.searchedNodes, e.jobs.size(), closeTo == null ? "REFUSED" : "submitted",
+                      bh.jobs.size(), closeTo == null ? 0 : closeTo.searchedNodes);
+                    Log.getLogger().info(s);
+                    helper.assertTrue(first != null && first.searchExhausted && first.searchedNodes >= 500, "fixture: A's exact search was no proof. " + s);
+                    helper.assertTrue(e.jobs.isEmpty(), "fixture: the exact proof did not refuse an exact walk. " + s);
+                    helper.assertTrue(closeTo != null && bh.jobs.size() == 1, "an exact move-to proof refused a builder's close-to walk. " + s);
+                    helper.succeed();
+                });
+            }))));
+    }
+
+    /**
+     * path_colony_cache_walled_yard: host T of colony 1 stands in a walled yard (26 x 26, 3 high, closed) and asks for an
+     * open target outside; its search exhausts the yard (500+ nodes, strong proof for positions inside the yard). Host U
+     * of colony 1, inside the yard, must be refused. Host B of colony 1, 10 blocks from T on the other side of the wall,
+     * must still search and reach the target.
+     */
+    public static void pathColonyCacheWalledYard(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        final BlockState stone = Blocks.STONE.defaultBlockState();
+        fill(helper, new BlockPos(-1, 1, -1), new BlockPos(26, 3, -1), stone);
+        fill(helper, new BlockPos(-1, 1, 26), new BlockPos(26, 3, 26), stone);
+        fill(helper, new BlockPos(-1, 1, -1), new BlockPos(-1, 3, 26), stone);
+        fill(helper, new BlockPos(26, 1, -1), new BlockPos(26, 3, 26), stone);
+        final Host t = new Host(helper, new BlockPos(12, 1, 22));
+        final Host u = new Host(helper, new BlockPos(15, 1, 22));
+        final Host b = new Host(helper, new BlockPos(12, 1, 32));
+        final BlockPos target = helper.absolutePos(new BlockPos(50, 1, 30));
+        final Map<Mob, Integer> ids = new java.util.HashMap<>();
+        ids.put(t.mob, 1);
+        ids.put(u.mob, 1);
+        ids.put(b.mob, 1);
+        final AutoCloseable colonies = testColonies(helper.getLevel(), ids);
+        observeAll(t, u, b);
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () ->
+          drive(helper, t, () -> target, 0, 100, t2 -> t.jobs.size() >= 2, () ->
+            drive(helper, u, () -> target, 0, 100, t2 -> false, () ->
+              drive(helper, b, () -> target, 0, 300, t2 -> b.anyReached(target), () -> {
+                  Pathfinding.submitObserver = null;
+                  close(colonies);
+                  final PathResult<?> first = t.jobs.isEmpty() ? null : t.jobs.get(0).getResult();
+                  final String s = String.format("R10 walled yard: T first search exhausted %s (%d nodes, proof %d positions), U (inside) %d jobs, "
+                                                   + "B (10 blocks, other side of the wall) %d jobs, B reached %s",
+                    first != null && first.searchExhausted, first == null ? 0 : first.searchedNodes,
+                    first == null || first.reachablePositions == null ? 0 : first.reachablePositions.length, u.jobs.size(), b.jobs.size(), b.anyReached(target));
+                  Log.getLogger().info(s);
+                  helper.assertTrue(first != null && first.searchExhausted && first.reachablePositions != null, "fixture: the yard search was no proof. " + s);
+                  helper.assertTrue(u.jobs.isEmpty(), "a citizen inside the proven yard searched again. " + s);
+                  helper.assertTrue(b.jobs.size() >= 1, "a citizen outside the yard was blocked by the yard's proof. " + s);
+                  helper.assertTrue(b.anyReached(target), "the citizen outside the yard did not reach the target. " + s);
+                  helper.succeed();
+              })))));
+    }
+
+    /**
+     * path_colony_cache_boxed_citizen: host T of colony 1 is boxed in (a 1x2 pocket in stone) and asks for an open target
+     * 36 blocks away: its search exhausts in a few nodes. That is no proof about the target, so host B of the same colony,
+     * standing 4 blocks from T outside the box, must still search and reach the target.
+     */
+    public static void pathColonyCacheBoxedCitizen(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        final BlockPos boxRel = new BlockPos(4, 1, 10);
+        final Host t = new Host(helper, boxRel);
+        sealTarget(helper, boxRel);
+        final Host b = new Host(helper, new BlockPos(8, 1, 10));
+        final BlockPos target = helper.absolutePos(new BlockPos(40, 1, 10));
+        final Map<Mob, Integer> ids = new java.util.HashMap<>();
+        ids.put(t.mob, 1);
+        ids.put(b.mob, 1);
+        final AutoCloseable colonies = testColonies(helper.getLevel(), ids);
+        observeAll(t, b);
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () ->
+          drive(helper, t, () -> target, 0, 100, t2 -> false, () ->
+            drive(helper, b, () -> target, 0, 300, t2 -> b.anyReached(target), () -> {
+                Pathfinding.submitObserver = null;
+                close(colonies);
+                final PathResult<?> first = t.jobs.isEmpty() ? null : t.jobs.get(0).getResult();
+                final String s = String.format("R10 boxed citizen: T %d jobs (first exhausted %s, %d nodes, backed off %s), B %d jobs, B reached %s",
+                  t.jobs.size(), first != null && first.searchExhausted, first == null ? 0 : first.searchedNodes, t.nav.isDestinationUnreachable(target), b.jobs.size(),
+                  b.anyReached(target));
+                Log.getLogger().info(s);
+                helper.assertTrue(first != null && first.searchExhausted && !first.isPathReachingDestination(), "fixture: the boxed host's search did not exhaust. " + s);
+                helper.assertTrue(b.jobs.size() >= 1, "a boxed citizen's failure stopped another citizen of its colony from searching. " + s);
+                helper.assertTrue(b.anyReached(target), "the other citizen did not reach the shared target. " + s);
+                helper.succeed();
+            }))));
+    }
+
+    // ------------------------------------------------------------------ round 10: failed-search cap
+
+    /**
+     * path_failed_search_cap: a host asks for a target sealed in stone. Its first search keeps the normal budget; its
+     * retry for the same destination is marked and must stay within the retry cap plus the high-cost allowance
+     * (2 x 25^2). Logged: nodes per search.
+     */
+    public static void pathFailedSearchCap(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        sealTarget(helper, SEALED_TARGET);
+        final Host host = new Host(helper, HOST_START);
+        final BlockPos target = helper.absolutePos(SEALED_TARGET);
+        observe(host);
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            Pathfinding.Stats.reset();
+            drive(helper, host, () -> target, 0, 400, t -> host.jobs.size() >= 2 && host.jobs.get(1).getResult().isDone(), () -> {
+                Pathfinding.submitObserver = null;
+                final int allowance = 2 * com.minecolonies.core.entity.pathfinding.PathingOptions.MAX_COST * com.minecolonies.core.entity.pathfinding.PathingOptions.MAX_COST + 1;
+                final StringBuilder jobs = new StringBuilder();
+                for (final AbstractPathJob job : host.jobs)
+                {
+                    final PathJobMoveToLocation m = (PathJobMoveToLocation) job;
+                    jobs.append(m.getResult().searchedNodes).append(m.isRetryCapped() ? " capped " + m.getFailedNodeCap() : " normal").append("; ");
+                }
+                final String s = "R10 retry cap: jobs [" + jobs + "] allowance " + allowance + "; stats: " + Pathfinding.Stats.summary();
+                Log.getLogger().info(s);
+                helper.assertTrue(host.jobs.size() >= 2, "fixture: fewer than 2 searches. " + s);
+                final PathJobMoveToLocation first = (PathJobMoveToLocation) host.jobs.get(0);
+                final PathJobMoveToLocation retry = (PathJobMoveToLocation) host.jobs.get(1);
+                helper.assertTrue(!first.isRetryCapped(), "the first search was capped. " + s);
+                helper.assertTrue(retry.isRetryCapped(), "the retry for a failed destination was not capped. " + s);
+                helper.assertTrue(!retry.getResult().isPathReachingDestination(), "fixture: the sealed target was reached. " + s);
+                helper.assertTrue(retry.getResult().searchedNodes <= retry.getFailedNodeCap() + allowance, "the retry ran past its cap. " + s);
+                helper.succeed();
+            });
+        }));
+    }
+
+    /**
+     * path_long_detour_reaches: a 106-block (manhattan) walk from corner to corner around a wall across almost the whole
+     * plot (gap only at the far end) must reach with the normal budget. Logged: nodes searched.
+     */
+    public static void pathLongDetourReaches(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        fill(helper, new BlockPos(25, 1, MIN_Z), new BlockPos(25, 3, 35), Blocks.STONE.defaultBlockState());
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            final PathJobMoveToLocation job =
+              new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(-6, 1, -6)), helper.absolutePos(new BlockPos(57, 1, 37)), 48, null);
+            Pathfinding.enqueue(job);
+            waitAll(helper, List.of(job.getResult()), System.nanoTime(), 0, () -> {
+                final Path path = job.getResult().getPath();
+                final String s = String.format("R10 long detour: %s, %d path nodes, %d searched", job.getResult().isPathReachingDestination() ? "reach" : "NOREACH",
+                  path == null ? 0 : path.getNodeCount(), job.getResult().searchedNodes);
+                Log.getLogger().info(s);
+                helper.assertTrue(job.getResult().isPathReachingDestination(), "a long legit detour did not reach. " + s);
+                helper.assertTrue(path != null && path.getNodeCount() >= 100, "fixture: the walk is shorter than 100 nodes. " + s);
+                helper.succeed();
+            });
+        }));
+    }
+
+    /**
+     * path_road_heuristic_nodes: a road grid (stone brick lines every 8 blocks both ways) and 8 trips between off-road
+     * points (cost jitter off). Logged: total nodes, walk time (1 per off-road step, 1/1.3 on road) and road share. Every
+     * trip must reach and most steps must be on road.
+     */
+    public static void pathRoadHeuristicNodes(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        for (int x = -4; x <= 56; x += 8)
+        {
+            fill(helper, new BlockPos(x, 0, MIN_Z + 1), new BlockPos(x, 0, MAX_Z - 1), Blocks.STONE_BRICKS.defaultBlockState());
+        }
+        for (int z = -4; z <= 36; z += 8)
+        {
+            fill(helper, new BlockPos(MIN_X + 1, 0, z), new BlockPos(MAX_X - 1, 0, z), Blocks.STONE_BRICKS.defaultBlockState());
+        }
+        final int[][] trips = {{-6, -6, 57, 37}, {57, -6, -6, 37}, {1, 2, 50, 30}, {-2, 30, 54, -2}, {10, 10, 46, 26}, {22, -7, 30, 38}, {-7, 18, 58, 18}, {34, 2, 2, 34}};
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            final List<PathJobMoveToLocation> jobs = new ArrayList<>();
+            for (final int[] trip : trips)
+            {
+                final PathJobMoveToLocation job = new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(trip[0], 1, trip[1])),
+                  helper.absolutePos(new BlockPos(trip[2], 1, trip[3])), 48, null);
+                job.getPathingOptions().randomnessFactor = 0.0D;
+                jobs.add(job);
+                Pathfinding.enqueue(job);
+            }
+            final List<PathResult<?>> all = new ArrayList<>();
+            jobs.forEach(j -> all.add(j.getResult()));
+            waitAll(helper, all, System.nanoTime(), 0, () -> {
+                final double[] n = roadTotals(helper, jobs);
+                final String s = String.format("R10 road grid: %d of %d reached, %.0f nodes, walk time %.1f, road share %.2f", (int) n[0], trips.length, n[1], n[2], n[3]);
+                Log.getLogger().info(s);
+                helper.assertTrue(n[0] == trips.length, "a road grid trip did not reach. " + s);
+                helper.assertTrue(n[3] >= 0.5D, "the trips do not use the roads. " + s);
+                helper.succeed();
+            });
+        }));
+    }
+
+    /**
+     * path_road_heuristic_citizen: a real citizen's navigator gives the heuristic. A road grid with small stone buildings
+     * in its cells, 8 trips between building sides, once with the citizen's own learned average and once with it set to
+     * 0.3 (multiplier 1.3). Logged: nodes, walk time, road share. Every trip must reach. The test removes its citizen,
+     * its colony and its forced chunks at the end.
+     */
+    public static void pathRoadHeuristicCitizen(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = foundGameTestColony(helper, "R10 road heuristic");
+        final int x0 = 10, x1 = 59, z0 = -8, z1 = 39;
+        final BlockPos a = helper.absolutePos(new BlockPos(x0, 0, z0));
+        final BlockPos b = helper.absolutePos(new BlockPos(x1, 0, z1));
+        for (int cx = Math.min(a.getX(), b.getX()) >> 4; cx <= Math.max(a.getX(), b.getX()) >> 4; cx++)
+        {
+            for (int cz = Math.min(a.getZ(), b.getZ()) >> 4; cz <= Math.max(a.getZ(), b.getZ()) >> 4; cz++)
+            {
+                level.setChunkForced(cx, cz, true);
+            }
+        }
+        keepClock(helper, 6000L);
+        final BlockState stone = Blocks.STONE.defaultBlockState();
+        for (int x = x0; x <= x1; x++)
+        {
+            for (int z = z0; z <= z1; z++)
+            {
+                helper.setBlock(new BlockPos(x, -1, z), stone);
+                final boolean border = x == x0 || x == x1 || z == z0 || z == z1;
+                final boolean road = (x - x0) % 8 == 4 || (z - z0) % 8 == 4;
+                helper.setBlock(new BlockPos(x, 0, z), road && !border ? Blocks.STONE_BRICKS.defaultBlockState() : stone);
+                final boolean building = !road && !border && Math.floorMod(x - x0, 8) >= 6 - 4 && Math.floorMod(x - x0, 8) <= 6
+                                           && Math.floorMod(z - z0, 8) >= 2 && Math.floorMod(z - z0, 8) <= 6;
+                for (int y = 1; y <= 5; y++)
+                {
+                    helper.setBlock(new BlockPos(x, y, z), (border || building) && y <= 3 ? stone : Blocks.AIR.defaultBlockState());
+                }
+            }
+        }
+        final int[][] trips = {{x0 + 1, z0 + 1, x1 - 1, z1 - 1}, {x1 - 1, z0 + 1, x0 + 1, z1 - 1}, {x0 + 9, z0 + 1, x1 - 9, z1 - 1}, {x0 + 1, z1 - 9, x1 - 1, z0 + 9},
+          {x0 + 17, z0 + 1, x0 + 33, z1 - 1}, {x0 + 1, z0 + 17, x1 - 1, z0 + 17}, {x1 - 1, z0 + 25, x0 + 1, z0 + 9}, {x0 + 25, z1 - 1, x0 + 9, z0 + 1}};
+        helper.runAfterDelay(20, () -> {
+            final BlockPos spawn = helper.absolutePos(new BlockPos(x0 + 1, 1, z0 + 1));
+            final ICitizenData data = colony.getCitizenManager().spawnOrCreateCivilian(null, level, List.of(spawn), true);
+            helper.assertTrue(data != null && data.getEntity().isPresent(), "citizen did not spawn");
+            final AbstractEntityCitizen citizen = data.getEntity().get();
+            final MinecoloniesAdvancedPathNavigate nav = (MinecoloniesAdvancedPathNavigate) citizen.getNavigation();
+            final double learned = nav.getAvgHeuristicModifier();
+            final StringBuilder out = new StringBuilder("R10 road citizen:");
+            final boolean[] allReached = {true};
+            final Runnable[] round = new Runnable[1];
+            final double[] avgs = {learned, 0.3D};
+            final int[] index = {0};
+            final Runnable cleanup = () -> {
+                citizen.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+                com.minecolonies.api.colony.IColonyManager.getInstance().deleteColonyByWorld(colony.getID(), false, level);
+                for (int cx = Math.min(a.getX(), b.getX()) >> 4; cx <= Math.max(a.getX(), b.getX()) >> 4; cx++)
+                {
+                    for (int cz = Math.min(a.getZ(), b.getZ()) >> 4; cz <= Math.max(a.getZ(), b.getZ()) >> 4; cz++)
+                    {
+                        level.setChunkForced(cx, cz, false);
+                    }
+                }
+            };
+            round[0] = () -> {
+                if (index[0] >= avgs.length)
+                {
+                    cleanup.run();
+                    final String s = out.append(" (avg ").append(String.format("%.2f", learned)).append(" learned at spawn)").toString();
+                    Log.getLogger().info(s);
+                    helper.assertTrue(allReached[0], "a road grid trip did not reach. " + s);
+                    helper.succeed();
+                    return;
+                }
+                final double avg = avgs[index[0]++];
+                nav.setAvgHeuristicModifierForTests(avg);
+                final List<PathJobMoveToLocation> jobs = new ArrayList<>();
+                for (final int[] trip : trips)
+                {
+                    final PathJobMoveToLocation job = new PathJobMoveToLocation(level, helper.absolutePos(new BlockPos(trip[0], 1, trip[1])),
+                      helper.absolutePos(new BlockPos(trip[2], 1, trip[3])), 48, citizen);
+                    job.getPathingOptions().randomnessFactor = 0.0D;
+                    jobs.add(job);
+                    Pathfinding.enqueue(job);
+                }
+                final List<PathResult<?>> all = new ArrayList<>();
+                jobs.forEach(j -> all.add(j.getResult()));
+                waitAll(helper, all, System.nanoTime(), 0, () -> {
+                    final double[] n = roadTotals(helper, jobs);
+                    allReached[0] &= n[0] == trips.length;
+                    out.append(String.format(" | multiplier %.2f: %d of %d reached, %.0f nodes, walk %.1f, road share %.2f", jobs.get(0).getStartHeuristicMod(), (int) n[0],
+                      trips.length, n[1], n[2], n[3]));
+                    round[0].run();
+                });
+            };
+            round[0].run();
+        });
+    }
+
+    /** Reached count, total nodes searched, total walk time, share of steps on road. */
+    private static double[] roadTotals(final GameTestHelper helper, final List<PathJobMoveToLocation> jobs)
+    {
+        double reached = 0, nodes = 0, time = 0, road = 0, steps = 0;
+        for (final PathJobMoveToLocation job : jobs)
+        {
+            reached += job.getResult().isPathReachingDestination() ? 1 : 0;
+            nodes += job.getResult().searchedNodes;
+            final Path path = job.getResult().getPath();
+            if (path == null)
+            {
+                continue;
+            }
+            for (int i = 1; i < path.getNodeCount(); i++)
+            {
+                final Node n = path.getNode(i);
+                final boolean onRoad =
+                  com.minecolonies.core.util.WorkerUtil.isPathBlock(helper.getLevel().getBlockState(new BlockPos(n.x, n.y - 1, n.z)).getBlock());
+                time += onRoad ? 1 / com.minecolonies.core.entity.pathfinding.PathingOptions.ROAD_SPEED : 1;
+                road += onRoad ? 1 : 0;
+                steps++;
+            }
+        }
+        return new double[] {reached, nodes, time, steps == 0 ? 0 : road / steps};
+    }
+
+    // ------------------------------------------------------------------ round 10: fair queue
+
+    /** Fair queue: jobs of the flooding colony, jobs of the quiet colony, and the start-order bar for the quiet ones. */
+    private static final int FLOOD_JOBS = 60, QUIET_JOBS = 10, QUIET_START_BAR = 2 * QUIET_JOBS + 10;
+
+    /**
+     * path_queue_fair_colonies: colony 1 floods the shared queue with 60 failing searches (a sealed target 102 blocks
+     * away), then colony 2 queues 10 short ones. Colonies take turns, so every colony 2 search must start among the first
+     * 2 x 10 + 10 searches (one queue in order would start them after all 60; 150 ran close to the 40,100-tick test limit on the unthrottled server). Nothing may be rejected.
+     */
+    public static void pathQueueFairColonies(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        final BlockPos farTarget = new BlockPos(55, 1, 35);
+        sealTarget(helper, farTarget);
+        final Pathfinding.ColonyKey flooding = new Pathfinding.ColonyKey(helper.getLevel().dimension(), 1);
+        final Pathfinding.ColonyKey quiet = new Pathfinding.ColonyKey(helper.getLevel().dimension(), 2);
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            Pathfinding.Stats.reset();
+            final List<PathJobMoveToLocation> flood = new ArrayList<>();
+            final List<PathJobMoveToLocation> calm = new ArrayList<>();
+            for (int i = 0; i < FLOOD_JOBS; i++)
+            {
+                final PathJobMoveToLocation job =
+                  new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(-6, 1, -6)), helper.absolutePos(farTarget), 48, null);
+                job.setQueueKey(flooding);
+                flood.add(job);
+                Pathfinding.enqueue(job);
+            }
+            for (int i = 0; i < QUIET_JOBS; i++)
+            {
+                final PathJobMoveToLocation job =
+                  new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(0, 1, 2 * i)), helper.absolutePos(new BlockPos(12, 1, 2 * i)), 48, null);
+                job.setQueueKey(quiet);
+                calm.add(job);
+                Pathfinding.enqueue(job);
+            }
+            final List<PathResult<?>> all = new ArrayList<>();
+            flood.forEach(j -> all.add(j.getResult()));
+            calm.forEach(j -> all.add(j.getResult()));
+            final long t0 = System.nanoTime();
+            waitAll(helper, all, t0, 0, () -> {
+                long quietLast = 0;
+                int quietReached = 0;
+                for (final PathJobMoveToLocation j : calm)
+                {
+                    quietLast = Math.max(quietLast, j.getStartOrder());
+                    quietReached += j.getResult().isPathReachingDestination() ? 1 : 0;
+                }
+                long floodLast = 0;
+                long floodWait = 0;
+                long quietWait = 0;
+                for (final PathJobMoveToLocation j : flood)
+                {
+                    floodLast = Math.max(floodLast, j.getStartOrder());
+                    floodWait += Math.max(0, j.getQueueWaitNanos());
+                }
+                for (final PathJobMoveToLocation j : calm)
+                {
+                    quietWait += Math.max(0, j.getQueueWaitNanos());
+                }
+                final String s = String.format("R10 fair queue: %d + %d jobs, last quiet start %d (bar %d), last flood start %d, quiet reached %d, rejected %d, "
+                                                 + "avg queue wait quiet %.2f ms flood %.2f ms, all done after %d ms; stats: %s",
+                  FLOOD_JOBS, QUIET_JOBS, quietLast, QUIET_START_BAR, floodLast, quietReached, Pathfinding.Stats.rejected.get(), quietWait / 1e6 / QUIET_JOBS,
+                  floodWait / 1e6 / FLOOD_JOBS, (System.nanoTime() - t0) / 1_000_000L, Pathfinding.Stats.summary());
+                Log.getLogger().info(s);
+                helper.assertTrue(Pathfinding.Stats.rejected.get() == 0, "jobs were rejected. " + s);
+                helper.assertTrue(quietReached == QUIET_JOBS, "fixture: a quiet colony job did not reach. " + s);
+                helper.assertTrue(quietLast > 0 && quietLast <= QUIET_START_BAR, "the quiet colony waited behind the flooding one. " + s);
+                helper.succeed();
+            });
+        }));
+    }
+
+    // ------------------------------------------------------------------ round 10: route hints
+
+    /** A plain (not a route leg) job of the host for the destination that reached it. */
+    private static boolean plainReached(final Host host, final BlockPos dest)
+    {
+        for (final AbstractPathJob job : host.jobs)
+        {
+            if (job.getRouteTarget() == null && PathJobMoveToLocation.isJobFor(job, dest) && job.getResult().isPathReachingDestination())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The host's route legs for the destination, in order. */
+    private static List<AbstractPathJob> legs(final Host host, final BlockPos dest)
+    {
+        final List<AbstractPathJob> legs = new ArrayList<>();
+        for (final AbstractPathJob job : host.jobs)
+        {
+            if (dest.equals(job.getRouteTarget()))
+            {
+                legs.add(job);
+            }
+        }
+        return legs;
+    }
+
+    private static String legSummary(final GameTestHelper helper, final List<AbstractPathJob> legs)
+    {
+        final StringBuilder sb = new StringBuilder("[");
+        for (final AbstractPathJob leg : legs)
+        {
+            sb.append(helper.relativePos(((PathJobMoveToLocation) leg).getDestination()).toShortString()).append(leg.getResult().isPathReachingDestination() ? " R; " : " F; ");
+        }
+        return sb.append(']').toString();
+    }
+
+    /**
+     * path_route_hints_followed: a test provider answers a 76-block walk with two waypoints on a detour (the plain
+     * search would go diagonally). The host must walk leg to the first, leg to the second, then search plainly to the
+     * destination and reach it; the provider is asked once.
+     */
+    public static void pathRouteHintsFollowed(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        final Host host = new Host(helper, new BlockPos(-6, 1, -6));
+        final BlockPos dest = helper.absolutePos(new BlockPos(57, 1, 37));
+        final BlockPos w1 = helper.absolutePos(new BlockPos(50, 1, -4));
+        final BlockPos w2 = helper.absolutePos(new BlockPos(52, 1, 20));
+        final List<BlockPos> calls = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final IRouteHintProvider provider = (level, colony, from, to) -> {
+            if (!to.equals(dest))
+            {
+                return null;
+            }
+            calls.add(from);
+            return List.of(w1, w2);
+        };
+        observe(host);
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            Pathfinding.Stats.reset();
+            RouteHints.register(provider);
+            final AutoCloseable anyMob = MinecoloniesAdvancedPathNavigate.routeHintsForAnyMobInTests();
+            drive(helper, host, () -> dest, 0, 1200, t -> plainReached(host, dest), () -> {
+                RouteHints.unregister(provider);
+                close(anyMob);
+                Pathfinding.submitObserver = null;
+                final List<AbstractPathJob> legs = legs(host, dest);
+                final String s = String.format("R10 route hints followed: %d provider calls, legs %s, plain reached %s, host at %s; stats: %s", calls.size(),
+                  legSummary(helper, legs), plainReached(host, dest), helper.relativePos(host.mob.blockPosition()).toShortString(), Pathfinding.Stats.summary());
+                Log.getLogger().info(s);
+                helper.assertTrue(calls.size() == 1, "the provider was not asked exactly once. " + s);
+                helper.assertTrue(legs.size() == 2, "not two route legs. " + s);
+                helper.assertTrue(legs.size() == 2 && ((PathJobMoveToLocation) legs.get(0)).getDestination().equals(w1)
+                                    && ((PathJobMoveToLocation) legs.get(1)).getDestination().equals(w2), "the legs do not follow the waypoints in order. " + s);
+                helper.assertTrue(legs.stream().allMatch(l -> l.getResult().isPathReachingDestination()), "a leg did not reach its waypoint. " + s);
+                helper.assertTrue(plainReached(host, dest), "the destination was not reached after the last waypoint. " + s);
+                helper.succeed();
+            });
+        }));
+    }
+
+    /**
+     * path_route_hints_fallback: (1) a provider that throws and one that answers null: the walk is one plain search that
+     * reaches, the throw is caught. (2) a provider whose only waypoint is sealed in stone: the leg fails, the route is
+     * dropped, and a plain search reaches the destination.
+     */
+    public static void pathRouteHintsFallback(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        final Host host = new Host(helper, new BlockPos(-6, 1, -6));
+        final BlockPos dest = helper.absolutePos(new BlockPos(57, 1, 37));
+        final BlockPos dest2 = helper.absolutePos(new BlockPos(-6, 1, 30));
+        final BlockPos sealedRel = new BlockPos(25, 1, 33);
+        final BlockPos sealed = helper.absolutePos(sealedRel);
+        final int[] throwCalls = {0};
+        final int[] nullCalls = {0};
+        final IRouteHintProvider thrower = (level, colony, from, to) -> {
+            throwCalls[0]++;
+            throw new IllegalStateException("R10 test provider throws on purpose");
+        };
+        final IRouteHintProvider none = (level, colony, from, to) -> {
+            nullCalls[0]++;
+            return null;
+        };
+        final IRouteHintProvider sealedRoute = (level, colony, from, to) -> to.equals(dest2) ? List.of(sealed) : null;
+        observe(host);
+        final AutoCloseable[] anyMob = new AutoCloseable[1];
+        final Runnable restore = () -> {
+            RouteHints.unregister(thrower);
+            RouteHints.unregister(none);
+            RouteHints.unregister(sealedRoute);
+            if (anyMob[0] != null)
+            {
+                close(anyMob[0]);
+            }
+            Pathfinding.submitObserver = null;
+        };
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            Pathfinding.Stats.reset();
+            final long failedBefore = RouteHints.failedCalls.get();
+            RouteHints.register(thrower);
+            RouteHints.register(none);
+            anyMob[0] = MinecoloniesAdvancedPathNavigate.routeHintsForAnyMobInTests();
+            drive(helper, host, () -> dest, 0, 600, t -> plainReached(host, dest), () -> {
+                final int phase1Jobs = host.jobs.size();
+                final boolean phase1Reached = plainReached(host, dest);
+                final int phase1Legs = legs(host, dest).size();
+                RouteHints.unregister(thrower);
+                RouteHints.unregister(none);
+                sealTarget(helper, sealedRel);
+                RouteHints.register(sealedRoute);
+                drive(helper, host, () -> dest2, 0, 1200, t -> plainReached(host, dest2), () -> {
+                    restore.run();
+                    final List<AbstractPathJob> legs2 = legs(host, dest2);
+                    final String s = String.format("R10 route hints fallback: phase 1 throw calls %d, null calls %d, caught %d, %d jobs, %d legs, reached %s; "
+                                                     + "phase 2 legs %s, plain reached %s; stats: %s", throwCalls[0], nullCalls[0], RouteHints.failedCalls.get() - failedBefore,
+                      phase1Jobs, phase1Legs, phase1Reached, legSummary(helper, legs2), plainReached(host, dest2), Pathfinding.Stats.summary());
+                    Log.getLogger().info(s);
+                    helper.assertTrue(throwCalls[0] >= 1 && nullCalls[0] >= 1, "fixture: the providers were not asked. " + s);
+                    helper.assertTrue(RouteHints.failedCalls.get() - failedBefore >= 1, "the provider's exception was not caught and counted. " + s);
+                    helper.assertTrue(phase1Legs == 0 && phase1Reached, "a null answer did not give one plain search that reaches. " + s);
+                    helper.assertTrue(legs2.size() == 1 && !legs2.get(0).getResult().isPathReachingDestination(), "fixture: no failed leg to the sealed waypoint. " + s);
+                    helper.assertTrue(Pathfinding.Stats.routeFallbacks.get() >= 1, "the failed leg did not drop the route. " + s);
+                    helper.assertTrue(plainReached(host, dest2), "no plain search reached the destination after the leg failed. " + s);
+                    helper.succeed();
+                });
             });
         }));
     }

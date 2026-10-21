@@ -169,6 +169,34 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     private int visitedLevel = 1;
 
     /**
+     * The job's turn in the fair queue (its colony), null for none. Set on the submitting thread before the job is queued.
+     */
+    @Nullable
+    private volatile Object queueKey = null;
+
+    /**
+     * When this job is one leg of a hinted route (see RouteHints), the route's final destination, else null.
+     */
+    @Nullable
+    private BlockPos routeTarget = null;
+
+    /**
+     * When the job was handed to the executor (System.nanoTime), and how long it then waited in the queue; 0 / -1 unknown.
+     */
+    private volatile long submitNanos    = 0;
+    private volatile long queueWaitNanos = -1;
+
+    /**
+     * Order in which this job's search started (1 = first since the counters were reset), 0 before it starts.
+     */
+    private volatile long startOrder = 0;
+
+    /**
+     * The heuristic multiplier at the start of the search, for logs.
+     */
+    private volatile double startHeuristicMod = 0;
+
+    /**
      * AbstractPathJob constructor.
      *
      * @param world  the world within which to path.
@@ -294,7 +322,11 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     @Override
     public final Path call()
     {
-        Pathfinding.Stats.searchStarted();
+        startOrder = Pathfinding.Stats.searchStarted();
+        if (submitNanos != 0)
+        {
+            queueWaitNanos = System.nanoTime() - submitNanos;
+        }
         try
         {
             return search();
@@ -305,10 +337,81 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
         }
         finally
         {
+            Pathfinding.Stats.searchDone(totalNodesVisited, !reachesDestination, queueWaitNanos);
             Pathfinding.Stats.searchFinished();
         }
 
         return null;
+    }
+
+    /**
+     * @return the heuristic multiplier the search started with (from its entity's navigator, or the default 2).
+     */
+    public double getStartHeuristicMod()
+    {
+        return startHeuristicMod;
+    }
+
+    /**
+     * @return the job's queue key (its colony), null for none.
+     */
+    @Nullable
+    public Object getQueueKey()
+    {
+        return queueKey;
+    }
+
+    /**
+     * Sets the job's turn in the fair queue; normally its entity's colony, set when it is submitted.
+     *
+     * @param queueKey the key, null for none.
+     */
+    public void setQueueKey(@Nullable final Object queueKey)
+    {
+        this.queueKey = queueKey;
+    }
+
+    /**
+     * @return the final destination when this job is one leg of a hinted route, else null.
+     */
+    @Nullable
+    public BlockPos getRouteTarget()
+    {
+        return routeTarget;
+    }
+
+    /**
+     * Marks this job as one leg of a hinted route to the given destination.
+     *
+     * @param routeTarget the route's final destination.
+     */
+    public void setRouteTarget(@Nullable final BlockPos routeTarget)
+    {
+        this.routeTarget = routeTarget;
+    }
+
+    /**
+     * Records the time the job is handed to the executor (for the queue wait counter).
+     */
+    public void markSubmitted()
+    {
+        submitNanos = System.nanoTime();
+    }
+
+    /**
+     * @return nanoseconds the job waited in the queue before its search started, -1 before it starts.
+     */
+    public long getQueueWaitNanos()
+    {
+        return queueWaitNanos;
+    }
+
+    /**
+     * @return order in which this job's search started since the counters were reset, 0 before it starts.
+     */
+    public long getStartOrder()
+    {
+        return startOrder;
     }
 
     /**
@@ -318,6 +421,7 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
      */
     private MNode getAndSetupStartNode()
     {
+        startHeuristicMod = heuristicMod;
         final MNode startNode = new MNode(null, start.getX(), start.getY(), start.getZ(), 0, computeHeuristic(start.getX(), start.getY(), start.getZ()) * heuristicMod);
 
         if (PathfindingUtils.isLadder(cachedBlockLookup.getBlockState(start.getX(), start.getY(), start.getZ()), pathingOptions))
@@ -442,6 +546,25 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
             handleDebugOptions(node);
             visitNode(node);
             node.increaseVisited();
+        }
+
+        if (!reachesDestination && nodesToVisit.isEmpty())
+        {
+            result.searchExhausted = true;
+            // (only for a walker of a colony: nobody else can use the proof)
+            if (queueKey instanceof Pathfinding.ColonyKey
+                  && totalNodesVisited >= ColonyUnreachableCache.MIN_PROOF_NODES && nodes.size() <= ColonyUnreachableCache.MAX_PROOF_POSITIONS)
+            {
+                // every node was visited: these are all the positions reachable from the start (proof for the colony cache)
+                final long[] reachable = new long[nodes.size()];
+                int i = 0;
+                for (final MNode n : nodes.values())
+                {
+                    reachable[i++] = BlockPos.asLong(n.x, n.y, n.z);
+                }
+                Arrays.sort(reachable);
+                result.reachablePositions = reachable;
+            }
         }
 
         // Explore additional possible endnodes after reaching, if we got extra nodes to search

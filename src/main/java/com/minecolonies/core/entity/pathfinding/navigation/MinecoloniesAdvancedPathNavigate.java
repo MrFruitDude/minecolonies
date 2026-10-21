@@ -9,6 +9,7 @@ import com.minecolonies.api.entity.other.MinecoloniesMinecart;
 import com.minecolonies.api.entity.pathfinding.IDynamicHeuristicNavigator;
 import com.minecolonies.api.entity.pathfinding.IMinecoloniesNavigator;
 import com.minecolonies.api.entity.pathfinding.IStuckHandler;
+import com.minecolonies.api.pathfinding.RouteHints;
 import com.minecolonies.api.util.*;
 import com.minecolonies.api.util.constant.ColonyConstants;
 import com.minecolonies.api.util.constant.GuardConstants;
@@ -20,6 +21,7 @@ import com.minecolonies.core.entity.pathfinding.pathresults.TreePathResult;
 import com.minecolonies.core.util.WorkerUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
@@ -56,7 +58,7 @@ import static com.minecolonies.core.entity.pathfinding.pathjobs.AbstractPathJob.
 // TODO: Rework
 public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNavigate implements IDynamicHeuristicNavigator, IMinecoloniesNavigator
 {
-    private static final double ON_PATH_SPEED_MULTIPLIER = 1.3D;
+    private static final double ON_PATH_SPEED_MULTIPLIER = PathingOptions.ROAD_SPEED;
     public static final  double MIN_Y_DISTANCE           = 0.001;
     public static final  int    MAX_SPEED_ALLOWED        = 2;
     public static final  double MIN_SPEED_ALLOWED        = 0.1;
@@ -129,6 +131,67 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     private int      unreachableFails  = 0;
     private int      unreachableLevel  = 0;
     private int      unreachableTicks  = 0;
+
+    /**
+     * Whether the back-off above came from close-to walks: a close-to back-off refuses exact walks too, an exact one does
+     * not refuse close-to walks (walking next to a block that cannot be stood on still works).
+     */
+    private boolean  unreachableCloseTo = false;
+
+    /**
+     * A waypoint counts as reached when the entity stands within this distance of it (squared blocks); also the
+     * distance under which a hinted waypoint is skipped at the start of a leg.
+     */
+    private static final int ROUTE_WAYPOINT_REACH_SQ = 16;
+
+    /**
+     * Ticks a destination gets no route hints after one of its legs failed.
+     */
+    private static final int ROUTE_ABANDON_TICKS = 1200;
+
+    /**
+     * Ticks before the providers are asked again for the same destination (one query per walk, not per AI request).
+     */
+    private static final int ROUTE_REQUERY_TICKS = 200;
+
+    /**
+     * Test hook: route hints for any entity with this navigator, not only citizens. False in production; only settable
+     * in a GameTest run ({@link #routeHintsForAnyMobInTests()}).
+     */
+    private static volatile boolean routeHintsForAnyMob = false;
+
+    /**
+     * GameTests only (-Dneoforge.enableGameTest=true): route hints for any entity with this navigator.
+     *
+     * @return closing it switches it off.
+     */
+    public static AutoCloseable routeHintsForAnyMobInTests()
+    {
+        Pathfinding.requireGameTest();
+        routeHintsForAnyMob = true;
+        return () -> routeHintsForAnyMob = false;
+    }
+
+    /**
+     * The hinted route being followed (RouteHints): its destination, the waypoints left after the current leg, the
+     * current leg's waypoint and job. A destination whose leg failed gets plain searches until routeAbandonedUntil.
+     */
+    @Nullable
+    private       BlockPos            routeTarget         = null;
+    private final java.util.ArrayDeque<BlockPos> routeWaypoints = new java.util.ArrayDeque<>();
+    @Nullable
+    private       BlockPos            routeLeg            = null;
+    @Nullable
+    private       AbstractPathJob     routeLegJob         = null;
+    @Nullable
+    private       BlockPos            routeAbandoned      = null;
+    private       long                routeAbandonedUntil = 0;
+    /**
+     * The last two destinations the providers were asked about and when (game time), so an AI that alternates two far
+     * targets does not ask on every switch.
+     */
+    private final BlockPos[]          routeQueried        = new BlockPos[2];
+    private final long[]              routeQueriedAt      = new long[2];
 
     /**
      * Temporary block position
@@ -281,6 +344,18 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         final double speedFactor,
         final boolean safeDestination)
     {
+        // Same refusal as walkTo, before any route query or job: a refused target asks no provider and builds nothing.
+        if (pauseTicks > 0 || isRefused(desiredPosition, true))
+        {
+            return null;
+        }
+        final PathJobMoveToLocation leg = nextRouteLeg(PathfindingUtils.prepareStart(ourEntity), desiredPosition);
+        if (leg != null)
+        {
+            // A leg of a hinted route is a move-to job; callers only test it with PathJobMoveCloseToXNearY.isJobFor, which
+            // accepts a leg of a route to the desired position.
+            return (PathResult<PathJobMoveCloseToXNearY>) (PathResult<?>) setPathJob(leg, desiredPosition, speedFactor, safeDestination);
+        }
         PathJobMoveCloseToXNearY pathJob = new PathJobMoveCloseToXNearY(ourEntity.level(), desiredPosition, nearbyPosition, 1, ourEntity);
         return setPathJob(pathJob, desiredPosition, speedFactor, safeDestination);
     }
@@ -298,7 +373,8 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         }
 
         // CA-11, now for the "move close to X near Y" jobs of the builders as well: an unreachable target is not searched again and again
-        if (job instanceof IDestinationPathJob destinationJob && isDestinationUnreachable(destinationJob.getDestination()))
+        // (also when another citizen of the colony just found it unreachable)
+        if (job instanceof IDestinationPathJob destinationJob && isRefused(destinationJob.getDestination(), job instanceof PathJobMoveCloseToXNearY))
         {
             return null;
         }
@@ -373,6 +449,11 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         }
 
         job.setPathingOptions(getOptionsForPathJob());
+        if (job instanceof PathJobMoveToLocation moveTo && unreachableFails > 0 && moveTo.getDestination().equals(unreachableDest))
+        {
+            // a retry for a destination that already failed: bounded by distance, not stretched to ~16,000 nodes again
+            moveTo.limitToFailedCap();
+        }
         pathResult = job.getResult();
         pathResult.startJob(Pathfinding.getExecutor());
         return (PathResult<T>) pathResult;
@@ -584,12 +665,17 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     protected PathResult<PathJobMoveToLocation> walkTo(final BlockPos desiredPos, final double speedFactor, final boolean safeDestination)
     {
         // Same outcome as setPathJob's refusal, without first building the job's chunk cache on the server thread.
-        if (pauseTicks > 0 || isDestinationUnreachable(desiredPos))
+        if (pauseTicks > 0 || isRefused(desiredPos, false))
         {
             return null;
         }
 
         @NotNull final BlockPos start = PathfindingUtils.prepareStart(ourEntity);
+        final PathJobMoveToLocation leg = nextRouteLeg(start, desiredPos);
+        if (leg != null)
+        {
+            return setPathJob(leg, desiredPos, speedFactor, safeDestination);
+        }
         return setPathJob(
             new PathJobMoveToLocation(CompatibilityUtils.getWorldFromEntity(ourEntity),
                 start,
@@ -803,9 +889,11 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             return;
         }
 
-        if (!dest.equals(unreachableDest))
+        final boolean closeTo = proofKind(pathResult.getJob()) == ColonyUnreachableCache.Kind.CLOSE;
+        if (!dest.equals(unreachableDest) || closeTo != unreachableCloseTo)
         {
             unreachableDest = dest;
+            unreachableCloseTo = closeTo;
             unreachableFails = 0;
             unreachableLevel = 0;
             unreachableTicks = 0;
@@ -819,18 +907,216 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             unreachableTicks = UNREACHABLE_BACKOFF[Math.min(unreachableLevel, UNREACHABLE_BACKOFF.length - 1)];
             unreachableLevel++;
         }
+        // Shared with the colony only as strong proof: the search tried every node it could reach (500+), and only for
+        // walkers standing on one of those positions with the same abilities. The back-off above stays this citizen's own.
+        final ColonyUnreachableCache.Kind kind = proofKind(pathResult.getJob());
+        if (kind != null)
+        {
+            ColonyUnreachableCache.markUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest,
+              pathResult.getJob().getPathingOptions().abilityFlags(), kind, pathResult.reachablePositions);
+        }
+        // the proof array can be large; the cache keeps its own reference
+        pathResult.reachablePositions = null;
     }
 
     /**
-     * Whether move-to jobs for this destination are currently refused because it kept failing (CA-11). AI code can use
-     * this to treat the target as "can't reach" instead of asking again.
+     * Whether move-to jobs for this destination are currently refused because it kept failing (CA-11), or because a
+     * search of the same colony that reached where this entity stands just proved it unreachable (colony cache). AI code can use this to treat the target as
+     * "can't reach" instead of asking again.
      *
      * @param dest the destination.
      * @return true while backing off from it.
      */
     public boolean isDestinationUnreachable(final BlockPos dest)
     {
-        return unreachableTicks > 0 && dest != null && dest.equals(unreachableDest);
+        if (dest == null)
+        {
+            return false;
+        }
+        return unreachableTicks > 0 && dest.equals(unreachableDest)
+                 || ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest, getOptionsForPathJob().abilityFlags(),
+          ColonyUnreachableCache.Kind.EXACT, PathfindingUtils.prepareStart(ourEntity));
+    }
+
+    /**
+     * RouteHints: the next leg of a hinted route for a long walk, or null for a plain search to the destination.
+     * <p>
+     * A new destination more than {@link RouteHints#MIN_DISTANCE} blocks away asks the providers once (citizens only); an
+     * answer is followed waypoint by waypoint, each leg a normal move-to search marked with the route's destination, so
+     * the AI sees it as the walk it asked for. Each later request for the same destination (the AI asks again when a leg
+     * is done) checks that the leg reached its waypoint and gives the next leg; after the last waypoint the walk is a
+     * plain search. A leg that did not reach its waypoint drops the route: plain searches to that destination for
+     * {@link #ROUTE_ABANDON_TICKS}.
+     *
+     * @param start the start of the walk.
+     * @param dest  the destination.
+     * @return the leg job, or null.
+     */
+    @Nullable
+    private PathJobMoveToLocation nextRouteLeg(final BlockPos start, final BlockPos dest)
+    {
+        // (while paused setPathJob refuses every job: no provider call and no leg job for nothing)
+        if (dest == null || pauseTicks > 0 || !RouteHints.hasProviders() || !(ourEntity.level() instanceof ServerLevel level))
+        {
+            return null;
+        }
+        final boolean citizen = ourEntity instanceof AbstractEntityCitizen;
+        if (!citizen && !routeHintsForAnyMob)
+        {
+            return null;
+        }
+        if (dest.equals(routeAbandoned) && level.getGameTime() < routeAbandonedUntil && level.getGameTime() >= routeAbandonedUntil - ROUTE_ABANDON_TICKS)
+        {
+            return null;
+        }
+
+        // (the current path is this route's last leg, so the leg was accepted and walked; a refused leg starts over)
+        final boolean onThisRoute = routeLegJob != null && dest.equals(routeTarget) && pathResult != null && pathResult.getJob() == routeLegJob;
+        if (onThisRoute)
+        {
+            // the AI asks again: the last leg is over, it must have reached its waypoint
+            if (!pathResult.isPathReachingDestination() || ourEntity.blockPosition().distSqr(routeLeg) > ROUTE_WAYPOINT_REACH_SQ)
+            {
+                abandonRoute(level, dest);
+                return null;
+            }
+        }
+        else
+        {
+            clearRoute();
+            if (start.distSqr(dest) <= (double) RouteHints.MIN_DISTANCE * RouteHints.MIN_DISTANCE)
+            {
+                return null;
+            }
+            final long now = level.getGameTime();
+            for (int i = 0; i < routeQueried.length; i++)
+            {
+                if (dest.equals(routeQueried[i]) && now - routeQueriedAt[i] < ROUTE_REQUERY_TICKS && now >= routeQueriedAt[i])
+                {
+                    // asked for this destination moments ago (the route is done or was refused): plain search
+                    return null;
+                }
+            }
+            // remember it in the older slot
+            final int slot = routeQueried[0] == null || routeQueried[1] != null && routeQueriedAt[0] <= routeQueriedAt[1] ? 0 : 1;
+            routeQueried[slot] = dest;
+            routeQueriedAt[slot] = now;
+            Pathfinding.Stats.routeHintQueries.incrementAndGet();
+            final List<BlockPos> waypoints =
+              RouteHints.query(level, citizen ? ((AbstractEntityCitizen) ourEntity).getCitizenColonyHandler().getColony() : null, start, dest);
+            if (waypoints == null)
+            {
+                return null;
+            }
+            if (!validRoute(level, start, waypoints))
+            {
+                Pathfinding.Stats.routeFallbacks.incrementAndGet();
+                return null;
+            }
+            routeTarget = dest;
+            routeWaypoints.addAll(waypoints);
+        }
+
+        BlockPos next = routeWaypoints.pollFirst();
+        while (next != null && start.distSqr(next) <= ROUTE_WAYPOINT_REACH_SQ)
+        {
+            next = routeWaypoints.pollFirst();
+        }
+        if (next == null)
+        {
+            // route done (or every waypoint was at hand): the rest is a plain search
+            clearRoute();
+            return null;
+        }
+        if (!WorldUtil.isBlockLoaded(level, next) || isRefused(next, false))
+        {
+            abandonRoute(level, dest);
+            return null;
+        }
+        routeLeg = next;
+        Pathfinding.Stats.routeLegs.incrementAndGet();
+        final PathJobMoveToLocation leg =
+          new PathJobMoveToLocation(level, start, next, (int) ourEntity.getAttribute(Attributes.FOLLOW_RANGE).getValue(), ourEntity);
+        leg.setRouteTarget(dest);
+        routeLegJob = leg;
+        return leg;
+    }
+
+    /**
+     * Max straight-line gap between the start and the first waypoint, and between waypoints, before a route is refused.
+     */
+    private static final int ROUTE_MAX_GAP = 96;
+
+    /**
+     * A hinted route is used only when every waypoint is inside the build height and no gap is longer than
+     * {@link #ROUTE_MAX_GAP}, so a bad answer cannot turn each leg into a long search.
+     */
+    private static boolean validRoute(final Level level, final BlockPos start, final List<BlockPos> waypoints)
+    {
+        BlockPos previous = start;
+        for (final BlockPos waypoint : waypoints)
+        {
+            if (level.isOutsideBuildHeight(waypoint) || previous.distSqr(waypoint) > (double) ROUTE_MAX_GAP * ROUTE_MAX_GAP)
+            {
+                return false;
+            }
+            previous = waypoint;
+        }
+        return true;
+    }
+
+    private void abandonRoute(final Level level, final BlockPos dest)
+    {
+        Pathfinding.Stats.routeFallbacks.incrementAndGet();
+        clearRoute();
+        routeAbandoned = dest;
+        routeAbandonedUntil = level.getGameTime() + ROUTE_ABANDON_TICKS;
+    }
+
+    private void clearRoute()
+    {
+        routeTarget = null;
+        routeWaypoints.clear();
+        routeLeg = null;
+        routeLegJob = null;
+    }
+
+    /**
+     * The goal kind of a job for the colony cache: exact for plain move-to jobs, close for close-to jobs, null for the
+     * rest (their goals differ, they are not shared).
+     */
+    @Nullable
+    private static ColonyUnreachableCache.Kind proofKind(final AbstractPathJob job)
+    {
+        if (job instanceof PathJobMoveCloseToXNearY)
+        {
+            return ColonyUnreachableCache.Kind.CLOSE;
+        }
+        return job != null && job.getClass() == PathJobMoveToLocation.class ? ColonyUnreachableCache.Kind.EXACT : null;
+    }
+
+    /**
+     * {@link #isDestinationUnreachable} for one goal kind, counting refusals by the colony cache in
+     * {@link Pathfinding.Stats}. A close-to walk is refused only by close-to proof (its own back-off from close-to
+     * walks, or a close-to proof of the colony).
+     */
+    private boolean isRefused(final BlockPos dest, final boolean closeTo)
+    {
+        if (dest == null)
+        {
+            return false;
+        }
+        if (unreachableTicks > 0 && dest.equals(unreachableDest) && (unreachableCloseTo || !closeTo))
+        {
+            return true;
+        }
+        if (ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest, getOptionsForPathJob().abilityFlags(),
+          closeTo ? ColonyUnreachableCache.Kind.CLOSE : ColonyUnreachableCache.Kind.EXACT, PathfindingUtils.prepareStart(ourEntity)))
+        {
+            Pathfinding.Stats.unreachableCacheHits.incrementAndGet();
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -1417,6 +1703,18 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     public double getAvgHeuristicModifier()
     {
         return heuristicAvg;
+    }
+
+    /**
+     * GameTests only (-Dneoforge.enableGameTest=true): sets the learned heuristic average, to measure searches with a
+     * value a long-lived citizen may have.
+     *
+     * @param value the average cost per block.
+     */
+    public void setAvgHeuristicModifierForTests(final double value)
+    {
+        Pathfinding.requireGameTest();
+        heuristicAvg = value;
     }
 
     @Override
