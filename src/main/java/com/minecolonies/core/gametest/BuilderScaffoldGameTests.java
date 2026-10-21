@@ -462,7 +462,7 @@ final class BuilderScaffoldGameTests
      */
     public static void lampTopFromAStandSpot(final GameTestHelper helper)
     {
-        final int fallbacks0 = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks;
+        final int fallbacks0 = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks.get();
         tallStructure(helper, "lamp_top", () -> shape("lamp_top", 3, 4, 3, (x, y, z) -> y == 0 || (x == 1 && z == 1)), true, 6000, false, (live, origin) -> {
             // a ring of bottom slabs on the ground around the footprint, where the builder stands to work
             for (int x = -2; x <= 4; x++)
@@ -477,7 +477,7 @@ final class BuilderScaffoldGameTests
             }
         }, () -> {
             helper.assertTrue(BuilderScaffolding.towersBuilt == 0, "a tower was planned for a lamp top 3 above the ground: " + BuilderScaffolding.towersBuilt);
-            helper.assertTrue(com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks == fallbacks0,
+            helper.assertTrue(com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks.get() == fallbacks0,
               "the builder fell back to the working range: no stand spot worked for a lamp top 3 above the ground");
         }, 0);
     }
@@ -526,6 +526,101 @@ final class BuilderScaffoldGameTests
                 }
             };
         }, () -> helper.assertTrue(floodSeen, "the cleared cells never flooded: the test did not test a flooded cell"), 0);
+    }
+
+    /**
+     * Builder review c1 H1: a pillar 12 high, scaffolding switched off. Nothing is ever placed out of reach: whatever the reach fallback places lies at most 5
+     * up or down from the eye, and the blocks higher than that are refused with a reason (they need scaffolding), not placed from the ground.
+     */
+    public static void tallBlockWithoutScaffolding(final GameTestHelper helper)
+    {
+        WorkerSettings.overrideReachForTests(null, true, false, 0);
+        ReachAudit.enable(true);
+        BuilderScaffolding.resetCounters();
+        final int fallbacks0 = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks.get();
+        final int refusals0 = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachRefusals.get();
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF pillar", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            final Blueprint blueprint = shape("pillar", 1, 12, 1, (x, y, z) -> true);
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            final WorkOrderDecoration order = live.orderFor("pillar", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            WorkerEfficiencyGameTests.everyTick(live, 12_000, tick -> {
+                if (tick % 1000 == 0)
+                {
+                    Log.getLogger().info("WSCAF pillar t={} missing={} fallbacks={} refusals={} audit={} maxVertical={} {}", tick, missing(live, blueprint, origin),
+                      com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks.get() - fallbacks0,
+                      com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachRefusals.get() - refusals0, ReachAudit.violations(),
+                      String.format("%.2f", ReachAudit.fallbackMaxVertical()), live.ai());
+                }
+                return tick >= 9000 || (live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder());
+            }, () -> {
+                final int fallbacks = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks.get() - fallbacks0;
+                final int refusals = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachRefusals.get() - refusals0;
+                Log.getLogger().info("WBENCH RESULT pillar missing={} fallbacks={} refusals={} fallbackActions={} maxVertical={} violations={} top={}", missing(live, blueprint, origin),
+                  fallbacks, refusals, ReachAudit.fallbackActions(), String.format("%.2f", ReachAudit.fallbackMaxVertical()), ReachAudit.violations(),
+                  live.level.getBlockState(origin.above(11)).getBlock());
+                helper.assertTrue(ReachAudit.violations() == 0, "blocks were placed out of reach: " + ReachAudit.examples());
+                helper.assertTrue(ReachAudit.fallbackMaxVertical() <= 5.0001D, "the fallback placed a block " + ReachAudit.fallbackMaxVertical() + " up or down from the eye");
+                WorkerSettings.clearOverrides();
+                ReachAudit.enable(false);
+                helper.succeed();
+            }, () -> "missing=" + missing(live, blueprint, origin) + " " + live.ai());
+        });
+    }
+
+    /**
+     * Builder review c1 H2: a ring 10 high whose scaffolding is asked for and arrives only about 3000 ticks later (a slow courier). The builder waits for it
+     * as before: no reach fallback, the ring is built whole, nothing out of reach.
+     */
+    public static void slowDeliveryNoFallback(final GameTestHelper helper)
+    {
+        WorkerSettings.overrideReachForTests(null, true, null, 16);
+        ReachAudit.enable(true);
+        BuilderScaffolding.resetCounters();
+        final int fallbacks0 = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks.get();
+        WorkerEfficiencyGameTests.scene(helper, "WSCAF slow", live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            final Blueprint blueprint = ring("slow", 10);
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
+            final WorkOrderDecoration order = live.orderFor("slow", SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            final int[] requestedAt = {-1};
+            final boolean[] delivered = {false};
+            WorkerEfficiencyGameTests.everyTick(live, 30_000, tick -> {
+                if (requestedAt[0] < 0)
+                {
+                    for (final var request : live.hut.getOpenRequestsOfType(-1, com.google.common.reflect.TypeToken.of(com.minecolonies.api.colony.requestsystem.requestable.Stack.class)))
+                    {
+                        if (request.getRequest().getStack().is(Items.SCAFFOLDING))
+                        {
+                            requestedAt[0] = tick;
+                        }
+                    }
+                }
+                if (requestedAt[0] >= 0 && !delivered[0] && tick - requestedAt[0] >= 3000)
+                {
+                    // the slow courier brings 32
+                    delivered[0] = true;
+                    InventoryUtils.addItemStackToItemHandler(live.hut.getItemHandlerCap(), new ItemStack(Items.SCAFFOLDING, 32));
+                    Log.getLogger().info("WSCAF slow: requested at t={}, delivered at t={}", requestedAt[0], tick);
+                }
+                return delivered[0] && live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder();
+            }, () -> {
+                final int fallbacks = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachFallbacks.get() - fallbacks0;
+                Log.getLogger().info("WBENCH RESULT slow requestedAt={} towers={} cells={} fallbacks={} violations={}", requestedAt[0], BuilderScaffolding.towersBuilt,
+                  BuilderScaffolding.cellsPlaced, fallbacks, ReachAudit.violations());
+                helper.assertTrue(built(live, blueprint, origin), "not built: missing " + missing(live, blueprint, origin));
+                helper.assertTrue(fallbacks == 0, "a late delivery made the builder fall back to the working range: " + fallbacks);
+                helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
+                helper.assertTrue(scaffoldInWorld(live, origin) == 0, "scaffolding left");
+                WorkerSettings.clearOverrides();
+                ReachAudit.enable(false);
+                helper.succeed();
+            }, () -> "requestedAt=" + requestedAt[0] + " delivered=" + delivered[0] + " missing=" + missing(live, blueprint, origin) + " " + live.ai());
+        });
     }
 
     public static void tallWall8(final GameTestHelper helper)
