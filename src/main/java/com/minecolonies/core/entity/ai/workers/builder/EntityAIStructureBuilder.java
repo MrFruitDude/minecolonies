@@ -563,6 +563,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
     /** The order whose blocks fall back at once while no scaffolding is anywhere and none is asked for (a starved fallback fired in it). */
     private int      starvedOrder = -1;
+    /** The order in which a tower was waited for in vain once: later no-spot blocks of it do not wait again while no scaffolding has come. */
+    private int      waitedOrder  = -1;
     /** Fallback reasons this order logged at WARN, and how often each came (later ones at DEBUG). */
     private final java.util.Map<String, Integer> fallbackLog = new java.util.HashMap<>();
     /** How often the builder fell back to the limited working range, to MineColonies' default placement, refused a block out of range, and fell back on a
@@ -628,16 +630,21 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
 
     /**
-     * Whether the block or the one under it holds a fluid other than water (lava): no fallback ever places there.
+     * Whether the block, or the first thing under it (through air, up to 16 down), holds a fluid other than water (lava): no fallback ever places there.
      */
     private boolean fluidHazard(final BlockPos pos)
     {
-        for (final BlockPos p : new BlockPos[] {pos, pos.below()})
+        final BlockPos.MutableBlockPos p = pos.mutable();
+        for (int i = 0; i <= 16; i++, p.move(net.minecraft.core.Direction.DOWN))
         {
             final net.minecraft.world.level.material.FluidState fluid = world.getFluidState(p);
             if (!fluid.isEmpty() && !fluid.is(net.minecraft.tags.FluidTags.WATER))
             {
                 return true;
+            }
+            if (i > 0 && !world.getBlockState(p).isAir())
+            {
+                return false;
             }
         }
         return false;
@@ -669,6 +676,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     private boolean defaultAllowed(final BlockPos target, final long now)
     {
         if (!BuilderScaffolding.enabled() || (scaffold.hasNoItems() && !scaffold.stockAsked()))
+        {
+            return true;
+        }
+        if (waitedOrder >= 0 && waitedOrder == currentOrderId() && scaffold.hasNoItems())
         {
             return true;
         }
@@ -742,6 +753,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             reachOrder = order;
             fallbackLog.clear();
             starvedOrder = -1;
+            waitedOrder = -1;
             noSpotFirst.clear();
             lastResort.clear();
         }
@@ -804,9 +816,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             starvedOrder = order;
             mode = FallbackMode.DEFAULT;
         }
-        else if (noSpotFor >= REACH_FALLBACK_WAITING_TICKS)
+        else if (noSpotFor >= 0L && (noSpotFor >= REACH_FALLBACK_WAITING_TICKS || (waitedOrder == order && scaffold.hasNoItems())))
         {
             kind = "waited";
+            waitedOrder = order;
             why = "no stand spot reaches it and the scaffolding asked for has not come in " + noSpotFor + " ticks";
             mode = FallbackMode.DEFAULT;
         }
@@ -1332,6 +1345,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         fallbackLog.clear();
         reachOrder = -1;
         starvedOrder = -1;
+        waitedOrder = -1;
         noSpotFirst.clear();
         lastResort.clear();
     }
