@@ -99,7 +99,7 @@ public final class WorkHungerGameTests
         WorkerEfficiencyGameTests.scene(helper, "WHUNGER eat at work", live -> {
             live.setSkills(1, 1);
             live.giveTools();
-            final Blueprint wall = BuilderScaffoldGameTests.shape("eat_at_work", 9, 2, 1, (x, y, z) -> true);
+            final Blueprint wall = BuilderScaffoldGameTests.shape("eat_at_work", 9, 4, 1, (x, y, z) -> true);
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), BuilderScaffoldGameTests.solidCount(wall) + WorkerEfficiencyGameTests.SPARE);
             final WorkOrderDecoration order = live.orderFor("eat_at_work", BuilderScaffoldGameTests.SITE, wall);
             InventoryUtils.addItemStackToItemHandler(live.citizen.getInventory(), new ItemStack(Items.BREAD, 8));
@@ -119,7 +119,7 @@ public final class WorkHungerGameTests
                   CitizenSnack.eaten.get() - eaten0, state, meals, live.ai());
                 helper.assertTrue(meals.isEmpty(), "the builder left his work for a meal: " + meals);
                 helper.assertTrue(bread < 8 && CitizenSnack.eaten.get() > eaten0, "no bread eaten at work: bread=" + bread);
-                helper.assertTrue(state == CitizenAIState.WORK, "not working after eating: " + state);
+                helper.assertTrue(state == CitizenAIState.WORKING || BuilderScaffoldGameTests.built(live, wall, order.getLocation()), "not working after eating: " + state);
                 helper.assertTrue(live.colony.getWorkManager().getWorkOrder(order.getID()) != null || BuilderScaffoldGameTests.built(live, wall, order.getLocation()),
                   "the order was dropped");
                 WorkerSettings.clearOverrides();

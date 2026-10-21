@@ -69,7 +69,8 @@ public class CitizenSnack
     public boolean tick()
     {
         final ICitizenData data = citizen.getCitizenData();
-        if (data == null || citizen.level().isClientSide() || data.getJob() == null || data.isChild() || citizen.getCitizenAI().getState() != CitizenAIState.WORK)
+        final var state = citizen.getCitizenAI().getState();
+        if (data == null || citizen.level().isClientSide() || data.getJob() == null || data.isChild() || (state != CitizenAIState.WORKING && state != CitizenAIState.WORK))
         {
             eating = false;
             return false;
