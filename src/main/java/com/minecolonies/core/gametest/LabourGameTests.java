@@ -603,8 +603,9 @@ final class LabourGameTests
                     helper.assertTrue(board.takenTrees().isEmpty() && board.takenSurface().isEmpty() && board.takenTables().isEmpty() && board.takenFurnaces().isEmpty()
                                         && board.takenCutters().isEmpty() && board.takenEntities().isEmpty(),
                       "taken sites outlived the order: trees " + board.takenTrees() + " tables " + board.takenTables());
-                    final var state = builder.getJob() == null || builder.getJob().getWorkerAI() == null ? null : builder.getJob().getWorkerAI().getState();
-                    helper.assertTrue(state != com.minecolonies.core.entity.ai.workers.builder.BuilderSupplyState.SUPPLY_RUN, "still fetching for a gone order");
+                    // (the session itself, not the AI's state name: an idle builder's state may still read SUPPLY_RUN until his job AI next runs)
+                    helper.assertTrue(!(builder.getJob() != null && builder.getJob().getWorkerAI() instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder ai
+                                          && ai.isSupplying()), "still fetching for a gone order");
                 }
                 return now - cancelledAt[0] > 900;
             }, () -> {

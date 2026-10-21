@@ -261,6 +261,14 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
 
     /**
+     * @return whether a supply session runs now (read-only; the AI's state name may still read SUPPLY_RUN for a tick after it ended).
+     */
+    public boolean isSupplying()
+    {
+        return supply != null;
+    }
+
+    /**
      * A leisure break never interrupts a supply run (hunger may: the run is okay-to-eat).
      */
     @Override

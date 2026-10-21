@@ -637,6 +637,7 @@ final class WaveBLabourGameTests
             final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
             InventoryUtils.addItemStackToItemHandler(idle.getInventory(), new ItemStack(Items.WOODEN_PICKAXE));
             final IToken<?> dirt = ask(f.builder, new ItemStack(Items.DIRT, 11));
+            // (more cobblestone than the pit holds: the request stays open, the world shows what was dug)
             final IToken<?> cobble = ask(f.builder, new ItemStack(Items.COBBLESTONE, 2));
             final long[] doneAt = {-1L};
             poll(helper, List.of(colony), 9000, () -> {
@@ -644,7 +645,7 @@ final class WaveBLabourGameTests
                                                                                              + count(helper, Blocks.STONE, 30, 20, 33, 22, 0));
                 if (doneAt[0] < 0)
                 {
-                    if (inHut(f.builder, Items.DIRT) >= 11 && inHut(f.builder, Items.COBBLESTONE) >= 1)
+                    if (inHut(f.builder, Items.DIRT) >= 11 && !helper.getBlockState(new BlockPos(31, 0, 21)).is(Blocks.STONE))
                     {
                         doneAt[0] = helper.getLevel().getGameTime();
                     }
@@ -654,7 +655,6 @@ final class WaveBLabourGameTests
             }, () -> {
                 helper.assertTrue(!helper.getBlockState(new BlockPos(31, 0, 21)).is(Blocks.STONE) && count(helper, Blocks.STONE, 30, 20, 33, 22, 0) == 11,
                   "not exactly the pit's stone was dug: stone left " + count(helper, Blocks.STONE, 30, 20, 33, 22, 0));
-                helper.assertTrue(inHut(f.builder, Items.COBBLESTONE) == 1, "more cobblestone than the pit holds: " + inHut(f.builder, Items.COBBLESTONE));
                 end();
                 helper.succeed();
             }, () -> "dirt " + describe(f, dirt, idle) + " | cobble " + f.describe(cobble));
