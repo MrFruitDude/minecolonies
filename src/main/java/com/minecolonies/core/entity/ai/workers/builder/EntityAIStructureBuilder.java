@@ -1465,9 +1465,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     @Override
     public boolean walkToConstructionSite(final BlockPos currentBlock)
     {
-        if (reachFallback != null && !reachFallback.equals(currentBlock))
+        if (reachFallback != null && (!reachFallback.equals(currentBlock) || reachTarget == null))
         {
-            // the block he worked on from the working range is done: the physical reach again
+            // the block he worked on from the working range is done: the physical reach again. Also when the walk is to the same position but not for that
+            // block (no reach target: the walk to the order's location once the stage has nothing left). r9 preview9 stall: the location was the walled
+            // block placed by the default rule, so this walk counted as its fallback walk, which is never deferred (R4), and he walked at it for good
             dropReachFallback();
         }
         if (usesPhysicalReach() && currentBlock.equals(reachTarget) && !reachFallbackDue(currentBlock))

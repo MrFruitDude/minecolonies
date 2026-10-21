@@ -588,6 +588,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         final BlockPos progress = getProgressPos() == null ? NULL_POS : getProgressPos().getA();
         BlockPos worldPos = getPosToWorkAt();
         boolean reachGate = false;
+        boolean nothingLeft = false;
         if (usesPhysicalReach() && blockToMine == null && !limitReached)
         {
             // the worker works on what he reaches: the next block that has something to do is the one he has to be able to reach
@@ -596,6 +597,12 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             {
                 worldPos = next.get(0);
                 reachGate = true;
+            }
+            else
+            {
+                // nothing is left in the stage (the look ran to its end): the step only ends it, so there is no walk to the order's location first.
+                // That location can be cut off (r9 preview9 stall: a walled block placed by the default rule; he walked at it until the test ran out)
+                nothingLeft = peekAtEnd;
             }
         }
 
@@ -609,7 +616,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         final boolean outOfOrder = nearby != null;
 
         reachTarget = usesPhysicalReach() ? (blockToMine != null ? blockToMine : (reachGate ? worldPos : null)) : null;
-        final boolean mustWalk = !outOfOrder && (worldPos != null || blockToMine != null) && !limitReached
+        final boolean mustWalk = !outOfOrder && !nothingLeft && (worldPos != null || blockToMine != null) && !limitReached
                                    && (blockToMine == null ? !walkToConstructionSite(worldPos) : !walkToConstructionSite(blockToMine));
         if (mustWalk)
         {
@@ -1643,6 +1650,11 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     protected static final int REACH_LOOKAHEAD = 48;
 
     /**
+     * Whether the last {@link #peekWork} found nothing because the stage's iteration ran to its end (not because its look-ahead ran out).
+     */
+    private boolean peekAtEnd = false;
+
+    /**
      * The blocks the worker works on next and where something has to be done (not those that are what the blueprint wants already), in the
      * order he works on them, without moving on.
      *
@@ -1651,6 +1663,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      */
     protected final List<BlockPos> peekWork(final int n)
     {
+        peekAtEnd = false;
         if (structurePlacer == null || structurePlacer.getB().getStage() == null)
         {
             return List.of();
@@ -1670,7 +1683,8 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         {
             placer.getIterator().setProgressPos(progress.getA());
             int guard = 0;
-            while (work.size() < n && guard++ < 8 * n + 256 && iterate.get() == AbstractBlueprintIterator.Result.NEW_BLOCK)
+            AbstractBlueprintIterator.Result last = AbstractBlueprintIterator.Result.NEW_BLOCK;
+            while (work.size() < n && guard++ < 8 * n + 256 && (last = iterate.get()) == AbstractBlueprintIterator.Result.NEW_BLOCK)
             {
                 final BlockPos local = placer.getIterator().getProgressPos();
                 final BlockPos worldPos = handler.getProgressPosInWorld(local);
@@ -1679,6 +1693,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
                     work.add(worldPos);
                 }
             }
+            peekAtEnd = work.isEmpty() && last == AbstractBlueprintIterator.Result.AT_END;
         }
         finally
         {
