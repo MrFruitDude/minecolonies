@@ -173,6 +173,81 @@ public final class HutDebts
         return true;
     }
 
+    /**
+     * Forgives one debt of the colony: the debt of the hut at the position (a standing hut's own debt first, else a gone hut's debt recorded there) goes, and so does
+     * its open request when no other debt still needs it (the hut's own for a standing hut, the town hall's for a gone one). The other debts and their re-ask timers
+     * are not touched. The colony is marked dirty. For tools that remove a hut and settle its debt (Colony Command). Server thread only.
+     *
+     * @param colony the colony (only a server colony has debts).
+     * @param hut    the hut's position (its building id).
+     * @return true if a debt was forgiven; false if the colony has none for that position (nothing changed).
+     */
+    public static boolean forgive(@Nullable final IColony colony, final BlockPos hut)
+    {
+        if (!(colony instanceof com.minecolonies.core.colony.Colony server) || hut == null)
+        {
+            return false;
+        }
+        final HutDebts debts = server.getLabourData().hutDebts();
+        final Debt debt = debts.removeOne(hut);
+        if (debt == null)
+        {
+            return false;
+        }
+        final IBuilding asker = debt.gone() ? server.getServerBuildingManager().getTownHall() : server.getServerBuildingManager().getBuilding(debt.hut());
+        if (asker != null && !debts.stillOwes(debt, asker))
+        {
+            end(server, asker, debt.item());
+        }
+        server.markDirty();
+        return true;
+    }
+
+    /**
+     * Removes exactly one debt at the position (a standing hut's first, else a gone hut's) and its timer; nothing else changes.
+     *
+     * @return the removed debt, or null when there is none at the position.
+     */
+    @Nullable
+    Debt removeOne(final BlockPos hut)
+    {
+        Debt found = null;
+        for (final Debt debt : debts)
+        {
+            if (debt.hut().equals(hut) && (found == null || (found.gone() && !debt.gone())))
+            {
+                found = debt;
+            }
+        }
+        if (found != null)
+        {
+            debts.remove(found);
+            askedAt.remove(found);
+        }
+        return found;
+    }
+
+    /**
+     * Records a debt with its last ask time (null: never asked). Tests only.
+     */
+    void record(final Debt debt, @Nullable final Long asked)
+    {
+        debts.add(debt);
+        if (asked != null)
+        {
+            askedAt.put(debt, asked);
+        }
+    }
+
+    /**
+     * @return when the debt last asked, or null (runtime only). Tests only.
+     */
+    @Nullable
+    Long askedAt(final Debt debt)
+    {
+        return askedAt.get(debt);
+    }
+
     private static boolean asking(final IBuilding building, final Item item)
     {
         for (final IRequest<?> request : building.getOpenRequests(-1))
