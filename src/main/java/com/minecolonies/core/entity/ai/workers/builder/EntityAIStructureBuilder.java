@@ -468,8 +468,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     private final class ReachWalk
     {
         BlockPos spot = null;
-        /** Whether he was stepped to the middle of the spot once. */
-        boolean centred = false;
+        /** When he was stepped to the middle of the spot (0: not yet). */
+        long centredAt = 0L;
         long since = 0L;
         long budget = 100L;
         final Set<BlockPos> bad = new HashSet<>();
@@ -530,16 +530,47 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     /** Since when he stands still on a valid spot next to the flooded block, 0: he does not. */
     private long     floodedSince = 0L;
     private long     floodedLogAt = 0L;
-    /** The block he works on from MineColonies' working range (the physical reach found no spot for it in time), or null. */
+    /** The block he works on from MineColonies' working range (the physical reach found no spot for it in time), or null, and how. */
     private BlockPos reachFallback = null;
+    private FallbackMode reachFallbackMode = FallbackMode.LIMITED;
     private int      fallbackWalkFails = 0;
+    private BlockPos fallbackFailAt = null;
+    /** The spot the limited fallback walks to, for which block, and when it was looked for (the search is not run every tick). */
+    private BlockPos fallbackSpot = null;
+    private BlockPos fallbackSpotFor = null;
+    private long     fallbackSpotAt = Long.MIN_VALUE / 2;
+    /** Per block of this order: when no stand spot was first left for it (kept when the block is deferred and comes again). */
+    private final java.util.Map<BlockPos, Long> noSpotFirst = new java.util.HashMap<>();
+    /** Blocks of this order the unstuck ladder would have left out (holes): kept, and placed the way MineColonies places them once that is allowed. */
+    private final java.util.Map<BlockPos, Integer> lastResort = new java.util.HashMap<>();
+    /** How often a block may come back as a last resort before it is left out after all (MineColonies' own placement could not get to it either). */
+    static final int LAST_RESORT_KEEPS = 6;
+    /** Ticks between two searches for a spot in the working range. */
+    static final long FALLBACK_SPOT_RETRY = 20L;
+
+    /**
+     * How a block out of the physical reach is worked on.
+     * <ul>
+     *   <li>{@code LIMITED}: from MineColonies' working range with its limit up and down enforced (5 around, 5 up or down from the eye); used while scaffolding is
+     *   available. A block out of that range is refused ("needs scaffolding") while a tower for it can still come.</li>
+     *   <li>{@code DEFAULT}: the way unmodified MineColonies places it (5 around, any height): scaffolding is off, none is anywhere or asked for, or the tower
+     *   was waited for {@link #REACH_FALLBACK_WAITING_TICKS}. The builder leaves no holes.</li>
+     * </ul>
+     */
+    enum FallbackMode
+    {
+        LIMITED, DEFAULT
+    }
     /** The order whose blocks fall back at once while no scaffolding is anywhere and none is asked for (a starved fallback fired in it). */
     private int      starvedOrder = -1;
     /** Fallback reasons this order logged at WARN, and how often each came (later ones at DEBUG). */
     private final java.util.Map<String, Integer> fallbackLog = new java.util.HashMap<>();
-    /** How often the builder fell back to MineColonies' working range, and refused a block out of it (for the tests and the logs). */
+    /** How often the builder fell back to the limited working range, to MineColonies' default placement, refused a block out of range, and fell back on a
+     * flooded cell (for the tests and the logs). */
     public static final java.util.concurrent.atomic.AtomicInteger reachFallbacks = new java.util.concurrent.atomic.AtomicInteger();
-    public static final java.util.concurrent.atomic.AtomicInteger reachRefusals = new java.util.concurrent.atomic.AtomicInteger();
+    public static final java.util.concurrent.atomic.AtomicInteger reachDefaults  = new java.util.concurrent.atomic.AtomicInteger();
+    public static final java.util.concurrent.atomic.AtomicInteger reachRefusals  = new java.util.concurrent.atomic.AtomicInteger();
+    public static final java.util.concurrent.atomic.AtomicInteger reachFlooded   = new java.util.concurrent.atomic.AtomicInteger();
 
     private final BuilderScaffolding scaffold = new BuilderScaffolding(this);
 
@@ -556,7 +587,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return true;
         }
-        return pos.equals(reachFallback) && inFallbackRange(worker.blockPosition(), worker.getEyeY(), pos);
+        // (MineColonies' default placement has no reach gate: its own walk decides)
+        return pos.equals(reachFallback) && (reachFallbackMode == FallbackMode.DEFAULT || inFallbackRange(worker.blockPosition(), worker.getEyeY(), pos));
     }
 
     /**
@@ -621,11 +653,49 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         reachNoSpotSince = 0L;
         floodedSince = 0L;
         fallbackWalkFails = 0;
+        fallbackFailAt = null;
+        fallbackSpotFor = null;
         if (reachFallback != null)
         {
-            com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(worker, null);
+            com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(worker, null, false);
         }
         reachFallback = null;
+    }
+
+    /**
+     * Whether a block out of the physical reach may be placed the way unmodified MineColonies places it: scaffolding is off, none is anywhere and none is asked
+     * for, or no stand spot was left for it for {@link #REACH_FALLBACK_WAITING_TICKS} (the tower was waited for long enough).
+     */
+    private boolean defaultAllowed(final BlockPos target, final long now)
+    {
+        if (!BuilderScaffolding.enabled() || (scaffold.hasNoItems() && !scaffold.stockAsked()))
+        {
+            return true;
+        }
+        final Long first = noSpotFirst.get(target);
+        return first != null && now - first >= REACH_FALLBACK_WAITING_TICKS;
+    }
+
+    /**
+     * The unstuck ladder would leave the block out for good. Out of the physical reach, the builder leaves no hole: the block is kept and comes again, and is
+     * placed the way MineColonies places it once that is allowed ({@link #defaultAllowed}); while a tower for it can still come he waits for it. Never over
+     * lava, and after {@link #LAST_RESORT_KEEPS} returns the block is left out after all.
+     */
+    @Override
+    protected boolean keepInsteadOfAbandoning(final BlockPos pos)
+    {
+        if (!usesPhysicalReach() || fluidHazard(pos))
+        {
+            return false;
+        }
+        // (while the tower for it can still come, waiting does not use up the returns)
+        final int keeps = defaultAllowed(pos, world.getGameTime()) ? lastResort.merge(pos.immutable(), 1, Integer::sum) : lastResort.merge(pos.immutable(), 0, Integer::sum);
+        if (keeps > LAST_RESORT_KEEPS)
+        {
+            return false;
+        }
+        scaffold.note("last resort for " + pos + " (" + keeps + ")");
+        return true;
     }
 
     private int currentOrderId()
@@ -672,6 +742,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             reachOrder = order;
             fallbackLog.clear();
             starvedOrder = -1;
+            noSpotFirst.clear();
+            lastResort.clear();
         }
         if (!target.equals(reachTry))
         {
@@ -681,6 +753,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             reachNoSpotSince = 0L;
             floodedSince = 0L;
             fallbackWalkFails = 0;
+            fallbackFailAt = null;
         }
         if (target.equals(reachFallback))
         {
@@ -707,10 +780,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                                 + " below=" + world.getBlockState(worker.blockPosition().below()).getBlock() + " scaffold=" + scaffold.debug());
             }
         }
-        final boolean noneAnywhere = scaffold.hasNoItems() && !scaffold.stockAsked();
-        final long noSpotFor = reachNoSpotSince == 0L ? -1L : now - reachNoSpotSince;
+        final boolean noneAnywhere = !BuilderScaffolding.enabled() || (scaffold.hasNoItems() && !scaffold.stockAsked());
+        final Long first = reachNoSpotSince == 0L ? null : noSpotFirst.get(target);
+        final long noSpotFor = first == null ? -1L : now - first;
         final String kind;
         final String why;
+        FallbackMode mode = FallbackMode.LIMITED;
         if (reachTryMisses >= REACH_FALLBACK_MISSES)
         {
             kind = "missed";
@@ -720,57 +795,115 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             kind = "flooded";
             why = "the cell is flooded";
+            reachFlooded.incrementAndGet();
         }
         else if (noSpotFor >= 0L && noneAnywhere && (noSpotFor >= REACH_FALLBACK_STARVED_TICKS || starvedOrder == order))
         {
             kind = "starved";
-            why = "no stand spot reaches it and no scaffolding is anywhere or asked for";
+            why = BuilderScaffolding.enabled() ? "no stand spot reaches it and no scaffolding is anywhere or asked for" : "no stand spot reaches it and scaffolding is off";
             starvedOrder = order;
+            mode = FallbackMode.DEFAULT;
         }
         else if (noSpotFor >= REACH_FALLBACK_WAITING_TICKS)
         {
-            kind = "waiting";
+            kind = "waited";
             why = "no stand spot reaches it and the scaffolding asked for has not come in " + noSpotFor + " ticks";
+            mode = FallbackMode.DEFAULT;
+        }
+        else if (lastResort.containsKey(target))
+        {
+            if (!defaultAllowed(target, now))
+            {
+                // the tower for it can still come: he waits, and says why
+                reachRefusals.incrementAndGet();
+                logFallback("refused", "Builder {} refuses {} for now: out of his reach, it needs scaffolding, which is asked for; he waits for it (at most {} ticks)",
+                  worker.getName().getString(), target.toShortString(), REACH_FALLBACK_WAITING_TICKS);
+                return false;
+            }
+            kind = "last-resort";
+            why = "the unstuck ladder would have left it out";
+            mode = FallbackMode.DEFAULT;
         }
         else
         {
             return false;
         }
+        if (mode == FallbackMode.LIMITED && defaultAllowed(target, now))
+        {
+            mode = FallbackMode.DEFAULT;
+        }
+        startFallback(target, mode, kind, why, now);
+        return true;
+    }
+
+    private void startFallback(final BlockPos target, final FallbackMode mode, final String kind, final String why, final long now)
+    {
         reachFallback = target.immutable();
+        reachFallbackMode = mode;
         fallbackWalkFails = 0;
-        reachFallbacks.incrementAndGet();
-        logFallback(kind, "Builder {} cannot reach {} with the physical reach ({}; {} ticks, {} spots missed): works on it from MineColonies' working range",
+        fallbackFailAt = null;
+        (mode == FallbackMode.DEFAULT ? reachDefaults : reachFallbacks).incrementAndGet();
+        logFallback(kind + "/" + mode, "Builder {} cannot reach {} with the physical reach ({}; {} ticks, {} spots missed): " + (mode == FallbackMode.DEFAULT
+                                                                                                                                  ? "places it the way MineColonies does (5 around, any height)"
+                                                                                                                                  : "works on it from MineColonies' working range (5 around, 5 up or down)"),
           worker.getName().getString(), target.toShortString(), why, now - reachTrySince, reachTryMisses);
-        scaffold.note("reach fallback for " + target + ": " + why);
+        scaffold.note("reach fallback " + mode + " for " + target + ": " + why);
         scaffold.cancelWaiting();
         mainWalk.spot = null;
         workFrom = null;
         worker.getNavigation().stop();
-        com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(worker, reachFallback);
-        return true;
+        com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(worker, reachFallback, mode == FallbackMode.LIMITED);
     }
 
     /**
-     * The fallback block lies out of his working range: walks to a spot from which it is in range (5 around, 5 up or down from the eye), or refuses it when
-     * there is none or the walk does not get there ({@link #FALLBACK_WALK_FAILS}): the block needs scaffolding, and the unstuck ladder gives it up for now.
+     * The limited fallback block lies out of his range: walks to a spot from which it is in range (5 around, 5 up or down from the eye; the search runs every
+     * {@link #FALLBACK_SPOT_RETRY} ticks, not every tick). With no such spot, or after {@link #FALLBACK_WALK_FAILS} walks that did not get there: MineColonies'
+     * default placement if it is allowed ({@link #defaultAllowed}), else the block is refused for now (it needs scaffolding, which can still come).
      *
-     * @return false (he is not in range yet, or the block is refused).
+     * @return true if the block is now placed the default way (the caller goes on with MineColonies' own walk), false while he walks or waits.
      */
     private boolean walkIntoFallbackRange(final BlockPos target)
     {
-        final BlockPos spot = fallbackWalkFails >= FALLBACK_WALK_FAILS ? null : StandSpots.nearest(world, target, FALLBACK_RANGE, FALLBACK_RANGE + 2, FALLBACK_RANGE, p -> canWalkTo(p)
-          && inFallbackRange(p, p.getY() + StandSpots.standOffset(world, p) + worker.getEyeHeight(), target));
-        if (spot == null)
+        final long now = world.getGameTime();
+        if (fallbackFailAt != null && fallbackFailAt.distManhattan(worker.blockPosition()) > 2)
         {
+            // he was moved (a ladder teleport, a walk): the failed walks were from somewhere else
+            fallbackWalkFails = 0;
+            fallbackFailAt = null;
+        }
+        if (!target.equals(fallbackSpotFor) || now - fallbackSpotAt >= FALLBACK_SPOT_RETRY || now < fallbackSpotAt)
+        {
+            fallbackSpotFor = target.immutable();
+            fallbackSpotAt = now;
+            fallbackSpot = fallbackWalkFails >= FALLBACK_WALK_FAILS ? null : StandSpots.nearest(world, target, FALLBACK_RANGE, FALLBACK_RANGE + 2, FALLBACK_RANGE, p -> canWalkTo(p)
+              && inFallbackRange(p, p.getY() + StandSpots.standOffset(world, p) + worker.getEyeHeight(), target));
+        }
+        if (fallbackSpot == null)
+        {
+            if (defaultAllowed(target, now))
+            {
+                reachFallbackMode = FallbackMode.DEFAULT;
+                reachDefaults.incrementAndGet();
+                logFallback("out-of-range/DEFAULT", "Builder {} cannot get {} into the limited working range: places it the way MineColonies does", worker.getName().getString(),
+                  target.toShortString());
+                com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(worker, target, false);
+                workFrom = null;
+                return true;
+            }
             reachRefusals.incrementAndGet();
-            logFallback("refused", "Builder {} refuses {}: out of MineColonies' working range (5 around, 5 up or down) from every spot he can get to; it needs scaffolding",
-              worker.getName().getString(), target.toShortString());
+            logFallback("refused", "Builder {} refuses {} for now: out of MineColonies' working range (5 around, 5 up or down) from every spot he can get to; it needs "
+                                     + "scaffolding, which is asked for", worker.getName().getString(), target.toShortString());
             scaffold.note("refused " + target + ": out of the working range from every spot");
             return false;
         }
-        if (EntityNavigationUtils.walkToBlock(worker, spot) == -1)
+        if (EntityNavigationUtils.walkToBlock(worker, fallbackSpot) == -1)
         {
+            // one walk ended somewhere else: counted once, and a new walk is started
             fallbackWalkFails++;
+            fallbackFailAt = worker.blockPosition();
+            // (the ended walk is dropped, so the next call starts a new one)
+            worker.getNavigation().stop();
+            fallbackSpotAt = Long.MIN_VALUE / 2;
         }
         return false;
     }
@@ -966,8 +1099,9 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 }
                 if (walk == mainWalk && target.equals(reachTry) && reachNoSpotSince == 0L)
                 {
-                    // the clock of the scaffolding fallback: only a tower would help this block now
+                    // the clock of the scaffolding fallback: only a tower would help this block now (the first time is kept when the block comes again)
                     reachNoSpotSince = now;
+                    noSpotFirst.putIfAbsent(target.immutable(), now);
                 }
                 if (!mayScaffold)
                 {
@@ -994,7 +1128,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 return false;
             }
             walk.spot = spots.get(0).feet();
-            walk.centred = false;
+            walk.centredAt = 0L;
             if (walk == mainWalk && target.equals(reachTry))
             {
                 reachNoSpotSince = 0L;
@@ -1026,11 +1160,14 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 prevBlockPosition = target;
                 return true;
             }
-            if (walked == 1 && !walk.centred)
+            if (walked == 1 && (walk.centredAt == 0L || (now - walk.centredAt < 10L && worker.getMoveControl().hasWanted())))
             {
-                // on the spot but off its middle by more than the margin: one step to the middle before the spot counts as not working
-                walk.centred = true;
-                worker.getMoveControl().setWantedPosition(walk.spot.getX() + 0.5D, worker.getY(), walk.spot.getZ() + 0.5D, 1.0D);
+                // on the spot but off its middle by more than the margin: a step to the middle (up to 10 ticks) before the spot counts as not working
+                if (walk.centredAt == 0L)
+                {
+                    walk.centredAt = now;
+                    worker.getMoveControl().setWantedPosition(walk.spot.getX() + 0.5D, worker.getY(), walk.spot.getZ() + 0.5D, 1.0D);
+                }
                 return false;
             }
             // the walk is over, and the block is still out of reach: this spot does not work
@@ -1195,6 +1332,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         fallbackLog.clear();
         reachOrder = -1;
         starvedOrder = -1;
+        noSpotFirst.clear();
+        lastResort.clear();
     }
 
     @Override
@@ -1203,16 +1342,16 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         if (reachFallback != null && !reachFallback.equals(currentBlock))
         {
             // the block he worked on from the working range is done: the physical reach again
-            com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(worker, null);
+            com.minecolonies.core.entity.ai.workers.util.ReachAudit.excuse(worker, null, false);
             reachFallback = null;
         }
         if (usesPhysicalReach() && currentBlock.equals(reachTarget) && !reachFallbackDue(currentBlock))
         {
             return walkIntoReach(mainWalk, currentBlock, () -> workAhead(currentBlock), false, null, true);
         }
-        if (usesPhysicalReach() && currentBlock.equals(reachFallback))
+        if (usesPhysicalReach() && currentBlock.equals(reachFallback) && reachFallbackMode == FallbackMode.LIMITED)
         {
-            // MineColonies' own working range, with its limit up and down enforced: never the horizontal-only check below
+            // the limited working range, its limit up and down enforced: never the horizontal-only check below
             if (inFallbackRange(worker.blockPosition(), worker.getEyeY(), currentBlock))
             {
                 worker.getNavigation().stop();
@@ -1220,8 +1359,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 prevBlockPosition = currentBlock;
                 return true;
             }
-            return walkIntoFallbackRange(currentBlock);
+            if (!walkIntoFallbackRange(currentBlock))
+            {
+                return false;
+            }
         }
+        // (from here on: unmodified MineColonies, and the default placement of a block the physical reach could not serve)
 
         // A builder that is already within the normal working radius does not
         // need an asynchronous path calculation.  This is also important for

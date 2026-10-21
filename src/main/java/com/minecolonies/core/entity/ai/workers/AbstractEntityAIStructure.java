@@ -1183,8 +1183,16 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             final BlockPos pos = worldPos.immutable();
             if (retryBlocks.remove(pos))
             {
-                abandonedBlocks.add(pos);
-                onBlockAbandoned(pos);
+                if (keepInsteadOfAbandoning(pos))
+                {
+                    // (the worker leaves no hole: it comes again, see keepInsteadOfAbandoning)
+                    retryBlocks.add(pos);
+                }
+                else
+                {
+                    abandonedBlocks.add(pos);
+                    onBlockAbandoned(pos);
+                }
             }
             else
             {
@@ -1203,6 +1211,17 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             stuck.progress();
         }
         toolWaitTicks = 0;
+    }
+
+    /**
+     * Whether a block the worker could not get to twice is kept (it comes again) instead of being left out of the stage for good. None by default.
+     *
+     * @param worldPos the block.
+     * @return true to keep it.
+     */
+    protected boolean keepInsteadOfAbandoning(final BlockPos worldPos)
+    {
+        return false;
     }
 
     /**

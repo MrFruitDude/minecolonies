@@ -25,7 +25,9 @@ public final class ReachAudit
     /** The block each builder (by entity id) works on from MineColonies' working range (the physical reach found no spot for it in time): not counted as a violation. */
     private static final java.util.Map<Integer, BlockPos> excused = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.concurrent.atomic.AtomicInteger fallbackActions = new java.util.concurrent.atomic.AtomicInteger();
-    /** The largest distance up or down from the eye to a block placed from the working range. */
+    /** The builders whose excused block is placed from the limited working range (5 up or down), not MineColonies' default placement. */
+    private static final java.util.Set<Integer> limitedIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** The largest distance up or down from the eye to a block placed from the limited working range. */
     private static volatile double fallbackMaxVertical = 0.0D;
 
     public static void enable(final boolean on)
@@ -36,6 +38,7 @@ public final class ReachAudit
         worst = 0.0D;
         examples.clear();
         excused.clear();
+        limitedIds.clear();
         fallbackActions.set(0);
         fallbackMaxVertical = 0.0D;
     }
@@ -43,15 +46,24 @@ public final class ReachAudit
     /**
      * The block this builder now works on from MineColonies' working range (null: none): its placement is counted apart, not as a violation.
      */
-    public static void excuse(final LivingEntity worker, final BlockPos block)
+    public static void excuse(final LivingEntity worker, final BlockPos block, final boolean limited)
     {
         if (block == null)
         {
             excused.remove(worker.getId());
+            limitedIds.remove(worker.getId());
         }
         else
         {
             excused.put(worker.getId(), block.immutable());
+            if (limited)
+            {
+                limitedIds.add(worker.getId());
+            }
+            else
+            {
+                limitedIds.remove(worker.getId());
+            }
         }
     }
 
@@ -89,6 +101,10 @@ public final class ReachAudit
         if (block.equals(excused.get(worker.getId())))
         {
             fallbackActions.incrementAndGet();
+            if (!limitedIds.contains(worker.getId()))
+            {
+                return;
+            }
             final double eye = worker.getEyeY();
             final double up = block.getY() > eye ? block.getY() - eye : (eye > block.getY() + 1 ? eye - (block.getY() + 1) : 0.0D);
             fallbackMaxVertical = Math.max(fallbackMaxVertical, up);

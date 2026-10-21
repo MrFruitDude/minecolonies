@@ -50,8 +50,11 @@ public final class BuilderScaffolding
         IDLE, WAIT_STOCK, GATHER, BUILD, EXIT, DISMANTLE
     }
 
-    /** Ticks a builder waits for scaffolding items that were requested, before he goes on without a tower. */
+    /** Ticks a builder waits for scaffolding items with no request open for them, before he goes on without a tower. */
     static final int STOCK_TIMEOUT = 600;
+
+    /** Ticks a tower waits for scaffolding items while a request for them is open (a delivery that may come late): only then it is dropped. */
+    static final int REQUESTED_STOCK_TIMEOUT = 6000;
 
     /** After that long without a tower being possible, the next try. */
     static final int DENY_TICKS = 3000;
@@ -685,9 +688,11 @@ public final class BuilderScaffolding
             phaseSince = now;
             return true;
         }
-        if (now - phaseSince > STOCK_TIMEOUT)
+        // a delivery that is asked for may be slow: the tower waits for it (the block is deferred meanwhile, other work goes on)
+        final int timeout = stockAsked() ? REQUESTED_STOCK_TIMEOUT : STOCK_TIMEOUT;
+        if (now - phaseSince > timeout)
         {
-            log("no scaffolding items after " + STOCK_TIMEOUT + " ticks, going on without a tower");
+            log("no scaffolding items after " + timeout + " ticks, going on without a tower");
             deniedUntil = now + DENY_TICKS;
             stockDeniedUntil = now + 2 * DENY_TICKS;
             abort();
