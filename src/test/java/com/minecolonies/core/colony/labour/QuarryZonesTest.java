@@ -160,4 +160,74 @@ public class QuarryZonesTest
         assertEquals(64, zones.zones().get(0).top(9, 9));
         assertTrue(zones.used());
     }
+
+    private static QuarryZones legacy(final int surface)
+    {
+        final CompoundTag item = new CompoundTag();
+        item.putInt("id", 3);
+        item.putIntArray("area", new int[] {0, 0, 9, 9});
+        item.putInt("surface", surface);
+        final ListTag list = new ListTag();
+        list.add(item);
+        final CompoundTag tag = new CompoundTag();
+        tag.put("zones", list);
+        final QuarryZones zones = new QuarryZones();
+        zones.read(tag);
+        return zones;
+    }
+
+    @Test
+    public void aZoneSavedWithOneSurfaceIsPendingAndKeepsItsOldForm()
+    {
+        final QuarryZones zones = legacy(64);
+        assertTrue(zones.pending(3));
+        final CompoundTag saved = zones.write().getListOrEmpty("zones").getCompoundOrEmpty(0);
+        assertEquals(64, saved.getIntOr("surface", 0));
+        assertFalse(saved.contains("tops"));
+        final QuarryZones again = new QuarryZones();
+        again.read(zones.write());
+        assertTrue(again.pending(3));
+        // a new zone is never pending
+        final DirectedOrder.Area other = DirectedOrder.Area.of(20, 20, 25, 25);
+        assertFalse(again.pending(again.add(other, flat(other, 60), 8).zone().id()));
+    }
+
+    @Test
+    public void migrationNeverDigsDeeperThanTheOldRule()
+    {
+        assertArrayEquals(new int[] {64, 65, 70}, QuarryZones.migratedTops(new int[] {60, 65, 70}, 64));
+        final QuarryZones zones = legacy(64);
+        final int[] sampled = flat(AREA, 66);
+        set(sampled, AREA, 2, 2, 61);
+        assertTrue(zones.migrate(3, sampled, 8));
+        assertFalse(zones.pending(3));
+        final QuarryZones.Zone zone = zones.zones().get(0);
+        assertEquals(64, zone.top(2, 2));
+        assertEquals(66, zone.top(5, 5));
+        for (int x = 0; x <= 9; x++)
+        {
+            for (int z = 0; z <= 9; z++)
+            {
+                assertTrue(zone.floor(x, z, 8) >= 64 - 8 + 1);
+            }
+        }
+        // migrated once: saved with its tops, read back as a normal zone
+        final QuarryZones loaded = new QuarryZones();
+        loaded.read(zones.write());
+        assertFalse(loaded.pending(3));
+        assertEquals(zone, loaded.zones().get(0));
+        assertFalse(loaded.migrate(3, sampled, 8));
+    }
+
+    @Test
+    public void anUnevenOldZoneStaysPending()
+    {
+        final QuarryZones zones = legacy(64);
+        final int[] sampled = flat(AREA, 64);
+        set(sampled, AREA, 9, 9, 80);
+        assertFalse(zones.migrate(3, sampled, 8));
+        assertTrue(zones.pending(3));
+        assertTrue(zones.remove(3));
+        assertFalse(zones.pending(3));
+    }
 }

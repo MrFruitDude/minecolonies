@@ -17,7 +17,12 @@ import java.util.List;
  * A zone is dug top down in terraces, measured per column from the top each column had when the zone was marked: a block {@code d} layers below its column's marked
  * top may only be taken {@code d} blocks or more inside the zone's edge, and never {@link LabourSettings#quarryDepth} layers or deeper below that top. A zone whose
  * marked tops differ by more than the depth is refused (a hole or a hillside would otherwise make the limit meaningless). So every layer is one step lower than the
- * last and a labourer can always walk out. Saved with the colony ({@link LabourData}); a zone belongs to one colony and is only ever read by its own labour. Server thread only.
+ * last and a labourer can always walk out.
+ * <p>
+ * A zone saved before the tops were kept (one surface for all columns, the lowest) is {@link #pending}: labour digs nothing in it until its columns are loaded and
+ * owned, then each column's top is sampled once from the ground there and raised to at least the old surface ({@link #migrate}), so no column is ever dug deeper than
+ * the old rule allowed. If the sampled tops differ by more than the depth (a zone that marking would now refuse as {@link Refusal#UNEVEN}) the zone stays pending:
+ * labour leaves it alone until a manager removes and marks it again. Saved with the colony ({@link LabourData}); a zone belongs to one colony and is only ever read by its own labour. Server thread only.
  */
 public final class QuarryZones
 {
@@ -110,6 +115,8 @@ public final class QuarryZones
     }
 
     private final List<Zone> zones = new ArrayList<>();
+    /** The zones saved before the tops were kept, by id, with their old single surface: not dug until {@link #migrate} kept their tops. */
+    private final java.util.Map<Integer, Integer> legacy = new java.util.HashMap<>();
     private int  next = 1;
     private long revision;
 
@@ -143,6 +150,60 @@ public final class QuarryZones
             }
         }
         return null;
+    }
+
+    /**
+     * @return whether the zone was saved before the tops were kept and has not been sampled yet: labour digs nothing in it.
+     */
+    public boolean pending(final int id)
+    {
+        return legacy.containsKey(id);
+    }
+
+    /**
+     * Gives a {@link #pending} zone the tops of its columns, sampled from the ground now (the caller checked the area is loaded and owned): every column's top is at
+     * least the old surface, so its floor is never deeper than the old rule's.
+     *
+     * @return true if the zone was migrated; false if it was not pending, or its tops differ by more than the depth (it stays pending: it must be marked again).
+     */
+    boolean migrate(final int id, final int[] sampled, final int depth)
+    {
+        final Integer surface = legacy.get(id);
+        if (surface == null)
+        {
+            return false;
+        }
+        for (int i = 0; i < zones.size(); i++)
+        {
+            final Zone zone = zones.get(i);
+            if (zone.id() != id)
+            {
+                continue;
+            }
+            final int[] tops = migratedTops(sampled, surface);
+            if (tops.length != zone.tops().length || spread(tops) > Math.max(1, depth))
+            {
+                return false;
+            }
+            zones.set(i, new Zone(id, zone.area(), tops));
+            legacy.remove(id);
+            revision++;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * The migration rule (pure): each sampled column top, never below the old single surface.
+     */
+    public static int[] migratedTops(final int[] sampled, final int surface)
+    {
+        final int[] tops = new int[sampled.length];
+        for (int i = 0; i < sampled.length; i++)
+        {
+            tops[i] = Math.max(sampled[i], surface);
+        }
+        return tops;
     }
 
     /**
@@ -245,6 +306,7 @@ public final class QuarryZones
     {
         if (zones.removeIf(zone -> zone.id() == id))
         {
+            legacy.remove(id);
             revision++;
             return true;
         }
@@ -261,7 +323,16 @@ public final class QuarryZones
             final CompoundTag item = new CompoundTag();
             item.putInt(TAG_ID, zone.id());
             item.putIntArray(TAG_AREA, new int[] {zone.area().minX(), zone.area().minZ(), zone.area().maxX(), zone.area().maxZ()});
-            item.putIntArray(TAG_TOPS, zone.tops());
+            final Integer surface = legacy.get(zone.id());
+            if (surface != null)
+            {
+                // (still the old form: sampled once its columns are loaded, after any number of saves)
+                item.putInt(TAG_SURFACE, surface);
+            }
+            else
+            {
+                item.putIntArray(TAG_TOPS, zone.tops());
+            }
             list.add(item);
         }
         tag.put(TAG_ZONES, list);
@@ -273,6 +344,7 @@ public final class QuarryZones
     public void read(@NotNull final CompoundTag tag)
     {
         zones.clear();
+        legacy.clear();
         int highest = 0;
         final ListTag list = tag.getListOrEmpty(TAG_ZONES);
         for (int i = 0; i < list.size() && zones.size() < MAX_ZONES; i++)
@@ -292,9 +364,11 @@ public final class QuarryZones
             int[] tops = item.getIntArray(TAG_TOPS).orElse(new int[0]);
             if (tops.length != area.width() * area.depth())
             {
-                // (a zone saved with one surface for all columns, before the tops were kept)
+                // (a zone saved with one surface for all columns, before the tops were kept: pending until its tops are sampled)
+                final int surface = item.getIntOr(TAG_SURFACE, 0);
                 tops = new int[area.width() * area.depth()];
-                java.util.Arrays.fill(tops, item.getIntOr(TAG_SURFACE, 0));
+                java.util.Arrays.fill(tops, surface);
+                legacy.put(id, surface);
             }
             zones.add(new Zone(id, area, tops));
             highest = Math.max(highest, id);

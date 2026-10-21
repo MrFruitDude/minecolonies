@@ -1149,6 +1149,31 @@ public final class LabourBoard
         }
     }
 
+    /**
+     * @return whether the citizen is away for his needs now (eating, sleeping, sick, mourning, fleeing): his job AI does not run and cannot renew a lease.
+     */
+    public static boolean awayForNeeds(final ICitizenData citizen)
+    {
+        if (!(citizen.getEntity().orElse(null) instanceof com.minecolonies.core.entity.citizen.EntityCitizen entity))
+        {
+            return false;
+        }
+        final var state = entity.getCitizenAI().getState();
+        return state == com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState.EATING
+                 || state == com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState.SLEEP
+                 || state == com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState.SICK
+                 || state == com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState.MOURN
+                 || state == com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState.FLEE;
+    }
+
+    /**
+     * @return the game time before which labour does not take the request again (its back-off after failures), or 0 when it is on none.
+     */
+    public long backoffUntil(final IToken<?> request)
+    {
+        return notBefore.getOrDefault(request, 0L);
+    }
+
     private void backoff(final IToken<?> request, final long now)
     {
         final int n = failures.merge(request, 1, Integer::sum);
@@ -1278,7 +1303,13 @@ public final class LabourBoard
                 if (now > claim.leaseUntil() || citizen == null || citizen.getEntity().isEmpty())
                 {
                     LabourStats.CLAIMS_EXPIRED.incrementAndGet();
-                    release(claim, false, true);
+                    // a lease that ran out while he ate, slept, was sick, mourned or fled is no failure of the request: given back without back-off
+                    final boolean needs = citizen != null && awayForNeeds(citizen);
+                    if (needs)
+                    {
+                        LabourStats.log("claim of citizen {} ran out during his needs: no back-off", claim.citizenId());
+                    }
+                    release(claim, false, !needs);
                     continue;
                 }
             }

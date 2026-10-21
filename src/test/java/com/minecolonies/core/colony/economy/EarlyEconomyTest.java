@@ -48,6 +48,10 @@ public class EarlyEconomyTest
         // the two keys are independent
         assertEquals(4, CitizenManager.freeCitizenTarget(false, 4, 4));
         assertEquals(6, CitizenManager.freeCitizenTarget(true, 8, 6));
+        // F4: a floor set above the starting count is clamped to it
+        assertEquals(4, CitizenManager.freeCitizenTarget(true, 4, 8));
+        assertEquals(4, CitizenManager.freeFloor(4, 8));
+        assertEquals(4, CitizenManager.freeFloor(8, 4));
     }
 
     @Test

@@ -242,7 +242,28 @@ public class CitizenManager implements ICitizenManager
      */
     public static int freeCitizenTarget(final boolean startingDone, final int starting, final int floor)
     {
-        return startingDone ? floor : starting;
+        return startingDone ? freeFloor(starting, floor) : starting;
+    }
+
+    /**
+     * The free floor never lies above the starting count (a respawncitizenamount set higher than initialcitizenamount is read as the starting count).
+     *
+     * @param starting the starting count (server config initialcitizenamount).
+     * @param floor    the configured free floor (server config respawncitizenamount).
+     * @return the free floor in force.
+     */
+    public static int freeFloor(final int starting, final int floor)
+    {
+        return Math.min(floor, starting);
+    }
+
+    /**
+     * @return the free floor in force from the server config (see {@link #freeFloor(int, int)}): also the disease and reproduction threshold.
+     */
+    public static int configuredFreeFloor()
+    {
+        final var server = com.minecolonies.api.MinecoloniesAPIProxy.getInstance().getConfig().getServer();
+        return freeFloor(server.initialCitizenAmount.get(), server.respawnCitizenAmount.get());
     }
 
     /**

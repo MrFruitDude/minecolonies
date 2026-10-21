@@ -94,6 +94,9 @@ public final class LabourSites
 
     private List<BoundingBox> boxes   = List.of();
     private long              boxesAt = Long.MIN_VALUE / 2;
+    /** The boxes of the finished decorations (their controllers) in reach, cached like the buildings' boxes. */
+    private List<BoundingBox> decorations   = List.of();
+    private long              decorationsAt = Long.MIN_VALUE / 2;
 
     /**
      * The scans of the directed orders' areas, by order id.
@@ -137,6 +140,7 @@ public final class LabourSites
         surfaceAt = Long.MIN_VALUE / 2;
         postsAt = Long.MIN_VALUE / 2;
         boxesAt = Long.MIN_VALUE / 2;
+        decorationsAt = Long.MIN_VALUE / 2;
         areas.clear();
     }
 
@@ -248,6 +252,7 @@ public final class LabourSites
             list.add(box(building));
         }
         list.addAll(orderBoxes());
+        list.addAll(decorationBoxes());
         boxes = list;
         boxesAt = now;
         return list;
@@ -294,6 +299,81 @@ public final class LabourSites
     }
 
     /**
+     * @return the boxes, with a 1 block margin, of the finished decorations and road pieces whose decoration controller stands in a loaded chunk of this colony's claim
+     *   within reach or in one of its quarry zones. MineColonies keeps no list of finished decorations, but each keeps its controller block with the blueprint's corners:
+     *   this protects the decorations finished before the builders recorded the blocks they place (Wave B). A decoration with no controller left is not seen here.
+     */
+    private List<BoundingBox> decorationBoxes()
+    {
+        final long now = now();
+        if (now - decorationsAt < CACHE_TICKS && now >= decorationsAt)
+        {
+            return decorations;
+        }
+        final List<BoundingBox> list = new ArrayList<>();
+        final ServerLevel level = level();
+        if (level != null)
+        {
+            final Set<Long> chunks = new HashSet<>();
+            final BlockPos hall = anchor();
+            final int radius = LabourSettings.gatherRadius();
+            for (int cx = (hall.getX() - radius) >> 4; cx <= (hall.getX() + radius) >> 4; cx++)
+            {
+                for (int cz = (hall.getZ() - radius) >> 4; cz <= (hall.getZ() + radius) >> 4; cz++)
+                {
+                    chunks.add(((long) cx << 32) | (cz & 0xffffffffL));
+                }
+            }
+            for (final QuarryZones.Zone zone : colony.getLabourData().quarries().zones())
+            {
+                for (int cx = zone.area().minX() >> 4; cx <= zone.area().maxX() >> 4; cx++)
+                {
+                    for (int cz = zone.area().minZ() >> 4; cz <= zone.area().maxZ() >> 4; cz++)
+                    {
+                        chunks.add(((long) cx << 32) | (cz & 0xffffffffL));
+                    }
+                }
+            }
+            for (final long key : chunks)
+            {
+                final LevelChunk chunk = level.getChunkSource().getChunkNow((int) (key >> 32), (int) key);
+                if (chunk == null)
+                {
+                    continue;
+                }
+                for (final net.minecraft.world.level.block.entity.BlockEntity entity : chunk.getBlockEntities().values())
+                {
+                    if (entity instanceof com.minecolonies.core.tileentities.TileEntityDecorationController controller && ownedBy(entity.getBlockPos()))
+                    {
+                        list.add(decorationBox(controller));
+                    }
+                }
+            }
+        }
+        decorations = list;
+        decorationsAt = now;
+        return list;
+    }
+
+    /**
+     * @return the decoration's box from its controller's blueprint corners (relative to the controller), with a 1 block margin; the controller alone when it has none.
+     */
+    static BoundingBox decorationBox(final com.minecolonies.core.tileentities.TileEntityDecorationController controller)
+    {
+        final BlockPos at = controller.getBlockPos();
+        final var corners = controller.getSchematicCorners();
+        if (corners.getA().equals(at) && corners.getB().equals(at))
+        {
+            // (no corners kept: getSchematicCorners answers the controller's own position)
+            return new BoundingBox(at.getX() - 1, at.getY() - 1, at.getZ() - 1, at.getX() + 1, at.getY() + 1, at.getZ() + 1);
+        }
+        final BlockPos a = at.offset(corners.getA());
+        final BlockPos b = at.offset(corners.getB());
+        return new BoundingBox(Math.min(a.getX(), b.getX()) - 1, Math.min(a.getY(), b.getY()) - 1, Math.min(a.getZ(), b.getZ()) - 1,
+          Math.max(a.getX(), b.getX()) + 1, Math.max(a.getY(), b.getY()) + 1, Math.max(a.getZ(), b.getZ()) + 1);
+    }
+
+    /**
      * @return the building's box with its 2 block margin.
      */
     private static BoundingBox box(final IBuilding building)
@@ -332,6 +412,13 @@ public final class LabourSites
             }
         }
         for (final BoundingBox box : orderBoxes())
+        {
+            if (box.isInside(pos))
+            {
+                return true;
+            }
+        }
+        for (final BoundingBox box : decorationBoxes())
         {
             if (box.isInside(pos))
             {
@@ -891,8 +978,25 @@ public final class LabourSites
         }
         final int depth = LabourSettings.quarryDepth();
         final Map<Long, Boolean> chunkOwned = new HashMap<>();
-        for (final QuarryZones.Zone zone : zones)
+        final QuarryZones quarries = colony.getLabourData().quarries();
+        for (final QuarryZones.Zone old : zones)
         {
+            QuarryZones.Zone zone = old;
+            if (quarries.pending(zone.id()))
+            {
+                // a zone saved before the tops were kept: its tops are sampled once, when all of it is loaded and owned; until then nothing is dug there
+                if (!areaUsable(zone.area()) || !quarries.migrate(zone.id(), columnTops(zone.area()), depth))
+                {
+                    continue;
+                }
+                colony.markDirty();
+                LabourStats.log("quarry zone {} of colony {}: tops sampled from the ground (saved before the tops were kept)", zone.id(), colony.getID());
+                zone = quarries.at(new BlockPos(zone.area().minX(), 0, zone.area().minZ()));
+                if (zone == null)
+                {
+                    continue;
+                }
+            }
             final DirectedOrder.Area area = zone.area();
             for (int x = area.minX(); x <= area.maxX(); x++)
             {
@@ -938,8 +1042,9 @@ public final class LabourSites
      */
     public boolean quarryAllows(final BlockPos pos)
     {
-        final QuarryZones.Zone zone = colony.getLabourData().quarries().at(pos);
-        return zone != null && QuarryZones.diggable(zone, pos, LabourSettings.quarryDepth());
+        final QuarryZones quarries = colony.getLabourData().quarries();
+        final QuarryZones.Zone zone = quarries.at(pos);
+        return zone != null && !quarries.pending(zone.id()) && QuarryZones.diggable(zone, pos, LabourSettings.quarryDepth());
     }
 
     /**

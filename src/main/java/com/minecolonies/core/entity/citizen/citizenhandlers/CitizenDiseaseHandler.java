@@ -78,11 +78,11 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
 
 
     /**
-     * The population at or below which citizens do not fall sick: the free citizen floor (respawncitizenamount), not the starting count.
+     * The population at or below which citizens do not fall sick: the free citizen floor (respawncitizenamount, at most the starting count).
      */
     private static int minPopulationForDisease()
     {
-        return IMinecoloniesAPI.getInstance().getConfig().getServer().respawnCitizenAmount.get();
+        return com.minecolonies.core.colony.managers.CitizenManager.configuredFreeFloor();
     }
 
     /**
