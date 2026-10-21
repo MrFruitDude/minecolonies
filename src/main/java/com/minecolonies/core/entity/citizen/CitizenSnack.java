@@ -67,19 +67,27 @@ public class CitizenSnack
     }
 
     /**
-     * A slot of food he carries that the rule lets him eat outside a restaurant, or -1.
+     * The best scored slot of food he carries that the rule lets him eat outside a restaurant (the score of the eat task: eaten long ago or never
+     * first, MineColonies food counted half), or -1.
      */
     private int acceptedFoodSlot(final ICitizenData data)
     {
+        int best = -1;
+        int bestScore = Integer.MAX_VALUE;
         for (int i = 0; i < citizen.getInventoryCitizen().getSlots(); i++)
         {
             final ItemStack stack = citizen.getInventoryCitizen().getStackInSlot(i);
             if (!stack.isEmpty() && FoodUtils.wouldEatOutsideRestaurant(data, stack))
             {
-                return i;
+                final int score = data.getCitizenFoodHandler().checkLastEaten(stack.getItem()) * (stack.getItem() instanceof com.minecolonies.api.items.IMinecoloniesFoodItem ? 1 : 2);
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = i;
+                }
             }
         }
-        return -1;
+        return best;
     }
 
     /**
