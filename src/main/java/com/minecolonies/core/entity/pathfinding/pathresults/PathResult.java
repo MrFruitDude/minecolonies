@@ -234,6 +234,7 @@ public class PathResult<T extends AbstractPathJob>
                 job.setQueueKey(com.minecolonies.core.entity.pathfinding.Pathfinding.colonyKeyOf(job.getEntity()));
             }
             com.minecolonies.core.entity.pathfinding.Pathfinding.Stats.submitted.incrementAndGet();
+            job.markSubmitted();
             pathCalculation = executorService.submit(job);
         }
     }

@@ -175,6 +175,12 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     private volatile Object queueKey = null;
 
     /**
+     * When the job was handed to the executor (System.nanoTime), and how long it then waited in the queue; 0 / -1 unknown.
+     */
+    private volatile long submitNanos    = 0;
+    private volatile long queueWaitNanos = -1;
+
+    /**
      * Order in which this job's search started (1 = first since the counters were reset), 0 before it starts.
      */
     private volatile long startOrder = 0;
@@ -311,6 +317,10 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     public final Path call()
     {
         startOrder = Pathfinding.Stats.searchStarted();
+        if (submitNanos != 0)
+        {
+            queueWaitNanos = System.nanoTime() - submitNanos;
+        }
         try
         {
             return search();
@@ -321,6 +331,7 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
         }
         finally
         {
+            Pathfinding.Stats.searchDone(totalNodesVisited, !reachesDestination, queueWaitNanos);
             Pathfinding.Stats.searchFinished();
         }
 
@@ -344,6 +355,22 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     public void setQueueKey(@Nullable final Object queueKey)
     {
         this.queueKey = queueKey;
+    }
+
+    /**
+     * Records the time the job is handed to the executor (for the queue wait counter).
+     */
+    public void markSubmitted()
+    {
+        submitNanos = System.nanoTime();
+    }
+
+    /**
+     * @return nanoseconds the job waited in the queue before its search started, -1 before it starts.
+     */
+    public long getQueueWaitNanos()
+    {
+        return queueWaitNanos;
     }
 
     /**

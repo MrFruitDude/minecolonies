@@ -751,6 +751,7 @@ public final class PathfindingGameTests
         ids.put(c.mob, 2);
         final java.util.function.Function<Mob, Pathfinding.ColonyKey> before = testColonies(helper.getLevel(), ids);
         observeAll(a, b, c);
+        final long[] hitsBefore = {Pathfinding.Stats.unreachableCacheHits.get()};
         final Runnable restore = () -> {
             Pathfinding.submitObserver = null;
             Pathfinding.colonyKeyResolver = before;
@@ -764,11 +765,13 @@ public final class PathfindingGameTests
                   helper.setBlock(SEALED_TARGET.west().above(), Blocks.AIR.defaultBlockState());
                   drive(helper, b, () -> target, 0, 300, t -> b.anyReached(target), () -> {
                       restore.run();
-                      final String s = String.format("R10 colony cache: A %d jobs (backed off %s), B %d jobs while cached then %d, C (other colony) %d jobs, B reached %s",
-                        a.jobs.size(), a.nav.isDestinationUnreachable(target), bBlocked, b.jobs.size(), c.jobs.size(), b.anyReached(target));
+                      final String s = String.format("R10 colony cache: A %d jobs (backed off %s), B %d jobs while cached then %d, C (other colony) %d jobs, B reached %s, "
+                                                       + "cache refusals %d", a.jobs.size(), a.nav.isDestinationUnreachable(target), bBlocked, b.jobs.size(), c.jobs.size(),
+                        b.anyReached(target), Pathfinding.Stats.unreachableCacheHits.get() - hitsBefore[0]);
                       Log.getLogger().info(s);
                       helper.assertTrue(a.jobs.size() >= 2, "fixture: host A did not fail twice. " + s);
                       helper.assertTrue(bBlocked == 0, "a second citizen of the same colony searched the cached unreachable target. " + s);
+                      helper.assertTrue(Pathfinding.Stats.unreachableCacheHits.get() > hitsBefore[0], "no refusal by the colony cache was counted. " + s);
                       helper.assertTrue(c.jobs.size() >= 1, "a citizen of another colony was blocked by colony 1's cache. " + s);
                       helper.assertTrue(b.anyReached(target), "the target was not reached after the blocks around it changed. " + s);
                       helper.succeed();
@@ -791,6 +794,7 @@ public final class PathfindingGameTests
         final BlockPos farTarget = new BlockPos(55, 1, 35);
         sealTarget(helper, farTarget);
         helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            Pathfinding.Stats.reset();
             final PathJobMoveToLocation near =
               new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(HOST_START), helper.absolutePos(SEALED_TARGET), 48, null);
             final PathJobMoveToLocation far =
@@ -799,9 +803,9 @@ public final class PathfindingGameTests
             Pathfinding.enqueue(far);
             waitAll(helper, List.of(near.getResult(), far.getResult()), System.nanoTime(), 0, () -> {
                 final int allowance = 2 * com.minecolonies.core.entity.pathfinding.PathingOptions.MAX_COST * com.minecolonies.core.entity.pathfinding.PathingOptions.MAX_COST + 1;
-                final String s = String.format("R10 failed cap: near %d nodes (cap %d, exhausted %s), far %d nodes (cap %d, exhausted %s), allowance %d",
+                final String s = String.format("R10 failed cap: near %d nodes (cap %d, exhausted %s), far %d nodes (cap %d, exhausted %s), allowance %d; stats: %s",
                   near.getResult().searchedNodes, near.getFailedNodeCap(), near.getResult().searchExhausted, far.getResult().searchedNodes, far.getFailedNodeCap(),
-                  far.getResult().searchExhausted, allowance);
+                  far.getResult().searchExhausted, allowance, Pathfinding.Stats.summary());
                 Log.getLogger().info(s);
                 helper.assertTrue(!near.getResult().isPathReachingDestination() && !far.getResult().isPathReachingDestination(), "fixture: a sealed target was reached. " + s);
                 helper.assertTrue(near.getResult().searchedNodes <= near.getFailedNodeCap() + allowance, "the near failed search ran past its cap. " + s);
@@ -863,12 +867,21 @@ public final class PathfindingGameTests
                     quietReached += j.getResult().isPathReachingDestination() ? 1 : 0;
                 }
                 long floodLast = 0;
+                long floodWait = 0;
+                long quietWait = 0;
                 for (final PathJobMoveToLocation j : flood)
                 {
                     floodLast = Math.max(floodLast, j.getStartOrder());
+                    floodWait += Math.max(0, j.getQueueWaitNanos());
                 }
-                final String s = String.format("R10 fair queue: %d + %d jobs, last quiet start %d (bar %d), last flood start %d, quiet reached %d, rejected %d, all done after %d ms",
-                  FLOOD_JOBS, QUIET_JOBS, quietLast, QUIET_START_BAR, floodLast, quietReached, Pathfinding.Stats.rejected.get(), (System.nanoTime() - t0) / 1_000_000L);
+                for (final PathJobMoveToLocation j : calm)
+                {
+                    quietWait += Math.max(0, j.getQueueWaitNanos());
+                }
+                final String s = String.format("R10 fair queue: %d + %d jobs, last quiet start %d (bar %d), last flood start %d, quiet reached %d, rejected %d, "
+                                                 + "avg queue wait quiet %.2f ms flood %.2f ms, all done after %d ms; stats: %s",
+                  FLOOD_JOBS, QUIET_JOBS, quietLast, QUIET_START_BAR, floodLast, quietReached, Pathfinding.Stats.rejected.get(), quietWait / 1e6 / QUIET_JOBS,
+                  floodWait / 1e6 / FLOOD_JOBS, (System.nanoTime() - t0) / 1_000_000L, Pathfinding.Stats.summary());
                 Log.getLogger().info(s);
                 helper.assertTrue(Pathfinding.Stats.rejected.get() == 0, "jobs were rejected. " + s);
                 helper.assertTrue(quietReached == QUIET_JOBS, "fixture: a quiet colony job did not reach. " + s);

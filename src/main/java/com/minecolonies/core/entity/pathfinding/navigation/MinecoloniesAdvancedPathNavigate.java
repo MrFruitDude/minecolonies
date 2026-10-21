@@ -299,7 +299,7 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
 
         // CA-11, now for the "move close to X near Y" jobs of the builders as well: an unreachable target is not searched again and again
         // (also when another citizen of the colony just found it unreachable)
-        if (job instanceof IDestinationPathJob destinationJob && isDestinationUnreachable(destinationJob.getDestination()))
+        if (job instanceof IDestinationPathJob destinationJob && isRefused(destinationJob.getDestination()))
         {
             return null;
         }
@@ -585,7 +585,7 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     protected PathResult<PathJobMoveToLocation> walkTo(final BlockPos desiredPos, final double speedFactor, final boolean safeDestination)
     {
         // Same outcome as setPathJob's refusal, without first building the job's chunk cache on the server thread.
-        if (pauseTicks > 0 || isDestinationUnreachable(desiredPos))
+        if (pauseTicks > 0 || isRefused(desiredPos))
         {
             return null;
         }
@@ -843,6 +843,27 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         }
         return unreachableTicks > 0 && dest.equals(unreachableDest)
                  || ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest);
+    }
+
+    /**
+     * {@link #isDestinationUnreachable}, counting refusals by the colony cache in {@link Pathfinding.Stats}.
+     */
+    private boolean isRefused(final BlockPos dest)
+    {
+        if (dest == null)
+        {
+            return false;
+        }
+        if (unreachableTicks > 0 && dest.equals(unreachableDest))
+        {
+            return true;
+        }
+        if (ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest))
+        {
+            Pathfinding.Stats.unreachableCacheHits.incrementAndGet();
+            return true;
+        }
+        return false;
     }
 
     /**

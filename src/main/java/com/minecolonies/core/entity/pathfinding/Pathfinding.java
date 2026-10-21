@@ -36,8 +36,9 @@ public final class Pathfinding
     private static       ThreadPoolExecutor           executor;
 
     /**
-     * Job counters: what was submitted, rejected and how many searches ran at once. Cheap atomics, readable for perf
-     * logging and by GameTests.
+     * Job counters: what was submitted, rejected and how many searches ran at once; nodes searched, failed searches and
+     * their nodes, time jobs waited in the queue, and jobs refused by the colony unreachable cache. Cheap atomics,
+     * readable for perf logging and by GameTests.
      */
     public static final class Stats
     {
@@ -46,6 +47,12 @@ public final class Pathfinding
         public static final AtomicInteger running     = new AtomicInteger();
         public static final AtomicInteger peakRunning = new AtomicInteger();
         public static final AtomicLong    started     = new AtomicLong();
+        public static final AtomicLong    nodesSearched        = new AtomicLong();
+        public static final AtomicLong    failedSearches       = new AtomicLong();
+        public static final AtomicLong    failedSearchNodes    = new AtomicLong();
+        public static final AtomicLong    queueWaitNanos       = new AtomicLong();
+        public static final AtomicLong    queueWaitMaxNanos    = new AtomicLong();
+        public static final AtomicLong    unreachableCacheHits = new AtomicLong();
 
         private Stats()
         {
@@ -59,6 +66,12 @@ public final class Pathfinding
             submitted.set(0);
             rejected.set(0);
             started.set(0);
+            nodesSearched.set(0);
+            failedSearches.set(0);
+            failedSearchNodes.set(0);
+            queueWaitNanos.set(0);
+            queueWaitMaxNanos.set(0);
+            unreachableCacheHits.set(0);
             peakRunning.set(running.get());
         }
 
@@ -80,6 +93,39 @@ public final class Pathfinding
         public static void searchFinished()
         {
             running.decrementAndGet();
+        }
+
+        /**
+         * Called on the worker thread with a finished search's numbers.
+         *
+         * @param nodes     nodes the search visited.
+         * @param failed    whether it did not reach its destination.
+         * @param waitNanos how long the job waited in the queue, negative when unknown.
+         */
+        public static void searchDone(final int nodes, final boolean failed, final long waitNanos)
+        {
+            nodesSearched.addAndGet(nodes);
+            if (failed)
+            {
+                failedSearches.incrementAndGet();
+                failedSearchNodes.addAndGet(nodes);
+            }
+            if (waitNanos >= 0)
+            {
+                queueWaitNanos.addAndGet(waitNanos);
+                queueWaitMaxNanos.accumulateAndGet(waitNanos, Math::max);
+            }
+        }
+
+        /**
+         * @return the counters on one line, for logs.
+         */
+        public static String summary()
+        {
+            final long n = started.get();
+            return String.format("submitted %d, rejected %d, started %d, peak running %d, nodes %d, failed %d (%d nodes), queue wait avg %.2f ms max %.2f ms, cache refusals %d",
+              submitted.get(), rejected.get(), n, peakRunning.get(), nodesSearched.get(), failedSearches.get(), failedSearchNodes.get(),
+              n == 0 ? 0D : queueWaitNanos.get() / 1e6 / n, queueWaitMaxNanos.get() / 1e6, unreachableCacheHits.get());
         }
     }
 
