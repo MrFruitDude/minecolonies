@@ -169,6 +169,11 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     private int visitedLevel = 1;
 
     /**
+     * Whether the heuristic was already scaled down for roads (see {@link #scaleHeuristicOnRoads()}).
+     */
+    private boolean roadSeen = false;
+
+    /**
      * AbstractPathJob constructor.
      *
      * @param world  the world within which to path.
@@ -656,6 +661,40 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
     }
 
     /**
+     * Whether the heuristic is scaled by the road step cost once the search sees its first road block. A road step costs
+     * 1 / road speed, so a heuristic of one per block overestimates on roads; scaling it keeps the search close to
+     * admissible there and finds a road a few blocks off the straight line. Searches that never touch a road keep their
+     * old heuristic (and their old routes).
+     *
+     * @return true for jobs with a fixed destination whose end score does not depend on the heuristic.
+     */
+    protected boolean scaleHeuristicOnRoads()
+    {
+        return false;
+    }
+
+    /**
+     * Multiplies the heuristic by a factor and re-queues every open node with its new value (one O(open) rebuild).
+     *
+     * @param factor the factor.
+     */
+    private void scaleHeuristic(final double factor)
+    {
+        heuristicMod *= factor;
+        final List<MNode> open = new ArrayList<>(nodesToVisit);
+        nodesToVisit.clear();
+        for (final MNode recalc : open)
+        {
+            recalcHeuristic(recalc);
+            nodesToVisit.offer(recalc);
+        }
+        if (startNode != null)
+        {
+            recalcHeuristic(startNode);
+        }
+    }
+
+    /**
      * Recalculates the heuristic value for the node
      *
      * @param node given node
@@ -866,6 +905,14 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
 
         final boolean swimStart = isSwimming && !node.isSwimming();
         final boolean onRoad = WorkerUtil.isPathBlock(belowState.getBlock());
+        if (onRoad && !roadSeen && !isSwimming)
+        {
+            roadSeen = true;
+            if (scaleHeuristicOnRoads() && pathingOptions.onPathCost < 1)
+            {
+                scaleHeuristic(pathingOptions.onPathCost);
+            }
+        }
         final boolean onRails = pathingOptions.canUseRails() && (corner ? belowState : state).getBlock() instanceof BaseRailBlock;
         final boolean railsExit = !onRails && node != null && node.isOnRails();
         final boolean ladder = PathfindingUtils.isLadder(state, pathingOptions, nextX, nextY, nextZ, cachedBlockLookup);

@@ -56,7 +56,7 @@ import static com.minecolonies.core.entity.pathfinding.pathjobs.AbstractPathJob.
 // TODO: Rework
 public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNavigate implements IDynamicHeuristicNavigator, IMinecoloniesNavigator
 {
-    private static final double ON_PATH_SPEED_MULTIPLIER = 1.3D;
+    private static final double ON_PATH_SPEED_MULTIPLIER = PathingOptions.ROAD_SPEED;
     public static final  double MIN_Y_DISTANCE           = 0.001;
     public static final  int    MAX_SPEED_ALLOWED        = 2;
     public static final  double MIN_SPEED_ALLOWED        = 0.1;

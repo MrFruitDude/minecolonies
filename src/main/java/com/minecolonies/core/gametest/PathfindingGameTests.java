@@ -648,6 +648,64 @@ public final class PathfindingGameTests
         }));
     }
 
+    // ------------------------------------------------------------------ round 10: road cost
+
+    /** Road lanes: a near road (3 blocks off the line, faster) and a far road (10 off, slower than the line). */
+    private static final int NEAR_LINE_Z = 4, NEAR_ROAD_Z = 7, FAR_LINE_Z = 24, FAR_ROAD_Z = 34;
+
+    /** Path nodes standing on a road block. */
+    private static int roadNodes(final GameTestHelper helper, final Path path)
+    {
+        int n = 0;
+        for (int i = 0; i < path.getNodeCount(); i++)
+        {
+            final Node node = path.getNode(i);
+            if (com.minecolonies.core.util.WorkerUtil.isPathBlock(helper.getLevel().getBlockState(new BlockPos(node.x, node.y - 1, node.z)).getBlock()))
+            {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /**
+     * path_road_preference: road cost is 1 / road speed. A stone brick road 3 blocks off a 63-block straight line walks in
+     * about 3 + 63 / 1.3 + 3 = 54.5 against 63, so the path must use it. A road 10 blocks off takes about 68.5, slower than
+     * the line, so that path must not use it (with the old cost of 1/6 it looked like 30.5).
+     */
+    public static void pathRoadPreference(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        fill(helper, new BlockPos(-4, 0, NEAR_ROAD_Z), new BlockPos(55, 0, NEAR_ROAD_Z), Blocks.STONE_BRICKS.defaultBlockState());
+        fill(helper, new BlockPos(-4, 0, FAR_ROAD_Z), new BlockPos(55, 0, FAR_ROAD_Z), Blocks.STONE_BRICKS.defaultBlockState());
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () -> {
+            final PathJobMoveToLocation near = new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(-6, 1, NEAR_LINE_Z)),
+              helper.absolutePos(new BlockPos(57, 1, NEAR_LINE_Z)), 48, null);
+            final PathJobMoveToLocation far = new PathJobMoveToLocation(helper.getLevel(), helper.absolutePos(new BlockPos(-6, 1, FAR_LINE_Z)),
+              helper.absolutePos(new BlockPos(57, 1, FAR_LINE_Z)), 48, null);
+            near.getPathingOptions().randomnessFactor = 0.0D;
+            far.getPathingOptions().randomnessFactor = 0.0D;
+            Pathfinding.enqueue(near);
+            Pathfinding.enqueue(far);
+            waitAll(helper, List.of(near.getResult(), far.getResult()), System.nanoTime(), 0, () -> {
+                final Path nearPath = near.getResult().getPath();
+                final Path farPath = far.getResult().getPath();
+                final int nearRoad = nearPath == null ? -1 : roadNodes(helper, nearPath);
+                final int farRoad = farPath == null ? -1 : roadNodes(helper, farPath);
+                final String s = String.format("R10 road: near %s road nodes %d of %d (%d searched), far %s road nodes %d of %d (%d searched)",
+                  near.getResult().isPathReachingDestination() ? "reach" : "NOREACH", nearRoad, nearPath == null ? 0 : nearPath.getNodeCount(),
+                  near.getResult().searchedNodes, far.getResult().isPathReachingDestination() ? "reach" : "NOREACH", farRoad,
+                  farPath == null ? 0 : farPath.getNodeCount(), far.getResult().searchedNodes);
+                Log.getLogger().info(s);
+                helper.assertTrue(near.getResult().isPathReachingDestination() && far.getResult().isPathReachingDestination(), "a road route did not reach. " + s);
+                helper.assertTrue(nearRoad >= 40, "the faster road 3 blocks off the line was not used. " + s);
+                helper.assertTrue(farRoad == 0, "the slower road 10 blocks off the line was used. " + s);
+                helper.succeed();
+            });
+        }));
+    }
+
     // ------------------------------------------------------------------ real citizen
 
     /**

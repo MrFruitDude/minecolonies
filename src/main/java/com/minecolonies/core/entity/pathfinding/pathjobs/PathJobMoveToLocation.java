@@ -70,6 +70,12 @@ public class PathJobMoveToLocation extends AbstractPathJob implements IDestinati
         return BlockPosUtil.distManhattan(destination, x, y, z);
     }
 
+    @Override
+    protected boolean scaleHeuristicOnRoads()
+    {
+        return true;
+    }
+
     /**
      * Checks if the target has been reached.
      *

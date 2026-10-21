@@ -13,6 +13,12 @@ public class PathingOptions
     public static final int MAX_COST = 25;
 
     /**
+     * Walk speed factor of a citizen on a road (a block in the minecolonies:pathblocks tag). The navigator applies it,
+     * and the road step cost is its inverse, so search cost and walk time agree.
+     */
+    public static final double ROAD_SPEED = 1.3D;
+
+    /**
      * Additional cost of jumping
      */
     public double jumpCost = 2D;
@@ -23,9 +29,10 @@ public class PathingOptions
     public double dropCost = 1D;
 
     /**
-     * Cost improvement of paths - base 1.
+     * Cost factor of a step on a road - base 1. The inverse of the road walk speed: a road detour is taken only when
+     * it is really faster (it used to be 1/6, which made 6x longer road detours look cheaper than they walk).
      */
-    public double onPathCost = 1 / 6d;
+    public double onPathCost = 1 / ROAD_SPEED;
 
     /**
      * Cost improvement of paths - base 1.
