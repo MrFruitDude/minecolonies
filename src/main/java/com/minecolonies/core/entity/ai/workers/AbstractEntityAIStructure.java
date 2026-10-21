@@ -1149,7 +1149,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
                 tryScaffold(target);
                 break;
             case TELEPORT:
-                if (!WorkerSettings.teleportOffForTests())
+                if (!WorkerSettings.teleportOffForTests(worker.getId()))
                 {
                     teleportOut(target);
                 }

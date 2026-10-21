@@ -36,7 +36,9 @@ public final class WorkerSettings
     private static volatile Boolean       physicalReachOverride;
     private static volatile Boolean       scaffoldingOverride;
     private static volatile Integer       scaffoldStockOverride;
-    private static volatile boolean       teleportOff;
+    /** The worker (entity id) whose ladder teleport a test switched off, or -1. Scoped to one worker: a failed test that never resets it does not touch
+     * the workers of later tests (c8 launch: a global flag held a builder in labour_early_grace). */
+    private static volatile int           teleportOffFor = -1;
 
     /**
      * Only for tests: overrides the config. Null values go back to the config.
@@ -58,24 +60,24 @@ public final class WorkerSettings
     }
 
     /**
-     * Only for tests: switches the unstuck ladder's teleport step off (a block the walk never reaches then comes back until the keep limit).
+     * Only for tests: switches the unstuck ladder's teleport step off for one worker (entity id; -1 for none).
      */
-    public static void overrideTeleportForTests(final boolean off)
+    public static void overrideTeleportForTests(final int entityId)
     {
-        teleportOff = off;
+        teleportOffFor = entityId;
     }
 
     /**
-     * @return whether a test switched the unstuck ladder's teleport step off.
+     * @return whether a test switched the unstuck ladder's teleport step off for this worker.
      */
-    public static boolean teleportOffForTests()
+    public static boolean teleportOffForTests(final int entityId)
     {
-        return teleportOff;
+        return entityId >= 0 && entityId == teleportOffFor;
     }
 
     public static void clearOverrides()
     {
-        teleportOff = false;
+        teleportOffFor = -1;
         overrideForTests(null, null, null, null, null, null);
         overrideReachForTests(null, null, null, null);
     }
