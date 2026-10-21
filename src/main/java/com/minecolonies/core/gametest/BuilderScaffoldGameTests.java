@@ -767,7 +767,25 @@ final class BuilderScaffoldGameTests
      */
     public static void pathBlockedOrderEnds(final GameTestHelper helper)
     {
-        walledOff(helper, "walled", false);
+        walledOff(helper, "walled", false, false, false);
+    }
+
+    /**
+     * Builder review c5 C5-1: the same ring, but the wait for a tower never ends for this builder (test switch), and scaffolding is stocked, so no other
+     * default route can win. The block must be placed by the 13th return: every default try of the order is a kept-out one.
+     */
+    public static void pathBlocked13thReturn(final GameTestHelper helper)
+    {
+        walledOff(helper, "walled13", false, true, false);
+    }
+
+    /**
+     * Builder review c4 L-a: the same ring as {@link #pathBlocked13thReturn}, with a dirt block to clear above the block to place. The block to clear comes
+     * back like the one to place, and is mined by the same default rule (from where MineColonies' walk ended) instead of staying standing.
+     */
+    public static void pathBlockedClear(final GameTestHelper helper)
+    {
+        walledOff(helper, "walledclear", false, true, true);
     }
 
     /**
@@ -775,10 +793,10 @@ final class BuilderScaffoldGameTests
      */
     public static void pathBlockedOverLava(final GameTestHelper helper)
     {
-        walledOff(helper, "walledlava", true);
+        walledOff(helper, "walledlava", true, false, false);
     }
 
-    private static void walledOff(final GameTestHelper helper, final String name, final boolean lava)
+    private static void walledOff(final GameTestHelper helper, final String name, final boolean lava, final boolean only13th, final boolean clear)
     {
         WorkerSettings.overrideReachForTests(null, true, true, 16);
         ReachAudit.enable(true);
@@ -789,6 +807,10 @@ final class BuilderScaffoldGameTests
             live.setSkills(40, 40);
             live.giveTools();
             WorkerSettings.overrideTeleportForTests(live.citizen.getEntity().get().getId());
+            if (only13th)
+            {
+                WorkerSettings.overrideTowerWaitForTests(live.citizen.getEntity().get().getId());
+            }
             final Blueprint blueprint = shape(name, 1, 2, 1, (x, y, z) -> y == 0);
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
             live.stock(Items.SCAFFOLDING, 32);
@@ -812,6 +834,11 @@ final class BuilderScaffoldGameTests
             }
             final WorkOrderDecoration order = live.orderFor(name, SITE, blueprint);
             final BlockPos origin = order.getLocation();
+            if (clear)
+            {
+                // the blueprint wants air there: the clear stage has to mine it
+                live.level.setBlock(origin.above(), Blocks.DIRT.defaultBlockState(), 3);
+            }
             final int[] doneTick = {0};
             WorkerEfficiencyGameTests.everyTick(live, 40_000, tick -> {
                 if (tick == 1 || tick % 1000 == 0)
@@ -825,9 +852,10 @@ final class BuilderScaffoldGameTests
             }, () -> {
                 final int[] d = reachDelta(at);
                 final int keptOut = com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder.reachKeptOut.get() - keptOut0;
-                Log.getLogger().info("WBENCH RESULT {} ticks={} missing={} keptOut={} limited={} default={} refused={} towers={} cells={} default2D={} violations={}", name,
+                final boolean dirtLeft = live.level.getBlockState(origin.above()).is(Blocks.DIRT);
+                Log.getLogger().info("WBENCH RESULT {} ticks={} missing={} keptOut={} limited={} default={} refused={} towers={} cells={} default2D={} violations={} dirtLeft={}", name,
                   doneTick[0], missing(live, blueprint, origin), keptOut, d[0], d[1], d[2], BuilderScaffolding.towersBuilt, BuilderScaffolding.cellsPlaced,
-                  ReachAudit.defaultMax2D(), ReachAudit.violations());
+                  ReachAudit.defaultMax2D(), ReachAudit.violations(), dirtLeft);
                 helper.assertTrue(ReachAudit.violations() == 0, "placed out of range: " + ReachAudit.examples());
                 if (lava)
                 {
@@ -840,6 +868,15 @@ final class BuilderScaffoldGameTests
                     // c8 launch: the 6000-tick wait route (no spot reached it for 6000 ticks) placed it after 2 returns, before the 13th; either default route
                     // is the no-holes rule. Which one ran is logged in the result line.
                     helper.assertTrue(keptOut > 0 || d[1] > 0, "not placed by a default try (keptOut 0, default " + d[1] + ")");
+                    if (only13th)
+                    {
+                        // the wait cannot end and scaffolding is there: the only default try is the 13th return's (C5-1)
+                        helper.assertTrue(keptOut > 0 && d[1] == keptOut, "not placed by the 13th return: keptOut " + keptOut + ", default tries " + d[1]);
+                    }
+                    if (clear)
+                    {
+                        helper.assertTrue(!dirtLeft, "the block to clear stayed standing (L-a)");
+                    }
                 }
                 WorkerSettings.clearOverrides();
                 ReachAudit.enable(false);
