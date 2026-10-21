@@ -1120,12 +1120,12 @@ public final class PathfindingGameTests
     // ------------------------------------------------------------------ round 10: fair queue
 
     /** Fair queue: jobs of the flooding colony, jobs of the quiet colony, and the start-order bar for the quiet ones. */
-    private static final int FLOOD_JOBS = 150, QUIET_JOBS = 10, QUIET_START_BAR = 2 * QUIET_JOBS + 10;
+    private static final int FLOOD_JOBS = 60, QUIET_JOBS = 10, QUIET_START_BAR = 2 * QUIET_JOBS + 10;
 
     /**
-     * path_queue_fair_colonies: colony 1 floods the shared queue with 150 failing searches (a sealed target 102 blocks
+     * path_queue_fair_colonies: colony 1 floods the shared queue with 60 failing searches (a sealed target 102 blocks
      * away), then colony 2 queues 10 short ones. Colonies take turns, so every colony 2 search must start among the first
-     * 2 x 10 + 10 searches (one queue in order would start them after all 150). Nothing may be rejected.
+     * 2 x 10 + 10 searches (one queue in order would start them after all 60; 150 ran close to the 40,100-tick test limit on the unthrottled server). Nothing may be rejected.
      */
     public static void pathQueueFairColonies(final GameTestHelper helper)
     {
