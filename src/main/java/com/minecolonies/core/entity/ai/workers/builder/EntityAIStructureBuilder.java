@@ -237,8 +237,9 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
             endSupply(building != null && building.getColony() instanceof com.minecolonies.core.colony.Colony colony ? colony.getLabourBoard() : null,
               com.minecolonies.api.colony.idle.IdleStopReason.NEEDS, com.minecolonies.core.colony.labour.LabourSelfSupply.Outcome.NEUTRAL);
         }
-        // back from sleep, a meal or sickness: the reach clocks start again
+        // back from sleep, a meal or sickness: the reach clocks start again, and he walks to his hut before the next order
         resetReachTracking();
+        nextOrderWithoutHutUntil = 0;
         super.resetAI();
     }
 
@@ -385,6 +386,63 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         return !checkForWorkOrder();
     }
 
+    /**
+     * A builder who just finished an order goes straight to the next one (round 10): no walk to his hut in between when nothing needs the hut. Without
+     * an order coming (nothing claimed for his hut, nothing free he can build), and after anything that resets his AI (night, rain, sickness, a raid,
+     * a meal), he walks to the hut as before.
+     */
+    private static final int NEXT_ORDER_GRACE = 100;
+
+    /**
+     * The game time until which the builder may start his next order without the walk to his hut (0: he walks).
+     */
+    private long nextOrderWithoutHutUntil = 0;
+
+    /**
+     * How many times a builder went from one finished order to the next one without the walk to his hut (for the tests).
+     */
+    public static final java.util.concurrent.atomic.AtomicInteger hutWalksSkipped = new java.util.concurrent.atomic.AtomicInteger();
+
+    @Override
+    protected IAIState completeBuild()
+    {
+        final IAIState state = super.completeBuild();
+        nextOrderWithoutHutUntil = world.getGameTime() + NEXT_ORDER_GRACE;
+        return state;
+    }
+
+    /**
+     * Something he can only do at his hut comes first: a dump of a full inventory, materials he waits for.
+     */
+    private boolean hutNeededBeforeNextOrder()
+    {
+        return building.hasCarry() || inventoryNeedsDump() || building.hasOpenSyncRequest(worker.getCitizenData());
+    }
+
+    /**
+     * The next order may need scaffolding, which he takes from the hut's racks before he leaves (so he goes there for it).
+     */
+    private boolean mayNeedScaffoldingFromHut()
+    {
+        return usesPhysicalReach() && BuilderScaffolding.enabled() && building.getWorkOrder() != null && building.getWorkOrder().getBlueprint() != null
+                 && mayNeedScaffolding(building.getWorkOrder().getBlueprint());
+    }
+
+    /**
+     * An order that the colony tick is about to hand to this hut: one queued for it, or a free one it can build.
+     */
+    private boolean nextOrderClaimable()
+    {
+        for (final com.minecolonies.api.colony.workorders.IServerWorkOrder order : building.getColony().getWorkManager().getWorkOrders().values())
+        {
+            if (order.isClaimed() ? order.getClaimedBy().equals(building.getPosition()) : order.canBuild(building))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     protected IAIState startWorkingAtOwnBuilding()
     {
@@ -397,6 +455,27 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return ASSIST_PLAN;
         }
+
+        if (world.getGameTime() <= nextOrderWithoutHutUntil && !hutNeededBeforeNextOrder())
+        {
+            // he just finished an order and the next one is his already, or is queued for him: straight to it, no walk to the hut in between
+            if (building.hasWorkOrder())
+            {
+                if (checkForWorkOrder() && !mayNeedScaffoldingFromHut())
+                {
+                    nextOrderWithoutHutUntil = 0;
+                    hutWalksSkipped.incrementAndGet();
+                    final IAIState state = super.startWorkingAtOwnBuilding();
+                    return state == IDLE ? LOAD_STRUCTURE : state;
+                }
+            }
+            else if (nextOrderClaimable())
+            {
+                // the colony tick hands it over within a second
+                return getState();
+            }
+        }
+        nextOrderWithoutHutUntil = 0;
 
         if (!walkToBuilding())
         {

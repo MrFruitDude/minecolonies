@@ -1,0 +1,119 @@
+package com.minecolonies.core.entity.citizen;
+
+import com.minecolonies.api.colony.ICitizenData;
+import com.minecolonies.api.colony.buildings.IBuilding;
+import com.minecolonies.api.crafting.ItemStorage;
+import com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState;
+import com.minecolonies.api.entity.citizen.citizenhandlers.ICitizenFoodHandler;
+import com.minecolonies.api.util.FoodUtils;
+import com.minecolonies.api.util.InventoryUtils;
+import com.minecolonies.api.util.ItemStackUtils;
+import com.minecolonies.api.util.SoundUtils;
+import com.minecolonies.core.network.messages.client.ItemParticleEffectMessage;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.SwingAnimation;
+
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static com.minecolonies.api.util.constant.CitizenConstants.FULL_SATURATION;
+import static com.minecolonies.api.util.constant.GuardConstants.BASIC_VOLUME;
+
+/**
+ * Eating at work (round 10): a working citizen whose saturation falls below 30% eats suitable food he carries, or takes it from the racks of his work hut
+ * when he stands in it, without leaving his work: one item every few seconds, until he is at half. The trip to a restaurant (the eat task at 2.5) stays for
+ * a citizen who has no such food. The food rules of the eat task hold: home level, diversity and quality (a citizen on the brink of complaining keeps his
+ * food and goes to the restaurant), the history of what he ate. Server side only.
+ */
+public class CitizenSnack
+{
+    /**
+     * Below this saturation a working citizen starts eating at work (30%).
+     */
+    public static final double START = FULL_SATURATION * 0.3;
+
+    /**
+     * Once he eats, he goes on until this saturation (50%), so he does not eat one bite at every check.
+     */
+    public static final double UNTIL = FULL_SATURATION * 0.5;
+
+    /**
+     * Ticks between two checks (and between two items: about the five seconds of the eat task).
+     */
+    public static final int INTERVAL = 100;
+
+    /**
+     * Items eaten at work (for the tests).
+     */
+    public static final AtomicInteger eaten = new AtomicInteger();
+
+    private final EntityCitizen citizen;
+
+    /**
+     * Whether he is eating at work (between START and UNTIL).
+     */
+    private boolean eating = false;
+
+    public CitizenSnack(final EntityCitizen citizen)
+    {
+        this.citizen = citizen;
+    }
+
+    /**
+     * One check: eats one item when he is working, hungry enough and has suitable food at hand.
+     *
+     * @return false (a ticking transition that never changes the state).
+     */
+    public boolean tick()
+    {
+        final ICitizenData data = citizen.getCitizenData();
+        if (data == null || citizen.level().isClientSide() || data.getJob() == null || data.isChild() || citizen.getCitizenAI().getState() != CitizenAIState.WORK)
+        {
+            eating = false;
+            return false;
+        }
+        final double saturation = data.getSaturation();
+        if (saturation >= UNTIL || (!eating && saturation >= START))
+        {
+            eating = false;
+            return false;
+        }
+
+        int slot = FoodUtils.getBestFoodForCitizen(citizen.getInventoryCitizen(), data, null);
+        if (slot == -1)
+        {
+            final IBuilding work = data.getWorkBuilding();
+            if (work != null && work.isInBuilding(citizen.blockPosition()))
+            {
+                final ItemStorage food = FoodUtils.checkForFoodInBuilding(data, null, work);
+                if (food != null && InventoryUtils.transferItemStackIntoNextBestSlotInItemHandler(work, food, citizen.getInventoryCitizen()))
+                {
+                    slot = FoodUtils.getBestFoodForCitizen(citizen.getInventoryCitizen(), data, null);
+                }
+            }
+        }
+        if (slot == -1)
+        {
+            eating = false;
+            return false;
+        }
+
+        final ItemStack food = citizen.getInventoryCitizen().getStackInSlot(slot);
+        final Item item = food.getItem();
+        citizen.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
+        citizen.playSound(SoundEvents.GENERIC_EAT.value(), (float) BASIC_VOLUME, (float) SoundUtils.getRandomPitch(citizen.getRandom()));
+        new ItemParticleEffectMessage(food.copy(), citizen.getX(), citizen.getY(), citizen.getZ(), citizen.getXRot(), citizen.getYRot(), citizen.getEyeHeight()).sendToTrackingEntity(citizen);
+        ItemStackUtils.consumeFood(food, citizen, null);
+        final ICitizenFoodHandler foodHandler = data.getCitizenFoodHandler();
+        if (foodHandler.getLastEaten() != item)
+        {
+            foodHandler.addLastEaten(item);
+        }
+        data.markDirty(0);
+        eaten.incrementAndGet();
+        eating = data.getSaturation() < UNTIL;
+        return false;
+    }
+}

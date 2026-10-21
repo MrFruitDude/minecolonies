@@ -206,6 +206,11 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
      * The citizen AI
      */
     private ITickRateStateMachine<IState> citizenAI = new TickRateStateMachine<>(CitizenAIState.IDLE, e -> {}, ENTITY_AI_TICKRATE);
+
+    /**
+     * Eating at work when hungry, before the trip to a restaurant.
+     */
+    private final CitizenSnack snack = new CitizenSnack(this);
     /**
      * Maximum air supply
      */
@@ -253,6 +258,7 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
             return false;
         }, () -> null, 1));
         entityStateController.addTransition(new TickingTransition<>(EntityState.ACTIVE_SERVER, this::decreaseIdleSaturation, () -> null, SATURATION_DECREASE_AFTER));
+        entityStateController.addTransition(new TickingTransition<>(EntityState.ACTIVE_SERVER, snack::tick, () -> null, CitizenSnack.INTERVAL));
         entityStateController.addTransition(new TickingTransition<>(EntityState.INACTIVE, this::isAlive, () -> EntityState.INIT, 100));
     }
     /**

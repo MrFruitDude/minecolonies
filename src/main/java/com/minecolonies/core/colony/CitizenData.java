@@ -518,6 +518,24 @@ public class CitizenData implements ICitizenData
         return id;
     }
 
+    /**
+     * New citizens start between half and full saturation (round 10), so the meals of a colony spread out instead of all coming at once.
+     */
+    public static final double START_SATURATION_MIN_SHARE = 0.5;
+
+    /**
+     * The colony-wide hunger reset fills every citizen to between 75% and full, for the same reason.
+     */
+    public static final double RESET_SATURATION_MIN_SHARE = 0.75;
+
+    /**
+     * A random saturation between {@code minShare} of the maximum and the maximum.
+     */
+    public static double randomSaturation(final java.util.Random random, final double minShare)
+    {
+        return MAX_SATURATION * (minShare + (1.0D - minShare) * random.nextDouble());
+    }
+
     @Override
     public void initForNewCivilian()
     {
@@ -529,7 +547,7 @@ public class CitizenData implements ICitizenData
         name = generateName(random, female, getColony(), getColony().getCitizenNameFile());
         textureId = random.nextInt(255);
 
-        saturation = MAX_SATURATION;
+        saturation = randomSaturation(random, START_SATURATION_MIN_SHARE);
 
         int levelCap = (int) colony.getOverallHappiness() * 2;
         // the free citizens (the starting ones, then the free floor) are skilled at least to 5
