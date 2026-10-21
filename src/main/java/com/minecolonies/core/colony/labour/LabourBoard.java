@@ -1111,19 +1111,24 @@ public final class LabourBoard
     private boolean destinationTicks(final LabourClaim claim, final ICitizenData citizen)
     {
         final var entity = citizen.getEntity().orElse(null);
-        final BlockPos at = claim.destination() != null ? claim.destination() : colony.getCenter();
-        return entity != null && entity.level() instanceof net.minecraft.server.level.ServerLevel level && at != null && LabourSites.simulated(level, at);
+        final java.util.function.Predicate<BlockPos> ticking = entity != null && entity.level() instanceof net.minecraft.server.level.ServerLevel level
+                                                                 ? p -> LabourSites.simulated(level, p) : null;
+        return destinationTicks(claim.destination(), colony.getCenter(), ticking);
     }
 
     /**
      * Whether the release of a frozen claim counts against its request (back-off): only when the citizen walked out of the ticking area while his hut still
      * ticks, not when the whole area left the simulation (builder review c5 C5-2).
      *
-     * @param destinationTicks whether the hut the claim delivers to still ticks.
+     * @param destination the hut the claim delivers to, null if none.
+     * @param centre      the colony centre, used when there is no hut.
+     * @param ticking     whether entities tick at a position in the citizen's level; null if he has no entity or level (counts as not ticking).
+     * @return whether the hut (else the centre) ticks.
      */
-    static boolean frozenPenalized(final boolean destinationTicks)
+    static boolean destinationTicks(@Nullable final BlockPos destination, @Nullable final BlockPos centre, @Nullable final java.util.function.Predicate<BlockPos> ticking)
     {
-        return destinationTicks;
+        final BlockPos at = destination != null ? destination : centre;
+        return ticking != null && at != null && ticking.test(at);
     }
 
     /**
@@ -1380,7 +1385,7 @@ public final class LabourBoard
                     LabourStats.log("claim of citizen {} given back: he stopped ticking at {} ({})", claim.citizenId(), citizen.getEntity().get().blockPosition().toShortString(),
                       walkedOut ? "walked out, back-off" : "area left the simulation, no back-off");
                     releasedFrozen.add(claim);
-                    release(claim, false, frozenPenalized(walkedOut));
+                    release(claim, false, walkedOut);
                 }
             }
         }

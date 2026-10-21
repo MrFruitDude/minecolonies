@@ -1344,7 +1344,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     @Override
     protected boolean minesFromHere(final BlockPos target)
     {
-        return usesPhysicalReach() && target.equals(reachFallback) && reachFallbackMode == FallbackMode.DEFAULT && target.equals(defaultWalkedTo);
+        return usesPhysicalReach() && target.equals(reachFallback) && reachFallbackMode == FallbackMode.DEFAULT && target.equals(defaultWalkedTo) && !fluidHazard(target);
     }
 
     @Override

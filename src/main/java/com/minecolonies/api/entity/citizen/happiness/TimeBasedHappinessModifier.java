@@ -82,8 +82,20 @@ public final class TimeBasedHappinessModifier extends AbstractHappinessModifier 
     @Override
     public double getFactor(final ICitizenData citizenData)
     {
-        final double baseFactor = super.getFactor(citizenData);
+        return timed(super.getFactor(citizenData));
+    }
 
+    @Override
+    public double peekFactor(final ICitizenData citizenData)
+    {
+        return timed(super.peekFactor(citizenData));
+    }
+
+    /**
+     * The base factor with the boost or penalty of the days it has lasted.
+     */
+    private double timed(final double baseFactor)
+    {
         double factor = baseFactor;
         if (baseFactor < 1.0)
         {

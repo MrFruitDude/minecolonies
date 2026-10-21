@@ -72,6 +72,13 @@ public class DynamicHappinessSupplier implements IHappinessSupplierWrapper
     }
 
     @Override
+    public double peekValue(final ICitizenData citizenData)
+    {
+        final HappinessRegistry.HappinessFunctionEntry function = IMinecoloniesAPI.getInstance().getHappinessFunctionRegistry().getValue(key);
+        return function == null ? lastValue : function.getDoubleSupplier().apply(citizenData);
+    }
+
+    @Override
     public double getLastCachedValue()
     {
         return lastValue;

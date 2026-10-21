@@ -1,5 +1,6 @@
 package com.minecolonies.core.colony.labour;
 
+import net.minecraft.core.BlockPos;
 import org.junit.Test;
 
 import static org.junit.Assert.assertFalse;
@@ -21,8 +22,16 @@ public class FrozenClaimTest
     @Test
     public void onlyAWalkOutOfTheTickingAreaPutsTheRequestOnBackoff()
     {
-        // builder review c5 C5-2: his hut still ticks, he walked out: back-off; the hut stopped ticking too (a player walked away): neutral
-        assertTrue(LabourBoard.frozenPenalized(true));
-        assertFalse(LabourBoard.frozenPenalized(false));
+        // builder review c5 C5-2 / review r9 c1 L2: the hut decides, else the colony centre; no level counts as not ticking
+        final BlockPos hut = new BlockPos(10, 64, 10);
+        final BlockPos centre = new BlockPos(0, 64, 0);
+        final java.util.function.Predicate<BlockPos> onlyHut = hut::equals;
+        final java.util.function.Predicate<BlockPos> onlyCentre = centre::equals;
+        assertTrue(LabourBoard.destinationTicks(hut, centre, onlyHut));
+        assertFalse(LabourBoard.destinationTicks(hut, centre, onlyCentre));
+        assertTrue(LabourBoard.destinationTicks(null, centre, onlyCentre));
+        assertFalse(LabourBoard.destinationTicks(null, centre, onlyHut));
+        assertFalse(LabourBoard.destinationTicks(null, null, p -> true));
+        assertFalse(LabourBoard.destinationTicks(hut, centre, null));
     }
 }

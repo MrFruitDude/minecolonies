@@ -2,14 +2,22 @@ package com.minecolonies.core.entity.citizen.citizenhandlers;
 
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.IMinecoloniesAPI;
+import com.minecolonies.api.MinecoloniesAPIProxy;
+import com.minecolonies.api.entity.citizen.happiness.HappinessRegistry;
 import com.minecolonies.api.entity.citizen.happiness.IHappinessModifier;
+import net.minecraft.core.Registry;
+import net.minecraft.resources.Identifier;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import org.junit.Test;
 
 import java.lang.reflect.Proxy;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Round 9: the live happiness for Colony Command's cards is computed from the factors as they are now, and leaves the cached value alone.
@@ -112,5 +120,62 @@ public class LiveHappinessTest
         assertEquals(10.0, handler.getLiveHappiness(colony(0.2), null), 0.0);
         food.factor = 3.0;
         assertEquals(10.0, handler.getLiveHappiness(colony(0.0), null), 0.0);
+    }
+
+    @Test
+    public void liveValueOnTheProductionHandlerStoresNothing()
+    {
+        // review r9 c1 M1: the production handler of a citizen (CitizenHappinessHandler(data), its real dynamic suppliers and time-based modifiers); the
+        // happiness functions answer what the test says. CitizenData itself cannot be constructed in a plain JUnit run (its inventory needs the vanilla
+        // bootstrap, which needs the FML loader), so the citizen is an interface stand-in.
+        final double[] value = {0.5};
+        final HappinessRegistry.HappinessFunctionEntry entry = new HappinessRegistry.HappinessFunctionEntry(d -> value[0]);
+        final Object registry = Proxy.newProxyInstance(LiveHappinessTest.class.getClassLoader(), new Class<?>[] {Registry.class},
+          (proxy, method, args) -> method.getName().equals("getValue") && args != null && args.length == 1 && args[0] instanceof Identifier ? entry : null);
+        final IMinecoloniesAPI api = (IMinecoloniesAPI) Proxy.newProxyInstance(LiveHappinessTest.class.getClassLoader(), new Class<?>[] {IMinecoloniesAPI.class},
+          (proxy, method, args) -> method.getName().equals("getHappinessFunctionRegistry") ? registry : null);
+        MinecoloniesAPIProxy.getInstance().setApiInstance(api);
+        try
+        {
+            final IColony colony = colony(0.0);
+            final ICitizenData citizen = (ICitizenData) Proxy.newProxyInstance(LiveHappinessTest.class.getClassLoader(), new Class<?>[] {ICitizenData.class},
+              (proxy, method, args) -> method.getName().equals("getColony") ? colony : method.getName().equals("getId") ? 1 : null);
+            final CitizenHappinessHandler handler = new CitizenHappinessHandler(citizen);
+
+            // every function answers 0.5 (the time-based modifiers weigh it by their days, so the total is not asserted, only compared)
+            final double cached = handler.getHappiness(colony, citizen);
+            final Map<String, Double> stored = lastValues(handler);
+
+            value[0] = 0.25;
+            final double live = handler.getLiveHappiness(colony, citizen);
+            assertTrue("the live value follows the factors: " + live + " vs " + cached, live < cached);
+            // nothing changed: the suppliers' last values, and the cached happiness
+            assertEquals(stored, lastValues(handler));
+            assertEquals(cached, handler.getHappiness(colony, citizen), 0.0);
+            assertEquals(live, handler.getLiveHappiness(colony, citizen), 0.0);
+            assertEquals(stored, lastValues(handler));
+
+            // a null colony gives the cached value and does not throw
+            assertEquals(cached, handler.getLiveHappiness(null, citizen), 0.0);
+
+            // once the cache is renewed (a modifier change), the cached path gives the same value as the live one
+            handler.addModifier(new Factor("neutral", 1.0, 1.0));
+            assertEquals(live, handler.getHappiness(colony, citizen), 1e-9);
+        }
+        finally
+        {
+            MinecoloniesAPIProxy.getInstance().setApiInstance(null);
+        }
+    }
+
+    /** The supplier value each modifier stored last (what client views and the save show). */
+    private static Map<String, Double> lastValues(final CitizenHappinessHandler handler)
+    {
+        final Map<String, Double> out = new HashMap<>();
+        for (final String id : handler.getModifiers())
+        {
+            out.put(id, handler.getModifier(id).getFactor(null));
+        }
+        return out;
     }
 }

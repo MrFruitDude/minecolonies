@@ -22,6 +22,18 @@ public interface IHappinessSupplierWrapper
      */
     double getLastCachedValue();
 
+    /**
+     * The current value, like {@link #getValue}, but nothing is stored: the last cached value stays as it is. Suppliers that store nothing return
+     * {@link #getValue}.
+     *
+     * @param citizenData the citizen.
+     * @return the current value.
+     */
+    default double peekValue(final ICitizenData citizenData)
+    {
+        return getValue(citizenData);
+    }
+
     CompoundTag serializeNBT(HolderLookup.Provider provider);
 
     void deserializeNBT(HolderLookup.Provider provider, CompoundTag nbt);

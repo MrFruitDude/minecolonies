@@ -33,6 +33,18 @@ public interface IHappinessModifier
     double getWeight();
 
     /**
+     * The factor as it is now, like {@link #getFactor}, but without storing anything (the supplier's last value stays). Modifiers that store nothing return
+     * {@link #getFactor}.
+     *
+     * @param data the citizen the factor is for.
+     * @return the value of the factor.
+     */
+    default double peekFactor(@Nullable final ICitizenData data)
+    {
+        return getFactor(data);
+    }
+
+    /**
      * Read the modifier from nbt.
      *
      * @param compoundNBT the compound to read it from.

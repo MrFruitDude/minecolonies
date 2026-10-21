@@ -58,6 +58,12 @@ public final class ExpirationBasedHappinessModifier extends AbstractHappinessMod
     }
 
     @Override
+    public double peekFactor(final ICitizenData data)
+    {
+        return days > 0 && days <= period ? super.peekFactor(data) : 1.0;
+    }
+
+    @Override
     public void reset()
     {
         this.days = period;

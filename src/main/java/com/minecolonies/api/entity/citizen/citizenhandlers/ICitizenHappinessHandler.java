@@ -1,5 +1,6 @@
 package com.minecolonies.api.entity.citizen.citizenhandlers;
 
+import org.jetbrains.annotations.Nullable;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.entity.citizen.happiness.IHappinessModifier;
@@ -52,15 +53,17 @@ public interface ICitizenHappinessHandler
     double getHappiness(final IColony colony, final ICitizenData citizenData);
 
     /**
-     * The happiness of the citizen as it is now: computed from the factors at this moment, without reading or changing the cached value that
-     * {@link #getHappiness} returns (that one is only renewed when a modifier changes or a day ends). Server side, for displays that show the live value.
-     * Handlers that keep no cache return {@link #getHappiness}.
+     * The happiness of the citizen as it is now: computed from the factors at this moment with no side effect. Neither the cached value that
+     * {@link #getHappiness} returns (renewed only when a modifier changes or a day ends) nor the last values of the factors (saved, and shown by client
+     * views) change. Server thread only: the factors read colony state. The social and security factors loop over the colony's citizens, so one call costs
+     * O(citizens); call it at most about once a second per open view, not per citizen every tick. A null colony returns the cached value (0 before the first one); it never throws. Handlers that keep
+     * no cache return {@link #getHappiness}.
      *
-     * @param colony      the colony.
+     * @param colony      the colony, null for the cached value.
      * @param citizenData the citizen.
      * @return the happiness, 0 to 10.
      */
-    default double getLiveHappiness(final IColony colony, final ICitizenData citizenData)
+    default double getLiveHappiness(@Nullable final IColony colony, final ICitizenData citizenData)
     {
         return getHappiness(colony, citizenData);
     }

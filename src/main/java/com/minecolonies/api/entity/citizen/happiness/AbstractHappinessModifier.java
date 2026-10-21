@@ -47,6 +47,12 @@ public abstract class AbstractHappinessModifier implements IHappinessModifier
         return citizenData == null ? supplier.getLastCachedValue() : supplier.getValue(citizenData);
     }
 
+    @Override
+    public double peekFactor(@Nullable final ICitizenData citizenData)
+    {
+        return citizenData == null ? supplier.getLastCachedValue() : supplier.peekValue(citizenData);
+    }
+
     /**
      * Create an empty instance of the abstract happiness modifier.
      */

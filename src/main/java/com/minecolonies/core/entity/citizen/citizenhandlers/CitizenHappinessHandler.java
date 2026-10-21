@@ -1,5 +1,6 @@
 package com.minecolonies.core.entity.citizen.citizenhandlers;
 
+import org.jetbrains.annotations.Nullable;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.interactionhandling.ChatPriority;
@@ -141,19 +142,33 @@ public class CitizenHappinessHandler implements ICitizenHappinessHandler
     {
         if (cachedHappiness == -1)
         {
-            cachedHappiness = getLiveHappiness(colony, citizenData);
+            cachedHappiness = compute(colony, citizenData, false);
         }
         return cachedHappiness;
     }
 
     @Override
-    public double getLiveHappiness(final IColony colony, final ICitizenData citizenData)
+    public double getLiveHappiness(@Nullable final IColony colony, final ICitizenData citizenData)
+    {
+        if (colony == null)
+        {
+            return cachedHappiness == -1 ? 0.0 : cachedHappiness;
+        }
+        return compute(colony, citizenData, true);
+    }
+
+    /**
+     * Happiness from the factors now.
+     *
+     * @param peek true to store nothing (the factors' last values stay), false to renew them as the cached path always did.
+     */
+    private double compute(final IColony colony, final ICitizenData citizenData, final boolean peek)
     {
         double total = 0.0;
         double totalWeight = 0.0;
         for (final IHappinessModifier happinessModifier : happinessFactors.values())
         {
-            final double factor = happinessModifier.getFactor(citizenData);
+            final double factor = peek ? happinessModifier.peekFactor(citizenData) : happinessModifier.getFactor(citizenData);
             if (factor == 1.0)
                 continue;
             total += factor * happinessModifier.getWeight();
