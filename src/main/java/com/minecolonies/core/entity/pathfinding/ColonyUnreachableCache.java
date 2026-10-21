@@ -22,11 +22,11 @@ import java.util.Map;
  * expiry ({@link #EXPIRY_TICKS} game ticks); a new proof never refreshes an older one. All proofs of a target end as soon
  * as a block in the small box around it changes (checked on lookup, loaded chunks only). Entries are keyed by colony
  * (walker's dimension and colony id, {@link Pathfinding.ColonyKey}), target block and pathing ability flags
- * ({@link PathingOptions#abilityFlags()}), so colonies and citizens with other abilities never share, and by goal kind:
- * an exact move-to proof ({@link Kind#EXACT}) refuses only exact move-to walks, while a close-to proof
- * ({@link Kind#CLOSE}, "anywhere near the block", the easier goal) refuses both. So a block that is sealed exactly never
- * stops a builder from walking next to it. A citizen's own failed tries (the CA-11 back-off) are never shared. Server
- * thread only.
+ * ({@link PathingOptions#abilityFlags()}), so colonies and citizens with other abilities never share, and by goal
+ * ({@link Goal}: kind and close-to distance). A proof refuses only walks with the same goal: an exact move-to proof
+ * never refuses a close-to walk, a close-to proof never refuses an exact walk, and a close-to proof for distance 1 never
+ * refuses a builder's distance-4 walk (the goals differ, none implies the other). A citizen's own failed tries (the CA-11
+ * back-off) are never shared. Server thread only.
  */
 public final class ColonyUnreachableCache
 {
@@ -46,7 +46,7 @@ public final class ColonyUnreachableCache
     public static final int MAX_PROOF_POSITIONS = 8192;
 
     /**
-     * Targets per colony (target, abilities and kind), and proofs per target, at most; the oldest are dropped first.
+     * Targets per colony (target, abilities and goal), and proofs per target, at most; the oldest are dropped first.
      */
     private static final int MAX_TARGETS_PER_COLONY = 32;
     private static final int MAX_PROOFS             = 4;
@@ -63,17 +63,38 @@ public final class ColonyUnreachableCache
     }
 
     /**
-     * The goal a proof was made for, and the goal a walker asks about.
+     * The goal kinds that make and use proofs.
      */
     public enum Kind
     {
-        /** Stand on (or right next to) the block: PathJobMoveToLocation. */
+        /** Stand on (or right next to) the block: PathJobMoveToLocation (exactly that class). */
         EXACT,
-        /** Get within a few blocks of it: PathJobMoveCloseToXNearY. */
+        /** Get within a distance of it: PathJobMoveCloseToXNearY. */
         CLOSE
     }
 
-    private record TargetKey(BlockPos target, int abilities, Kind kind)
+    /**
+     * The goal of a walk: its kind and, for close-to, its distance (0 for exact). Proofs and walks match only on equal
+     * goals.
+     *
+     * @param kind     the kind.
+     * @param distance the close-to distance, 0 for exact.
+     */
+    public record Goal(Kind kind, int distance)
+    {
+        public static final Goal EXACT = new Goal(Kind.EXACT, 0);
+
+        /**
+         * @param distance the close-to distance.
+         * @return the close-to goal for it.
+         */
+        public static Goal close(final int distance)
+        {
+            return new Goal(Kind.CLOSE, distance);
+        }
+    }
+
+    private record TargetKey(BlockPos target, int abilities, Goal goal)
     {
     }
 
@@ -94,15 +115,15 @@ public final class ColonyUnreachableCache
      * @param colony    the colony key, null does nothing.
      * @param target    the target block.
      * @param abilities the searching walker's pathing ability flags.
-     * @param kind      the goal kind of the search.
+     * @param goal      the goal of the search.
      * @param reachable sorted packed positions the exhausted search reached (see AbstractPathJob), null when it is no proof.
      * @return true if recorded.
      */
     public static synchronized boolean markUnreachable(
-      final Level level, @Nullable final Pathfinding.ColonyKey colony, final BlockPos target, final int abilities, final Kind kind,
+      final Level level, @Nullable final Pathfinding.ColonyKey colony, final BlockPos target, final int abilities, final Goal goal,
       @Nullable final long[] reachable)
     {
-        if (colony == null || target == null || kind == null || reachable == null || reachable.length == 0 || reachable.length > MAX_PROOF_POSITIONS)
+        if (colony == null || target == null || goal == null || reachable == null || reachable.length == 0 || reachable.length > MAX_PROOF_POSITIONS)
         {
             return false;
         }
@@ -110,7 +131,7 @@ public final class ColonyUnreachableCache
         final long now = level.getGameTime();
         prune(now, entries);
         final int blocks = blocksAround(level, target);
-        final TargetKey key = new TargetKey(target.immutable(), abilities, kind);
+        final TargetKey key = new TargetKey(target.immutable(), abilities, goal);
         final Entry old = entries.get(key);
         final List<Proof> proofs = new ArrayList<>();
         if (old != null && old.blocks() == blocks)
@@ -139,31 +160,22 @@ public final class ColonyUnreachableCache
     }
 
     /**
-     * Whether a live proof of the colony shows the target unreachable from this start for this goal kind: an exact walk is
-     * refused by an exact or a close-to proof, a close-to walk only by a close-to proof.
+     * Whether a live proof of the colony for the same goal shows the target unreachable from this start (the start is one
+     * of the proof's reachable positions). Expired proofs, and every proof when the blocks around the target changed, are
+     * removed.
      *
      * @param level     the level of the target.
      * @param colony    the colony key, null is never cached.
      * @param target    the target block.
      * @param abilities the walker's pathing ability flags.
-     * @param kind      the goal kind of the walk.
+     * @param goal      the goal of the walk, null (a walk without a goal kind) is never refused.
      * @param start     where the walker would start.
      * @return true while proven for this start.
      */
     public static synchronized boolean isUnreachable(
-      final Level level, @Nullable final Pathfinding.ColonyKey colony, final BlockPos target, final int abilities, final Kind kind, final BlockPos start)
+      final Level level, @Nullable final Pathfinding.ColonyKey colony, final BlockPos target, final int abilities, @Nullable final Goal goal, final BlockPos start)
     {
-        return proven(level, colony, target, abilities, Kind.CLOSE, start) || kind == Kind.EXACT && proven(level, colony, target, abilities, Kind.EXACT, start);
-    }
-
-    /**
-     * Whether a live proof of this kind covers the start. Expired proofs, and every proof when the blocks around the
-     * target changed, are removed.
-     */
-    private static boolean proven(
-      final Level level, @Nullable final Pathfinding.ColonyKey colony, final BlockPos target, final int abilities, final Kind kind, final BlockPos start)
-    {
-        if (colony == null || target == null || start == null)
+        if (colony == null || target == null || goal == null || start == null)
         {
             return false;
         }
@@ -172,7 +184,7 @@ public final class ColonyUnreachableCache
         {
             return false;
         }
-        final TargetKey key = new TargetKey(target, abilities, kind);
+        final TargetKey key = new TargetKey(target, abilities, goal);
         final Entry entry = entries.get(key);
         if (entry == null)
         {

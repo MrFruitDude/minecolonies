@@ -536,6 +536,13 @@ public final class PathfindingGameTests
 
     private static void waitAll(final GameTestHelper helper, final List<PathResult<?>> results, final long t0, final int tick, final Runnable then)
     {
+        waitAll(helper, results, t0, tick, () -> {}, then);
+    }
+
+    /** {@link #waitAll}, running {@code onTimeout} before failing on the wall-time bound. */
+    private static void waitAll(final GameTestHelper helper, final List<PathResult<?>> results, final long t0, final int tick, final Runnable onTimeout,
+      final Runnable then)
+    {
         boolean all = true;
         for (final PathResult<?> r : results)
         {
@@ -552,10 +559,11 @@ public final class PathfindingGameTests
         // The GameTest server runs unthrottled (thousands of ticks per second), so the bound is wall time.
         if (System.nanoTime() - t0 > 120_000_000_000L)
         {
+            onTimeout.run();
             helper.fail("queued path jobs not done after 120 s (" + tick + " ticks)");
             return;
         }
-        helper.runAfterDelay(1, () -> waitAll(helper, results, t0, tick + 1, then));
+        helper.runAfterDelay(1, () -> waitAll(helper, results, t0, tick + 1, onTimeout, then));
     }
 
     /** Four routes over one course: a wall with a gap, stairs onto a platform, a 1-deep ditch, a pillar field. */
@@ -798,11 +806,62 @@ public final class PathfindingGameTests
                 }))))));
     }
 
+    /** A builder-style close-to request: re-issued when the navigation is done or on another task. */
+    private static void requestCloseTo(final GameTestHelper helper, final Host host, final BlockPos target, final int distance)
+    {
+        final PathResult<?> r = host.nav.getPathResult();
+        final boolean right = r != null && r.getJob() instanceof com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveCloseToXNearY c
+                                && c.desiredPosition.equals(target) && c.distToDesired == distance;
+        if (host.nav.isDone() || !right)
+        {
+            host.nav.setPathJob(new com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveCloseToXNearY(helper.getLevel(), target, target, distance, host.mob),
+              target, 1.0D, false);
+        }
+    }
+
+    /** Like {@link #drive}, with close-to requests of the given distance. */
+    private static void driveCloseTo(final GameTestHelper helper, final Host host, final BlockPos target, final int distance, final int tick, final int ticks,
+      final java.util.function.IntPredicate stopEarly, final Runnable then)
+    {
+        if (tick >= ticks || stopEarly.test(tick))
+        {
+            then.run();
+            return;
+        }
+        final PathResult<?> computing = host.nav.getPathResult();
+        if (computing != null && !computing.isDone())
+        {
+            helper.runAfterDelay(1, () -> driveCloseTo(helper, host, target, distance, tick, ticks, stopEarly, then));
+            return;
+        }
+        host.step();
+        if (tick % REQUEST_EVERY == 0)
+        {
+            requestCloseTo(helper, host, target, distance);
+        }
+        helper.runAfterDelay(1, () -> driveCloseTo(helper, host, target, distance, tick + 1, ticks, stopEarly, then));
+    }
+
+    /** Close-to jobs of the host for the target with the given distance. */
+    private static List<AbstractPathJob> closeJobs(final Host host, final BlockPos target, final int distance)
+    {
+        final List<AbstractPathJob> out = new ArrayList<>();
+        for (final AbstractPathJob job : host.jobs)
+        {
+            if (job instanceof com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveCloseToXNearY c && c.desiredPosition.equals(target) && c.distToDesired == distance)
+            {
+                out.add(job);
+            }
+        }
+        return out;
+    }
+
     /**
-     * path_close_to_after_exact_proof (review c3 M1): host A of colony 1 proves the sealed block unreachable with an exact
-     * move-to search (exhausted, 500+ nodes). Host E of the same colony, on A's reachable floor, asks for an exact walk to
-     * it and must be refused. Host Bh of the same colony, also on that floor, starts a builder's close-to walk to the
-     * same block: an exact proof must not refuse it, so its search is submitted and runs.
+     * path_close_to_after_exact_proof (review c3 M1, c4 M1): proofs refuse only walks with the same goal. On one open
+     * floor, colony 1, a block sealed in stone (its distance-1 spots are stone, open floor 2 blocks away):
+     * A proves it unreachable for exact walks (exhausted search); E's exact walk is then refused. C1's distance-1
+     * close-to walk is not refused by the exact proof, runs, and proves distance 1 unreachable; C2's distance-1 walk is
+     * then refused. The builder's distance-4 walk is refused by neither proof and reaches next to the block.
      */
     public static void pathCloseToAfterExactProof(final GameTestHelper helper)
     {
@@ -811,33 +870,45 @@ public final class PathfindingGameTests
         sealTarget(helper, SEALED_TARGET);
         final Host a = new Host(helper, new BlockPos(-6, 1, -6));
         final Host e = new Host(helper, new BlockPos(-6, 1, 4));
-        final Host bh = new Host(helper, new BlockPos(-4, 1, 4));
+        final Host c1 = new Host(helper, new BlockPos(-2, 1, -6));
+        final Host c2 = new Host(helper, new BlockPos(-2, 1, 4));
+        final Host bh = new Host(helper, new BlockPos(-4, 1, 10));
         final BlockPos target = helper.absolutePos(SEALED_TARGET);
         final Map<Mob, Integer> ids = new java.util.HashMap<>();
-        ids.put(a.mob, 1);
-        ids.put(e.mob, 1);
-        ids.put(bh.mob, 1);
+        for (final Host h : new Host[] {a, e, c1, c2, bh})
+        {
+            ids.put(h.mob, 1);
+        }
         final AutoCloseable colonies = testColonies(helper.getLevel(), ids);
-        observeAll(a, e, bh);
+        observeAll(a, e, c1, c2, bh);
         helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () ->
           drive(helper, a, () -> target, 0, 100, t -> a.jobs.size() >= 2, () ->
-            drive(helper, e, () -> target, 0, 50, t -> false, () -> {
-                final PathResult<?> closeTo = bh.nav.setPathJob(
-                  new com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveCloseToXNearY(helper.getLevel(), target, target, 1, bh.mob), target, 1.0D, false);
-                waitAll(helper, closeTo == null ? List.of() : List.of(closeTo), System.nanoTime(), 0, () -> {
-                    Pathfinding.submitObserver = null;
-                    close(colonies);
-                    final PathResult<?> first = a.jobs.isEmpty() ? null : a.jobs.get(0).getResult();
-                    final String s = String.format("R10 close-to after exact proof: A first exhausted %s (%d nodes), E exact %d jobs, builder close-to %s, %d jobs (%d nodes)",
-                      first != null && first.searchExhausted, first == null ? 0 : first.searchedNodes, e.jobs.size(), closeTo == null ? "REFUSED" : "submitted",
-                      bh.jobs.size(), closeTo == null ? 0 : closeTo.searchedNodes);
-                    Log.getLogger().info(s);
-                    helper.assertTrue(first != null && first.searchExhausted && first.searchedNodes >= 500, "fixture: A's exact search was no proof. " + s);
-                    helper.assertTrue(e.jobs.isEmpty(), "fixture: the exact proof did not refuse an exact walk. " + s);
-                    helper.assertTrue(closeTo != null && bh.jobs.size() == 1, "an exact move-to proof refused a builder's close-to walk. " + s);
-                    helper.succeed();
-                });
-            }))));
+            drive(helper, e, () -> target, 0, 50, t -> false, () ->
+              driveCloseTo(helper, c1, target, 1, 0, 100, t -> c1.jobs.size() >= 2, () ->
+                driveCloseTo(helper, c2, target, 1, 0, 50, t -> false, () ->
+                  driveCloseTo(helper, bh, target, 4, 0, 400, t -> closeJobs(bh, target, 4).stream().anyMatch(j -> j.getResult().isPathReachingDestination()), () -> {
+                      Pathfinding.submitObserver = null;
+                      close(colonies);
+                      final PathResult<?> exactProof = a.jobs.isEmpty() ? null : a.jobs.get(0).getResult();
+                      final List<AbstractPathJob> c1Jobs = closeJobs(c1, target, 1);
+                      final PathResult<?> closeProof = c1Jobs.isEmpty() ? null : c1Jobs.get(0).getResult();
+                      final List<AbstractPathJob> builder = closeJobs(bh, target, 4);
+                      final boolean reached = builder.stream().anyMatch(j -> j.getResult().isPathReachingDestination());
+                      final String s = String.format("R10 goals: exact proof %s (%d nodes), E exact %d jobs; C1 dist-1 %d jobs (proof %s, %d nodes), C2 dist-1 %d jobs; "
+                                                       + "builder dist-4 %d jobs, reached %s, builder at %s",
+                        exactProof != null && exactProof.searchExhausted, exactProof == null ? 0 : exactProof.searchedNodes, e.jobs.size(), c1.jobs.size(),
+                        closeProof != null && closeProof.searchExhausted, closeProof == null ? 0 : closeProof.searchedNodes, c2.jobs.size(), builder.size(), reached,
+                        helper.relativePos(bh.mob.blockPosition()).toShortString());
+                      Log.getLogger().info(s);
+                      helper.assertTrue(exactProof != null && exactProof.searchExhausted && exactProof.searchedNodes >= 500, "fixture: A's exact search was no proof. " + s);
+                      helper.assertTrue(e.jobs.isEmpty(), "the exact proof did not refuse an exact walk of the same colony. " + s);
+                      helper.assertTrue(!c1Jobs.isEmpty(), "an exact proof refused a close-to walk. " + s);
+                      helper.assertTrue(closeProof != null && closeProof.searchExhausted && closeProof.searchedNodes >= 500, "fixture: C1's distance-1 search was no proof. " + s);
+                      helper.assertTrue(c2.jobs.isEmpty(), "the distance-1 proof did not refuse a distance-1 walk of the same colony. " + s);
+                      helper.assertTrue(!builder.isEmpty(), "a proof for another goal refused the builder's distance-4 walk. " + s);
+                      helper.assertTrue(reached, "the builder's distance-4 walk did not reach next to the sealed block. " + s);
+                      helper.succeed();
+                  })))))));
     }
 
     /**
@@ -1079,7 +1150,12 @@ public final class PathfindingGameTests
             final Runnable[] round = new Runnable[1];
             final double[] avgs = {learned, 0.3D};
             final int[] index = {0};
+            final java.util.concurrent.atomic.AtomicBoolean cleaned = new java.util.concurrent.atomic.AtomicBoolean();
             final Runnable cleanup = () -> {
+                if (cleaned.getAndSet(true))
+                {
+                    return;
+                }
                 citizen.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
                 com.minecolonies.api.colony.IColonyManager.getInstance().deleteColonyByWorld(colony.getID(), false, level);
                 for (int cx = Math.min(a.getX(), b.getX()) >> 4; cx <= Math.max(a.getX(), b.getX()) >> 4; cx++)
@@ -1090,6 +1166,8 @@ public final class PathfindingGameTests
                     }
                 }
             };
+            // also when the test runs out of ticks (40,100) or a wait times out: the safety runs shortly before the limit
+            helper.runAfterDelay(39_000, cleanup);
             round[0] = () -> {
                 if (index[0] >= avgs.length)
                 {
@@ -1113,7 +1191,7 @@ public final class PathfindingGameTests
                 }
                 final List<PathResult<?>> all = new ArrayList<>();
                 jobs.forEach(j -> all.add(j.getResult()));
-                waitAll(helper, all, System.nanoTime(), 0, () -> {
+                waitAll(helper, all, System.nanoTime(), 0, cleanup, () -> {
                     final double[] n = roadTotals(helper, jobs);
                     allReached[0] &= n[0] == trips.length;
                     out.append(String.format(" | multiplier %.2f: %d of %d reached, %.0f nodes, walk %.1f, road share %.2f", jobs.get(0).getStartHeuristicMod(), (int) n[0],

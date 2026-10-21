@@ -551,8 +551,8 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
         if (!reachesDestination && nodesToVisit.isEmpty())
         {
             result.searchExhausted = true;
-            // (only for a walker of a colony: nobody else can use the proof)
-            if (queueKey instanceof Pathfinding.ColonyKey
+            // (only for a walker of a colony and a job with a goal kind: nobody else can use the proof)
+            if (queueKey instanceof Pathfinding.ColonyKey && (getClass() == PathJobMoveToLocation.class || this instanceof PathJobMoveCloseToXNearY)
                   && totalNodesVisited >= ColonyUnreachableCache.MIN_PROOF_NODES && nodes.size() <= ColonyUnreachableCache.MAX_PROOF_POSITIONS)
             {
                 // every node was visited: these are all the positions reachable from the start (proof for the colony cache)
