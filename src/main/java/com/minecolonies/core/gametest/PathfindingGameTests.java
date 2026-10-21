@@ -943,12 +943,13 @@ public final class PathfindingGameTests
                   Pathfinding.submitObserver = null;
                   close(colonies);
                   final PathResult<?> first = t.jobs.isEmpty() ? null : t.jobs.get(0).getResult();
-                  final String s = String.format("R10 walled yard: T first search exhausted %s (%d nodes, proof %d positions), U (inside) %d jobs, "
+                  // the navigator takes the proof array off the result once it records the outcome (review c4 L3), so the fixture checks an exhausted 500+ node search
+                  final String s = String.format("R10 walled yard: T first search exhausted %s (%d nodes, proof %d positions left on the result), U (inside) %d jobs, "
                                                    + "B (10 blocks, other side of the wall) %d jobs, B reached %s",
                     first != null && first.searchExhausted, first == null ? 0 : first.searchedNodes,
                     first == null || first.reachablePositions == null ? 0 : first.reachablePositions.length, u.jobs.size(), b.jobs.size(), b.anyReached(target));
                   Log.getLogger().info(s);
-                  helper.assertTrue(first != null && first.searchExhausted && first.reachablePositions != null, "fixture: the yard search was no proof. " + s);
+                  helper.assertTrue(first != null && first.searchExhausted && first.searchedNodes >= 500, "fixture: the yard search was no proof. " + s);
                   helper.assertTrue(u.jobs.isEmpty(), "a citizen inside the proven yard searched again. " + s);
                   helper.assertTrue(b.jobs.size() >= 1, "a citizen outside the yard was blocked by the yard's proof. " + s);
                   helper.assertTrue(b.anyReached(target), "the citizen outside the yard did not reach the target. " + s);
