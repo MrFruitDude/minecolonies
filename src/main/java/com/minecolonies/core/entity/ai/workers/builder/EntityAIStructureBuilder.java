@@ -1493,6 +1493,10 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             if (relocated)
             {
+                if (currentBlock.equals(reachFallback))
+                {
+                    com.minecolonies.core.entity.ai.workers.util.ReachAudit.defaultWalked(worker);
+                }
                 workFrom = worker.blockPosition();
                 prevBlockPosition = currentBlock;
             }
@@ -1543,6 +1547,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
                 gotoPath = null;
             }
 
+            if (currentBlock.equals(reachFallback))
+            {
+                // a block the physical reach could not serve waits for this walk: never placed while the path is still worked out (c7 launch: 23 away)
+                return false;
+            }
             if (prevBlockPosition != null)
             {
                 // This is good for building, and bad for mining, this is why mining should validate workFrom.
@@ -1565,6 +1574,11 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             if (BlockPosUtil.dist(workFrom, getSiteLocation()) < 100)
             {
+                if (currentBlock.equals(reachFallback))
+                {
+                    // MineColonies' walk ended as close as it gets: its own rule places from there (the audit allows it after the walk only)
+                    com.minecolonies.core.entity.ai.workers.util.ReachAudit.defaultWalked(worker);
+                }
                 prevBlockPosition = currentBlock;
                 workFrom = null;
                 return true;

@@ -31,6 +31,8 @@ public final class ReachAudit
     private static volatile double fallbackMaxVertical = 0.0D;
     /** The largest distance around (x plus z, MineColonies' measure) to a block placed by the default placement. */
     private static volatile long   defaultMax2D = 0L;
+    /** The builders whose default-placement block MineColonies' own walk ended at (its rule then places from there, any distance). */
+    private static final java.util.Set<Integer> walkedIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** MineColonies' default working radius around the builder. */
     static final int DEFAULT_RANGE = 5;
 
@@ -43,6 +45,7 @@ public final class ReachAudit
         examples.clear();
         excused.clear();
         limitedIds.clear();
+        walkedIds.clear();
         fallbackActions.set(0);
         fallbackMaxVertical = 0.0D;
         defaultMax2D = 0L;
@@ -53,6 +56,7 @@ public final class ReachAudit
      */
     public static void excuse(final LivingEntity worker, final BlockPos block, final boolean limited)
     {
+        walkedIds.remove(worker.getId());
         if (block == null)
         {
             excused.remove(worker.getId());
@@ -70,6 +74,14 @@ public final class ReachAudit
                 limitedIds.remove(worker.getId());
             }
         }
+    }
+
+    /**
+     * MineColonies' own walk to this builder's default-placement block ended: a placement further than 5 around is its own rule, not a leak.
+     */
+    public static void defaultWalked(final LivingEntity worker)
+    {
+        walkedIds.add(worker.getId());
     }
 
     /**
@@ -119,7 +131,7 @@ public final class ReachAudit
                 // MineColonies' default placement: 5 around (its own walk radius), any height. Further away is a leak, not excused (builder review c3 R1)
                 final long around = com.minecolonies.api.util.BlockPosUtil.getDistance2D(worker.blockPosition(), block);
                 defaultMax2D = Math.max(defaultMax2D, around);
-                if (around > DEFAULT_RANGE)
+                if (around > DEFAULT_RANGE && !walkedIds.contains(worker.getId()))
                 {
                     violations++;
                     if (examples.size() < 5)
