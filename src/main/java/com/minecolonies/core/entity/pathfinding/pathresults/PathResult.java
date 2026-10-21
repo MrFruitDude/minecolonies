@@ -64,6 +64,12 @@ public class PathResult<T extends AbstractPathJob>
     public int searchedNodes = 0;
 
     /**
+     * True when the search tried every node it could reach without reaching the destination (not stopped by its node
+     * limit): the destination cannot be reached from the start inside the job's search area.
+     */
+    public volatile boolean searchExhausted = false;
+
+    /**
      * The players getting debug information
      */
     private List<UUID> debugWatchers = null;

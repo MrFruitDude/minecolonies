@@ -298,6 +298,7 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         }
 
         // CA-11, now for the "move close to X near Y" jobs of the builders as well: an unreachable target is not searched again and again
+        // (also when another citizen of the colony just found it unreachable)
         if (job instanceof IDestinationPathJob destinationJob && isDestinationUnreachable(destinationJob.getDestination()))
         {
             return null;
@@ -819,18 +820,29 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
             unreachableTicks = UNREACHABLE_BACKOFF[Math.min(unreachableLevel, UNREACHABLE_BACKOFF.length - 1)];
             unreachableLevel++;
         }
+        // Shared with the colony: a search that ran out of nodes proves it at once, a tripped back-off after two tries.
+        if (pathResult.searchExhausted || unreachableTicks > 0)
+        {
+            ColonyUnreachableCache.markUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest);
+        }
     }
 
     /**
-     * Whether move-to jobs for this destination are currently refused because it kept failing (CA-11). AI code can use
-     * this to treat the target as "can't reach" instead of asking again.
+     * Whether move-to jobs for this destination are currently refused because it kept failing (CA-11), or because a
+     * citizen of the same colony just found it unreachable (colony cache). AI code can use this to treat the target as
+     * "can't reach" instead of asking again.
      *
      * @param dest the destination.
      * @return true while backing off from it.
      */
     public boolean isDestinationUnreachable(final BlockPos dest)
     {
-        return unreachableTicks > 0 && dest != null && dest.equals(unreachableDest);
+        if (dest == null)
+        {
+            return false;
+        }
+        return unreachableTicks > 0 && dest.equals(unreachableDest)
+                 || ColonyUnreachableCache.isUnreachable(ourEntity.level(), Pathfinding.colonyKeyOf(ourEntity), dest);
     }
 
     /**

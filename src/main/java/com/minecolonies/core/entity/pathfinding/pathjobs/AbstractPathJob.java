@@ -449,6 +449,11 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
             node.increaseVisited();
         }
 
+        if (!reachesDestination && nodesToVisit.isEmpty())
+        {
+            result.searchExhausted = true;
+        }
+
         // Explore additional possible endnodes after reaching, if we got extra nodes to search
         if (extraNodes > 0 && reachesDestination)
         {

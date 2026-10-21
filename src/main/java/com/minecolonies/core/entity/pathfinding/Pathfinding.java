@@ -1,8 +1,12 @@
 package com.minecolonies.core.entity.pathfinding;
 
+import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.entity.pathfinding.pathjobs.AbstractPathJob;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -16,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Static class the handles all the Pathfinding.
@@ -66,6 +71,43 @@ public final class Pathfinding
         {
             running.decrementAndGet();
         }
+    }
+
+    /**
+     * Identifies a colony across dimensions: colony ids are only unique within one dimension, so two colonies in one
+     * world never share a key.
+     *
+     * @param dimension the colony's dimension.
+     * @param colonyId  the colony's id.
+     */
+    public record ColonyKey(ResourceKey<Level> dimension, int colonyId)
+    {
+    }
+
+    /**
+     * Maps an entity to its colony key: a citizen gives its colony, anything else null. Tests may wrap it; production
+     * code must not change it.
+     */
+    public static volatile Function<Mob, ColonyKey> colonyKeyResolver = Pathfinding::citizenColonyKey;
+
+    /**
+     * @param mob the entity, may be null.
+     * @return the colony key of the entity, or null when it belongs to no colony.
+     */
+    @Nullable
+    public static ColonyKey colonyKeyOf(@Nullable final Mob mob)
+    {
+        return mob == null ? null : colonyKeyResolver.apply(mob);
+    }
+
+    @Nullable
+    private static ColonyKey citizenColonyKey(final Mob mob)
+    {
+        if (mob instanceof AbstractEntityCitizen citizen && citizen.getCitizenColonyHandler() != null && citizen.getCitizenColonyHandler().getColonyId() != 0)
+        {
+            return new ColonyKey(mob.level().dimension(), citizen.getCitizenColonyHandler().getColonyId());
+        }
+        return null;
     }
 
     /**
@@ -189,6 +231,7 @@ public final class Pathfinding
     public static void shutdown()
     {
         jobQueue.clear();
+        ColonyUnreachableCache.clear();
     }
 
     private Pathfinding()

@@ -706,6 +706,76 @@ public final class PathfindingGameTests
         }));
     }
 
+    // ------------------------------------------------------------------ round 10: colony unreachable cache
+
+    /** Installs a submit observer that records the jobs of every host. */
+    private static void observeAll(final Host... hosts)
+    {
+        Pathfinding.submitObserver = job -> {
+            for (final Host host : hosts)
+            {
+                if (job.getEntity() == host.mob)
+                {
+                    host.jobs.add(job);
+                }
+            }
+        };
+    }
+
+    /** Maps the given hosts to colony keys for the test (the hosts are villagers, not citizens). */
+    private static java.util.function.Function<Mob, Pathfinding.ColonyKey> testColonies(final ServerLevel level, final Map<Mob, Integer> ids)
+    {
+        final java.util.function.Function<Mob, Pathfinding.ColonyKey> before = Pathfinding.colonyKeyResolver;
+        Pathfinding.colonyKeyResolver = mob -> ids.containsKey(mob) ? new Pathfinding.ColonyKey(level.dimension(), ids.get(mob)) : before.apply(mob);
+        return before;
+    }
+
+    /**
+     * path_unreachable_colony_cache: host A of colony 1 fails on the sealed target until its CA-11 back-off trips, which
+     * shares the target with colony 1. Host B of colony 1 then asks for it for 100 ticks and must not search once. Host C
+     * of colony 2 asks for it too and must search (colonies never share the cache). Then the shell is opened: the block
+     * change clears the entry and B must reach the target.
+     */
+    public static void pathUnreachableColonyCache(final GameTestHelper helper)
+    {
+        prepareFloor(helper);
+        keepClock(helper, 6000L);
+        sealTarget(helper, SEALED_TARGET);
+        final Host a = new Host(helper, HOST_START);
+        final Host b = new Host(helper, new BlockPos(4, 1, 10));
+        final Host c = new Host(helper, new BlockPos(4, 1, 30));
+        final BlockPos target = helper.absolutePos(SEALED_TARGET);
+        final Map<Mob, Integer> ids = new java.util.HashMap<>();
+        ids.put(a.mob, 1);
+        ids.put(b.mob, 1);
+        ids.put(c.mob, 2);
+        final java.util.function.Function<Mob, Pathfinding.ColonyKey> before = testColonies(helper.getLevel(), ids);
+        observeAll(a, b, c);
+        final Runnable restore = () -> {
+            Pathfinding.submitObserver = null;
+            Pathfinding.colonyKeyResolver = before;
+        };
+        helper.runAfterDelay(2, () -> awaitIdlePool(helper, System.nanoTime(), () ->
+          drive(helper, a, () -> target, 0, 100, t -> a.nav.isDestinationUnreachable(target), () ->
+            drive(helper, b, () -> target, 0, 100, t -> false, () ->
+              drive(helper, c, () -> target, 0, 100, t -> c.jobs.size() > 0, () -> {
+                  final int bBlocked = b.jobs.size();
+                  helper.setBlock(SEALED_TARGET.west(), Blocks.AIR.defaultBlockState());
+                  helper.setBlock(SEALED_TARGET.west().above(), Blocks.AIR.defaultBlockState());
+                  drive(helper, b, () -> target, 0, 300, t -> b.anyReached(target), () -> {
+                      restore.run();
+                      final String s = String.format("R10 colony cache: A %d jobs (backed off %s), B %d jobs while cached then %d, C (other colony) %d jobs, B reached %s",
+                        a.jobs.size(), a.nav.isDestinationUnreachable(target), bBlocked, b.jobs.size(), c.jobs.size(), b.anyReached(target));
+                      Log.getLogger().info(s);
+                      helper.assertTrue(a.jobs.size() >= 2, "fixture: host A did not fail twice. " + s);
+                      helper.assertTrue(bBlocked == 0, "a second citizen of the same colony searched the cached unreachable target. " + s);
+                      helper.assertTrue(c.jobs.size() >= 1, "a citizen of another colony was blocked by colony 1's cache. " + s);
+                      helper.assertTrue(b.anyReached(target), "the target was not reached after the blocks around it changed. " + s);
+                      helper.succeed();
+                  });
+              })))));
+    }
+
     // ------------------------------------------------------------------ real citizen
 
     /**

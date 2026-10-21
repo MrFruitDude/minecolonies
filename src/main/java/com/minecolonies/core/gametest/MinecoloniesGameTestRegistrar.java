@@ -958,7 +958,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         // CA-10 / CA-11 pathfinding: each in its own batch (own environment), so no other test's path jobs share the
         // worker pool or the submit observer while one is measured.
         for (final String name : new String[] {"path_unreachable_backoff", "path_unreachable_other_target", "path_unreachable_recovers",
-          "path_queue_reject_marks_failed", "path_queue_parallel", "path_routes_identical", "path_citizen_walks_home", "path_road_preference"})
+          "path_queue_reject_marks_failed", "path_queue_parallel", "path_routes_identical", "path_citizen_walks_home", "path_road_preference",
+          "path_unreachable_colony_cache"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -969,6 +970,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "path_queue_parallel" -> PathfindingGameTests::pathQueueParallel;
                 case "path_routes_identical" -> PathfindingGameTests::pathRoutesIdentical;
                 case "path_road_preference" -> PathfindingGameTests::pathRoadPreference;
+                case "path_unreachable_colony_cache" -> PathfindingGameTests::pathUnreachableColonyCache;
                 default -> PathfindingGameTests::pathCitizenWalksHome;
             };
             event.registerTest(
