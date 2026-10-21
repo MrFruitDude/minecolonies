@@ -907,7 +907,8 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     @Nullable
     private PathJobMoveToLocation nextRouteLeg(final BlockPos start, final BlockPos dest)
     {
-        if (dest == null || !RouteHints.hasProviders() || !(ourEntity.level() instanceof ServerLevel level))
+        // (while paused setPathJob refuses every job: no provider call and no leg job for nothing)
+        if (dest == null || pauseTicks > 0 || !RouteHints.hasProviders() || !(ourEntity.level() instanceof ServerLevel level))
         {
             return null;
         }
