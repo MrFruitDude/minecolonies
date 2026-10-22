@@ -716,12 +716,31 @@ public final class RequestWaitTracker
         {
             final com.minecolonies.api.colony.buildings.IBuilding hut =
               colony.getServerBuildingManager().getBuilding(request.getRequester().getLocation().getInDimensionLocation());
-            if (hut != null && !hut.getContainers().isEmpty() && com.minecolonies.api.util.InventoryUtils.isBuildingFull(hut))
+            if (hut != null)
             {
-                return WaitReason.HUT_FULL_PICKUP_QUEUED;
+                final boolean loaded = com.minecolonies.api.util.WorldUtil.isBlockLoaded(colony.getWorld(), hut.getPosition());
+                return pickupReason(loaded, loaded && com.minecolonies.core.colony.requestsystem.priority.RequestImportance.loadedHutFull(colony, hut), fallback);
             }
         }
         return fallback;
+    }
+
+    /**
+     * Round 13 (c2): the pure part of {@link #queuedReason} for a pickup. Unloaded is checked first: an unloaded hut is never "full".
+     *
+     * @param loaded   the hut is loaded.
+     * @param full     the hut is loaded and full.
+     * @param fallback the reason otherwise.
+     * @return the reason.
+     */
+    @NotNull
+    public static WaitReason pickupReason(final boolean loaded, final boolean full, @NotNull final WaitReason fallback)
+    {
+        if (!loaded)
+        {
+            return WaitReason.UNLOADED;
+        }
+        return full ? WaitReason.HUT_FULL_PICKUP_QUEUED : fallback;
     }
 
     private static boolean allCouriersBusy(final IWareHouse wareHouse, final Colony colony)

@@ -67,8 +67,12 @@ final class LogisticsGameTests
         reg(event, "lg_bulk_pickup", LogisticsGameTests::bulkPickup);
         reg(event, "lg_requeue_on_break", LogisticsGameTests::requeueOnBreak);
         reg(event, "lg_wake_by_free_couriers", LogisticsGameTests::wakeByFreeCouriers);
-        reg(event, "lg_remainder_to_crafters", helper -> remainderToCrafters(helper, true));
-        reg(event, "lg_remainder_no_crafter", helper -> remainderToCrafters(helper, false));
+        reg(event, "lg_remainder_to_crafters", helper -> remainderToCrafters(helper, REMAINDER_CRAFTER));
+        reg(event, "lg_remainder_no_crafter", helper -> remainderToCrafters(helper, REMAINDER_NO_CRAFTER));
+        reg(event, "lg_remainder_no_inputs", helper -> remainderToCrafters(helper, REMAINDER_NO_INPUTS));
+        reg(event, "lg_remainder_builder_sawmill", LogisticsGameTests::remainderBuilderSawmill);
+        reg(event, "lg_unloaded_hut_not_full", LogisticsGameTests::unloadedHutNotFull);
+        reg(event, "lg_batch_by_stacks", LogisticsGameTests::batchByStacks);
         reg(event, "lg_min_stock_refill", LogisticsGameTests::minimumStockRefill);
     }
 
@@ -463,13 +467,15 @@ final class LogisticsGameTests
         helper.succeed();
     }
 
+    private static final int REMAINDER_NO_CRAFTER = 0;
+    private static final int REMAINDER_CRAFTER     = 1;
+    private static final int REMAINDER_NO_INPUTS   = 2;
+
     /**
-     * L7: two planks in stock and a request for 64 (minimum 1). With a sawmill that has a worker the warehouse holds the two and sends the rest
-     * to be crafted at once; without one it hands the two out as before.
+     * A sawmill that makes 4 planks from a log, with a worker unless there is no crafter.
      */
-    static void remainderToCrafters(final GameTestHelper helper, final boolean crafter)
+    private static IBuilding plankSawmill(final RsFixture f, final boolean staffed, final boolean ai)
     {
-        final RsFixture f = RsFixture.found(helper, "lg-remainder-" + crafter, 4);
         final IBuilding sawmill = f.place(ModBlocks.blockHutSawmill, new BlockPos(8, 1, 22), "craftsmanship/carpentry/sawmill1.blueprint");
         final ICraftingBuildingModule craft = sawmill.getModule(BuildingModules.SAWMILL_CRAFT);
         final RecipeStorage recipe = RecipeStorage.builder()
@@ -478,40 +484,216 @@ final class LogisticsGameTests
           .withPrimaryOutput(new ItemStack(Items.OAK_PLANKS, 4))
           .build();
         final IToken<?> recipeToken = IColonyManager.getInstance().getRecipeManager().checkOrAddRecipe(recipe);
-        helper.assertTrue(craft.addRecipe(recipeToken), "sawmill rejected the recipe");
-        f.stock(0, new ItemStack(Items.OAK_PLANKS, 2));
-        f.stock(1, new ItemStack(Items.OAK_LOG, 32));
-        if (crafter)
+        f.helper.assertTrue(craft.addRecipe(recipeToken), "sawmill rejected the recipe");
+        if (staffed)
         {
-            final ICitizenData worker = f.spawn(new BlockPos(10, 1, 28), true);
-            helper.assertTrue(sawmill.getModule(BuildingModules.SAWMILL_WORK).assignCitizen(worker), "worker not assigned");
+            final ICitizenData worker = f.spawn(new BlockPos(10, 1, 28), !ai);
+            f.helper.assertTrue(sawmill.getModule(BuildingModules.SAWMILL_WORK).assignCitizen(worker), "worker not assigned");
+            worker.getEntity().ifPresent(e -> e.setPos(sawmill.getID().getX() + 0.5D, sawmill.getID().getY(), sawmill.getID().getZ() + 0.5D));
         }
-        final IToken<?> ask = f.builder.createRequest(new Stack(new ItemStack(Items.OAK_PLANKS, 64), 64, 1), false);
-        final IRequest<?> request = f.request(ask);
-        helper.assertTrue(request != null, "the request exists");
-        boolean delivery = false;
-        boolean remainder = false;
+        return sawmill;
+    }
+
+    /**
+     * Round 13 (L7, c2): the warehouse's open remainder for the item, across its resolvers.
+     */
+    private static IToken<?> openRemainder(final RsFixture f, final com.minecolonies.api.colony.requestsystem.requestable.IDeliverable wanted)
+    {
+        for (final var resolver : ((AbstractBuilding) f.warehouse).getResolvers())
+        {
+            if (resolver instanceof final AbstractWarehouseRequestResolver warehouse)
+            {
+                final IToken<?> token = warehouse.openRemainder(f.manager(), wanted);
+                if (token != null)
+                {
+                    return token;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasDeliveryChild(final RsFixture f, final IRequest<?> request)
+    {
         for (final IToken<?> child : request.getChildren())
         {
             final IRequest<?> c = f.request(child);
-            if (c == null)
+            if (c != null && c.getRequest() instanceof Delivery)
             {
-                continue;
+                return true;
             }
-            delivery |= c.getRequest() instanceof Delivery;
-            remainder |= !(c.getRequest() instanceof Delivery) && c.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.IDeliverable d && d.getCount() == 62;
         }
-        final int held = f.ledger().reservedStock(f.warehouse.getID(), stack -> stack.is(Items.OAK_PLANKS));
-        Log.getLogger().info("LG_METRIC remainder crafter={} state={} delivery={} remainder={} held={}", crafter, request.getState(), delivery, remainder, held);
-        if (crafter)
+        return false;
+    }
+
+    /**
+     * L7 (c2 decision): two planks in stock and a request for 64 (minimum 1), ledger on. The two are always handed out at once (never held). With a
+     * staffed sawmill that can make planks (logs in store) the other 62 go to it as a separate request; without a crafter, or when the crafter has
+     * no logs and nobody makes them, nothing else happens.
+     */
+    static void remainderToCrafters(final GameTestHelper helper, final int mode)
+    {
+        com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(true);
+        final RsFixture f = RsFixture.found(helper, "lg-remainder-" + mode, 4);
+        plankSawmill(f, mode != REMAINDER_NO_CRAFTER, false);
+        f.stock(0, new ItemStack(Items.OAK_PLANKS, 2));
+        if (mode != REMAINDER_NO_INPUTS)
         {
-            helper.assertTrue(remainder && !delivery, "the remainder goes to the sawmill at once: " + f.describe(ask));
-            helper.assertTrue(held == 2, "the two planks are held for the request: " + held);
+            f.stock(1, new ItemStack(Items.OAK_LOG, 32));
+        }
+        final long scans = com.minecolonies.core.colony.requestsystem.wait.WaitDiagnosis.recipeScans;
+        final Stack planks = new Stack(new ItemStack(Items.OAK_PLANKS, 64), 64, 1);
+        for (int i = 0; i < 5; i++)
+        {
+            com.minecolonies.core.colony.requestsystem.wait.WaitDiagnosis.recipeSupport((com.minecolonies.core.colony.Colony) f.colony, planks);
+        }
+        helper.assertTrue(com.minecolonies.core.colony.requestsystem.wait.WaitDiagnosis.recipeScans - scans <= 1,
+          "recipe support scans the buildings once per item per tick: " + (com.minecolonies.core.colony.requestsystem.wait.WaitDiagnosis.recipeScans - scans));
+        final long sent = AbstractWarehouseRequestResolver.remaindersSent;
+        final IToken<?> ask = f.builder.createRequest(planks, false);
+        final IRequest<?> request = f.request(ask);
+        helper.assertTrue(request != null, "the request exists");
+        final boolean delivery = hasDeliveryChild(f, request);
+        final IToken<?> remainder = openRemainder(f, planks);
+        final int held = f.ledger().reservedStock(f.warehouse.getID(), stack -> stack.is(Items.OAK_PLANKS));
+        Log.getLogger().info("LG_METRIC remainder mode={} state={} delivery={} remainder={} held={}", mode, request.getState(), delivery,
+          remainder == null ? "none" : f.describe(remainder), held);
+        helper.assertTrue(delivery, "the two planks are handed out at once: " + f.describe(ask));
+        helper.assertTrue(held == 2, "only the delivery holds the two: " + held);
+        if (mode == REMAINDER_CRAFTER)
+        {
+            helper.assertTrue(remainder != null && AbstractWarehouseRequestResolver.remaindersSent == sent + 1, "the remainder goes to the sawmill");
+            final IRequest<?> r = f.request(remainder);
+            helper.assertTrue(r != null && !r.hasParent() && r.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.IDeliverable d && d.getCount() == 62,
+              "a separate request for 62: " + f.describe(remainder));
+            helper.assertTrue(f.manager().getResolverForRequest(remainder) instanceof com.minecolonies.core.colony.requestsystem.resolvers.core.AbstractCraftingRequestResolver,
+              "a crafter took it: " + f.describe(remainder));
+            // A second ask while the remainder is open sends no second remainder.
+            f.stock(2, new ItemStack(Items.OAK_PLANKS, 2));
+            final IToken<?> again = f.builder.createRequest(new Stack(new ItemStack(Items.OAK_PLANKS, 64), 64, 1), false);
+            helper.assertTrue(hasDeliveryChild(f, f.request(again)) && AbstractWarehouseRequestResolver.remaindersSent == sent + 1, "one open remainder per item");
         }
         else
         {
-            helper.assertTrue(delivery && !remainder, "no crafter: the two are handed out as before: " + f.describe(ask));
+            helper.assertTrue(remainder == null && AbstractWarehouseRequestResolver.remaindersSent == sent, "no remainder: " + (remainder == null ? "none" : f.describe(remainder)));
         }
+        helper.succeed();
+    }
+
+    /**
+     * L7 (c2), integration: ledger on, a builder hut asks for 16 planks (minimum 1), the warehouse has 2 planks and logs, a sawmill and a courier
+     * work with their own AI. The builder gets the 2 at once, the sawmill crafts the remainder into the warehouse, and the builder's next ask is
+     * served from that stock.
+     */
+    static void remainderBuilderSawmill(final GameTestHelper helper)
+    {
+        com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(true);
+        final RsFixture f = RsFixture.found(helper, "lg-remainder-chain", 4);
+        final IBuilding courierHut = f.place(ModBlocks.blockHutDeliveryman, new BlockPos(32, 1, 2), "craftsmanship/storage/deliveryman1.blueprint");
+        helper.runAfterDelay(200, () -> {
+            final IBuilding sawmill = plankSawmill(f, true, true);
+            final ICitizenData courier = f.spawn(new BlockPos(34, 1, 8), false);
+            helper.assertTrue(courierHut.getModule(BuildingModules.COURIER_WORK).assignCitizen(courier), "courier not assigned to the courier hut");
+            helper.assertTrue(f.warehouse.getModule(BuildingModules.WAREHOUSE_COURIERS).assignCitizen(courier), "courier not assigned to the warehouse");
+            courier.getEntity().ifPresent(e -> e.setPos(courierHut.getID().getX() + 0.5D, courierHut.getID().getY(), courierHut.getID().getZ() + 0.5D));
+            f.stock(0, new ItemStack(Items.OAK_PLANKS, 2));
+            f.stock(1, new ItemStack(Items.OAK_LOG, 16));
+            final Stack planks = new Stack(new ItemStack(Items.OAK_PLANKS, 16), 16, 1);
+            final IToken<?> ask = f.builder.createRequest(planks, false);
+            helper.assertTrue(hasDeliveryChild(f, f.request(ask)), "the 2 planks go out at once: " + f.describe(ask));
+            final IToken<?> remainder = openRemainder(f, planks);
+            helper.assertTrue(remainder != null, "the 14 go to the sawmill");
+            final long start = f.level.getGameTime();
+            final boolean[] second = {false};
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                f.level.getServer().clockManager().setTotalTicks(f.level.registryAccess().getOrThrow(net.minecraft.world.clock.WorldClocks.OVERWORLD), 6000L);
+                final long elapsed = f.level.getGameTime() - start;
+                final int inHut = InventoryUtils.getItemCountInItemHandler(f.builder.getItemHandlerCap(), stack -> stack.is(Items.OAK_PLANKS));
+                final int inStore = f.physical(stack -> stack.is(Items.OAK_PLANKS));
+                final boolean crafted = openRemainder(f, planks) == null && inStore >= 14;
+                if (!second[0] && inHut >= 2 && crafted)
+                {
+                    Log.getLogger().info("LG_METRIC remainder_chain builder={} store={} ticks={}", inHut, inStore, elapsed);
+                    second[0] = true;
+                    final IToken<?> next = f.builder.createRequest(new Stack(new ItemStack(Items.OAK_PLANKS, 14), 14, 1), false);
+                    helper.assertTrue(hasDeliveryChild(f, f.request(next)), "the next ask is served from the crafted stock: " + f.describe(next));
+                    helper.succeed();
+                    return;
+                }
+                if (elapsed > 24_000)
+                {
+                    helper.fail("remainder chain stuck after " + elapsed + " ticks: builder " + inHut + ", warehouse planks " + inStore + ", logs " + f.physical(s -> s.is(Items.OAK_LOG))
+                                  + ", remainder " + (openRemainder(f, planks) == null ? "closed" : f.describe(openRemainder(f, planks))) + ", sawmill planks "
+                                  + InventoryUtils.getItemCountInItemHandler(sawmill.getItemHandlerCap(), stack -> stack.is(Items.OAK_PLANKS)));
+                    return;
+                }
+                helper.runAfterDelay(20, () -> poll[0].run());
+            };
+            helper.runAfterDelay(20, () -> poll[0].run());
+        });
+    }
+
+    /**
+     * c2: a hut whose racks are not loaded is not full, so its pickup is not urgent and the queue does not call it "hut full"; an unloaded hut
+     * reads as unloaded.
+     */
+    static void unloadedHutNotFull(final GameTestHelper helper)
+    {
+        scene(helper, "lg-unloaded", false, s -> {
+            final RsFixture f = s.f();
+            helper.assertTrue(s.far().createPickupRequest(64, false), "a sweep");
+            final IRequest<Pickup> pickup = openPickup(f, s.far());
+            final List<BlockPos> containers = new ArrayList<>(s.far().getContainers());
+            for (final BlockPos pos : containers)
+            {
+                s.far().removeContainerPosition(pos);
+            }
+            // A rack position in a chunk nobody loads.
+            final BlockPos away = s.far().getPosition().offset(300_000, 0, 300_000);
+            s.far().addContainerPosition(away);
+            try
+            {
+                helper.assertTrue(!com.minecolonies.api.util.WorldUtil.isBlockLoaded(f.level, away), "fixture: the rack is not loaded");
+                helper.assertTrue(!InventoryUtils.isBuildingFull(s.far()), "no loaded rack: not full");
+                helper.assertTrue(RequestImportance.of(f.manager(), pickup) != RequestImportance.URGENT, "not urgent: " + RequestImportance.of(f.manager(), pickup));
+                helper.assertTrue(RequestWaitTracker.queuedReason(f.colony, pickup, WaitReason.COURIER_BUSY) == WaitReason.COURIER_BUSY, "not called hut full");
+                helper.assertTrue(RequestWaitTracker.pickupReason(false, true, WaitReason.COURIER_BUSY) == WaitReason.UNLOADED, "unloaded is checked first");
+                helper.assertTrue(RequestWaitTracker.pickupReason(true, true, WaitReason.COURIER_BUSY) == WaitReason.HUT_FULL_PICKUP_QUEUED, "loaded and full");
+                helper.assertTrue(RequestWaitTracker.pickupReason(true, false, WaitReason.COURIER_BUSY) == WaitReason.COURIER_BUSY, "loaded, room left");
+            }
+            finally
+            {
+                s.far().removeContainerPosition(away);
+                for (final BlockPos pos : containers)
+                {
+                    s.far().addContainerPosition(pos);
+                }
+            }
+            helper.succeed();
+        });
+    }
+
+    /**
+     * L2 (c2): a batch is limited by the stacks it carries, summed over its tasks, not by its task count.
+     */
+    static void batchByStacks(final GameTestHelper helper)
+    {
+        helper.assertTrue(JobDeliveryman.stacksOf(new ItemStack(Items.DIRT, 1)) == 1 && JobDeliveryman.stacksOf(new ItemStack(Items.DIRT, 64)) == 1
+                            && JobDeliveryman.stacksOf(new ItemStack(Items.DIRT, 65)) == 2 && JobDeliveryman.stacksOf(new ItemStack(Items.DIRT, 256)) == 4, "stacks by count");
+        helper.assertTrue(JobDeliveryman.stacksOf(new ItemStack(Items.DIAMOND_SWORD, 3)) == 3, "unstackable items take a stack each");
+        final int carry = JobDeliveryman.carryStacks(1, 5);
+        // Level 1: one four-stack refill fills the bag; a second does not fit, while four one-stack deliveries do.
+        helper.assertTrue(JobDeliveryman.fitsCarry(0, 4, carry) && !JobDeliveryman.fitsCarry(4, 4, carry), "a second 4-stack refill does not fit at level 1");
+        int carried = 0;
+        int tasks = 0;
+        while (JobDeliveryman.fitsCarry(carried, 1, carry))
+        {
+            carried++;
+            tasks++;
+        }
+        helper.assertTrue(tasks == 4, "four one-stack tasks fit: " + tasks);
+        helper.assertTrue(JobDeliveryman.fitsCarry(100, 100, JobDeliveryman.carryStacks(5, 5)), "the top level has no limit");
         helper.succeed();
     }
 

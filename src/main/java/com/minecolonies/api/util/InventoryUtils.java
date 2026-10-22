@@ -896,19 +896,25 @@ public class InventoryUtils
     {
         final Level world = ownBuilding.getColony().getWorld();
 
+        // Round 13 (c2): full only when at least one loaded rack was seen and none had a free slot. An unloaded hut is not full.
+        boolean sawRack = false;
         for (final BlockPos pos : ownBuilding.getContainers())
         {
             if (WorldUtil.isBlockLoaded(world, pos))
             {
                 final BlockEntity entity = world.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack rack && rack.getFreeSlots() > 0)
+                if (entity instanceof TileEntityRack rack)
                 {
-                    return false;
+                    if (rack.getFreeSlots() > 0)
+                    {
+                        return false;
+                    }
+                    sawRack = true;
                 }
             }
         }
 
-        return true;
+        return sawRack;
     }
 
     /**

@@ -6,6 +6,7 @@ import com.minecolonies.api.util.WorldUtil;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
 import com.minecolonies.core.colony.buildings.modules.WarehouseRequestQueueModule;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.resources.Identifier;
@@ -692,6 +693,9 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             getTaskQueueFromDataStore().add(resultRequestId);
         }
         int extendedReqs = 1;
+        // Round 13 (L2, c2): the batch is limited by the stacks it carries, summed over its tasks, not by its task count.
+        final int carryCap = carryCap();
+        int carried = stacksOf(resultRequest);
         batching:
         for (final WarehouseRequestQueueModule wareHouseModule : queues)
         {
@@ -725,8 +729,9 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
                     continue;
                 }
 
-                if (getTarget(localRequest).equals(getTarget(resultRequest)))
+                if (getTarget(localRequest).equals(getTarget(resultRequest)) && fitsCarry(carried, stacksOf(localRequest), carryCap))
                 {
+                    carried += stacksOf(localRequest);
                     getTaskQueueFromDataStore().add(reqId);
                     remember(reqId, wareHouseModule);
                     extendedReqs++;
@@ -745,6 +750,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         {
             getTaskQueueFromDataStore().add(resultRequestId);
         }
+        // Merge note for the parent: wire com.minecolonies.core.entity.ai.AiCounters.courierTrip(getColony(), extendedReqs) (lane mc-work) here.
 
         for (final WarehouseRequestQueueModule wareHouseModule : queues)
         {
@@ -1047,6 +1053,50 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
     public static int maxParallelDeliveries(final int bySkill, final int level, final int maxLevel)
     {
         return Math.max(MIN_BATCH, Math.max(bySkill, Math.min(MAX_CAPACITY_BATCH, carryStacks(level, maxLevel))));
+    }
+
+    /**
+     * Round 13 (L2, c2): whether a task of {@code stacks} stacks still fits the batch.
+     *
+     * @param carried what the batch carries already, in stacks.
+     * @param stacks  the task's stacks.
+     * @param cap     the courier's carry cap in stacks.
+     * @return true when it fits.
+     */
+    public static boolean fitsCarry(final int carried, final int stacks, final int cap)
+    {
+        return (long) carried + stacks <= cap;
+    }
+
+    /**
+     * Round 13 (L2, c2): the stacks a task takes in the courier's bag: a delivery by its item count, a pickup one stack (its size is unknown
+     * until the courier is there; the pickup step stops at the carry cap).
+     *
+     * @param request a delivery or pickup.
+     * @return the stacks, at least 1.
+     */
+    public static int stacksOf(@Nullable final IRequest<?> request)
+    {
+        return request != null && request.getRequest() instanceof final Delivery delivery ? stacksOf(delivery.getStack()) : 1;
+    }
+
+    /**
+     * @param stack an item stack, of any count.
+     * @return how many full stacks it takes, at least 1.
+     */
+    public static int stacksOf(@NotNull final ItemStack stack)
+    {
+        final int max = Math.max(1, stack.getMaxStackSize());
+        return Math.max(1, (stack.getCount() + max - 1) / max);
+    }
+
+    /**
+     * @return this courier's carry cap in stacks.
+     */
+    private int carryCap()
+    {
+        final IBuilding hut = getCitizen() == null ? null : getCitizen().getWorkBuilding();
+        return hut == null ? MIN_CARRY_STACKS : carryStacks(hut.getBuildingLevel(), hut.getMaxBuildingLevel());
     }
 
     /**

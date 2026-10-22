@@ -176,8 +176,22 @@ public enum RequestImportance
         {
             return false;
         }
-        final IBuilding building = colony.getServerBuildingManager().getBuilding(requester.getLocation().getInDimensionLocation());
-        return building != null && !building.getContainers().isEmpty() && com.minecolonies.api.util.InventoryUtils.isBuildingFull(building);
+        return loadedHutFull(colony, colony.getServerBuildingManager().getBuilding(requester.getLocation().getInDimensionLocation()));
+    }
+
+    /**
+     * Round 13 (c2): a hut counts as full only when it is loaded and its loaded racks have no free slot. Unloaded is checked first, so an
+     * unloaded hut never makes a pickup URGENT or {@code HUT_FULL_PICKUP_QUEUED}.
+     *
+     * @param colony   the colony.
+     * @param building the hut, may be null.
+     * @return true when it is loaded and full.
+     */
+    public static boolean loadedHutFull(@NotNull final IColony colony, @Nullable final IBuilding building)
+    {
+        return building != null && !building.getContainers().isEmpty()
+                 && com.minecolonies.api.util.WorldUtil.isBlockLoaded(colony.getWorld(), building.getPosition())
+                 && com.minecolonies.api.util.InventoryUtils.isBuildingFull(building);
     }
 
     private static boolean workerBlocked(final IRequestManager manager, final IRequest<?> root)
