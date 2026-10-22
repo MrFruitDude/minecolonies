@@ -3,7 +3,7 @@ package com.minecolonies.core.gametest;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.HiringMode;
-import com.minecolonies.api.colony.buildings.modules.IAssignsCitizen;
+import com.minecolonies.api.colony.buildings.modules.IAssignsJob;
 import com.minecolonies.api.colony.permissions.Action;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
@@ -65,7 +65,7 @@ public final class Round12GameTests
             helper.assertTrue(ColonyPlayerActions.setWorkerPaused(player, colony, id, false) && !citizen.isPaused(), "resume");
 
             final int modes = ColonyPlayerActions.setHiringMode(player, colony, hut, HiringMode.MANUAL);
-            helper.assertTrue(modes > 0 && f.builder.getModules(IAssignsCitizen.class).stream().allMatch(m -> m.getHiringMode() == HiringMode.MANUAL), "hiring mode: " + modes);
+            helper.assertTrue(modes > 0 && f.builder.getModules(IAssignsJob.class).stream().allMatch(m -> m.getHiringMode() == HiringMode.MANUAL), "hiring mode: " + modes);
 
             helper.assertTrue(ColonyPlayerActions.alterPickUpPriority(player, colony, hut, -100), "pickup priority down");
             final int low = f.builder.getPickUpPriority();
@@ -76,16 +76,20 @@ public final class Round12GameTests
             helper.assertTrue(ColonyPlayerActions.forcePickup(player, colony, hut), "force pickup");
 
             final IToken<?> token = f.builder.createRequest(citizen, new Stack(new ItemStack(Items.DIRT), 4, 4), false);
+            helper.assertTrue(!ColonyPlayerActions.cancelRequest(MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper), colony, token), "a stranger cancelled a request");
             helper.assertTrue(ColonyPlayerActions.cancelRequest(player, colony, token), "cancel request");
             final IRequest<?> cancelled = colony.getRequestManager().getRequestForToken(token);
             helper.assertTrue(cancelled == null || cancelled.getState() == RequestState.CANCELLED || cancelled.getState() == RequestState.COMPLETED,
               "request state after cancel: " + (cancelled == null ? null : cancelled.getState()));
 
-            final boolean one = ColonyPlayerActions.recallCitizen(player, colony, id);
-            final double toHut = citizen.getEntity().map(e -> Math.sqrt(e.blockPosition().distSqr(hut))).orElse(-1D);
-            helper.assertTrue(one && toHut >= 0 && toHut < 12, "recall one: " + one + " distance " + toHut);
-            final int all = ColonyPlayerActions.recallAllToTownHall(player, colony);
+            // Recall one goes to the town hall, as the town hall's "Recall one" does (not to the workplace).
             final BlockPos hall = colony.getServerBuildingManager().getTownHall().getID();
+            final BlockPos away = helper.absolutePos(new BlockPos(30, 1, 20));
+            final boolean one = ColonyPlayerActions.recallCitizen(player, colony, id);
+            final double toHut = citizen.getEntity().map(e -> Math.sqrt(e.blockPosition().distSqr(hall))).orElse(-1D);
+            helper.assertTrue(one && toHut >= 0 && toHut < 12, "recall one: " + one + " distance to the town hall " + toHut);
+            citizen.getEntity().ifPresent(e -> e.teleportTo(away.getX() + 0.5D, away.getY(), away.getZ() + 0.5D));
+            final int all = ColonyPlayerActions.recallAllToTownHall(player, colony);
             final double toHall = citizen.getEntity().map(e -> Math.sqrt(e.blockPosition().distSqr(hall))).orElse(-1D);
             helper.assertTrue(all >= 1 && toHall >= 0 && toHall < 12, "recall all: " + all + " distance " + toHall);
 
@@ -99,8 +103,52 @@ public final class Round12GameTests
 
             helper.assertTrue(ColonyPlayerActions.fireWorker(player, colony, id) && citizen.getWorkBuilding() == null, "fire: work " + citizen.getWorkBuilding());
             helper.assertTrue(!ColonyPlayerActions.fireWorker(player, colony, id), "fired twice");
+            // Colony B: the officer of A has no rights there, and B's ids mean nothing in A.
+            final IColony other = foundSecondColony(helper, "r12-player-actions-b");
+            final ICitizenData stranger = other.getCitizenManager().spawnOrCreateCivilian(null, helper.getLevel(), java.util.List.of(other.getCenter().above()), true);
+            helper.assertTrue(stranger != null && stranger.getEntity().isPresent(), "colony B citizen did not spawn");
+            final int sid = stranger.getId();
+            final BlockPos otherHall = other.getServerBuildingManager().getTownHall().getID();
+            final BlockPos where = stranger.getEntity().get().blockPosition();
+            helper.assertTrue(!ColonyPlayerActions.canManage(player, other), "the officer of A manages B");
+            helper.assertTrue(!ColonyPlayerActions.recallCitizen(player, other, sid) && ColonyPlayerActions.recallAllToTownHall(player, other) == 0, "recall in B");
+            helper.assertTrue(!ColonyPlayerActions.setWorkerPaused(player, other, sid, true) && !stranger.isPaused(), "pause in B");
+            helper.assertTrue(!ColonyPlayerActions.fireWorker(player, other, sid) && !ColonyPlayerActions.adjustSkill(creative, other, sid, Skill.Strength, 1), "fire or skill in B");
+            helper.assertTrue(!ColonyPlayerActions.hireWorker(player, other, otherHall, moduleId, sid), "hire in B");
+            helper.assertTrue(ColonyPlayerActions.setHiringMode(player, other, otherHall, HiringMode.MANUAL) == 0 && !ColonyPlayerActions.forcePickup(player, other, otherHall)
+                                && !ColonyPlayerActions.alterPickUpPriority(player, other, otherHall, 1), "building actions in B");
+            // B's hut position passed with colony A resolves to no building of A.
+            helper.assertTrue(!ColonyPlayerActions.hireWorker(player, colony, otherHall, moduleId, id) && ColonyPlayerActions.setHiringMode(player, colony, otherHall, HiringMode.AUTO) == 0
+                                && !ColonyPlayerActions.forcePickup(player, colony, otherHall) && !ColonyPlayerActions.alterPickUpPriority(player, colony, otherHall, 1), "B's hut through colony A");
+            helper.assertTrue(stranger.getEntity().map(e -> e.blockPosition().equals(where)).orElse(false), "colony B citizen moved");
             Log.getLogger().info("R12 RESULT player_actions modes={} recall_one={} hut={} all={} hall={}", modes, one, toHut, all, toHall);
             helper.succeed();
         });
+    }
+
+    /**
+     * A second colony far from the fixture, owned by the same fake player as the fixture colony (as foundGameTestColony does).
+     */
+    private static IColony foundSecondColony(final GameTestHelper helper, final String name)
+    {
+        final net.minecraft.server.level.ServerLevel level = helper.getLevel();
+        final BlockPos pos = helper.absolutePos(new BlockPos(200, 1, 2));
+        level.setChunkForced(pos.getX() >> 4, pos.getZ() >> 4, true);
+        for (int x = -2; x <= 2; x++)
+        {
+            for (int z = -2; z <= 2; z++)
+            {
+                level.setBlock(pos.offset(x, -1, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+            }
+        }
+        level.setBlock(pos, com.minecolonies.api.blocks.ModBlocks.blockHutTownHall.defaultBlockState(), 3);
+        final com.minecolonies.core.tileentities.TileEntityColonyBuilding hut = (com.minecolonies.core.tileentities.TileEntityColonyBuilding) level.getBlockEntity(pos);
+        hut.setPackName("Minecolonies Original");
+        hut.setBlueprintPath("fundamentals/townhall1.blueprint");
+        final IColony colony = com.minecolonies.api.colony.IColonyManager.getInstance()
+          .createColony(level, pos, net.neoforged.neoforge.common.util.FakePlayerFactory.getMinecraft(level), name, "Minecolonies Original");
+        helper.assertTrue(colony != null, "colony B creation returned null");
+        helper.assertTrue(colony.getServerBuildingManager().addNewBuilding(hut, level) != null && colony.getServerBuildingManager().hasTownHall(), "colony B town hall");
+        return colony;
     }
 }

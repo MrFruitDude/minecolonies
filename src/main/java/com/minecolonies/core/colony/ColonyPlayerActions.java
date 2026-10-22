@@ -4,9 +4,9 @@ import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.HiringMode;
 import com.minecolonies.api.colony.buildings.IBuilding;
-import com.minecolonies.api.colony.buildings.modules.IAssignsCitizen;
 import com.minecolonies.api.colony.buildings.modules.IAssignsJob;
 import com.minecolonies.api.colony.permissions.Action;
+import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
@@ -28,7 +28,7 @@ import java.util.Optional;
  * Round 12 (M6, M7, M8): the citizen and worker actions of the MineColonies windows, callable from server code without a client message (Colony Command
  * uses them for its own panels). Each method checks what the matching message checks: the player needs {@link Action#MANAGE_HUTS} in the colony (the skill
  * cheat also needs creative mode), the building must be one of the colony's own and the citizen one of its citizens. A refused or invalid call changes
- * nothing and returns false (or 0). Server thread only.
+ * nothing and returns false (or 0). Server thread only: a call from any other thread is refused.
  */
 public final class ColonyPlayerActions
 {
@@ -39,18 +39,20 @@ public final class ColonyPlayerActions
     /**
      * @param player the acting player.
      * @param colony the colony.
-     * @return whether the player may run the actions below in this colony (the messages' MANAGE_HUTS check, on the server side).
+     * @return whether the player may run the actions below in this colony (the messages' MANAGE_HUTS check, on the server thread).
      */
     public static boolean canManage(@Nullable final ServerPlayer player, @Nullable final IColony colony)
     {
         return player != null && colony != null && colony.getWorld() != null && !colony.getWorld().isClientSide()
+                 && colony.getWorld().getServer() != null && colony.getWorld().getServer().isSameThread()
                  && colony.getPermissions().hasPermission(player, Action.MANAGE_HUTS);
     }
 
     /**
-     * Recalls one citizen to its workplace, else its home, else the town hall (RecallSingleCitizenMessage).
+     * Recalls one citizen to the town hall, as the town hall's "Recall one" (RecallSingleCitizenMessage) does. A missing entity is respawned at the town
+     * hall first (the RecallCitizenHutMessage path), instead of the message's setLastPosition and ticksExisted handling.
      *
-     * @return whether the citizen is at the target now.
+     * @return whether the citizen is at the town hall now (false when the colony has no town hall).
      */
     public static boolean recallCitizen(final ServerPlayer player, final IColony colony, final int citizenId)
     {
@@ -59,20 +61,12 @@ public final class ColonyPlayerActions
         {
             return false;
         }
-        IBuilding target = citizen.getWorkBuilding();
-        if (target == null)
-        {
-            target = citizen.getHomeBuilding();
-        }
-        if (target == null)
-        {
-            target = colony.getServerBuildingManager().getTownHall();
-        }
-        return target != null && recallTo(colony, citizen, target);
+        final IBuilding hall = colony.getServerBuildingManager().getTownHall();
+        return hall != null && recallTo(colony, citizen, hall);
     }
 
     /**
-     * Recalls every citizen of the colony to the town hall.
+     * Recalls every citizen of the colony to the town hall. New: MineColonies has no such message (its huts recall their own workers).
      *
      * @return how many citizens arrived there (0 when refused or the colony has no town hall).
      */
@@ -151,9 +145,9 @@ public final class ColonyPlayerActions
     }
 
     /**
-     * Sets the hiring mode of every assignment module of a building (BuildingHiringModeMessage does one module).
+     * Sets the hiring mode of every worker (job) module of a building (BuildingHiringModeMessage does one module). Housing modules are left alone.
      *
-     * @return how many modules changed (0 when refused or the building has none).
+     * @return how many modules changed (0 when refused or the building has no worker module).
      */
     public static int setHiringMode(final ServerPlayer player, final IColony colony, final BlockPos building, final HiringMode mode)
     {
@@ -163,7 +157,7 @@ public final class ColonyPlayerActions
             return 0;
         }
         int changed = 0;
-        for (final IAssignsCitizen module : hut.getModules(IAssignsCitizen.class))
+        for (final IAssignsJob module : hut.getModules(IAssignsJob.class))
         {
             module.setHiringMode(mode);
             changed++;
@@ -205,9 +199,10 @@ public final class ColonyPlayerActions
     }
 
     /**
-     * Cancels a request of the colony (UpdateRequestStateMessage with CANCELLED).
+     * Cancels a top-level request of the colony (UpdateRequestStateMessage with CANCELLED). Child requests are refused, as the MineColonies request window
+     * only offers Cancel at the top level.
      *
-     * @return whether the request existed and was cancelled.
+     * @return whether the request existed, was top level and was cancelled.
      */
     public static boolean cancelRequest(final ServerPlayer player, final IColony colony, final IToken<?> token)
     {
@@ -217,7 +212,8 @@ public final class ColonyPlayerActions
         }
         try
         {
-            if (colony.getRequestManager().getRequestForToken(token) == null)
+            final IRequest<?> request = colony.getRequestManager().getRequestForToken(token);
+            if (request == null || request.hasParent())
             {
                 return false;
             }
