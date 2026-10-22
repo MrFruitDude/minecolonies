@@ -232,6 +232,11 @@ public class CitizenWindowUtils
     }
 
     /**
+     * Number of food icons in the saturation bar.
+     */
+    private static final int SATURATION_ICONS = 10;
+
+    /**
      * Creates a saturation bar
      *
      * @param citizen the citizen.
@@ -253,8 +258,12 @@ public class CitizenWindowUtils
         view.findPaneOfTypeByID(WINDOW_ID_SATURATION_BAR, View.class).setAlignment(Alignment.MIDDLE_RIGHT);
 
 
+        // One food icon is a tenth of MAX_SATURATION, so the bar always has SATURATION_ICONS icons whatever the scale.
+        final double perIcon = ICitizenData.MAX_SATURATION / (double) SATURATION_ICONS;
+        final double shownSaturation = Math.max(0, Math.min(curSaturation, ICitizenData.MAX_SATURATION));
+
         //Max saturation (Black food items).
-        for (int i = 0; i < ICitizenData.MAX_SATURATION / 6.0; i++)
+        for (int i = 0; i < SATURATION_ICONS; i++)
         {
             @NotNull final Image saturation = new Image();
             saturation.setImage(SATURATION_ICON_EMPTY, false);
@@ -264,7 +273,7 @@ public class CitizenWindowUtils
             view.findPaneOfTypeByID(WINDOW_ID_SATURATION_BAR, View.class).addChild(saturation);
         }
 
-        final int brokenDownSaturation = (int) (curSaturation / 6.0);
+        final int brokenDownSaturation = (int) (shownSaturation / perIcon);
         //Current saturation (Full food hearts).
         int saturationPos;
         for (saturationPos = 0; saturationPos < brokenDownSaturation; saturationPos++)
@@ -277,7 +286,7 @@ public class CitizenWindowUtils
         }
 
         //Half food items.
-        if (curSaturation / 6.0 % 1 > 0)
+        if (shownSaturation / perIcon % 1 > 0 && saturationPos < SATURATION_ICONS)
         {
             @NotNull final Image saturation = new Image();
             saturation.setImage(SATURATION_ICON_HALF, false);
@@ -295,7 +304,8 @@ public class CitizenWindowUtils
      */
     public static void createHappinessBar(final ICitizenDataView citizen, final View happinessParView)
     {
-        int happiness = (int) citizen.getHappiness() * 2;
+        // Half smileys: round to the nearest half point, not down to a whole one.
+        int happiness = (int) Math.round(citizen.getHappiness() * 2);
         // Add Empty Smiley background
         for (int i = 0; i < MAX_HEART_ICONS; i++)
         {

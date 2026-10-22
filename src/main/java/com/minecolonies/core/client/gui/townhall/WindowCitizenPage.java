@@ -5,6 +5,7 @@ import com.ldtteam.blockui.PaneBuilders;
 import com.ldtteam.blockui.controls.*;
 import com.ldtteam.blockui.views.ScrollingList;
 import com.minecolonies.api.colony.ICitizen;
+import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.ICitizenDataView;
 import com.minecolonies.api.entity.citizen.Skill;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingTownHall;
@@ -18,8 +19,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Pose;
 import org.jetbrains.annotations.NotNull;
 
-import java.math.RoundingMode;
-import java.text.DecimalFormat;
 import java.util.*;
 
 import static com.minecolonies.api.util.constant.TranslationConstants.PARTIAL_HAPPINESS_MODIFIER_NAME;
@@ -139,8 +138,8 @@ public class WindowCitizenPage extends AbstractWindowTownHall
         findPaneOfTypeByID(JOB_LABEL, Text.class).setText(selectedCitizen.getJobComponent().withStyle(ChatFormatting.BOLD));
 
         findPaneOfTypeByID(HEALTH_SHORT_LABEL, Text.class).setText(Component.literal((int)selectedCitizen.getHealth() + "/" + (int) selectedCitizen.getMaxHealth()));
-        findPaneOfTypeByID(HAPPINESS_SHORT_LABEL, Text.class).setText(Component.literal((int) selectedCitizen.getHappiness() + "/" + 10));
-        findPaneOfTypeByID(SATURATION_SHORT_LABEL, Text.class).setText(Component.literal((int)selectedCitizen.getSaturation() + "/" + 20));
+        findPaneOfTypeByID(HAPPINESS_SHORT_LABEL, Text.class).setText(Component.literal(formatHappiness(selectedCitizen.getHappiness()) + "/" + 10));
+        findPaneOfTypeByID(SATURATION_SHORT_LABEL, Text.class).setText(Component.literal((int) selectedCitizen.getSaturation() + "/" + ICitizenData.MAX_SATURATION));
 
         selectedEntity = Minecraft.getInstance().level.getEntity(selectedCitizen.getEntityId());
         if (selectedEntity != null && selectedEntity.getPose() == Pose.SLEEPING)
@@ -211,6 +210,17 @@ public class WindowCitizenPage extends AbstractWindowTownHall
 
 
     /**
+     * Happiness as shown for a citizen and for the colony average: one decimal, rounded half up (x.x of 10).
+     *
+     * @param happiness the happiness value.
+     * @return the formatted value.
+     */
+    private static String formatHappiness(final double happiness)
+    {
+        return String.format(Locale.US, "%.1f", happiness);
+    }
+
+    /**
      * Fills the citizens list in the GUI.
      */
     private void fillHappinessList()
@@ -225,10 +235,7 @@ public class WindowCitizenPage extends AbstractWindowTownHall
             }
         }
 
-        final DecimalFormat df = new DecimalFormat("#.#");
-        df.setRoundingMode(RoundingMode.CEILING);
-
-        final String roundedHappiness = df.format(buildingView.getColony().getOverallHappiness());
+        final String roundedHappiness = formatHappiness(buildingView.getColony().getOverallHappiness());
         findPaneOfTypeByID("happinessTitle", Text.class).setText(Component.translatableEscape("com.minecolonies.coremod.gui.townhall.currenthappiness", roundedHappiness));
 
         final List<Map.Entry<String, Double>> happinessList = new ArrayList<>(happinessMap.entrySet());

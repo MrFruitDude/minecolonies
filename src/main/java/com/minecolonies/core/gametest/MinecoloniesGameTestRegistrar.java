@@ -1293,7 +1293,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           "labour_builder_self_supply", "labour_stone_tools", "labour_withdraw_covered", "labour_stockpile", "labour_charcoal", "labour_furnace_taken", "labour_natural_trees",
           "labour_coverage", "labour_ledger_sweep", "labour_caps", "labour_retrying_held", "labour_night", "labour_builder_self_supply_retry",
           "labour_builder_self_supply_order_gone", "labour_builder_self_supply_tool", "labour_builder_self_supply_no_bamboo",
-          "labour_builder_self_supply_needs", "labour_stash_leftovers", "labour_surplus_soil_warehouse"})
+          "labour_builder_self_supply_needs", "labour_stash_leftovers", "labour_surplus_soil_warehouse",
+          "labour_player_actions"})
         {
             if (skipped(name))
             {
@@ -1324,6 +1325,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "labour_builder_self_supply_needs" -> LabourGameTests::builderNeedsDoNotCountAgainstTheRequest;
                 case "labour_stash_leftovers" -> LabourGameTests::leftoversGoToTheWarehouse;
                 case "labour_surplus_soil_warehouse" -> Round11GameTests::surplusSoilToWarehouse;
+                case "labour_player_actions" -> Round12GameTests::playerActions;
                 default -> LabourGameTests::coloniesAreIsolated;
             };
             event.registerTest(
