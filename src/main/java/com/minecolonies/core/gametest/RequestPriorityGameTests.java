@@ -145,7 +145,8 @@ public final class RequestPriorityGameTests
     }
 
     /**
-     * Flag on, no priorities set: ties on every class, the older request goes first, then the nearer.
+     * Flag on, no priorities set: ties on every class, the older request goes first, then the nearer. Round 13 (L3): both wait less than one
+     * 45 s bucket, so they tie on the wait too and the courier's walk decides; the nearer one is also the older one here.
      */
     public static void equalClassesOldestFirst(final GameTestHelper helper)
     {

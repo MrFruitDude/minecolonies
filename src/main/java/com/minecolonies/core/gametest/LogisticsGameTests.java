@@ -370,6 +370,10 @@ final class LogisticsGameTests
             final int expected = Math.min(carry, EntityAIWorkDeliveryman.PICKUP_SLOTS_PER_STEP);
             s.courier().getEntity().ifPresent(e -> e.setPos(s.far().getID().getX() + 1.5D, s.far().getID().getY(), s.far().getID().getZ() + 1.5D));
             helper.assertTrue(s.far().createPickupRequest(64, true), "the pickup was requested");
+            // B1: a new forced pickup is due today (it used to be booked for a later day by the slider formula, and scored below every due task).
+            final IRequest<Pickup> forced = openPickup(f, s.far());
+            helper.assertTrue(RequestImportance.isForcedPickup(forced.getRequest()) && forced.getRequest().getDay() <= f.colony.getDay(),
+              "forced and due today: priority " + forced.getRequest().getPriority() + ", day " + forced.getRequest().getDay() + ", today " + f.colony.getDay());
             final long start = f.level.getGameTime();
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
