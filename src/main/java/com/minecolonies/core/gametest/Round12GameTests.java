@@ -105,24 +105,28 @@ public final class Round12GameTests
             helper.assertTrue(!ColonyPlayerActions.fireWorker(player, colony, id), "fired twice");
             // Colony B: the officer of A has no rights there, and B's ids mean nothing in A.
             final IColony other = foundSecondColony(helper, "r12-player-actions-b");
-            final ICitizenData stranger = other.getCitizenManager().spawnOrCreateCivilian(null, helper.getLevel(), java.util.List.of(other.getCenter().above()), true);
-            helper.assertTrue(stranger != null && stranger.getEntity().isPresent(), "colony B citizen did not spawn");
-            final int sid = stranger.getId();
-            final BlockPos otherHall = other.getServerBuildingManager().getTownHall().getID();
-            final BlockPos where = stranger.getEntity().get().blockPosition();
-            helper.assertTrue(!ColonyPlayerActions.canManage(player, other), "the officer of A manages B");
-            helper.assertTrue(!ColonyPlayerActions.recallCitizen(player, other, sid) && ColonyPlayerActions.recallAllToTownHall(player, other) == 0, "recall in B");
-            helper.assertTrue(!ColonyPlayerActions.setWorkerPaused(player, other, sid, true) && !stranger.isPaused(), "pause in B");
-            helper.assertTrue(!ColonyPlayerActions.fireWorker(player, other, sid) && !ColonyPlayerActions.adjustSkill(creative, other, sid, Skill.Strength, 1), "fire or skill in B");
-            helper.assertTrue(!ColonyPlayerActions.hireWorker(player, other, otherHall, moduleId, sid), "hire in B");
-            helper.assertTrue(ColonyPlayerActions.setHiringMode(player, other, otherHall, HiringMode.MANUAL) == 0 && !ColonyPlayerActions.forcePickup(player, other, otherHall)
-                                && !ColonyPlayerActions.alterPickUpPriority(player, other, otherHall, 1), "building actions in B");
-            // B's hut position passed with colony A resolves to no building of A.
-            helper.assertTrue(!ColonyPlayerActions.hireWorker(player, colony, otherHall, moduleId, id) && ColonyPlayerActions.setHiringMode(player, colony, otherHall, HiringMode.AUTO) == 0
-                                && !ColonyPlayerActions.forcePickup(player, colony, otherHall) && !ColonyPlayerActions.alterPickUpPriority(player, colony, otherHall, 1), "B's hut through colony A");
-            helper.assertTrue(stranger.getEntity().map(e -> e.blockPosition().equals(where)).orElse(false), "colony B citizen moved");
-            Log.getLogger().info("R12 RESULT player_actions modes={} recall_one={} hut={} all={} hall={}", modes, one, toHut, all, toHall);
-            helper.succeed();
+            // round 13: colony B's chunk was just force-loaded; it only ticks entities a few ticks later, and a citizen spawns only in an entity-ticking chunk
+            // (launches 2 and 3 of lane mc-life: the test grid moved and the chunk was no longer loaded by a neighbouring plot)
+            helper.runAfterDelay(20, () -> {
+                final ICitizenData stranger = other.getCitizenManager().spawnOrCreateCivilian(null, helper.getLevel(), java.util.List.of(other.getCenter().above()), true);
+                helper.assertTrue(stranger != null && stranger.getEntity().isPresent(), "colony B citizen did not spawn");
+                final int sid = stranger.getId();
+                final BlockPos otherHall = other.getServerBuildingManager().getTownHall().getID();
+                final BlockPos where = stranger.getEntity().get().blockPosition();
+                helper.assertTrue(!ColonyPlayerActions.canManage(player, other), "the officer of A manages B");
+                helper.assertTrue(!ColonyPlayerActions.recallCitizen(player, other, sid) && ColonyPlayerActions.recallAllToTownHall(player, other) == 0, "recall in B");
+                helper.assertTrue(!ColonyPlayerActions.setWorkerPaused(player, other, sid, true) && !stranger.isPaused(), "pause in B");
+                helper.assertTrue(!ColonyPlayerActions.fireWorker(player, other, sid) && !ColonyPlayerActions.adjustSkill(creative, other, sid, Skill.Strength, 1), "fire or skill in B");
+                helper.assertTrue(!ColonyPlayerActions.hireWorker(player, other, otherHall, moduleId, sid), "hire in B");
+                helper.assertTrue(ColonyPlayerActions.setHiringMode(player, other, otherHall, HiringMode.MANUAL) == 0 && !ColonyPlayerActions.forcePickup(player, other, otherHall)
+                                    && !ColonyPlayerActions.alterPickUpPriority(player, other, otherHall, 1), "building actions in B");
+                // B's hut position passed with colony A resolves to no building of A.
+                helper.assertTrue(!ColonyPlayerActions.hireWorker(player, colony, otherHall, moduleId, id) && ColonyPlayerActions.setHiringMode(player, colony, otherHall, HiringMode.AUTO) == 0
+                                    && !ColonyPlayerActions.forcePickup(player, colony, otherHall) && !ColonyPlayerActions.alterPickUpPriority(player, colony, otherHall, 1), "B's hut through colony A");
+                helper.assertTrue(stranger.getEntity().map(e -> e.blockPosition().equals(where)).orElse(false), "colony B citizen moved");
+                Log.getLogger().info("R12 RESULT player_actions modes={} recall_one={} hut={} all={} hall={}", modes, one, toHut, all, toHall);
+                helper.succeed();
+            });
         });
     }
 
