@@ -131,24 +131,32 @@ public final class Round12GameTests
     }
 
     /**
-     * A second colony far from the fixture, owned by the same fake player as the fixture colony (as foundGameTestColony does).
+     * How far north of its test the colony B of {@link #foundSecondColony} stands.
+     */
+    private static final int SECOND_COLONY_NORTH = 20000;
+
+    /**
+     * A second colony far from the fixture, owned by the same fake player as the fixture colony (as foundGameTestColony does). Round 13: it stands on a
+     * reserved spot 20000 blocks north of the test, outside the test grid (which grows to the south and east), so it can never touch another test's plot;
+     * the helper changes nothing there but the stone pad and the hut, and only checks that the room above the pad is clear.
      */
     private static IColony foundSecondColony(final GameTestHelper helper, final String name)
     {
         final net.minecraft.server.level.ServerLevel level = helper.getLevel();
-        final BlockPos pos = helper.absolutePos(new BlockPos(200, 1, 2));
-        level.setChunkForced(pos.getX() >> 4, pos.getZ() >> 4, true);
+        final BlockPos column = helper.absolutePos(new BlockPos(2, 1, 2)).offset(0, 0, -SECOND_COLONY_NORTH);
+        level.setChunkForced(column.getX() >> 4, column.getZ() >> 4, true);
+        level.getChunk(column.getX() >> 4, column.getZ() >> 4);
+        final BlockPos pos = level.getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, column);
         for (int x = -2; x <= 2; x++)
         {
             for (int z = -2; z <= 2; z++)
             {
-                level.setBlock(pos.offset(x, -1, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
-                // round 13: clear the air above the pad; the place 200 blocks away can hold blocks of another test's plot (the test grid moves when tests
-                // are added), and the colony B citizen needs room to spawn
                 for (int y = 0; y <= 3; y++)
                 {
-                    level.setBlock(pos.offset(x, y, z), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                    helper.assertTrue(level.getBlockState(pos.offset(x, y, z)).isAir(), "colony B spot is not clear at " + pos.offset(x, y, z) + ": "
+                                                                                     + level.getBlockState(pos.offset(x, y, z)));
                 }
+                level.setBlock(pos.offset(x, -1, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
             }
         }
         level.setBlock(pos, com.minecolonies.api.blocks.ModBlocks.blockHutTownHall.defaultBlockState(), 3);

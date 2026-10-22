@@ -114,8 +114,10 @@ public final class Round13LifeGameTests
         helper.assertTrue(PathingStuckHandler.quickRescueDue(1200, 0) && !PathingStuckHandler.quickRescueDue(1190, 0) && PathingStuckHandler.quickRescueDue(2000, 800),
           "D4: timing");
 
-        helper.assertTrue(CitizenAIStateMachine.backoff(1) == 40 && CitizenAIStateMachine.backoff(2) == 80 && CitizenAIStateMachine.backoff(5) == 400
-                            && CitizenAIStateMachine.backoff(40) == 400, "B4: back-off");
+        helper.assertTrue(EntityAISleep.homelessRetryDelay(1) == 30 && EntityAISleep.homelessRetryDelay(2) == 60 && EntityAISleep.homelessRetryDelay(5) == 480
+                            && EntityAISleep.homelessRetryDelay(50) == EntityAISleep.MAX_HOMELESS_RETRY, "D6: homeless re-walk back-off");
+        helper.assertTrue(CitizenAIStateMachine.backoff(1) == 40 && CitizenAIStateMachine.backoff(2) == 80 && CitizenAIStateMachine.MAX_BACKOFF == 80
+                            && CitizenAIStateMachine.backoff(40) == CitizenAIStateMachine.MAX_BACKOFF, "B4: back-off");
 
         // B4: a transition that always fails: back-off 40, then 80, then the machine goes back to IDLE (3 failures in a row) and runs its reset.
         final AtomicLong time = new AtomicLong(1000);
@@ -146,6 +148,27 @@ public final class Round13LifeGameTests
         helper.assertTrue(failedAt.size() == 3, "B4: failures " + failedAt);
         helper.assertTrue(failedAt.get(1) - failedAt.get(0) >= 39 && failedAt.get(2) - failedAt.get(1) >= 79, "B4: back-off not applied " + failedAt);
         helper.assertTrue(machine.getLogged() == 1 && machine.getSuppressed() == 2, "B4: log lines " + machine.getLogged() + " suppressed " + machine.getSuppressed());
+
+        // B4 "in a row": failures with a working step between them never reach the reset; the second machine shares the log limit of its throw site
+        final CitizenAIStateMachine steady = new CitizenAIStateMachine(time::get, () -> "life test steady", 1);
+        final AtomicInteger calls = new AtomicInteger();
+        final AtomicInteger steadyResets = new AtomicInteger();
+        steady.setOnReset(steadyResets::incrementAndGet);
+        steady.addTransition(new TickingTransition<>(CitizenAIState.IDLE, () -> calls.get() < 8, () -> {
+            if (calls.incrementAndGet() % 2 == 1)
+            {
+                throw new IllegalStateException("life test steady failure " + calls.get());
+            }
+            return CitizenAIState.IDLE;
+        }, 1));
+        for (int t = 0; t < 600; t++)
+        {
+            steady.tick();
+            time.incrementAndGet();
+        }
+        helper.assertTrue(calls.get() == 8 && steadyResets.get() == 0 && steady.getResets() == 0 && steady.getFailures() == 0,
+          "B4: separated failures reset the machine: calls " + calls + " resets " + steady.getResets() + " failures " + steady.getFailures());
+        helper.assertTrue(steady.getLogged() == 1 && steady.getSuppressed() == 3, "B4: steady log lines " + steady.getLogged() + " suppressed " + steady.getSuppressed());
         Log.getLogger().info("R13 LIFE RESULT pure_rules leisure_bound={} delays={} spots={} failures_at={} reset_at={}", bound, delays.size(), spots.size(), failedAt, resetAt);
         helper.succeed();
     }
@@ -175,10 +198,15 @@ public final class Round13LifeGameTests
             final ICitizenData data = spawn(helper, colony, new BlockPos(34, 1, 26));
             final EntityCitizen citizen = (EntityCitizen) data.getEntity().get();
             citizen.setNoAi(true);
-            final BlockPos home = data.getHomePosition();
-            helper.assertTrue(home != null && citizen.getQuickRescueTarget(home) != null, "D4: the home position is not a rescue target: " + home);
+            // the citizen is homeless: its bed is its D6 spot around the town hall
+            final BlockPos hallPos = data.getHomePosition();
+            helper.assertTrue(data.getHomeBuilding() == null && hallPos != null, "D4: the test citizen has a home " + data.getHomeBuilding());
+            final BlockPos home = EntityAISleep.homelessSpot(hallPos, data.getId());
+            helper.assertTrue(citizen.getQuickRescueTarget(home) != null, "D4: the homeless sleeping spot is not a rescue target: " + home);
             final BlockPos field = helper.absolutePos(new BlockPos(36, 1, 28));
             helper.assertTrue(citizen.getQuickRescueTarget(field) == null, "D4: an open field is a rescue target");
+            helper.assertTrue(citizen.getQuickRescueTarget(hallPos.offset(home.getX() > hallPos.getX() ? -3 : 3, 0, 0)) == null,
+              "D4: a walk near the town hall (not the sleeping spot) is a rescue target");
 
             final boolean playerNear = level.getNearestPlayer(citizen, PathingStuckHandler.QUICK_RESCUE_PLAYER_RANGE) != null
                                          || level.getNearestPlayer(home.getX(), home.getY(), home.getZ(), PathingStuckHandler.QUICK_RESCUE_PLAYER_RANGE, false) != null;
@@ -347,20 +375,20 @@ public final class Round13LifeGameTests
             final CitizenAIStateMachine machine = (CitizenAIStateMachine) citizen.getCitizenAI();
             final AtomicInteger thrown = new AtomicInteger();
             final int resetsBefore = machine.getResets();
+            // fails until the machine resets: a working step of the citizen between two failures restarts the count, so this may take more than 3 throws
             citizen.getCitizenAI().addTransition(new AIEventTarget<IState>(AIBlockingEventType.EVENT, () -> {
-                if (thrown.get() < 3)
+                if (machine.getResets() == resetsBefore && thrown.get() < 15)
                 {
                     thrown.incrementAndGet();
                     throw new IllegalStateException("life test: citizen AI failure " + thrown.get());
                 }
                 return false;
             }, () -> null, 1));
-            helper.runAfterDelay(400, () -> {
-                helper.assertTrue(thrown.get() == 3, "B4: thrown " + thrown);
-                helper.assertTrue(machine.getResets() == resetsBefore + 1, "B4: resets " + machine.getResets());
+            helper.succeedWhen(() -> {
+                helper.assertTrue(machine.getResets() == resetsBefore + 1, "B4: resets " + machine.getResets() + " after " + thrown + " throws");
+                helper.assertTrue(thrown.get() >= 3, "B4: reset after " + thrown + " throws");
                 helper.assertTrue(citizen.isAlive() && machine.getState() != null, "B4: citizen gone");
                 Log.getLogger().info("R13 LIFE RESULT ai_exception thrown={} resets={} state={} logged={}", thrown, machine.getResets(), machine.getState(), machine.getLogged());
-                helper.succeed();
             });
         });
     }
