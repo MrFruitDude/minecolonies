@@ -343,10 +343,13 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
         {
             return false;
         }
+        // a free spot: walkable floor, and no collision where the body goes (a hut block counts as droppable for pathing, but is solid)
         final BlockPos tpPos = BlockPosUtil.findAround(world, target, 6, 6,
           (posworld, pos) -> SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos.below()), pos.below()) == SurfaceType.WALKABLE
                                && SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos), pos) == SurfaceType.DROPABLE
-                               && SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos.above()), pos.above()) == SurfaceType.DROPABLE);
+                               && SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos.above()), pos.above()) == SurfaceType.DROPABLE
+                               && posworld.getBlockState(pos).getCollisionShape(posworld, pos).isEmpty()
+                               && posworld.getBlockState(pos.above()).getCollisionShape(posworld, pos.above()).isEmpty());
         if (tpPos == null)
         {
             return false;

@@ -187,6 +187,10 @@ public final class Round13LifeGameTests
             final double toHome = Math.sqrt(citizen.blockPosition().distSqr(home));
             helper.assertTrue(moved != playerNear, "D4: moved " + moved + " with a player near " + playerNear);
             helper.assertTrue(!moved || toHome <= 9, "D4: rescued to " + citizen.blockPosition() + ", " + toHome + " from home");
+            final BlockPos landed = citizen.blockPosition();
+            helper.assertTrue(!moved || (level.getBlockState(landed).getCollisionShape(level, landed).isEmpty()
+                                           && level.getBlockState(landed.above()).getCollisionShape(level, landed.above()).isEmpty()),
+              "D4: rescued into a solid block at " + landed + ": " + level.getBlockState(landed));
             helper.assertTrue(moved || citizen.blockPosition().equals(before), "D4: moved without a rescue");
 
             // a player next to the citizen: no rescue, the citizen stays
@@ -284,7 +288,7 @@ public final class Round13LifeGameTests
             for (int i = 1; i <= 6; i++)
             {
                 helper.runAfterDelay(40 + i * 50, () -> {
-                    log.add(idle.getStatus() + "/" + mourner.getStatus() + "/" + hungry.getStatus());
+                    log.add(id(idle.getStatus()) + "/" + id(mourner.getStatus()) + "/" + id(hungry.getStatus()));
                     helper.assertTrue(mourner.getStatus() == VisibleCitizenStatus.MOURNING, "B5: mourner shows " + mourner.getStatus() + " " + log);
                     helper.assertTrue(hungry.getStatus() == VisibleCitizenStatus.EAT, "B5: hungry citizen shows " + hungry.getStatus() + " " + log);
                     final EntityCitizen e = (EntityCitizen) idle.getEntity().get();
@@ -359,6 +363,11 @@ public final class Round13LifeGameTests
                 helper.succeed();
             });
         });
+    }
+
+    private static String id(final VisibleCitizenStatus status)
+    {
+        return status == null ? "none" : String.valueOf(status.getId());
     }
 
     private static ICitizenData spawn(final GameTestHelper helper, final IColony colony, final BlockPos rel)
