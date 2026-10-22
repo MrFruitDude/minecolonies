@@ -616,8 +616,17 @@ final class LogisticsGameTests
                 {
                     Log.getLogger().info("LG_METRIC remainder_chain builder={} store={} ticks={}", inHut, inStore, elapsed);
                     second[0] = true;
+                    // The builder used the two (else its own hut would serve the next ask and the request would be gone at once).
+                    final var hut = f.builder.getItemHandlerCap();
+                    for (int slot = 0; slot < hut.getSlots(); slot++)
+                    {
+                        if (hut.getStackInSlot(slot).is(Items.OAK_PLANKS))
+                        {
+                            hut.extractItem(slot, Integer.MAX_VALUE, false);
+                        }
+                    }
                     final IToken<?> next = f.builder.createRequest(new Stack(new ItemStack(Items.OAK_PLANKS, 14), 14, 1), false);
-                    helper.assertTrue(hasDeliveryChild(f, f.request(next)), "the next ask is served from the crafted stock: " + f.describe(next));
+                    helper.assertTrue(f.request(next) != null && hasDeliveryChild(f, f.request(next)), "the next ask is served from the crafted stock: " + f.describe(next));
                     helper.succeed();
                     return;
                 }
