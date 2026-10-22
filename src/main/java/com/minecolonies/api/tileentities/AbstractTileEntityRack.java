@@ -41,6 +41,20 @@ public abstract class AbstractTileEntityRack extends BlockEntity implements Menu
     protected ItemStackHandler inventory;
 
     /**
+     * Counts changes of the content since the rack was loaded (round 11, W4-07: a hungry worker who found no food for him in his hut's racks looks again only when
+     * this changed or after a while). Not saved.
+     */
+    private int contentVersion = 0;
+
+    /**
+     * @return how often the content changed since the rack was loaded.
+     */
+    public int getContentVersion()
+    {
+        return contentVersion;
+    }
+
+    /**
      * Create a new rack.
      * @param tileEntityTypeIn the specific block entity type.
      * @param pos the position.
@@ -78,6 +92,7 @@ public abstract class AbstractTileEntityRack extends BlockEntity implements Menu
         @Override
         protected void onContentsChanged(final int slot)
         {
+            contentVersion++;
             updateItemStorage();
             super.onContentsChanged(slot);
         }
