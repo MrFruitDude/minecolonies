@@ -429,13 +429,60 @@ public abstract class AbstractEntityAIUsesFurnace<J extends AbstractJob<?, J>, B
     }
 
     /**
-     * W4: whether the finished products he carries reach {@link #PRODUCT_DUMP_ITEMS}.
+     * W4 (review r13 Medium 1): ticks the product dump waits after a dump found the hut full (no walk to a full hut every 100 ticks).
+     */
+    public static final int PRODUCT_DUMP_BACKOFF = 1200;
+
+    /**
+     * W4: items taken out of furnaces since the last dump. Food fetched to serve, fuel and smelt inputs do not count.
+     */
+    private int productsTakenSinceDump = 0;
+
+    /**
+     * W4: game time before which the product dump does not trigger (after a dump into a full hut).
+     */
+    private long productDumpBlockedUntil = 0;
+
+    /**
+     * W4: whether the products he took out of furnaces since the last dump, and still carries, reach {@link #PRODUCT_DUMP_ITEMS}. Never while
+     * the hut is full or after a dump found it full (backoff).
      *
      * @return true if so.
      */
     public boolean productsToDump()
     {
-        return carriedProducts() >= PRODUCT_DUMP_ITEMS;
+        return productDumpDue(productsTakenSinceDump, carriedProducts(), world.getGameTime() < productDumpBlockedUntil || InventoryUtils.isBuildingFull(building));
+    }
+
+    /**
+     * W4: the product dump rule.
+     *
+     * @param taken   items taken out of furnaces since the last dump.
+     * @param carried products carried now (some may have been served).
+     * @param blocked the hut is full or the backoff runs.
+     * @return true if the products should go to the hut.
+     */
+    public static boolean productDumpDue(final int taken, final int carried, final boolean blocked)
+    {
+        return !blocked && Math.min(taken, carried) >= PRODUCT_DUMP_ITEMS;
+    }
+
+    /**
+     * @return the items taken out of furnaces since the last dump (tests).
+     */
+    public int getProductsTakenSinceDump()
+    {
+        return productsTakenSinceDump;
+    }
+
+    @Override
+    protected void onDumpFinished(final boolean buildingFull)
+    {
+        productsTakenSinceDump = 0;
+        if (buildingFull)
+        {
+            productDumpBlockedUntil = world.getGameTime() + PRODUCT_DUMP_BACKOFF;
+        }
     }
 
     /**
@@ -505,7 +552,9 @@ public abstract class AbstractEntityAIUsesFurnace<J extends AbstractJob<?, J>, B
 
         walkTo = null;
 
+        final int before = carriedItemCount();
         extractFromFurnace((FurnaceBlockEntity) entity);
+        productsTakenSinceDump += Math.max(0, carriedItemCount() - before);
         incrementActionsDoneAndDecSaturation();
         return START_WORKING;
     }

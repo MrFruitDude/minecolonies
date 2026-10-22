@@ -66,11 +66,11 @@ public final class Round13WorkGameTests
     static void register(final RegisterGameTestsEvent event)
     {
         final String[] names = {"dump_all_one_call", "dump_full_hut_keeps", "pickup_all_requests", "crafter_queue", "crafter_gathers_all", "guard_patrol_target", "rules", "counters_api",
-          "pickup_full_inventory", "cook_staggered_furnaces", "smelter_request", "smelter_cancel"};
+          "pickup_full_inventory", "cook_staggered_furnaces", "smelter_request", "smelter_cancel", "cook_serve_keeps_food"};
         final List<Consumer<GameTestHelper>> bodies = List.of(Round13WorkGameTests::dumpAllInOneCall, Round13WorkGameTests::dumpFullHutKeeps, Round13WorkGameTests::pickupAllRequests,
           Round13WorkGameTests::crafterQueue, Round13WorkGameTests::crafterGathersAll, Round13WorkGameTests::guardPatrolTarget, Round13WorkGameTests::rules,
           Round13WorkGameTests::countersApi, Round13WorkGameTests::pickupFullInventory, Round13WorkGameTests::cookStaggeredFurnaces, Round13WorkGameTests::smelterRequest,
-          Round13WorkGameTests::smelterCancel);
+          Round13WorkGameTests::smelterCancel, Round13WorkGameTests::cookServeKeepsFood);
         for (int i = 0; i < names.length; i++)
         {
             final String name = "r13w_" + names[i];
@@ -625,6 +625,14 @@ public final class Round13WorkGameTests
         {
             failures.add("W4 product threshold");
         }
+        // W4 (review r13 Medium 1): only furnace output counts, never with a full hut or during the backoff
+        if (com.minecolonies.core.entity.ai.workers.AbstractEntityAIUsesFurnace.productDumpDue(0, 24, false)
+              || !com.minecolonies.core.entity.ai.workers.AbstractEntityAIUsesFurnace.productDumpDue(16, 16, false)
+              || com.minecolonies.core.entity.ai.workers.AbstractEntityAIUsesFurnace.productDumpDue(20, 10, false)
+              || com.minecolonies.core.entity.ai.workers.AbstractEntityAIUsesFurnace.productDumpDue(20, 20, true))
+        {
+            failures.add("W4 product dump rule");
+        }
         // W2
         if (LabourBoard.restAfter(true) != 40 || LabourBoard.restAfter(false) != 600)
         {
@@ -923,6 +931,103 @@ public final class Round13WorkGameTests
                   helper.succeed();
               }, () -> "refills=" + refills[0] + " maxSlots=" + maxSlots[0] + " " + stateOf(worker));
           });
+    }
+
+    /**
+     * W4 (review r13 Medium 1): a cook carrying 24 cooked beef fetched to serve keeps it (the product dump counts only what he took out of a
+     * furnace) and serves a hungry citizen in the hut. Then, with a full hut, 20 beef taken out of a furnace cause at most one dump in 800
+     * ticks (no walk to the full hut every 100 ticks).
+     */
+    public static void cookServeKeepsFood(final GameTestHelper helper)
+    {
+        workerScene(helper, "R13 cook serve", ModBlocks.blockHutCook, "fundamentals/cook1.blueprint",
+          (hut, worker) -> hut.getModule(BuildingModules.COOK_WORK).assignCitizen(worker), (colony, hut, worker) -> {
+              helper.assertTrue(workAi(worker) instanceof com.minecolonies.core.entity.ai.workers.AbstractEntityAIUsesFurnace<?, ?>, "no furnace user AI: " + workAi(worker));
+              final var ai = (com.minecolonies.core.entity.ai.workers.AbstractEntityAIUsesFurnace<?, ?>) workAi(worker);
+              hut.getModule(BuildingModules.ITEMLIST_FUEL).addItem(new ItemStorage(new ItemStack(Items.COAL)));
+              hut.getModule(BuildingModules.RESTAURANT_MENU).addMenuItem(new ItemStack(Items.COOKED_BEEF));
+              final List<BlockPos> furnaces = placeFurnaces(helper, hut, new BlockPos(22, 1, 5));
+              // a free spot in the hut for the hungry citizen
+              BlockPos spot = null;
+              for (int dy = 0; dy <= 2 && spot == null; dy++)
+              {
+                  for (int dx = -4; dx <= 4 && spot == null; dx++)
+                  {
+                      for (int dz = -4; dz <= 4 && spot == null; dz++)
+                      {
+                          final BlockPos pos = hut.getPosition().offset(dx, dy, dz);
+                          if (hut.isInBuilding(pos) && helper.getLevel().getBlockState(pos).isAir() && helper.getLevel().getBlockState(pos.above()).isAir()
+                                && !helper.getLevel().getBlockState(pos.below()).isAir())
+                          {
+                              spot = pos;
+                          }
+                      }
+                  }
+              }
+              helper.assertTrue(spot != null, "fixture: no free spot in the cook hut");
+              final ICitizenData hungry = colony.getCitizenManager().spawnOrCreateCivilian(null, helper.getLevel(), List.of(spot), true);
+              helper.assertTrue(hungry != null && hungry.getEntity().isPresent(), "fixture: hungry citizen did not spawn");
+              final BlockPos at = spot;
+              hungry.getEntity().get().setPos(at.getX() + 0.5D, at.getY(), at.getZ() + 0.5D);
+              hungry.setSaturation(2);
+              hungry.setJustAte(false);
+              ((AbstractJob<?, ?>) worker.getJob()).clearActionsDone();
+              InventoryUtils.addItemStackToItemHandler(worker.getInventory(), new ItemStack(Items.COOKED_BEEF, 24));
+              final int[] dumpRule = {0};
+              poll(helper, worker, 1600, tick -> {
+                  if (ai.productsToDump())
+                  {
+                      dumpRule[0]++;
+                  }
+                  hungry.getEntity().ifPresent(e -> e.setPos(at.getX() + 0.5D, at.getY(), at.getZ() + 0.5D));
+                  return count(hungry, Items.COOKED_BEEF) > 0 || hungry.getSaturation() > 2;
+              }, () -> {
+                  final int inHut = InventoryUtils.getItemCountInItemHandler(hut.getItemHandlerCap(), stack -> stack.is(Items.COOKED_BEEF));
+                  Log.getLogger().info("R13W cook_serve served={} cookKeeps={} inHut={} dumpRule={} taken={}", count(hungry, Items.COOKED_BEEF), count(worker, Items.COOKED_BEEF),
+                    inHut, dumpRule[0], ai.getProductsTakenSinceDump());
+                  helper.assertTrue(dumpRule[0] == 0, "the product dump counted the food fetched to serve: " + dumpRule[0] + " ticks");
+                  helper.assertTrue(inHut == 0, "the cook took the food to serve back to the hut: " + inHut);
+                  helper.assertTrue(count(worker, Items.COOKED_BEEF) > 0, "the cook kept no food after serving");
+                  fullHutPart(helper, colony, hut, worker, ai, furnaces.get(0));
+              }, () -> "served=" + count(hungry, Items.COOKED_BEEF) + " sat=" + hungry.getSaturation() + " cook=" + count(worker, Items.COOKED_BEEF) + " " + stateOf(worker));
+          });
+    }
+
+    /**
+     * Second part of {@link #cookServeKeepsFood}: a full hut and 20 beef in the furnace.
+     */
+    private static void fullHutPart(final GameTestHelper helper, final IColony colony, final IBuilding hut, final ICitizenData worker,
+      final com.minecolonies.core.entity.ai.workers.AbstractEntityAIUsesFurnace<?, ?> ai, final BlockPos furnacePos)
+    {
+        final var cap = hut.getItemHandlerCap();
+        for (int slot = 0; slot < cap.getSlots(); slot++)
+        {
+            cap.insertItem(slot, new ItemStack(Items.COBBLESTONE, 64), false);
+        }
+        helper.assertTrue(InventoryUtils.isBuildingFull(hut), "fixture: the hut is not full");
+        furnace(helper, furnacePos).setItem(Constants.RESULT_SLOT, new ItemStack(Items.COOKED_BEEF, 20));
+        final int[] taken = {-1};
+        final long[] dumps0 = {-1};
+        poll(helper, worker, 1400, tick -> {
+            if (taken[0] < 0)
+            {
+                if (furnace(helper, furnacePos).getItem(Constants.RESULT_SLOT).isEmpty())
+                {
+                    taken[0] = tick;
+                    dumps0[0] = jobSnapshot(colony, worker).dumps();
+                }
+                return false;
+            }
+            return tick - taken[0] >= 800;
+        }, () -> {
+            final long dumps = jobSnapshot(colony, worker).dumps() - dumps0[0];
+            Log.getLogger().info("R13W cook_serve fullHut dumps={} taken={} carried={} rule={}", dumps, ai.getProductsTakenSinceDump(), count(worker, Items.COOKED_BEEF),
+              ai.productsToDump());
+            helper.assertTrue(dumps <= 1, "the cook walked to the full hut again and again: " + dumps + " dumps in 800 ticks");
+            helper.assertTrue(!ai.productsToDump(), "the product dump is still due with a full hut");
+            helper.assertTrue(count(worker, Items.COOKED_BEEF) >= 20, "food was lost at the full hut: " + count(worker, Items.COOKED_BEEF));
+            helper.succeed();
+        }, () -> "furnace not emptied: " + stateOf(worker));
     }
 
     private static String stateOf(final ICitizenData worker)

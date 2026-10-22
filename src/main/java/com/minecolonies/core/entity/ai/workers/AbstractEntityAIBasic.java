@@ -1688,14 +1688,14 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             alreadyKept.clear();
             slotAt = 0;
             this.clearActionsDone();
-            dumpFinished();
+            dumpFinished(true);
             return afterDump();
         }
 
         alreadyKept.clear();
         slotAt = 0;
         this.clearActionsDone();
-        dumpFinished();
+        dumpFinished(false);
 
         // Worker is not currently crafting, pickup is allowed.
         // Note that this will not create a pickup request when another request is already in progress.
@@ -1766,8 +1766,10 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
 
     /**
      * A dump finished: counters and the baseline for {@link #itemsGainedSinceDump()}.
+     *
+     * @param buildingFull true if the building could not take everything.
      */
-    private void dumpFinished()
+    private void dumpFinished(final boolean buildingFull)
     {
         lastDumpCalls = dumpCallsThisDump;
         final AiCounters.JobCounters jobCounters = counters();
@@ -1778,6 +1780,17 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         dumpCallsThisDump = 0;
         dumpedStacksThisDump = 0;
         itemsAfterLastDump = carriedItemCount();
+        onDumpFinished(buildingFull);
+    }
+
+    /**
+     * Called when a dump finished.
+     *
+     * @param buildingFull true if the building could not take everything (the rest stays with the worker).
+     */
+    protected void onDumpFinished(final boolean buildingFull)
+    {
+        // nothing by default
     }
 
     /**
