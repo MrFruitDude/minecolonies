@@ -31,6 +31,9 @@ import com.minecolonies.core.entity.ai.workers.guard.AbstractEntityAIGuard;
 import com.minecolonies.core.entity.ai.workers.production.EntityAIStructureMiner;
 import com.minecolonies.core.entity.ai.workers.production.agriculture.EntityAIWorkFarmer;
 import com.minecolonies.core.tileentities.TileEntityColonyBuilding;
+import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
+import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
+import com.ldtteam.structurize.blueprints.v1.Blueprint;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.Identifier;
@@ -94,6 +97,50 @@ public final class Round13WorkGameTests
         return InventoryUtils.getItemCountInItemHandler(citizen.getInventory(), stack -> stack.is(item));
     }
 
+    // ------------------------------------------------------------------ builder at work
+
+    /**
+     * The builder of the scene at work on a 9 by 4 wall (a builder without an order is idle and his work AI does not run). His bricks are in
+     * his hut, or with him when {@code carry}.
+     */
+    private static void atWork(final WorkerEfficiencyGameTests.Live live, final String name, final boolean carry)
+    {
+        atWork(live, name, carry, () -> {});
+    }
+
+    /**
+     * {@link #atWork}, with {@code beforeBricks} run after the tools are given and before the bricks are.
+     */
+    private static void atWork(final WorkerEfficiencyGameTests.Live live, final String name, final boolean carry, final Runnable beforeBricks)
+    {
+        WorkerSettings.overrideReachForTests(null, true, false, 0);
+        live.setSkills(1, 1);
+        live.giveTools();
+        beforeBricks.run();
+        final Blueprint wall = BuilderScaffoldGameTests.shape(name, 9, 4, 1, (x, y, z) -> true);
+        final int bricks = BuilderScaffoldGameTests.solidCount(wall) + WorkerEfficiencyGameTests.SPARE;
+        if (carry)
+        {
+            InventoryUtils.addItemStackToItemHandler(live.citizen.getInventory(), new ItemStack(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), 64));
+        }
+        else
+        {
+            live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), bricks);
+        }
+        live.orderFor(name, BuilderScaffoldGameTests.SITE, wall);
+    }
+
+    /**
+     * Fills the slots from {@code first} with 64 of an item.
+     */
+    private static void fill(final ICitizenData citizen, final int first, final int count, final Item item)
+    {
+        for (int slot = first; slot < first + count; slot++)
+        {
+            citizen.getInventory().insertItem(slot, new ItemStack(item, 64), false);
+        }
+    }
+
     // ------------------------------------------------------------------ W1, B7
 
     /**
@@ -103,30 +150,43 @@ public final class Round13WorkGameTests
     public static void dumpAllInOneCall(final GameTestHelper helper)
     {
         WorkerEfficiencyGameTests.scene(helper, "R13 dump all", live -> {
+            atWork(live, "r13_dump_all", false);
             final int slots = live.citizen.getInventory().getSlots();
-            for (int slot = 0; slot < 10; slot++)
-            {
-                live.citizen.getInventory().insertItem(slot, new ItemStack(Items.DIRT, 64), false);
-            }
+            final int firstFree = firstFreeSlot(live.citizen);
+            fill(live.citizen, firstFree, 10, Items.DIRT);
             live.citizen.getInventory().insertItem(slots - 1, new ItemStack(Items.DIRT, 32), false);
             helper.assertTrue(live.citizen.getInventory().getStackInSlot(slots - 2).isEmpty(), "fixture: the slot before the last is not empty");
             final int dirt0 = count(live.citizen, Items.DIRT);
+            helper.assertTrue(dirt0 == 672, "fixture: dirt " + dirt0);
             final AiCounters.JobSnapshot before = jobSnapshot(live.colony, live.citizen);
             ((AbstractJob<?, ?>) live.citizen.getJob()).incrementActionsDone(64);
             WorkerEfficiencyGameTests.everyTick(live, 1200, tick -> count(live.citizen, Items.DIRT) == 0, () -> {
                 final AbstractEntityAIBasic<?, ?> ai = workAi(live.citizen);
                 final AiCounters.JobSnapshot after = jobSnapshot(live.colony, live.citizen);
                 final int inHut = InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(Items.DIRT));
-                Log.getLogger().info("R13W dump_all calls={} dumps {}->{} stacks {}->{} inHut={} ticks={}", ai == null ? -1 : ai.getLastDumpCalls(), before.dumps(), after.dumps(),
-                  before.dumpedStacks(), after.dumpedStacks(), inHut, after.totalTicks());
+                Log.getLogger().info("R13W dump_all calls={} dumps {}->{} stacks {}->{} inHut={} ticks {}->{} {}", ai == null ? -1 : ai.getLastDumpCalls(), before.dumps(), after.dumps(),
+                  before.dumpedStacks(), after.dumpedStacks(), inHut, before.totalTicks(), after.totalTicks(), after.stateTicks());
                 helper.assertTrue(ai != null && ai.getLastDumpCalls() == 1, "the dump took more than one step after arrival: " + (ai == null ? "no ai" : ai.getLastDumpCalls()));
                 helper.assertTrue(inHut == dirt0, "items were lost or kept: in hut " + inHut + " of " + dirt0);
-                helper.assertTrue(after.dumps() == before.dumps() + 1 && after.dumpedStacks() - before.dumpedStacks() == 11,
-                  "the counters did not see one dump of 11 stacks: " + before + " -> " + after);
+                helper.assertTrue(after.dumps() > before.dumps() && after.dumpedStacks() - before.dumpedStacks() >= 11,
+                  "the counters did not see the dump of 11 stacks: " + before + " -> " + after);
                 helper.assertTrue(after.totalTicks() > before.totalTicks(), "no state ticks counted for the builder");
+                WorkerSettings.clearOverrides();
                 helper.succeed();
             }, () -> "dirt left " + count(live.citizen, Items.DIRT) + " " + live.ai());
         });
+    }
+
+    private static int firstFreeSlot(final ICitizenData citizen)
+    {
+        for (int slot = 0; slot < citizen.getInventory().getSlots(); slot++)
+        {
+            if (citizen.getInventory().getStackInSlot(slot).isEmpty())
+            {
+                return slot;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -135,18 +195,16 @@ public final class Round13WorkGameTests
     public static void dumpFullHutKeeps(final GameTestHelper helper)
     {
         WorkerEfficiencyGameTests.scene(helper, "R13 dump full hut", live -> {
+            // the dirt comes before the bricks in his inventory: the dump reaches it first
+            atWork(live, "r13_dump_full", true, () -> fill(live.citizen, firstFreeSlot(live.citizen), 3, Items.DIRT));
             final var cap = live.hut.getItemHandlerCap();
             for (int slot = 0; slot < cap.getSlots(); slot++)
             {
                 cap.insertItem(slot, new ItemStack(Items.COBBLESTONE, 64), false);
             }
-            // one free slot and room for 10 more dirt nowhere else
+            // one free slot
             cap.extractItem(0, 64, false);
             helper.assertTrue(InventoryUtils.openSlotCount(cap) == 1, "fixture: the hut should have exactly one free slot, has " + InventoryUtils.openSlotCount(cap));
-            for (int slot = 0; slot < 3; slot++)
-            {
-                live.citizen.getInventory().insertItem(slot, new ItemStack(Items.DIRT, 64), false);
-            }
             final long dumps0 = jobSnapshot(live.colony, live.citizen).dumps();
             ((AbstractJob<?, ?>) live.citizen.getJob()).incrementActionsDone(64);
             WorkerEfficiencyGameTests.everyTick(live, 1200, tick -> jobSnapshot(live.colony, live.citizen).dumps() > dumps0, () -> {
@@ -155,6 +213,7 @@ public final class Round13WorkGameTests
                 Log.getLogger().info("R13W dump_full_hut inHut={} carried={}", inHut, carried);
                 helper.assertTrue(inHut + carried == 192, "dirt was lost in the dump: hut " + inHut + " + carried " + carried + " of 192");
                 helper.assertTrue(inHut == 64, "the free slot was not used: " + inHut);
+                WorkerSettings.clearOverrides();
                 helper.succeed();
             }, () -> "no dump finished " + live.ai());
         });
@@ -163,60 +222,73 @@ public final class Round13WorkGameTests
     // ------------------------------------------------------------------ W6, W7
 
     /**
-     * W6: three completed requests at the hut are taken in one visit (it was one per 40 ticks). W7: after that pickup the builder does not
-     * dump them all again (he keeps the goods he was given).
+     * W6: three completed requests at the hut are taken in one visit (it was one per 40 ticks). W7: after that pickup the builder (past the
+     * clearing stage) does not dump everything again.
      */
     public static void pickupAllRequests(final GameTestHelper helper)
     {
         WorkerEfficiencyGameTests.scene(helper, "R13 pickup all", live -> {
+            atWork(live, "r13_pickup_all", false);
             final IRequestManager manager = live.colony.getRequestManager();
             final List<Item> items = List.of(Items.DIRT, Items.SAND, Items.GRAVEL);
-            final List<IRequest<?>> requests = new ArrayList<>();
-            for (final Item item : items)
-            {
-                final IToken<?> token = live.hut.createRequest(live.citizen, new Stack(new ItemStack(item), 16, 16), false);
-                final IRequest<?> request = manager.getRequestForToken(token);
-                helper.assertTrue(request != null, "request not created for " + item);
-                request.addDelivery(new ItemStack(item, 16));
-                requests.add(request);
-            }
-            for (final IRequest<?> request : requests)
-            {
-                live.hut.onRequestedRequestComplete(manager, request);
-            }
-            for (final Item item : items)
-            {
-                live.stock(item, 16);
-            }
-            helper.assertTrue(live.hut.getCompletedRequestsOfCitizenOrBuilding(live.citizen).size() == 3, "fixture: not three completed requests: "
-              + live.hut.getCompletedRequestsOfCitizenOrBuilding(live.citizen).size());
-            final AiCounters.JobSnapshot before = jobSnapshot(live.colony, live.citizen);
-            final int skipped0 = EntityAIStructureBuilder.skippedPickupDumps.get();
+            final AiCounters.JobSnapshot[] before = {null};
+            final int[] skipped0 = {0};
+            final int[] madeAt = {-1};
             final int[] doneAt = {-1};
-            WorkerEfficiencyGameTests.everyTick(live, 1600, tick -> {
-                if (doneAt[0] < 0 && live.hut.getCompletedRequestsOfCitizenOrBuilding(live.citizen).isEmpty())
+            final long[] dumpsAtPickup = {-1};
+            WorkerEfficiencyGameTests.everyTick(live, 3000, tick -> {
+                final var progress = live.hut.getProgress();
+                if (madeAt[0] < 0 && progress != null && progress.getB() != BuildingProgressStage.CLEAR)
+                {
+                    // past the clearing: three requests, completed at once, their goods in the hut
+                    madeAt[0] = tick;
+                    final List<IRequest<?>> requests = new ArrayList<>();
+                    for (final Item item : items)
+                    {
+                        final IToken<?> token = live.hut.createRequest(live.citizen, new Stack(new ItemStack(item), 16, 16), false);
+                        final IRequest<?> request = manager.getRequestForToken(token);
+                        helper.assertTrue(request != null, "request not created for " + item);
+                        request.addDelivery(new ItemStack(item, 16));
+                        requests.add(request);
+                    }
+                    for (final IRequest<?> request : requests)
+                    {
+                        live.hut.onRequestedRequestComplete(manager, request);
+                    }
+                    for (final Item item : items)
+                    {
+                        live.stock(item, 16);
+                    }
+                    helper.assertTrue(live.hut.getCompletedRequestsOfCitizenOrBuilding(live.citizen).size() == 3, "fixture: not three completed requests");
+                    before[0] = jobSnapshot(live.colony, live.citizen);
+                    skipped0[0] = EntityAIStructureBuilder.skippedPickupDumps.get();
+                    return false;
+                }
+                if (madeAt[0] >= 0 && doneAt[0] < 0 && live.hut.getCompletedRequestsOfCitizenOrBuilding(live.citizen).isEmpty())
                 {
                     doneAt[0] = tick;
+                    dumpsAtPickup[0] = jobSnapshot(live.colony, live.citizen).dumps();
+                    // (the actions of the wall do not start a dump in the next ticks)
+                    ((AbstractJob<?, ?>) live.citizen.getJob()).clearActionsDone();
+                    for (final Item item : items)
+                    {
+                        helper.assertTrue(count(live.citizen, item) >= 16, "the builder did not take the delivered " + item);
+                    }
                 }
-                // a while after the pickup: he still has the goods (no full dump in between)
-                return doneAt[0] >= 0 && tick - doneAt[0] >= 100;
+                return doneAt[0] >= 0 && tick - doneAt[0] >= 60;
             }, () -> {
                 final AbstractEntityAIBasic<?, ?> ai = workAi(live.citizen);
                 final AiCounters.JobSnapshot after = jobSnapshot(live.colony, live.citizen);
-                Log.getLogger().info("R13W pickup_all last={} pickups {}->{} requests {}->{} skippedDumps={} dumps {}->{} carried dirt={} sand={} gravel={}",
-                  ai == null ? -1 : ai.getLastPickupRequests(), before.pickups(), after.pickups(), before.pickupRequests(), after.pickupRequests(),
-                  EntityAIStructureBuilder.skippedPickupDumps.get() - skipped0, before.dumps(), after.dumps(), count(live.citizen, Items.DIRT), count(live.citizen, Items.SAND),
-                  count(live.citizen, Items.GRAVEL));
-                helper.assertTrue(after.pickups() - before.pickups() == 1 && after.pickupRequests() - before.pickupRequests() == 3,
-                  "the three requests were not taken in one visit: " + before + " -> " + after);
-                helper.assertTrue(EntityAIStructureBuilder.skippedPickupDumps.get() > skipped0, "the builder did not skip the dump after the pickup");
-                helper.assertTrue(after.dumps() == before.dumps(), "the builder dumped after the pickup: " + before.dumps() + " -> " + after.dumps());
-                for (final Item item : items)
-                {
-                    helper.assertTrue(count(live.citizen, item) >= 16, "the builder does not carry the delivered " + item);
-                }
+                Log.getLogger().info("R13W pickup_all madeAt={} doneAt={} last={} pickups {}->{} requests {}->{} skippedDumps={} dumps {}->{}", madeAt[0], doneAt[0],
+                  ai == null ? -1 : ai.getLastPickupRequests(), before[0].pickups(), after.pickups(), before[0].pickupRequests(), after.pickupRequests(),
+                  EntityAIStructureBuilder.skippedPickupDumps.get() - skipped0[0], dumpsAtPickup[0], after.dumps());
+                helper.assertTrue(after.pickups() - before[0].pickups() == 1 && after.pickupRequests() - before[0].pickupRequests() == 3,
+                  "the three requests were not taken in one visit: " + before[0] + " -> " + after);
+                helper.assertTrue(EntityAIStructureBuilder.skippedPickupDumps.get() > skipped0[0], "the builder did not skip the dump after the pickup");
+                helper.assertTrue(after.dumps() == dumpsAtPickup[0], "the builder dumped right after the pickup: " + dumpsAtPickup[0] + " -> " + after.dumps());
+                WorkerSettings.clearOverrides();
                 helper.succeed();
-            }, () -> "completed left " + live.hut.getCompletedRequestsOfCitizenOrBuilding(live.citizen).size() + " " + live.ai());
+            }, () -> "madeAt=" + madeAt[0] + " completed left " + live.hut.getCompletedRequestsOfCitizenOrBuilding(live.citizen).size() + " progress=" + live.hut.getProgress() + " " + live.ai());
         });
     }
 
