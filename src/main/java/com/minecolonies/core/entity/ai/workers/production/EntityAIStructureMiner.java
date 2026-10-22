@@ -99,6 +99,53 @@ public class EntityAIStructureMiner extends AbstractEntityAIStructureWithWorkOrd
      */
     private static final int LADDER_REQUEST_BATCHES = 10;
 
+    /**
+     * W11: fill blocks (with the worker and in the hut) below which the next batch is asked for ahead.
+     */
+    public static final int COBBLE_LOW_WATER = 16;
+
+    /**
+     * W11: ladders (with the worker and in the hut) below which the next batch is asked for ahead.
+     */
+    public static final int LADDER_LOW_WATER = 4;
+
+    /**
+     * W11: requests made ahead (tests).
+     */
+    public static final java.util.concurrent.atomic.AtomicInteger requestedAhead = new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * W11: whether to ask for the next batch now.
+     *
+     * @param have     items with the worker and in the hut.
+     * @param lowWater the low-water mark.
+     * @param open     whether a request for them is already open.
+     * @return true to ask.
+     */
+    public static boolean shouldRequestAhead(final int have, final int lowWater, final boolean open)
+    {
+        return !open && have < lowWater;
+    }
+
+    /**
+     * W11: asks (in the background, the miner keeps working) for a batch of an item when the miner and his hut together have fewer than the
+     * low-water mark and nothing is asked for yet.
+     */
+    private void requestAhead(final ItemStack stack, final int batch, final int lowWater)
+    {
+        final java.util.function.Predicate<ItemStack> same = s -> ItemStackUtils.compareItemStacksIgnoreStackSize(s, stack);
+        final int have = InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), same) + InventoryUtils.getCountFromBuilding(building, same);
+        final boolean open = !building.getOpenRequestsOfTypeFiltered(worker.getCitizenData(), com.minecolonies.api.util.constant.TypeConstants.DELIVERABLE,
+          (com.minecolonies.api.colony.requestsystem.request.IRequest<? extends com.minecolonies.api.colony.requestsystem.requestable.IDeliverable> r) -> r.getRequest().matches(stack)).isEmpty()
+          || !building.getCompletedRequestsOfTypeFiltered(worker.getCitizenData(), com.minecolonies.api.util.constant.TypeConstants.DELIVERABLE,
+          (com.minecolonies.api.colony.requestsystem.request.IRequest<? extends com.minecolonies.api.colony.requestsystem.requestable.IDeliverable> r) -> r.getRequest().matches(stack)).isEmpty();
+        if (shouldRequestAhead(have, lowWater, open))
+        {
+            worker.getCitizenData().createRequestAsync(new com.minecolonies.api.colony.requestsystem.requestable.Stack(stack, batch, 1));
+            requestedAhead.incrementAndGet();
+        }
+    }
+
     public static final String RENDER_META_TORCH   = "torch";
     public static final String RENDER_META_STONE   = "stone";
     public static final String RENDER_META_SHOVEL  = "shovel";
@@ -480,6 +527,9 @@ public class EntityAIStructureMiner extends AbstractEntityAIStructureWithWorkOrd
         {
             return state;
         }
+        // W11: the next ladders and fill blocks are asked for while some are left, so the shaft does not stop until they come
+        requestAhead(new ItemStack(getLadderBackFillBlock()), COBBLE_REQUEST_BATCHES, COBBLE_LOW_WATER);
+        requestAhead(new ItemStack(Blocks.LADDER), LADDER_REQUEST_BATCHES, LADDER_LOW_WATER);
 
         if (ladderDamaged())
         {

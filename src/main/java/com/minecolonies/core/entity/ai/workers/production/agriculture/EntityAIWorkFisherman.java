@@ -103,7 +103,6 @@ public class EntityAIWorkFisherman extends AbstractEntityAISkill<JobFisherman, B
     /**
      * The amount of catches until the fisherman empties his inventory.
      */
-    private static final int MAX_FISHES_IN_INV = 10;
 
     /**
      * The maximum amount of adjusts of his rotation until the fisherman discards a fishing location.
@@ -226,7 +225,14 @@ public class EntityAIWorkFisherman extends AbstractEntityAISkill<JobFisherman, B
     @Override
     protected int getActionsDoneUntilDumping()
     {
-        return MAX_FISHES_IN_INV;
+        // W8: about 64 items (or a full inventory) per trip to the hut, it was 10 fish
+        return GATHERER_DUMP_ACTIONS;
+    }
+
+    @Override
+    protected boolean wantInventoryDumped()
+    {
+        return gatheredEnoughToDump() || super.wantInventoryDumped();
     }
 
     /**

@@ -159,6 +159,27 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private boolean checkedInHut = false;
 
     /**
+     * W11: the tree the sapling check before felling was made for.
+     */
+    @Nullable
+    private Object saplingCheckedFor = null;
+
+    /**
+     * W11: walk to the hut for a sapling before felling the current tree.
+     */
+    private boolean fetchSaplingFirst = false;
+
+    /**
+     * W11: blocks from the hut within which the lumberjack takes a sapling along before felling.
+     */
+    private static final int SAPLING_FETCH_RANGE = 24;
+
+    /**
+     * W11: saplings taken from the hut before a felling (tests).
+     */
+    public static final java.util.concurrent.atomic.AtomicInteger saplingsFetchedAhead = new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
      * The active pathfinding job used to walk to trees.
      */
     @Nullable
@@ -502,6 +523,28 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             job.setTree(null);
             pathResult = null;
             return START_WORKING;
+        }
+
+        // W11: no sapling for this tree with him, but his hut has one and he is still near it: take it now, before the felling, instead of
+        // waiting at the stump for one to drop and walking back for it
+        if (building.shouldReplant() && saplingCheckedFor != job.getTree())
+        {
+            saplingCheckedFor = job.getTree();
+            fetchSaplingFirst = findSaplingSlot() == -1 && !ItemStackUtils.isEmpty(job.getTree().getSapling())
+                                  && worker.blockPosition().distSqr(building.getPosition()) <= SAPLING_FETCH_RANGE * SAPLING_FETCH_RANGE
+                                  && InventoryUtils.hasItemInProvider(building, this::isCorrectSapling);
+        }
+        if (fetchSaplingFirst)
+        {
+            if (!walkToBuilding())
+            {
+                return getState();
+            }
+            fetchSaplingFirst = false;
+            if (checkAndTransferFromHut(job.getTree().getSapling()))
+            {
+                saplingsFetchedAhead.incrementAndGet();
+            }
         }
 
         if (job.getTree().hasLogs() || (shouldBreakLeaves && job.getTree().hasLeaves()) || checkedInHut)

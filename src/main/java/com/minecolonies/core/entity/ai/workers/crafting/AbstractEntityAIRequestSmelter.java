@@ -14,6 +14,8 @@ import com.minecolonies.api.util.ItemStackUtils;
 import com.minecolonies.api.util.StatsUtil;
 import com.ldtteam.structurize.api.util.Tuple;
 import com.minecolonies.api.util.WorldUtil;
+import com.minecolonies.api.colony.requestsystem.request.RequestState;
+import org.jetbrains.annotations.Nullable;
 import com.minecolonies.api.util.constant.translation.RequestSystemTranslationConstants;
 import com.minecolonies.core.colony.buildings.AbstractBuilding;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
@@ -360,9 +362,17 @@ public abstract class AbstractEntityAIRequestSmelter<J extends AbstractJobCrafte
 
         if (smeltableInInventory == 0)
         {
-            needsCurrently = new Tuple<>(smeltablePredicate, targetCount);
             furnacePos = null;
-            return GATHERING_REQUIRED_MATERIALS;
+            // W5: the fuel for the furnaces comes along in the same pass when the worker has none and a furnace lacks it
+            final List<Tuple<Predicate<ItemStack>, Integer>> toGather = new ArrayList<>();
+            toGather.add(new Tuple<>(smeltablePredicate, targetCount));
+            final List<ItemStack> possibleFuels = getActivePossibleFuels();
+            if (!possibleFuels.isEmpty() && !InventoryUtils.hasItemInItemHandler(worker.getInventoryCitizen(), isCorrectFuel(possibleFuels))
+                  && getFurnaceWithoutFuel() != null && InventoryUtils.hasBuildingEnoughElseCount(building, isCorrectFuel(possibleFuels), 1) >= 1)
+            {
+                toGather.add(new Tuple<>(isCorrectFuel(possibleFuels), STACKSIZE));
+            }
+            return gatherAll(toGather);
         }
 
         final int burningFurnaces = countOfBurningFurnaces();
@@ -494,9 +504,17 @@ public abstract class AbstractEntityAIRequestSmelter<J extends AbstractJobCrafte
         final int burning = countOfBurningFurnaces();
         if (burning > 0 && burning >= getMaxUsableFurnaces())
         {
+            // W9: every usable furnace burns: wait next to one (no walk back to the hut) and look again in a second
+            final BlockPos waitAt = getBurningFurnace();
+            if (waitAt != null)
+            {
+                walkToWorkPos(waitAt);
+            }
+            waitingAtFurnace = true;
             setDelay(TICKS_SECOND);
             return getState();
         }
+        waitingAtFurnace = false;
 
         furnacePos = getEmptyFurnaceWithFuel();
         if (furnacePos != null)
@@ -507,7 +525,59 @@ public abstract class AbstractEntityAIRequestSmelter<J extends AbstractJobCrafte
         return START_WORKING;
     }
 
+    /**
+     * W9: whether the worker waits at a furnace because every usable one burns (tests).
+     */
+    private boolean waitingAtFurnace = false;
+
+    /**
+     * @return true while the worker waits at a burning furnace (W9).
+     */
+    public boolean isWaitingAtFurnace()
+    {
+        return waitingAtFurnace;
+    }
+
+    /**
+     * W9: a furnace recipe needs no hits at the hut: the furnaces do the work, and the decision about them is made every craft step
+     * (10 ticks, a second while all burn) right where the worker stands.
+     */
+    @Override
+    protected IAIState craft()
+    {
+        if (currentRecipeStorage != null && currentRecipeStorage.getIntermediate() == Blocks.FURNACE && currentRequest != null && job.getCurrentTask() != null)
+        {
+            if (currentRequest.getState() == RequestState.CANCELLED || currentRequest.getState() == RequestState.FAILED)
+            {
+                currentRequest = null;
+                incrementActionsDone(getActionRewardForCraftingSuccess());
+                currentRecipeStorage = null;
+                return START_WORKING;
+            }
+            return executeCraftingAction(-1);
+        }
+        waitingAtFurnace = false;
+        return super.craft();
+    }
+
     // --------------------- Utility Methods --------------------- //
+
+    /**
+     * @return a furnace of the hut that burns with something in it, or null.
+     */
+    @Nullable
+    private BlockPos getBurningFurnace()
+    {
+        for (final BlockPos pos : building.getModule(FURNACE).getFurnaces())
+        {
+            if (WorldUtil.isBlockLoaded(world, pos) && world.getBlockEntity(pos) instanceof FurnaceBlockEntity furnace
+                  && furnace.getBlockState().getValue(AbstractFurnaceBlock.LIT) && !furnace.getItem(SMELTABLE_SLOT).isEmpty())
+            {
+                return pos;
+            }
+        }
+        return null;
+    }
 
     /**
      * Get a furnace with fuel but without smeltable.

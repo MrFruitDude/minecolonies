@@ -37,6 +37,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 import static com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState.*;
 import static com.minecolonies.api.util.ItemStackUtils.*;
@@ -70,6 +71,16 @@ public abstract class AbstractEntityAIUsesFurnace<J extends AbstractJob<?, J>, B
     private static final int STORAGE_BUFFER = 3;
 
     /**
+     * W9: ticks between two decisions (was 60).
+     */
+    public static final int DECIDE_INTERVAL = 20;
+
+    /**
+     * W9: how close (blocks) to a furnace of the hut the worker may wait instead of walking back to the hut block.
+     */
+    private static final double FURNACE_WAIT_RANGE = 4.0D;
+
+    /**
      * Sets up some important skeleton stuff for every ai.
      *
      * @param job the job class.
@@ -79,7 +90,7 @@ public abstract class AbstractEntityAIUsesFurnace<J extends AbstractJob<?, J>, B
         super(job);
         super.registerTargets(
           new AITarget(IDLE, START_WORKING, STANDARD_DELAY),
-          new AITarget(START_WORKING, this::startWorking, 60),
+          new AITarget(START_WORKING, this::startWorking, DECIDE_INTERVAL),
           new AITarget(FILL_UP_FURNACES, this::fillUpFurnace, STANDARD_DELAY),
           new AIEventTarget(AIBlockingEventType.AI_BLOCKING, this::accelerateFurnaces, TICKS_SECOND),
           new AITarget(RETRIEVING_END_PRODUCT_FROM_FURNACE, this::retrieveSmeltableFromFurnace, STANDARD_DELAY),
@@ -185,7 +196,8 @@ public abstract class AbstractEntityAIUsesFurnace<J extends AbstractJob<?, J>, B
      */
     public IAIState startWorking()
     {
-        if (!walkToBuilding())
+        // W9: a worker standing at one of the furnaces decides there (the furnaces are his work), he does not walk back to the hut block first
+        if (!isNearOwnFurnace() && !walkToBuilding())
         {
             return getState();
         }
@@ -252,8 +264,14 @@ public abstract class AbstractEntityAIUsesFurnace<J extends AbstractJob<?, J>, B
 
         if (amountOfSmeltableInBuilding > 0 && amountOfSmeltableInInv == 0)
         {
-            needsCurrently = new Tuple<>(this::isSmeltable, STACKSIZE);
-            return GATHERING_REQUIRED_MATERIALS;
+            // W5: the fuel comes along in the same pass when the worker has none
+            final List<Tuple<Predicate<ItemStack>, Integer>> toGather = new ArrayList<>();
+            toGather.add(new Tuple<>(this::isSmeltable, STACKSIZE));
+            if (amountOfFuelInBuilding > 0 && amountOfFuelInInv == 0)
+            {
+                toGather.add(new Tuple<>(stack -> itemListModule.isItemInList(new ItemStorage(stack)), STACKSIZE));
+            }
+            return gatherAll(toGather);
         }
         else if (amountOfFuelInBuilding > 0 && amountOfFuelInInv == 0)
         {
@@ -384,6 +402,38 @@ public abstract class AbstractEntityAIUsesFurnace<J extends AbstractJob<?, J>, B
     protected int getActionsDoneUntilDumping()
     {
         return 1;
+    }
+
+    /**
+     * W4: the products of a furnace are dumped when nothing else is ready to take out of a furnace, or the inventory is more than 70%
+     * full (it was after every furnace emptied).
+     */
+    @Override
+    protected boolean inventoryNeedsDump()
+    {
+        if (!super.inventoryNeedsDump())
+        {
+            return false;
+        }
+        return worker.getCitizenInventoryHandler().isInventoryFull() || wantInventoryDumped() || inventoryOverDumpRatio() || getPositionOfOvenToRetrieveFrom() == null;
+    }
+
+    /**
+     * W9: whether the worker stands next to one of the furnaces of his hut.
+     *
+     * @return true if so.
+     */
+    protected boolean isNearOwnFurnace()
+    {
+        final double range = FURNACE_WAIT_RANGE * FURNACE_WAIT_RANGE;
+        for (final BlockPos pos : building.getModule(FURNACE).getFurnaces())
+        {
+            if (worker.blockPosition().distSqr(pos) <= range)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

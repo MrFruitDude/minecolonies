@@ -444,18 +444,15 @@ public class EntityAIWorkPlanter extends AbstractEntityAICrafting<JobPlanter, Bu
     @Override
     protected int getActionsDoneUntilDumping()
     {
-        if (getState() != PLANTATION_DECIDE_FIELD_WORK && getState() != PLANTATION_WORK_FIELD)
-        {
-            return super.getActionsDoneUntilDumping();
-        }
+        // W8: about 64 items (or a full inventory) per trip to the hut; it was the action limit of the field (5 to 10). The field still
+        // changes after its action limit (handled by the field work, not by the dump).
+        return GATHERER_DUMP_ACTIONS;
+    }
 
-        PlantationField currentPlantationField = getCurrentField();
-        if (currentPlantationField == null)
-        {
-            return super.getActionsDoneUntilDumping();
-        }
-
-        return currentPlantationField.getModule().getActionLimit();
+    @Override
+    protected boolean wantInventoryDumped()
+    {
+        return gatheredEnoughToDump() || super.wantInventoryDumped();
     }
 
     @Override

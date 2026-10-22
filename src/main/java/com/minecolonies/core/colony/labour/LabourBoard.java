@@ -64,9 +64,36 @@ public final class LabourBoard
     public static final int MAX_LOT = 64;
 
     /**
-     * Ticks a citizen rests after a claim ended before he takes the next.
+     * Ticks a citizen rests after a claim failed (or was given up) before he takes the next.
      */
     public static final int CITIZEN_COOLDOWN = 600;
+
+    /**
+     * W2: ticks a citizen rests after a claim that handed in its goods (it was {@link #CITIZEN_COOLDOWN} after every claim).
+     */
+    public static final int CITIZEN_COOLDOWN_SUCCESS = 40;
+
+    /**
+     * W2: the rest after a claim.
+     *
+     * @param success whether the goods were handed in.
+     * @return the ticks.
+     */
+    public static int restAfter(final boolean success)
+    {
+        return success ? CITIZEN_COOLDOWN_SUCCESS : CITIZEN_COOLDOWN;
+    }
+
+    /**
+     * W2: the game time until which a citizen rests after his last claim (0 when he does not rest).
+     *
+     * @param citizenId the citizen id.
+     * @return the game time.
+     */
+    public long restsUntil(final int citizenId)
+    {
+        return cooldown.getOrDefault(citizenId, 0L);
+    }
 
     /**
      * Ticks after which a citizen whose offer found nothing asks again.
@@ -1177,7 +1204,7 @@ public final class LabourBoard
         {
             ledger.release(claim.token(), now);
         }
-        cooldown.put(claim.citizenId(), now + CITIZEN_COOLDOWN);
+        cooldown.put(claim.citizenId(), now + restAfter(success));
         final IToken<?> request = claim.request();
         if (request != null)
         {

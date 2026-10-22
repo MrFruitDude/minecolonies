@@ -95,7 +95,6 @@ public abstract class AbstractEntityAIHerder<J extends AbstractJob<?, J>, B exte
     /**
      * Number of actions needed to dump inventory.
      */
-    private static final int ACTIONS_FOR_DUMP = 10;
 
     /**
      * New born age.
@@ -157,7 +156,14 @@ public abstract class AbstractEntityAIHerder<J extends AbstractJob<?, J>, B exte
     @Override
     protected int getActionsDoneUntilDumping()
     {
-        return ACTIONS_FOR_DUMP;
+        // W8: about 64 items (or a full inventory) per trip to the hut, it was 10 actions
+        return GATHERER_DUMP_ACTIONS;
+    }
+
+    @Override
+    protected boolean wantInventoryDumped()
+    {
+        return gatheredEnoughToDump() || super.wantInventoryDumped();
     }
 
     @NotNull

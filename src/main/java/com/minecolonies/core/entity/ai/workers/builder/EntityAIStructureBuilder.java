@@ -557,10 +557,32 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         return mineBlock(blockToMine, safeStand, true, !IColonyManager.getInstance().getCompatibilityManager().isOre(world.getBlockState(blockToMine)), null);
     }
 
+    /**
+     * W7: after taking a delivery from his hut the builder goes on (PICK_UP takes what else he needs from the hut) instead of dumping his
+     * whole inventory first. While clearing he keeps the dump: his inventory is full of what he broke.
+     */
     @Override
     public IAIState afterRequestPickUp()
     {
-        return INVENTORY_FULL;
+        if (isClearing() || worker.getCitizenInventoryHandler().isInventoryFull() || inventoryOverDumpRatio())
+        {
+            return INVENTORY_FULL;
+        }
+        skippedPickupDumps.incrementAndGet();
+        return PICK_UP;
+    }
+
+    /**
+     * W7: pickups after which the full dump was skipped (tests).
+     */
+    public static final java.util.concurrent.atomic.AtomicInteger skippedPickupDumps = new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * @return true while the current structure is in its clearing stage.
+     */
+    private boolean isClearing()
+    {
+        return structurePlacer != null && structurePlacer.getB() != null && structurePlacer.getB().getStage() == BuildingProgressStage.CLEAR;
     }
 
     @Override

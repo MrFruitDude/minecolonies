@@ -135,8 +135,8 @@ public class EntityAIWorkPupil extends AbstractEntityAIInteract<JobPupil, Buildi
             return getState();
         }
 
-        if (!world.getEntitiesOfClass(EntityCitizen.class,
-          new AABB(studyPos.getX(), studyPos.getY(), studyPos.getZ(), studyPos.getX(), studyPos.getY(), studyPos.getZ())).isEmpty())
+        // B6: the seat is taken when another citizen is on it (the old zero-size box never found anyone, and would have found him too)
+        if (sittingTicks == 0 && !world.getEntitiesOfClass(EntityCitizen.class, new AABB(studyPos), other -> other != worker).isEmpty())
         {
             studyPos = null;
             return DECIDE;
@@ -198,7 +198,23 @@ public class EntityAIWorkPupil extends AbstractEntityAIInteract<JobPupil, Buildi
 
         maxSittingTicks = 0;
         sittingTicks = 0;
-        return null;
+        // B6: a study session ends here: decide again (recess or another free seat). It stayed in STUDY on the same seat forever.
+        studyPos = null;
+        sessionsDone++;
+        return DECIDE;
+    }
+
+    /**
+     * B6: study sessions finished by this pupil (tests).
+     */
+    private int sessionsDone = 0;
+
+    /**
+     * @return the study sessions this pupil finished.
+     */
+    public int getSessionsDone()
+    {
+        return sessionsDone;
     }
 
     @Override

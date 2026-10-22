@@ -327,6 +327,19 @@ public abstract class AbstractBuildingGuards extends AbstractBuilding implements
      */
     private int patrolTimer = 0;
 
+    /**
+     * W10: patrol points taken as soon as their search finished (tests).
+     */
+    private int patrolTargetsTakenEarly = 0;
+
+    /**
+     * @return patrol points taken as soon as their search finished (W10).
+     */
+    public int getPatrolTargetsTakenEarly()
+    {
+        return patrolTargetsTakenEarly;
+    }
+
     @Override
     public void onColonyTick(final IColony colony)
     {
@@ -393,6 +406,19 @@ public abstract class AbstractBuildingGuards extends AbstractBuilding implements
     {
         if (!newTarget && lastPatrolPoint != null)
         {
+            // W10: the random point searched for the next leg is taken as soon as the search is done. It was only read at the next leg
+            // change (up to 5 colony ticks later), and the guards stood at the point they had reached in the meantime.
+            if (pathResult != null && pathResult.isDone())
+            {
+                final BlockPos found = pathResult.getPath() == null ? null : pathResult.getPath().getTarget();
+                pathResult = null;
+                if (found != null)
+                {
+                    lastPatrolPoint = BlockPosUtil.getDistance(found, getPosition()) > getPatrolDistance() ? getPosition() : found;
+                    arrivedAtPatrol.clear();
+                    patrolTargetsTakenEarly++;
+                }
+            }
             return lastPatrolPoint;
         }
 

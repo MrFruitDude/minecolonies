@@ -118,7 +118,7 @@ public abstract class AbstractEntityAIGuard<J extends AbstractJobGuard<J>, B ext
     /**
      * Interval between guard task updates
      */
-    private static final int GUARD_TASK_INTERVAL = 100;
+    private static final int GUARD_TASK_INTERVAL = 40;
 
     /**
      * Interval between guard regen updates
@@ -264,6 +264,18 @@ public abstract class AbstractEntityAIGuard<J extends AbstractJobGuard<J>, B ext
     }
 
     /**
+     * W10: whether a guard may doze off at all now.
+     *
+     * @param day    whether it is day.
+     * @param raided whether the colony is raided.
+     * @return true only at night without a raid.
+     */
+    public static boolean maySleep(final boolean day, final boolean raided)
+    {
+        return !day && !raided;
+    }
+
+    /**
      * Whether the guard should fall asleep.
      *
      * @return true if so
@@ -271,6 +283,12 @@ public abstract class AbstractEntityAIGuard<J extends AbstractJobGuard<J>, B ext
     private boolean shouldSleep()
     {
         if (worker.getLastHurtByMob() != null || target != null || fighttimer > 0 || job.getCitizen().getCitizenDiseaseHandler().isSick())
+        {
+            return false;
+        }
+
+        // W10: a guard dozes off only at night, never in a raid (it was any time, about one guard in five asleep)
+        if (!maySleep(WorldUtil.isDayTime(world), worker.getCitizenColonyHandler().getColonyOrRegister().getRaiderManager().isRaided()))
         {
             return false;
         }
