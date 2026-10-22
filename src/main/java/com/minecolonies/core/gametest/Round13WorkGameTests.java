@@ -65,10 +65,12 @@ public final class Round13WorkGameTests
 
     static void register(final RegisterGameTestsEvent event)
     {
-        final String[] names = {"dump_all_one_call", "dump_full_hut_keeps", "pickup_all_requests", "crafter_queue", "crafter_gathers_all", "guard_patrol_target", "rules", "counters_api"};
+        final String[] names = {"dump_all_one_call", "dump_full_hut_keeps", "pickup_all_requests", "crafter_queue", "crafter_gathers_all", "guard_patrol_target", "rules", "counters_api",
+          "pickup_full_inventory", "cook_staggered_furnaces", "smelter_request", "smelter_cancel"};
         final List<Consumer<GameTestHelper>> bodies = List.of(Round13WorkGameTests::dumpAllInOneCall, Round13WorkGameTests::dumpFullHutKeeps, Round13WorkGameTests::pickupAllRequests,
           Round13WorkGameTests::crafterQueue, Round13WorkGameTests::crafterGathersAll, Round13WorkGameTests::guardPatrolTarget, Round13WorkGameTests::rules,
-          Round13WorkGameTests::countersApi);
+          Round13WorkGameTests::countersApi, Round13WorkGameTests::pickupFullInventory, Round13WorkGameTests::cookStaggeredFurnaces, Round13WorkGameTests::smelterRequest,
+          Round13WorkGameTests::smelterCancel);
         for (int i = 0; i < names.length; i++)
         {
             final String name = "r13w_" + names[i];
@@ -90,6 +92,16 @@ public final class Round13WorkGameTests
         final String key = citizen.getJob().getJobRegistryEntry().getKey().toString();
         final AiCounters.JobSnapshot snap = AiCounters.snapshot(colony).jobs().get(key);
         return snap == null ? new AiCounters.JobSnapshot(Map.of(), 0, 0, 0, 0, 0, 0) : snap;
+    }
+
+    private static int skippedPickupDumps(final ICitizenData citizen)
+    {
+        return workAi(citizen) instanceof EntityAIStructureBuilder builder ? builder.getSkippedPickupDumps() : 0;
+    }
+
+    private static int finishedWithoutDump(final ICitizenData citizen)
+    {
+        return workAi(citizen) instanceof AbstractEntityAICrafting<?, ?> crafter ? crafter.getFinishedWithoutDump() : 0;
     }
 
     static int count(final ICitizenData citizen, final Item item)
@@ -261,7 +273,7 @@ public final class Round13WorkGameTests
                     }
                     helper.assertTrue(live.hut.getCompletedRequestsOfCitizenOrBuilding(live.citizen).size() == 3, "fixture: not three completed requests");
                     before[0] = jobSnapshot(live.colony, live.citizen);
-                    skipped0[0] = EntityAIStructureBuilder.skippedPickupDumps.get();
+                    skipped0[0] = skippedPickupDumps(live.citizen);
                     return false;
                 }
                 if (madeAt[0] >= 0 && doneAt[0] < 0 && live.hut.getCompletedRequestsOfCitizenOrBuilding(live.citizen).isEmpty())
@@ -281,11 +293,11 @@ public final class Round13WorkGameTests
                 final AiCounters.JobSnapshot after = jobSnapshot(live.colony, live.citizen);
                 Log.getLogger().info("R13W pickup_all madeAt={} doneAt={} last={} pickups {}->{} requests {}->{} skippedDumps={} dumps {}->{}", madeAt[0], doneAt[0],
                   ai == null ? -1 : ai.getLastPickupRequests(), before[0].pickups(), after.pickups(), before[0].pickupRequests(), after.pickupRequests(),
-                  EntityAIStructureBuilder.skippedPickupDumps.get() - skipped0[0], dumpsAtPickup[0], after.dumps());
+                  skippedPickupDumps(live.citizen) - skipped0[0], dumpsAtPickup[0], after.dumps());
                 // (the builder may have completed requests of his own at the hut: they come along in the same visit)
                 helper.assertTrue(after.pickups() - before[0].pickups() == 1 && after.pickupRequests() - before[0].pickupRequests() >= 3,
                   "the three requests were not taken in one visit: " + before[0] + " -> " + after);
-                helper.assertTrue(EntityAIStructureBuilder.skippedPickupDumps.get() > skipped0[0], "the builder did not skip the dump after the pickup");
+                helper.assertTrue(skippedPickupDumps(live.citizen) > skipped0[0], "the builder did not skip the dump after the pickup");
                 helper.assertTrue(after.dumps() == dumpsAtPickup[0], "the builder dumped right after the pickup: " + dumpsAtPickup[0] + " -> " + after.dumps());
                 WorkerSettings.clearOverrides();
                 helper.succeed();
@@ -301,10 +313,30 @@ public final class Round13WorkGameTests
      */
     private static void crafterScene(final GameTestHelper helper, final String name, final BiConsumer<IColony, ICitizenData> body)
     {
+        workerScene(helper, name, ModBlocks.blockHutSawmill, "craftsmanship/carpentry/sawmill1.blueprint",
+          (sawmill, worker) -> sawmill.getModule(BuildingModules.SAWMILL_WORK).assignCitizen(worker), (colony, sawmill, worker) -> {
+              helper.assertTrue(workAi(worker) instanceof AbstractEntityAICrafting<?, ?>, "sawmill worker has no crafter AI: " + workAi(worker));
+              body.accept(colony, worker);
+          });
+    }
+
+    /**
+     * The body of a {@link #workerScene}.
+     */
+    private interface SceneBody
+    {
+        void run(IColony colony, IBuilding hut, ICitizenData worker);
+    }
+
+    /**
+     * A colony with a level 1 hut at (20, 1, 2), a live worker assigned to it and a close subscriber (the colony runs).
+     */
+    private static void workerScene(final GameTestHelper helper, final String name, final net.minecraft.world.level.block.Block hutBlock, final String blueprint,
+      final java.util.function.BiPredicate<IBuilding, ICitizenData> assign, final SceneBody body)
+    {
         final ServerLevel level = helper.getLevel();
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, name);
-        final IBuilding sawmill = MinecoloniesGameTests.placeProductionBuilding(helper, colony, ModBlocks.blockHutSawmill, new BlockPos(20, 1, 2),
-          "craftsmanship/carpentry/sawmill1.blueprint");
+        final IBuilding sawmill = MinecoloniesGameTests.placeProductionBuilding(helper, colony, hutBlock, new BlockPos(20, 1, 2), blueprint);
         final BlockPos anchor = helper.absolutePos(new BlockPos(22, 1, 10));
         level.setChunkForced(anchor.getX() >> 4, anchor.getZ() >> 4, true);
         final ServerPlayer player = MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
@@ -312,16 +344,15 @@ public final class Round13WorkGameTests
         colony.getPackageManager().addCloseSubscriber(player);
         helper.runAfterDelay(20, () -> {
             final ICitizenData worker = colony.getCitizenManager().spawnOrCreateCivilian(null, level, List.of(anchor), true);
-            helper.assertTrue(worker != null && worker.getEntity().isPresent(), "sawmill citizen did not spawn");
-            helper.assertTrue(sawmill.getModule(BuildingModules.SAWMILL_WORK).assignCitizen(worker), "sawmill assignment failed");
+            helper.assertTrue(worker != null && worker.getEntity().isPresent(), name + ": citizen did not spawn");
+            helper.assertTrue(assign.test(sawmill, worker), name + ": assignment failed");
             worker.getEntity().get().setPos(anchor.getX() + 0.5D, anchor.getY(), anchor.getZ() + 0.5D);
-            helper.assertTrue(workAi(worker) instanceof AbstractEntityAICrafting<?, ?>, "sawmill worker has no crafter AI: " + workAi(worker));
             final int[] waited = {0};
             final Runnable[] untilActive = new Runnable[1];
             untilActive[0] = () -> {
                 if (colony.isActive())
                 {
-                    body.accept(colony, worker);
+                    body.run(colony, sawmill, worker);
                     return;
                 }
                 if (++waited[0] > 400)
@@ -400,7 +431,7 @@ public final class Round13WorkGameTests
             final IBuilding builder = MinecoloniesGameTests.placeProductionBuilding(helper, colony, ModBlocks.blockHutBuilder, new BlockPos(8, 1, 2), "fundamentals/builder1.blueprint");
             teach(helper, sawmill, List.of(new ItemStorage(new ItemStack(Items.OAK_LOG, 2))), new ItemStack(Items.OAK_PLANKS, 4));
             put(helper, sawmill, Items.OAK_LOG, 6);
-            final int without0 = AbstractEntityAICrafting.finishedWithoutDump.get();
+            final int without0 = finishedWithoutDump(worker);
             final int[] queuedAt = {-1};
             final int[] wokeAt = {-1};
             final int[] maxQueue = {0};
@@ -425,7 +456,7 @@ public final class Round13WorkGameTests
                     }
                     return crafted(sawmill, Items.OAK_PLANKS) >= 12;
                 }, () -> {
-                    final int without = AbstractEntityAICrafting.finishedWithoutDump.get() - without0;
+                    final int without = finishedWithoutDump(worker) - without0;
                     Log.getLogger().info("R13W crafter_queue idleState={} queuedAt={} wokeAt={} maxQueue={} withoutDump={} crafted={} {}", idleState, queuedAt[0], wokeAt[0],
                       maxQueue[0], without, crafted(sawmill, Items.OAK_PLANKS), crafterState(worker));
                     helper.assertTrue(wokeAt[0] >= 0 && wokeAt[0] - queuedAt[0] <= 100, "the idle crafter did not start within 100 ticks of the task: queued " + queuedAt[0]
@@ -502,6 +533,14 @@ public final class Round13WorkGameTests
                 if (guards.getPatrolTargetsTakenEarly() > early0)
                 {
                     Log.getLogger().info("R13W guard_patrol taken after {} ticks: {} -> {}", elapsed[0], first, guards.getNextPatrolTarget(false));
+                    // review c1: the early take respects manual patrol with points set
+                    helper.assertTrue(guards.randomPatrolAllowed(), "random patrol not allowed in auto mode");
+                    guards.getSetting(AbstractBuildingGuards.PATROL_MODE).set(com.minecolonies.core.colony.buildings.modules.settings.GuardPatrolModeSetting.MANUAL);
+                    helper.assertTrue(guards.randomPatrolAllowed(), "random patrol not allowed in manual mode without points");
+                    guards.addPatrolTarget(anchor);
+                    helper.assertTrue(!guards.randomPatrolAllowed(), "random patrol allowed in manual mode with points");
+                    guards.getSetting(AbstractBuildingGuards.PATROL_MODE).set(com.minecolonies.core.colony.buildings.modules.settings.GuardPatrolModeSetting.AUTO);
+                    guards.resetPatrolTargets();
                     helper.succeed();
                 }
                 else if (elapsed[0] > 1200)
@@ -543,6 +582,48 @@ public final class Round13WorkGameTests
               || AbstractEntityAIBasic.exceptionBackoff(32, AbstractEntityAIBasic.EXCEPTION_QUIET_RESET - 1) != 32)
         {
             failures.add("B3 reset after a quiet spell");
+        }
+        // B3 (review c1): an AI that fails again one tick after every pause climbs to the cap and holds there (the 6400 tick pause at the cap
+        // does not count as quiet time), and starts again at 1 only after 6000 quiet ticks past the end of a pause
+        long pauseEnd = -1L;
+        int multiplier = 1;
+        final List<Integer> ladder = new ArrayList<>();
+        final List<Integer> pauses = new ArrayList<>();
+        for (int error = 0; error < 12; error++)
+        {
+            final long now = pauseEnd < 0 ? 1000L : pauseEnd + 1;
+            final AbstractEntityAIBasic.ExceptionStep step = AbstractEntityAIBasic.exceptionStep(multiplier, pauseEnd, now, true);
+            ladder.add(step.used());
+            pauses.add(step.pause());
+            if (step.pauseEnd() != now + step.pause())
+            {
+                failures.add("B3 pause end " + step);
+            }
+            pauseEnd = step.pauseEnd();
+            multiplier = step.next();
+        }
+        if (!ladder.equals(List.of(1, 2, 4, 8, 16, 32, 64, 64, 64, 64, 64, 64)) || pauses.get(11) != 6400)
+        {
+            failures.add("B3 constant failure ladder " + ladder + " pauses " + pauses);
+        }
+        if (AbstractEntityAIBasic.exceptionStep(multiplier, pauseEnd, pauseEnd + AbstractEntityAIBasic.EXCEPTION_QUIET_RESET - 1, true).used() != 64
+              || AbstractEntityAIBasic.exceptionStep(multiplier, pauseEnd, pauseEnd + AbstractEntityAIBasic.EXCEPTION_QUIET_RESET, true).used() != 1
+              || AbstractEntityAIBasic.exceptionStep(1, -1L, 5L, true).used() != 1
+              || AbstractEntityAIBasic.exceptionStep(multiplier, pauseEnd, pauseEnd + 1, false).pause() != 100)
+        {
+            failures.add("B3 quiet reset from the end of the pause");
+        }
+        // builder keep (review c1 note): the part of a stack over the need is dumped (it was a negative number, so nothing)
+        if (com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder.amountOverKeep(10, 20, 16) != 14
+              || com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder.amountOverKeep(0, 20, 16) != 4
+              || com.minecolonies.core.colony.buildings.AbstractBuildingStructureBuilder.amountOverKeep(10, 4, 16) != 0)
+        {
+            failures.add("builder keep math");
+        }
+        // W4 furnace users: a quarter stack of products
+        if (com.minecolonies.core.entity.ai.workers.AbstractEntityAIUsesFurnace.PRODUCT_DUMP_ITEMS != 16)
+        {
+            failures.add("W4 product threshold");
         }
         // W2
         if (LabourBoard.restAfter(true) != 40 || LabourBoard.restAfter(false) != 600)
@@ -646,6 +727,25 @@ public final class Round13WorkGameTests
         {
             failures.add("colony B sees colony A's counters");
         }
+        // review c1: off the server thread nothing is read or counted (the maps are not thread safe)
+        final Object[] offThread = {null, "unset"};
+        final Thread reader = new Thread(() -> {
+            offThread[0] = AiCounters.snapshot(a);
+            offThread[1] = AiCounters.job(a, "minecolonies:test_job");
+        }, "r13w-counters-reader");
+        reader.start();
+        try
+        {
+            reader.join(5000);
+        }
+        catch (final InterruptedException e)
+        {
+            Thread.currentThread().interrupt();
+        }
+        if (!(offThread[0] instanceof AiCounters.Snapshot offSnap) || !offSnap.jobs().isEmpty() || offThread[1] != null)
+        {
+            failures.add("off-thread access was not refused: " + offThread[0] + " / " + offThread[1]);
+        }
         final AiCounters.JobCounters jb = AiCounters.job(b, "minecolonies:test_job");
         jb.dump(1);
         AiCounters.reset(a);
@@ -656,5 +756,300 @@ public final class Round13WorkGameTests
         IColonyManager.getInstance().deleteColonyByWorld(b.getID(), false, level);
         helper.assertTrue(failures.isEmpty(), "counters: " + failures);
         helper.succeed();
+    }
+
+    // ------------------------------------------------------------------ W6 with a full inventory
+
+    /**
+     * W6 (review c1): three completed requests at the hut and room for one stack: the first is taken, the loop stops, the other two stay
+     * completed with their goods in the hut (never accepted without their items). With room again, the next visit takes both.
+     */
+    public static void pickupFullInventory(final GameTestHelper helper)
+    {
+        WorkerEfficiencyGameTests.scene(helper, "R13 pickup full", live -> {
+            atWork(live, "r13_pickup_full", false);
+            final AbstractEntityAIBasic<?, ?> ai = workAi(live.citizen);
+            helper.assertTrue(ai != null, "no work AI");
+            final IRequestManager manager = live.colony.getRequestManager();
+            final List<Item> items = List.of(Items.SAND, Items.GRAVEL, Items.CLAY_BALL);
+            final List<IRequest<?>> requests = new ArrayList<>();
+            for (final Item item : items)
+            {
+                final IToken<?> token = live.hut.createRequest(live.citizen, new Stack(new ItemStack(item), 16, 16), false);
+                final IRequest<?> request = manager.getRequestForToken(token);
+                helper.assertTrue(request != null, "request not created for " + item);
+                request.addDelivery(new ItemStack(item, 16));
+                requests.add(request);
+            }
+            for (final IRequest<?> request : requests)
+            {
+                live.hut.onRequestedRequestComplete(manager, request);
+            }
+            for (final Item item : items)
+            {
+                live.stock(item, 16);
+            }
+            // every slot but one full
+            final int slots = live.citizen.getInventory().getSlots();
+            final List<Integer> filled = new ArrayList<>();
+            for (int slot = 0; slot < slots; slot++)
+            {
+                if (live.citizen.getInventory().getStackInSlot(slot).isEmpty())
+                {
+                    filled.add(slot);
+                }
+            }
+            helper.assertTrue(filled.size() >= 4, "fixture: too few free slots " + filled.size());
+            final int free = filled.remove(filled.size() - 1);
+            for (final int slot : filled)
+            {
+                live.citizen.getInventory().insertItem(slot, new ItemStack(Items.DIRT, 64), false);
+            }
+            final net.minecraft.world.level.block.entity.BlockEntity hutEntity = live.level.getBlockEntity(live.hut.getPosition());
+            final int taken = ai.takeCompletedRequestsHere(hutEntity, requests);
+            final var completed = live.hut.getCompletedRequestsOfCitizenOrBuilding(live.citizen);
+            final List<String> failures = new ArrayList<>();
+            if (taken != 1)
+            {
+                failures.add("taken " + taken + " (free slot " + free + ")");
+            }
+            for (int i = 0; i < items.size(); i++)
+            {
+                final Item item = items.get(i);
+                final boolean accepted = !completed.contains(requests.get(i));
+                final int carried = count(live.citizen, item);
+                final int inHut = InventoryUtils.getItemCountInItemHandler(live.hut.getItemHandlerCap(), stack -> stack.is(item));
+                if (accepted ? carried < 16 : (carried != 0 || inHut < 16))
+                {
+                    failures.add(item + " accepted=" + accepted + " carried=" + carried + " inHut=" + inHut);
+                }
+                if (i == 0 != accepted)
+                {
+                    failures.add(item + " accepted=" + accepted);
+                }
+            }
+            // room again: the rest in the next visit
+            for (int k = 0; k < 4; k++)
+            {
+                live.citizen.getInventory().extractItem(filled.get(k), 64, false);
+            }
+            final int takenLater = ai.takeCompletedRequestsHere(hutEntity, List.of(requests.get(1), requests.get(2)));
+            if (takenLater != 2 || count(live.citizen, Items.GRAVEL) < 16 || count(live.citizen, Items.CLAY_BALL) < 16)
+            {
+                failures.add("second visit took " + takenLater);
+            }
+            Log.getLogger().info("R13W pickup_full taken={} later={} failures={}", taken, takenLater, failures);
+            WorkerSettings.clearOverrides();
+            helper.assertTrue(failures.isEmpty(), "pickup with a full inventory: " + failures);
+            helper.succeed();
+        });
+    }
+
+    // ------------------------------------------------------------------ W4 furnace users
+
+    /**
+     * Places furnaces at relative positions and registers them with the hut.
+     */
+    private static List<BlockPos> placeFurnaces(final GameTestHelper helper, final IBuilding hut, final BlockPos... relative)
+    {
+        final List<BlockPos> furnaces = new ArrayList<>();
+        for (final BlockPos rel : relative)
+        {
+            helper.setBlock(rel, net.minecraft.world.level.block.Blocks.FURNACE.defaultBlockState());
+            final BlockPos abs = helper.absolutePos(rel);
+            hut.getModule(BuildingModules.FURNACE).onBlockPlacedInBuilding(helper.getLevel().getBlockState(abs), abs, helper.getLevel());
+            furnaces.add(abs);
+        }
+        helper.assertTrue(hut.getModule(BuildingModules.FURNACE).getFurnaces().size() == relative.length, "fixture: furnaces not registered");
+        return furnaces;
+    }
+
+    private static net.minecraft.world.level.block.entity.FurnaceBlockEntity furnace(final GameTestHelper helper, final BlockPos pos)
+    {
+        return (net.minecraft.world.level.block.entity.FurnaceBlockEntity) helper.getLevel().getBlockEntity(pos);
+    }
+
+    /**
+     * W4 (review c1): a cook with two furnaces where one always has food ready (each is refilled as soon as he empties it) still brings the food
+     * to the hut, after a quarter stack, long before his inventory is 70% full (c1 held it until then).
+     */
+    public static void cookStaggeredFurnaces(final GameTestHelper helper)
+    {
+        workerScene(helper, "R13 cook furnaces", ModBlocks.blockHutCook, "fundamentals/cook1.blueprint",
+          (hut, worker) -> hut.getModule(BuildingModules.COOK_WORK).assignCitizen(worker), (colony, hut, worker) -> {
+              hut.getModule(BuildingModules.ITEMLIST_FUEL).addItem(new ItemStorage(new ItemStack(Items.COAL)));
+              final List<BlockPos> furnaces = placeFurnaces(helper, hut, new BlockPos(22, 1, 5), new BlockPos(25, 1, 5));
+              final int[] refills = {0};
+              final int[] maxSlots = {0};
+              final int[] slotsAtDelivery = {-1};
+              final int[] firstRefillTick = {-1};
+              final int[] deliveredAt = {-1};
+              poll(helper, worker, 2400, tick -> {
+                  for (final BlockPos pos : furnaces)
+                  {
+                      final var furnace = furnace(helper, pos);
+                      if (furnace.getItem(Constants.RESULT_SLOT).isEmpty())
+                      {
+                          furnace.setItem(Constants.RESULT_SLOT, new ItemStack(Items.COOKED_BEEF, 4));
+                          refills[0]++;
+                          if (firstRefillTick[0] < 0 && refills[0] > furnaces.size())
+                          {
+                              firstRefillTick[0] = tick;
+                          }
+                      }
+                  }
+                  int slots = 0;
+                  for (int slot = 0; slot < worker.getInventory().getSlots(); slot++)
+                  {
+                      if (worker.getInventory().getStackInSlot(slot).is(Items.COOKED_BEEF))
+                      {
+                          slots++;
+                      }
+                  }
+                  maxSlots[0] = Math.max(maxSlots[0], slots);
+                  final int inHut = InventoryUtils.getItemCountInItemHandler(hut.getItemHandlerCap(), stack -> stack.is(Items.COOKED_BEEF));
+                  if (inHut >= 16 && deliveredAt[0] < 0)
+                  {
+                      deliveredAt[0] = tick;
+                      slotsAtDelivery[0] = maxSlots[0];
+                  }
+                  return deliveredAt[0] >= 0;
+              }, () -> {
+                  final boolean oneReady = furnaces.stream().anyMatch(pos -> !furnace(helper, pos).getItem(Constants.RESULT_SLOT).isEmpty());
+                  Log.getLogger().info("R13W cook_furnaces refills={} firstRetrieve={} deliveredAt={} maxSlots={} oneReady={}", refills[0], firstRefillTick[0], deliveredAt[0],
+                    slotsAtDelivery[0], oneReady);
+                  helper.assertTrue(oneReady, "fixture: no furnace ready at the delivery");
+                  helper.assertTrue(slotsAtDelivery[0] < 18, "the cook held the food until his inventory filled: " + slotsAtDelivery[0] + " slots of food");
+                  helper.succeed();
+              }, () -> "refills=" + refills[0] + " maxSlots=" + maxSlots[0] + " " + stateOf(worker));
+          });
+    }
+
+    private static String stateOf(final ICitizenData worker)
+    {
+        final AbstractEntityAIBasic<?, ?> ai = workAi(worker);
+        return ai == null ? "no-ai" : ai.getState() + " history=" + ai.getStateAI().getHistory().getString();
+    }
+
+    // ------------------------------------------------------------------ W9 request smelter
+
+    /**
+     * A stone smeltery with two furnaces, stone and coal in its hut and a stone to smooth stone furnace recipe; a builder hut that asks for
+     * four smooth stone.
+     */
+    private static void smelterScene(final GameTestHelper helper, final String name, final SceneBody body)
+    {
+        workerScene(helper, name, ModBlocks.blockHutStoneSmeltery, "craftsmanship/masonry/stonesmeltery1.blueprint",
+          (hut, worker) -> hut.getModule(BuildingModules.STONESMELTER_WORK).assignCitizen(worker), (colony, hut, worker) -> {
+              helper.assertTrue(workAi(worker) instanceof com.minecolonies.core.entity.ai.workers.crafting.AbstractEntityAIRequestSmelter<?, ?>,
+                "no request smelter AI: " + workAi(worker));
+              hut.getModule(BuildingModules.ITEMLIST_FUEL).addItem(new ItemStorage(new ItemStack(Items.COAL)));
+              placeFurnaces(helper, hut, new BlockPos(22, 1, 5), new BlockPos(25, 1, 5));
+              final RecipeStorage recipe = RecipeStorage.builder().withRecipeId(null).withInputs(List.of(new ItemStorage(new ItemStack(Items.STONE, 1))))
+                .withPrimaryOutput(new ItemStack(Items.SMOOTH_STONE, 1)).withIntermediate(net.minecraft.world.level.block.Blocks.FURNACE).build();
+              helper.assertTrue(hut.getModule(BuildingModules.STONESMELTER_SMELTING).addRecipe(IColonyManager.getInstance().getRecipeManager().checkOrAddRecipe(recipe)),
+                "the smeltery rejected the recipe");
+              put(helper, hut, Items.STONE, 16);
+              put(helper, hut, Items.COAL, 16);
+              body.run(colony, hut, worker);
+          });
+    }
+
+    private static int smoothStone(final IBuilding hut, final ICitizenData worker)
+    {
+        return InventoryUtils.getItemCountInItemHandler(hut.getItemHandlerCap(), stack -> stack.is(Items.SMOOTH_STONE)) + count(worker, Items.SMOOTH_STONE);
+    }
+
+    /**
+     * W9 (review c1): the smeltery worker finishes a furnace request; while every usable furnace burns he waits next to one (no walk back to
+     * the hut block).
+     */
+    public static void smelterRequest(final GameTestHelper helper)
+    {
+        smelterScene(helper, "R13 smelter request", (colony, hut, worker) -> {
+            final IBuilding builder = MinecoloniesGameTests.placeProductionBuilding(helper, colony, ModBlocks.blockHutBuilder, new BlockPos(8, 1, 2), "fundamentals/builder1.blueprint");
+            builder.createRequest(new Stack(new ItemStack(Items.SMOOTH_STONE, 4), 4, 4), true);
+            final AbstractJobCrafter<?, ?> job = (AbstractJobCrafter<?, ?>) worker.getJob();
+            final int[] taskAt = {-1};
+            final int[] waitingTicks = {0};
+            final int[] litMax = {0};
+            final double[] waitDistance = {-1};
+            poll(helper, worker, 4000, tick -> {
+                if (taskAt[0] < 0 && job.getCurrentTask() != null)
+                {
+                    taskAt[0] = tick;
+                }
+                int lit = 0;
+                for (final BlockPos pos : hut.getModule(BuildingModules.FURNACE).getFurnaces())
+                {
+                    if (furnace(helper, pos).getBlockState().getValue(net.minecraft.world.level.block.AbstractFurnaceBlock.LIT))
+                    {
+                        lit++;
+                    }
+                }
+                litMax[0] = Math.max(litMax[0], lit);
+                if (workAi(worker) instanceof com.minecolonies.core.entity.ai.workers.crafting.AbstractEntityAIRequestSmelter<?, ?> smelter && smelter.isWaitingAtFurnace())
+                {
+                    waitingTicks[0]++;
+                    final BlockPos at = worker.getEntity().get().blockPosition();
+                    double best = Double.MAX_VALUE;
+                    for (final BlockPos pos : hut.getModule(BuildingModules.FURNACE).getFurnaces())
+                    {
+                        best = Math.min(best, Math.sqrt(at.distSqr(pos)));
+                    }
+                    waitDistance[0] = Math.max(waitDistance[0], best);
+                }
+                return taskAt[0] >= 0 && smoothStone(hut, worker) >= 4 && job.getCurrentTask() == null;
+            }, () -> {
+                Log.getLogger().info("R13W smelter_request taskAt={} smooth={} litMax={} waitingTicks={} waitDistance={}", taskAt[0], smoothStone(hut, worker), litMax[0],
+                  waitingTicks[0], waitDistance[0]);
+                helper.assertTrue(litMax[0] >= 1, "no furnace ever burned");
+                helper.assertTrue(waitingTicks[0] > 0, "the worker never waited at a burning furnace");
+                helper.assertTrue(waitDistance[0] <= 6.0D, "he waited away from the furnaces: " + waitDistance[0]);
+                helper.assertTrue(workAi(worker).getExceptionTimer() == 1, "the AI threw");
+                helper.succeed();
+            }, () -> "taskAt=" + taskAt[0] + " smooth=" + smoothStone(hut, worker) + " litMax=" + litMax[0] + " waiting=" + waitingTicks[0] + " task="
+                       + job.getCurrentTask() + " " + stateOf(worker));
+        });
+    }
+
+    /**
+     * W9 (review c1): the furnace task is cancelled while a furnace burns: the worker drops it (no craft step left on a cancelled request, no
+     * exception) and the task leaves his queue.
+     */
+    public static void smelterCancel(final GameTestHelper helper)
+    {
+        smelterScene(helper, "R13 smelter cancel", (colony, hut, worker) -> {
+            final IBuilding builder = MinecoloniesGameTests.placeProductionBuilding(helper, colony, ModBlocks.blockHutBuilder, new BlockPos(8, 1, 2), "fundamentals/builder1.blueprint");
+            builder.createRequest(new Stack(new ItemStack(Items.SMOOTH_STONE, 4), 4, 4), true);
+            final AbstractJobCrafter<?, ?> job = (AbstractJobCrafter<?, ?>) worker.getJob();
+            final IToken<?>[] cancelled = {null};
+            final int[] cancelledAt = {-1};
+            poll(helper, worker, 4000, tick -> {
+                if (cancelled[0] == null)
+                {
+                    final IRequest<?> task = job.getCurrentTask();
+                    boolean burning = false;
+                    for (final BlockPos pos : hut.getModule(BuildingModules.FURNACE).getFurnaces())
+                    {
+                        final var furnace = furnace(helper, pos);
+                        burning |= furnace.getBlockState().getValue(net.minecraft.world.level.block.AbstractFurnaceBlock.LIT) && !furnace.getItem(Constants.SMELTABLE_SLOT).isEmpty();
+                    }
+                    if (task != null && burning)
+                    {
+                        cancelled[0] = task.getId();
+                        cancelledAt[0] = tick;
+                        colony.getRequestManager().updateRequestState(task.getId(), com.minecolonies.api.colony.requestsystem.request.RequestState.CANCELLED);
+                    }
+                    return false;
+                }
+                final AbstractEntityAIBasic<?, ?> ai = workAi(worker);
+                return tick - cancelledAt[0] >= 40 && !job.getTaskQueue().contains(cancelled[0]) && ai != null && ai.getState() != AIWorkerState.CRAFT;
+            }, () -> {
+                Log.getLogger().info("R13W smelter_cancel cancelledAt={} queue={} {}", cancelledAt[0], job.getTaskQueue().size(), stateOf(worker));
+                helper.assertTrue(workAi(worker).getExceptionTimer() == 1, "the AI threw after the cancel");
+                helper.succeed();
+            }, () -> "cancelledAt=" + cancelledAt[0] + " queue=" + job.getTaskQueue() + " " + stateOf(worker));
+        });
     }
 }
