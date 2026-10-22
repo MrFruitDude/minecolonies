@@ -76,6 +76,14 @@ public class EntityAISleep implements IStateAI
      */
     private boolean homelessWalkStarted = false;
 
+    /**
+     * Homeless walks that ended short of the spot in this sleep, and the game time of the next try: the walk is tried again with a growing wait
+     * (30 ticks, doubling, at most {@link #MAX_HOMELESS_RETRY} ticks).
+     */
+    private int  homelessRetries   = 0;
+    private long nextHomelessWalk  = 0;
+    public static final int MAX_HOMELESS_RETRY = 600;
+
     public enum SleepState implements IState
     {
         WALKING_HOME,
@@ -137,6 +145,16 @@ public class EntityAISleep implements IStateAI
         }
 
         citizen.getCitizenData().setVisibleStatus(VisibleCitizenStatus.SLEEP);
+        if (homeBuilding == null && homelessWalkStarted && citizen.getNavigation().isDone())
+        {
+            // the walk to an unreachable spot ended far from the town hall: wait longer before each new try
+            final long now = citizen.level().getGameTime();
+            if (now < nextHomelessWalk)
+            {
+                return WALKING_HOME;
+            }
+            nextHomelessWalk = now + homelessRetryDelay(++homelessRetries);
+        }
         goHome();
         return WALKING_HOME;
     }
@@ -164,6 +182,8 @@ public class EntityAISleep implements IStateAI
         usedBed = null;
         bedTicks = 0;
         homelessWalkStarted = false;
+        homelessRetries = 0;
+        nextHomelessWalk = 0;
     }
 
     private void findBedAndTryToSleep()
@@ -250,6 +270,15 @@ public class EntityAISleep implements IStateAI
         new SleepingParticleMessage(citizen.getX(), citizen.getY() + 1.0d, citizen.getZ()).sendToTrackingEntity(citizen);
         //TODO make sleeping noises here.
         return null;
+    }
+
+    /**
+     * @param retries the homeless walks that ended short of the spot, from 1.
+     * @return the wait before the next walk, in ticks.
+     */
+    public static int homelessRetryDelay(final int retries)
+    {
+        return Math.min(MAX_HOMELESS_RETRY, 30 << Math.min(Math.max(0, retries - 1), 5));
     }
 
     /**

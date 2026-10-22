@@ -150,7 +150,18 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
     private boolean colonyHasHospital()
     {
         return citizenData.getColony() != null
-                 && citizenData.getColony().getServerBuildingManager().getFirstBuildingMatching(b -> b instanceof BuildingHospital && b.getBuildingLevel() > 0) != null;
+                 && citizenData.getColony().getServerBuildingManager().getFirstBuildingMatching(CitizenDiseaseHandler::isUsableHospital) != null;
+    }
+
+    /**
+     * B2: the one hospital check for both the home recovery count and the sick AI: a hospital that is built (level above 0).
+     *
+     * @param building the building.
+     * @return true when the building is a built hospital.
+     */
+    public static boolean isUsableHospital(final IBuilding building)
+    {
+        return building instanceof BuildingHospital && building.getBuildingLevel() > 0;
     }
 
     /**

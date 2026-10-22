@@ -154,12 +154,13 @@ public class EntityAISickTask implements IStateAI
     }
 
     /**
-     * @return the best hospital for the citizen, kept for 30 seconds (D7).
+     * @return the best built hospital for the citizen (the same check as the B2 home recovery), kept for 30 seconds (D7).
      */
     private BlockPos bestHospitalPos()
     {
         final IColony colony = citizen.getCitizenColonyHandler().getColonyOrRegister();
-        return hospitalLookup.get(colony, citizen.level().getGameTime(), () -> colony.getServerBuildingManager().getBestBuilding(citizen, BuildingHospital.class));
+        return hospitalLookup.get(colony, citizen.level().getGameTime(), () -> colony.getServerBuildingManager().getBestBuilding(citizen, BuildingHospital.class,
+          com.minecolonies.core.entity.citizen.citizenhandlers.CitizenDiseaseHandler::isUsableHospital));
     }
 
     /**

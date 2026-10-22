@@ -1136,7 +1136,8 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
     }
 
     /**
-     * Round 13 D4: a citizen stuck for about a minute on a trip that is not work may be moved to its home, its bed or a restaurant (when no player is near:
+     * Round 13 D4: a citizen stuck for about a minute on a trip that is not work may be moved to its home, its bed (a homeless citizen: its sleeping spot) or a
+     * restaurant, and no other place (when no player is near:
      * see {@link com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler#tryQuickRescue}).
      */
     @Override
@@ -1152,8 +1153,9 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
         {
             return destination;
         }
-        final BlockPos homePos = citizenData.getHomePosition();
-        if (homePos != null && homePos.distSqr(destination) <= 16 * 16)
+        // a homeless citizen's bed: its D6 sleeping spot (the walk there aims within 4 blocks of it)
+        final BlockPos spot = home == null ? com.minecolonies.core.entity.ai.minimal.EntityAISleep.homelessSpot(citizenData.getHomePosition(), getCivilianID()) : null;
+        if (spot != null && spot.distSqr(destination) <= 4 * 4)
         {
             return destination;
         }
