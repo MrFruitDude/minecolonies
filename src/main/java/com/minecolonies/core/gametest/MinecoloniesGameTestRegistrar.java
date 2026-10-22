@@ -967,7 +967,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           "path_unreachable_colony_cache", "path_failed_search_cap", "path_queue_fair_colonies",
           "path_route_hints_followed", "path_route_hints_fallback", "path_colony_cache_boxed_citizen", "path_long_detour_reaches",
           "path_road_heuristic_nodes", "path_colony_cache_walled_yard", "path_road_heuristic_citizen",
-          "path_close_to_after_exact_proof"})
+          "path_close_to_after_exact_proof", "path_route_hints_tick_budget"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -989,6 +989,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "path_colony_cache_walled_yard" -> PathfindingGameTests::pathColonyCacheWalledYard;
                 case "path_road_heuristic_citizen" -> PathfindingGameTests::pathRoadHeuristicCitizen;
                 case "path_close_to_after_exact_proof" -> PathfindingGameTests::pathCloseToAfterExactProof;
+                case "path_route_hints_tick_budget" -> Round11GameTests::routeHintTickBudget;
                 default -> PathfindingGameTests::pathCitizenWalksHome;
             };
             event.registerTest(
@@ -1292,7 +1293,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           "labour_builder_self_supply", "labour_stone_tools", "labour_withdraw_covered", "labour_stockpile", "labour_charcoal", "labour_furnace_taken", "labour_natural_trees",
           "labour_coverage", "labour_ledger_sweep", "labour_caps", "labour_retrying_held", "labour_night", "labour_builder_self_supply_retry",
           "labour_builder_self_supply_order_gone", "labour_builder_self_supply_tool", "labour_builder_self_supply_no_bamboo",
-          "labour_builder_self_supply_needs"})
+          "labour_builder_self_supply_needs", "labour_stash_leftovers", "labour_surplus_soil_warehouse"})
         {
             if (skipped(name))
             {
@@ -1321,6 +1322,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "labour_builder_self_supply_tool" -> LabourGameTests::builderMakesHisOwnTool;
                 case "labour_builder_self_supply_no_bamboo" -> LabourGameTests::builderMakesNoScaffoldingFromNothing;
                 case "labour_builder_self_supply_needs" -> LabourGameTests::builderNeedsDoNotCountAgainstTheRequest;
+                case "labour_stash_leftovers" -> LabourGameTests::leftoversGoToTheWarehouse;
+                case "labour_surplus_soil_warehouse" -> Round11GameTests::surplusSoilToWarehouse;
                 default -> LabourGameTests::coloniesAreIsolated;
             };
             event.registerTest(
@@ -1341,7 +1344,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           "scaffold_lamp_top", "scaffold_flooded_cell", "scaffold_tall_no_scaffold", "scaffold_slow_delivery",
           "scaffold_pillar_undelivered", "scaffold_flooded_pool", "scaffold_tall_hut_no_scaffold",
           "scaffold_path_blocked", "scaffold_default_no_place_while_pathing", "scaffold_path_blocked_lava",
-          "scaffold_path_blocked_13th", "scaffold_path_blocked_clear", "scaffold_next_order_no_hut", "scaffold_next_order_no_blueprint", "scaffold_next_order_race", "scaffold_next_order_cancelled"})
+          "scaffold_path_blocked_13th", "scaffold_path_blocked_clear", "scaffold_next_order_no_hut", "scaffold_next_order_no_blueprint", "scaffold_next_order_race", "scaffold_next_order_cancelled",
+          "scaffold_next_order_box_only"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -1394,6 +1398,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_default_no_place_while_pathing" -> BuilderScaffoldGameTests::noDefaultPlacementWhilePathing;
                 case "scaffold_next_order_no_hut" -> WorkHungerGameTests::nextOrderWithoutHutWalk;
                 case "scaffold_next_order_no_blueprint" -> WorkHungerGameTests::nextOrderWithoutBlueprintWalksToHut;
+                case "scaffold_next_order_box_only" -> Round11GameTests::nextOrderBoxOnlySkipsHutWalk;
                 case "scaffold_next_order_race" -> WorkHungerGameTests::twoBuildersRaceForOneOrder;
                 case "scaffold_next_order_cancelled" -> WorkHungerGameTests::nextOrderCancelledDuringWait;
                 default -> BuilderScaffoldGameTests::stockArrives;
@@ -1421,13 +1426,17 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
      */
     private void registerHunger(final RegisterGameTestsEvent event)
     {
-        for (final String name : new String[] {"hunger_eat_at_work", "hunger_start_spread", "hunger_rack_rejected", "hunger_rack_once"})
+        for (final String name : new String[] {"hunger_eat_at_work", "hunger_start_spread", "hunger_rack_rejected", "hunger_rack_once", "hunger_courier_cargo",
+          "hunger_rack_backoff", "hunger_labourer_snack"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
                 case "hunger_eat_at_work" -> WorkHungerGameTests::eatsCarriedFoodAtWork;
                 case "hunger_rack_rejected" -> WorkHungerGameTests::rejectedRackFoodStays;
                 case "hunger_rack_once" -> WorkHungerGameTests::rackFoodEatenOnceWithRejectedPocketFood;
+                case "hunger_courier_cargo" -> Round11GameTests::courierKeepsCargo;
+                case "hunger_rack_backoff" -> Round11GameTests::rackScanBackoff;
+                case "hunger_labourer_snack" -> LabourGameTests::labourerEatsAtWork;
                 default -> WorkHungerGameTests::startingSaturationSpread;
             };
             event.registerTest(
