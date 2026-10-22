@@ -185,6 +185,25 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
         worker.setRenderMetadata(getState() == CRAFT ? RENDER_META_WORKING : "");
     }
 
+    /**
+     * W3: an idle crafter (waiting or sitting out his 20 s idle step) starts as soon as a task comes in.
+     */
+    @Override
+    protected boolean shouldWakeEarly()
+    {
+        return getState() == IDLE && hasWorkToDo();
+    }
+
+    @Override
+    protected void onWokeEarly()
+    {
+        idlePos = null;
+        if (worker.getVehicle() instanceof SittingEntity)
+        {
+            worker.stopRiding();
+        }
+    }
+
     protected IAIState idle()
     {
         if ((idlePos != null && !walkToSafePos(idlePos)) || !worker.getNavigation().isDone())
@@ -289,13 +308,46 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
             return START_WORKING;
         }
 
-        if (job.getActionsDone() >= getActionsDoneUntilDumping())
+        if (waitForDumpBeforeWork())
         {
             // Wait to dump before continuing.
             return getState();
         }
 
         return getNextCraftingState();
+    }
+
+    /**
+     * W4: whether the next task waits for an inventory dump: only when a dump is due ({@link #getActionsDoneUntilDumping()}) and wanted
+     * now ({@link #dumpNowAfterWork()}).
+     *
+     * @return true to wait.
+     */
+    protected final boolean waitForDumpBeforeWork()
+    {
+        return job.getActionsDone() >= getActionsDoneUntilDumping() && dumpNowAfterWork();
+    }
+
+    /**
+     * W4: a crafter dumps between tasks only when the queue is empty or his inventory is more than 70% full. The outputs of a finished
+     * request still go into the hut at once ({@link #deliverFinishedOutputs}).
+     *
+     * @return true if a due dump happens now.
+     */
+    protected boolean dumpNowAfterWork()
+    {
+        return !hasWorkToDo() || inventoryOverDumpRatio();
+    }
+
+    @Override
+    protected boolean inventoryNeedsDump()
+    {
+        if (!super.inventoryNeedsDump())
+        {
+            return false;
+        }
+        // a full inventory or a custom reason always dumps; the action count only when wanted now (W4)
+        return worker.getCitizenInventoryHandler().isInventoryFull() || wantInventoryDumped() || dumpNowAfterWork();
     }
 
     /**
@@ -474,6 +526,8 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
         final int progressOpsCount = inProgressCount / Math.max(countPerIteration, 1);
 
         final List<ItemStorage> input = storage.getCleanedInput();
+        // W5: every missing input the hut has is fetched in one pass
+        final List<Tuple<Predicate<ItemStack>, Integer>> toGather = new ArrayList<>();
         for (final ItemStorage inputStorage : input)
         {
             final Predicate<ItemStack> predicate = stack -> !ItemStackUtils.isEmpty(stack) && new Stack(stack, false).matches(inputStorage.getItemStack());
@@ -499,8 +553,8 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
             {
                 if (InventoryUtils.hasItemInProvider(building, predicate))
                 {
-                    needsCurrently = new Tuple<>(predicate, remaining);
-                    return GATHERING_REQUIRED_MATERIALS;
+                    toGather.add(new Tuple<>(predicate, remaining));
+                    continue;
                 }
                 currentRecipeStorage = null;
                 currentRequest = null;
@@ -508,6 +562,10 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
             }
         }
 
+        if (!toGather.isEmpty())
+        {
+            return gatherAll(toGather);
+        }
         return CRAFT;
     }
 
@@ -643,6 +701,7 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
 
     public IAIState finalizeCraftingTask()
     {
+        final IRecipeStorage finished = currentRecipeStorage;
         currentRecipeStorage = null;
         resetValues();
 
@@ -650,7 +709,129 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
         {
             worker.getCitizenExperienceHandler().addExperience(currentRequest.getRequest().getCount() / 2.0);
         }
+        if (hasMoreTasksAfterCurrent() && !inventoryOverDumpRatio() && deliverFinishedOutputs(finished))
+        {
+            // W4: more tasks queued and room left: the outputs went into the hut, the next task starts without a full dump
+            return START_WORKING;
+        }
         return INVENTORY_FULL;
+    }
+
+    /**
+     * W4: whether another task waits in the queue after the current one.
+     *
+     * @return true if so.
+     */
+    protected boolean hasMoreTasksAfterCurrent()
+    {
+        return job.getTaskQueue().size() > 1;
+    }
+
+    /**
+     * W4: tasks finished without a full dump (this worker, tests).
+     */
+    private int finishedWithoutDump = 0;
+
+    /**
+     * @return tasks finished without a full dump (this worker only, since his AI started).
+     */
+    public int getFinishedWithoutDump()
+    {
+        return finishedWithoutDump;
+    }
+
+    /**
+     * W4: puts the outputs of the finished request (its deliveries) into the hut and finishes the request, as a full dump would, without
+     * dumping the rest of the inventory. Only in the hut, and only when every output fits.
+     *
+     * @param finished the recipe of the finished task.
+     * @return true if done, false when a full dump is needed.
+     */
+    protected boolean deliverFinishedOutputs(@Nullable final IRecipeStorage finished)
+    {
+        if (currentRequest == null || finished == null || !atHut() || building.getItemHandlerCap() == null
+              || currentRequest.getState() != RequestState.IN_PROGRESS)
+        {
+            return false;
+        }
+        final ItemStack output = finished.getPrimaryOutput();
+        int toMove = 0;
+        for (final ItemStack delivery : currentRequest.getDeliveries())
+        {
+            if (ItemStackUtils.compareItemStacksIgnoreStackSize(delivery, output))
+            {
+                toMove += delivery.getCount();
+            }
+        }
+        if (toMove <= 0)
+        {
+            return false;
+        }
+        final int carried = InventoryUtils.getItemCountInItemHandler(worker.getInventoryCitizen(), stack -> ItemStackUtils.compareItemStacksIgnoreStackSize(stack, output));
+        if (carried < toMove)
+        {
+            return false;
+        }
+        // move the outputs slot by slot; a stack the hut cannot take stays with the worker and the full dump happens instead
+        for (int slot = 0; slot < worker.getInventoryCitizen().getSlots() && toMove > 0; slot++)
+        {
+            final ItemStack stack = worker.getInventoryCitizen().getStackInSlot(slot);
+            if (stack.isEmpty() || !ItemStackUtils.compareItemStacksIgnoreStackSize(stack, output))
+            {
+                continue;
+            }
+            final int amount = Math.min(toMove, stack.getCount());
+            final ItemStack taken = worker.getInventoryCitizen().extractItem(slot, amount, false);
+            final ItemStack rest = InventoryUtils.transferItemStackIntoNextBestSlotInItemHandlerWithResult(taken, building.getItemHandlerCap());
+            toMove -= taken.getCount() - rest.getCount();
+            if (!rest.isEmpty())
+            {
+                final ItemStack left = worker.getInventoryCitizen().insertItem(slot, rest, false);
+                if (!left.isEmpty())
+                {
+                    InventoryUtils.addItemStackToItemHandler(worker.getInventoryCitizen(), left);
+                }
+                return false;
+            }
+        }
+        if (toMove > 0)
+        {
+            return false;
+        }
+        completeFinishedRequest();
+        resetActionsDone();
+        finishedWithoutDump++;
+        return true;
+    }
+
+    /**
+     * W4: whether the worker is at his hut (inside it, or within 8 blocks of the hut block, like a dump that walked there).
+     */
+    private boolean atHut()
+    {
+        return building.isInBuilding(worker.blockPosition()) || worker.blockPosition().distSqr(building.getPosition()) <= 64;
+    }
+
+    /**
+     * Finishes the current request once its outputs are in the hut (after a dump or {@link #deliverFinishedOutputs}).
+     */
+    private void completeFinishedRequest()
+    {
+        if (job.getMaxCraftingCount() == 0 && job.getProgress() == 0 && job.getCraftCounter() == 0 && currentRequest != null)
+        {
+            // Fallback security blanket. Normally, the craft() method should have dealt with the request.
+            if (currentRequest.getState() == RequestState.IN_PROGRESS)
+            {
+                worker.getCitizenColonyHandler()
+                    .getColonyOrRegister()
+                    .getStatisticsManager()
+                    .incrementBy(ITEMS_CRAFTED, currentRequest.getRequest().getCount(), worker.getCitizenColonyHandler().getColonyOrRegister().getDay());
+                job.finishRequest(true);
+                worker.getCitizenExperienceHandler().addExperience(currentRequest.getRequest().getCount() / 2.0);
+            }
+            currentRequest = null;
+            resetValues();
+        }
     }
 
     public void hitBlockWithToolInHand(@Nullable final BlockPos blockPos)
@@ -685,21 +866,7 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
     @Override
     public IAIState afterDump()
     {
-        if (job.getMaxCraftingCount() == 0 && job.getProgress() == 0 && job.getCraftCounter() == 0 && currentRequest != null)
-        {
-            // Fallback security blanket. Normally, the craft() method should have dealt with the request.
-            if (currentRequest.getState() == RequestState.IN_PROGRESS)
-            {
-                worker.getCitizenColonyHandler()
-                    .getColonyOrRegister()
-                    .getStatisticsManager()
-                    .incrementBy(ITEMS_CRAFTED, currentRequest.getRequest().getCount(), worker.getCitizenColonyHandler().getColonyOrRegister().getDay());
-                job.finishRequest(true);
-                worker.getCitizenExperienceHandler().addExperience(currentRequest.getRequest().getCount() / 2.0);
-            }
-            currentRequest = null;
-            resetValues();
-        }
+        completeFinishedRequest();
 
         if (!job.getSecondaryOutputs().isEmpty())
         {

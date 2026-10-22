@@ -12,7 +12,9 @@ import com.minecolonies.api.util.CompatibilityUtils;
 import com.minecolonies.api.util.ItemStackUtils;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EquipmentSlot;
+import com.minecolonies.core.entity.ai.AiCounters;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
 import java.util.List;
@@ -61,7 +63,48 @@ public abstract class AbstractAISkeleton<J extends IJob<?>> implements ITickingS
     @Override
     public void tick()
     {
+        countState();
         stateMachine.tick();
+    }
+
+    /**
+     * Round 13: the counters of this job in its colony (cached; looked up again after a reset of the counters).
+     */
+    @Nullable
+    private AiCounters.JobCounters counters = null;
+
+    /**
+     * The counter generation the cached counters belong to.
+     */
+    private int countersGeneration = -1;
+
+    /**
+     * Round 13: adds the ticks of this step to the time of the current state ({@link AiCounters}). One call per AI step, an int add.
+     */
+    private void countState()
+    {
+        final AiCounters.JobCounters jobCounters = counters();
+        if (jobCounters != null)
+        {
+            jobCounters.addStateTicks(stateMachine.getState().toString(), stateMachine.getTickRate());
+        }
+    }
+
+    /**
+     * Round 13: the counters of this job in its colony ({@link AiCounters}), or null without a colony.
+     *
+     * @return the counters.
+     */
+    @Nullable
+    protected final AiCounters.JobCounters counters()
+    {
+        if (counters == null || countersGeneration != AiCounters.generation())
+        {
+            countersGeneration = AiCounters.generation();
+            final var colony = job.getColony();
+            counters = colony == null || job.getJobRegistryEntry() == null ? null : AiCounters.job(colony, job.getJobRegistryEntry().getKey().toString());
+        }
+        return counters;
     }
 
     /**

@@ -340,7 +340,7 @@ public class EntityAIWorkAlchemist extends AbstractEntityAICrafting<JobAlchemist
             return START_WORKING;
         }
 
-        if (job.getActionsDone() >= getActionsDoneUntilDumping())
+        if (waitForDumpBeforeWork())
         {
             // Wait to dump before continuing.
             return getState();

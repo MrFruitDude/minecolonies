@@ -2,6 +2,7 @@ package com.minecolonies.core.event;
 
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.core.datalistener.*;
+import com.minecolonies.core.entity.ai.AiCounters;
 import com.minecolonies.core.entity.pathfinding.Pathfinding;
 import com.minecolonies.core.util.BackUpHelper;
 import net.minecraft.server.level.ServerPlayer;
@@ -93,5 +94,6 @@ public class FMLEventHandler
     {
         Pathfinding.shutdown();
         DataPackSyncEventHandler.ServerEvents.reset();
+        AiCounters.clearAll();
     }
 }

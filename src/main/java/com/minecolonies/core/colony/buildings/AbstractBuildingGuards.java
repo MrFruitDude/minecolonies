@@ -327,6 +327,19 @@ public abstract class AbstractBuildingGuards extends AbstractBuilding implements
      */
     private int patrolTimer = 0;
 
+    /**
+     * W10: patrol points taken as soon as their search finished (tests).
+     */
+    private int patrolTargetsTakenEarly = 0;
+
+    /**
+     * @return patrol points taken as soon as their search finished (W10).
+     */
+    public int getPatrolTargetsTakenEarly()
+    {
+        return patrolTargetsTakenEarly;
+    }
+
     @Override
     public void onColonyTick(final IColony colony)
     {
@@ -387,12 +400,34 @@ public abstract class AbstractBuildingGuards extends AbstractBuilding implements
         arrivedAtPatrol.clear();
     }
 
+    /**
+     * @return whether a random patrol point may be used: not in manual patrol mode with manual points set.
+     */
+    public boolean randomPatrolAllowed()
+    {
+        return !getSetting(PATROL_MODE).getValue().equals(GuardPatrolModeSetting.MANUAL) || patrolTargets == null || patrolTargets.isEmpty();
+    }
+
     @Override
     @Nullable
     public BlockPos getNextPatrolTarget(final boolean newTarget)
     {
         if (!newTarget && lastPatrolPoint != null)
         {
+            // W10: the random point searched for the next leg is taken as soon as the search is done. It was only read at the next leg
+            // change (up to 5 colony ticks later), and the guards stood at the point they had reached in the meantime.
+            if (pathResult != null && pathResult.isDone())
+            {
+                final BlockPos found = pathResult.getPath() == null ? null : pathResult.getPath().getTarget();
+                pathResult = null;
+                // (not after a switch to manual patrol with points set meanwhile: the manual points rule)
+                if (found != null && randomPatrolAllowed())
+                {
+                    lastPatrolPoint = BlockPosUtil.getDistance(found, getPosition()) > getPatrolDistance() ? getPosition() : found;
+                    arrivedAtPatrol.clear();
+                    patrolTargetsTakenEarly++;
+                }
+            }
             return lastPatrolPoint;
         }
 
@@ -409,7 +444,7 @@ public abstract class AbstractBuildingGuards extends AbstractBuilding implements
             return lastPatrolPoint;
         }
 
-        if (!getSetting(PATROL_MODE).getValue().equals(GuardPatrolModeSetting.MANUAL) || patrolTargets == null || patrolTargets.isEmpty())
+        if (randomPatrolAllowed())
         {
             BlockPos pos = null;
             if (this.pathResult != null)

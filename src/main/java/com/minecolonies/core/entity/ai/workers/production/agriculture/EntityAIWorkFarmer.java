@@ -115,6 +115,25 @@ public class EntityAIWorkFarmer extends AbstractEntityAICrafting<JobFarmer, Buil
     private boolean shouldDumpInventory = false;
 
     /**
+     * W8: field steps (one pass over a field) since the last dump.
+     */
+    private int fieldStepsSinceDump = 0;
+
+    /**
+     * W8: whether the farmer takes his harvest to the hut after finishing a field step: once per round over all his fields (when he
+     * carries something), or at {@link #GATHERER_DUMP_ITEMS} items.
+     *
+     * @param stepsSinceDump field steps since the last dump.
+     * @param fields         the fields he owns.
+     * @param gained         items gained since the last dump.
+     * @return true to dump now.
+     */
+    public static boolean farmerShouldDumpAfterField(final int stepsSinceDump, final int fields, final int gained)
+    {
+        return gathererShouldDump(gained) || (stepsSinceDump >= Math.max(1, fields) && gained > 0);
+    }
+
+    /**
      * If the farmer actually did any work on the field.
      */
     private boolean didWork = false;
@@ -155,9 +174,10 @@ public class EntityAIWorkFarmer extends AbstractEntityAICrafting<JobFarmer, Buil
     @Override
     protected boolean wantInventoryDumped()
     {
-        if (shouldDumpInventory || job.getActionsDone() >= getActionRewardForCraftingSuccess())
+        if (shouldDumpInventory || job.getActionsDone() >= getActionRewardForCraftingSuccess() || gatheredEnoughToDump())
         {
             shouldDumpInventory = false;
+            fieldStepsSinceDump = 0;
             return true;
         }
         return super.wantInventoryDumped();
@@ -567,7 +587,12 @@ public class EntityAIWorkFarmer extends AbstractEntityAICrafting<JobFarmer, Buil
             building.setWorkingOffset(nextValidCell(farmField));
             if (building.getWorkingOffset() == null)
             {
-                shouldDumpInventory = true;
+                // W8: the harvest goes to the hut after the last field of a round (or at about 64 items, or full), not after every field
+                fieldStepsSinceDump++;
+                if (farmerShouldDumpAfterField(fieldStepsSinceDump, module.getOwnedExtensions().size(), itemsGainedSinceDump()))
+                {
+                    shouldDumpInventory = true;
+                }
                 farmField.nextState();
                 module.markDirty();
                 if (didWork || ++skippedState >= 4)

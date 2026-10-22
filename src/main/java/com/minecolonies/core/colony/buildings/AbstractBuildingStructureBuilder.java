@@ -128,6 +128,20 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
         return MAX_BUILDING_LEVEL;
     }
 
+    /**
+     * The part of a stack to dump when {@code kept} items are already kept and {@code qtyToKeep} are needed: the rest over the need. It was
+     * {@code qtyToKeep - kept - count}, a negative number, so the whole stack stayed with the builder.
+     *
+     * @param kept      items of this kind already kept.
+     * @param count     items in this stack.
+     * @param qtyToKeep items of this kind the builder needs.
+     * @return the items of this stack to dump (0 or more).
+     */
+    public static int amountOverKeep(final int kept, final int count, final int qtyToKeep)
+    {
+        return Math.max(0, kept + count - qtyToKeep);
+    }
+
     @Override
     public int buildingRequiresCertainAmountOfItem(final ItemStack stack, final List<ItemStorage> localAlreadyKept, final boolean inventory, final JobEntry jobEntry)
     {
@@ -157,7 +171,7 @@ public abstract class AbstractBuildingStructureBuilder extends AbstractBuilding
                             else
                             {
                                 storage.setAmount(qtyToKeep);
-                                return qtyToKeep - kept - stack.getCount();
+                                return amountOverKeep(kept, stack.getCount(), qtyToKeep);
                             }
                         }
                     }
