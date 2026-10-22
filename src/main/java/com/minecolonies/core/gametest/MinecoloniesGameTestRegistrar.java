@@ -164,6 +164,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerHunger(event);
             }
+            if (only.contains("r13work"))
+            {
+                // round 13 lane mc-work: worker loops and the AI counters
+                Round13WorkGameTests.register(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -750,6 +755,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         registerWorkerEfficiency(event);
         registerBuilderScaffolding(event);
         registerHunger(event);
+        Round13WorkGameTests.register(event);
         registerScaffoldRecipe(event);
         registerIdleHelpers(event);
         // C2 builder collaboration observability and controls (one glob: minecolonies:collab_obs_*).
