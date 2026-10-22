@@ -469,11 +469,21 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
     {
         super.onRequestAssigned(manager, request, simulation);
         final PendingRemainder pending = pendingRemainder;
-        if (!simulation && pending != null && pending.request().equals(request.getId()))
+        final boolean sendPending = !simulation && pending != null && pending.request().equals(request.getId());
+        if (sendPending)
         {
             pendingRemainder = null;
+        }
+        holdAssigned(manager, request, simulation);
+        if (sendPending)
+        {
+            // Sent after the holds: the crafter's input requests can re-enter this resolver and clear the remembered match.
             sendRemainder(manager, pending);
         }
+    }
+
+    private void holdAssigned(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends IDeliverable> request, final boolean simulation)
+    {
         final ReservationLedger ledger = RsAccess.ledger(manager);
         if (!simulation && ledger != null && StorageNetwork.on(manager) && lastNetworkMatched != null && lastNetworkMatched.request().equals(request.getId()))
         {
