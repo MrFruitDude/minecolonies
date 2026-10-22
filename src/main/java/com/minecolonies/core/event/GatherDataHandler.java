@@ -36,10 +36,11 @@ public class GatherDataHandler
         final DataGenerator generator = event.getGenerator();
         // MC 26.3: enchantments are world-layer registry entries; advancements and recipes (with their unlock
         // advancements) are reloadable-layer registry bootstraps written by NeoForge's datapack registry providers.
+        // NeoForge 26.3.0.89 moved these methods from GatherDataEvent onto its PackGenerator.
         final Set<String> namespaces = Set.of(Constants.MOD_ID, "minecraft");
-        event.createWorldRegistryObjects(new RegistrySetBuilder()
+        event.getDefaultPackGenerator().createWorldRegistryObjects(new RegistrySetBuilder()
             .add(Registries.ENCHANTMENT, DefaultEnchantmentProvider::bootstrap), namespaces);
-        event.createReloadableRegistryObjects(new RegistrySetBuilder()
+        event.getDefaultPackGenerator().createReloadableRegistryObjects(new RegistrySetBuilder()
             .add(Registries.ADVANCEMENT, DefaultAdvancementsProvider::bootstrap)
             .add(Registries.CONTEXT_INT_PROVIDER, com.minecolonies.apiimp.initializer.ModCompostablesInitializer::bootstrap)
             .add(RecipeProvider.asBootstrap(DefaultRecipeProvider::new)), namespaces);
