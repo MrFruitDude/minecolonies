@@ -1000,13 +1000,19 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
                     return null;
                 }
             }
+            final com.minecolonies.api.colony.IColony colony = citizen ? ((AbstractEntityCitizen) ourEntity).getCitizenColonyHandler().getColony() : null;
+            if (!RouteHints.admit(level, colony))
+            {
+                // the hint queries of this server tick are used up (round 11, W4-05): a plain search now, and nothing remembered, so a later walk to
+                // this destination asks again
+                return null;
+            }
             // remember it in the older slot
             final int slot = routeQueried[0] == null || routeQueried[1] != null && routeQueriedAt[0] <= routeQueriedAt[1] ? 0 : 1;
             routeQueried[slot] = dest;
             routeQueriedAt[slot] = now;
             Pathfinding.Stats.routeHintQueries.incrementAndGet();
-            final List<BlockPos> waypoints =
-              RouteHints.query(level, citizen ? ((AbstractEntityCitizen) ourEntity).getCitizenColonyHandler().getColony() : null, start, dest);
+            final List<BlockPos> waypoints = RouteHints.query(level, colony, start, dest);
             if (waypoints == null)
             {
                 return null;
