@@ -861,13 +861,14 @@ final class WaveBLabourGameTests
 
     static final String[] NAMES = {"labour_quarry_auto", "labour_quarry_directed", "labour_quarry_isolated", "labour_glass", "labour_early_grace", "labour_hut_debt",
       "labour_hut_owed_rules", "labour_hut_debt_reload", "labour_quarry_pit", "labour_quarry_road",
-      "labour_hut_loan", "labour_quarry_decoration", "labour_quarry_legacy"};
+      "labour_hut_loan", "labour_quarry_decoration", "labour_quarry_legacy", "labour_early_ease"};
 
     static java.util.function.Consumer<GameTestHelper> test(final String name)
     {
         return switch (name)
         {
             case "labour_quarry_auto" -> WaveBLabourGameTests::quarryDigsOnlyInsideTheZone;
+            case "labour_early_ease" -> Round11GameTests::earlyPaceEases;
             case "labour_quarry_directed" -> WaveBLabourGameTests::quarryAllowsADirectedOrder;
             case "labour_quarry_isolated" -> WaveBLabourGameTests::quarryOfAnotherColonyIsIgnored;
             case "labour_glass" -> WaveBLabourGameTests::sandIsSmeltedToGlass;

@@ -159,8 +159,8 @@ public final class WorkHungerGameTests
     }
 
     /**
-     * Review c1 L1: the next order queued for his hut has no loaded blueprint (a queued order keeps only its box), and scaffolding is on: he may need
-     * scaffolding from the hut, so he walks there before he starts it.
+     * Review c1 L1: the next order queued for his hut has no loaded blueprint and no box (round 11: an order with a box is judged by it), and scaffolding
+     * is on: he may need scaffolding from the hut, so he walks there before he starts it.
      */
     public static void nextOrderWithoutBlueprintWalksToHut(final GameTestHelper helper)
     {
@@ -174,6 +174,8 @@ public final class WorkHungerGameTests
             final WorkOrderDecoration a = live.orderFor("next_nobp_a", new BlockPos(26, 1, 12), first);
             final WorkOrderDecoration b = queued(live, "next_nobp_b", new BlockPos(26, 1, 18), floor("next_nobp_b"), live.hut.getID());
             b.clearBlueprint();
+            // (round 11, W4-04: an order with a saved box is judged by it; only an order without a box is one that may need scaffolding)
+            Round11GameTests.setBox(b, com.minecolonies.api.util.constant.Constants.EMPTY_AABB);
             final BlockPos hut = live.hut.getPosition();
             final int[] aDone = {-1};
             final double[] minDistance = {Double.MAX_VALUE};

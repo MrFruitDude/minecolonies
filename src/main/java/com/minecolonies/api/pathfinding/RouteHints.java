@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * walks. MineColonies asks the providers in registration order when a citizen starts a walk longer than
  * {@link #MIN_DISTANCE} blocks; the first non-empty answer is used, and the walk follows it leg by leg with normal path
  * searches, falling back to a plain search when there is no answer or a leg fails. See {@link IRouteHintProvider} for
- * the contract. Without providers nothing changes.
+ * the contract. Without providers nothing changes. Each server tick has a budget of queries ({@link #admit}).
  */
 public final class RouteHints
 {
@@ -145,6 +145,27 @@ public final class RouteHints
 
     private static final List<Entry> PROVIDERS = new CopyOnWriteArrayList<>();
 
+    /**
+     * Round 11 (W4-05): the hint queries of one server tick, all levels together, are limited to {@link #TICK_CALLS} queries and {@link #TICK_NANOS} of
+     * provider time. The turns are shared between the colonies that asked in the tick before (a walker without a colony counts as one more), so one big
+     * colony cannot use up the queries of another. A walker refused here walks a plain search and asks again on a later walk.
+     */
+    public static final int  TICK_CALLS = 16;
+    public static final long TICK_NANOS = 2_000_000L;
+
+    /**
+     * Queries refused by the per-tick budget.
+     */
+    public static final AtomicLong budgetRefusals = new AtomicLong();
+
+    private static final Object NO_COLONY = new Object();
+    private static long tick = Long.MIN_VALUE;
+    private static int  tickCalls;
+    private static long tickNanos;
+    private static int  share = TICK_CALLS;
+    private static final java.util.Map<Object, Integer> TICK_COLONY_CALLS = new java.util.IdentityHashMap<>();
+    private static final java.util.Set<Object>          TICK_ASKERS       = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
     private RouteHints()
     {
     }
@@ -178,6 +199,50 @@ public final class RouteHints
         return !PROVIDERS.isEmpty();
     }
 
+    private static void rollTick(final ServerLevel level)
+    {
+        final long now = level.getServer() == null ? level.getGameTime() : level.getServer().getTickCount();
+        if (now != tick)
+        {
+            // the colonies that asked in the last tick share the turns of this one
+            share = Math.max(1, TICK_CALLS / Math.max(1, now == tick + 1 ? TICK_ASKERS.size() : 1));
+            tick = now;
+            tickCalls = 0;
+            tickNanos = 0L;
+            TICK_COLONY_CALLS.clear();
+            TICK_ASKERS.clear();
+        }
+    }
+
+    /**
+     * Whether a query for a walker of the colony fits the budget of this server tick ({@link #TICK_CALLS}, {@link #TICK_NANOS}, the colony's share). Asking
+     * counts the colony as one that wants turns. Server thread.
+     *
+     * @param level  the level.
+     * @param colony the walker's colony, may be null.
+     * @return true if {@link #query} may be called now.
+     */
+    public static synchronized boolean admit(final ServerLevel level, @Nullable final IColony colony)
+    {
+        rollTick(level);
+        final Object key = colony == null ? NO_COLONY : colony;
+        TICK_ASKERS.add(key);
+        final boolean ok = tickCalls < TICK_CALLS && tickNanos < TICK_NANOS && TICK_COLONY_CALLS.getOrDefault(key, 0) < share;
+        if (!ok)
+        {
+            budgetRefusals.incrementAndGet();
+        }
+        return ok;
+    }
+
+    /**
+     * @return the provider time spent in the current server tick (for the tests).
+     */
+    public static synchronized long tickNanos()
+    {
+        return tickNanos;
+    }
+
     /**
      * Asks the providers for waypoints, in registration order, skipping switched-off ones. Never throws: a provider that
      * throws (anything but a VirtualMachineError) is skipped. Null entries are dropped. Called by MineColonies'
@@ -192,22 +257,42 @@ public final class RouteHints
     @Nullable
     public static List<BlockPos> query(final ServerLevel level, @Nullable final IColony colony, final BlockPos from, final BlockPos to)
     {
-        for (final Entry entry : PROVIDERS)
+        if (!admit(level, colony))
         {
-            synchronized (entry)
+            // over the budget of this tick (see admit, which callers ask first to keep their own bookkeeping)
+            return null;
+        }
+        final long t0 = System.nanoTime();
+        try
+        {
+            for (final Entry entry : PROVIDERS)
             {
-                if (entry.isDisabled())
+                synchronized (entry)
                 {
-                    continue;
-                }
-                final List<BlockPos> copy = call(entry, level, colony, from, to);
-                if (copy != null)
-                {
-                    return copy;
+                    if (entry.isDisabled())
+                    {
+                        continue;
+                    }
+                    final List<BlockPos> copy = call(entry, level, colony, from, to);
+                    if (copy != null)
+                    {
+                        return copy;
+                    }
                 }
             }
+            return null;
         }
-        return null;
+        finally
+        {
+            spent(colony, System.nanoTime() - t0);
+        }
+    }
+
+    private static synchronized void spent(@Nullable final IColony colony, final long nanos)
+    {
+        tickCalls++;
+        tickNanos += nanos;
+        TICK_COLONY_CALLS.merge(colony == null ? NO_COLONY : colony, 1, Integer::sum);
     }
 
     @Nullable

@@ -421,12 +421,38 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
 
     /**
      * The next order may need scaffolding, which he takes from the hut's racks before he leaves (so he goes there for it). An order whose blueprint is
-     * not loaded (a queued order keeps only its box) counts as one that may need it.
+     * not loaded (a queued order keeps only its box, and after a restart no order has its blueprint) is judged by its saved box (round 11, W4-04); only an
+     * order without a box counts as one that may need it.
      */
     private boolean mayNeedScaffoldingFromHut()
     {
-        return usesPhysicalReach() && BuilderScaffolding.enabled() && building.getWorkOrder() != null
-                 && (building.getWorkOrder().getBlueprint() == null || mayNeedScaffolding(building.getWorkOrder().getBlueprint()));
+        if (!usesPhysicalReach() || !BuilderScaffolding.enabled() || building.getWorkOrder() == null)
+        {
+            return false;
+        }
+        final var order = building.getWorkOrder();
+        return order.getBlueprint() != null ? mayNeedScaffolding(order.getBlueprint()) : mayNeedScaffoldingByBox(order);
+    }
+
+    /**
+     * Judges an order without a loaded blueprint by its saved box: the box spans the bottom centres of the corner blocks, so each side is the size less one
+     * (the height exactly). A box read from a save has whole coordinates (the half block was cut off towards zero, which can make a side one shorter):
+     * such a side counts one block more, never less. An order without a box may need scaffolding.
+     */
+    public static boolean mayNeedScaffoldingByBox(final com.minecolonies.api.colony.workorders.IWorkOrder order)
+    {
+        final net.minecraft.world.phys.AABB box = order.getBoundingBox();
+        if (box == null || box == com.minecolonies.api.util.constant.Constants.EMPTY_AABB)
+        {
+            return true;
+        }
+        return BuildReach.mayNeedScaffolding(side(box.minX, box.getXsize()), (int) Math.round(box.getYsize()) + 1, side(box.minZ, box.getZsize()),
+          BuildReach.EYE_HEIGHT, WorkerSettings.reach());
+    }
+
+    private static int side(final double min, final double size)
+    {
+        return (int) Math.round(size) + 1 + (min == Math.floor(min) ? 1 : 0);
     }
 
     /**

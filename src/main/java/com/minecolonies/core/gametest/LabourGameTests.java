@@ -1229,6 +1229,92 @@ final class LabourGameTests
         });
     }
 
+    // ------------------------------------------------------------------ round 11
+
+    /**
+     * Round 11 W2-05: a labourer at work (no job, LABOUR state) at saturation 5 with bread in his pocket eats it without leaving his claim.
+     */
+    public static void labourerEatsAtWork(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "labour snack", 2);
+        final Colony colony = (Colony) f.colony;
+        forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
+        helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
+        tree(helper, 34, 20, 5);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            final IToken<?> token = ask(f.builder, new ItemStack(Items.WOODEN_PICKAXE));
+            final int[] eaten0 = {-1};
+            final LabourClaim[] claim = {null};
+            poll(helper, List.of(colony), 6000, () -> {
+                if (claim[0] == null)
+                {
+                    if (IdleCitizenArbiter.sessionOf(idle) instanceof LabourSession session && colony.getLabourBoard().claimOf(idle.getId()) != null)
+                    {
+                        claim[0] = session.claim();
+                        InventoryUtils.addItemStackToItemHandler(idle.getInventory(), new ItemStack(Items.BREAD, 8));
+                        idle.setSaturation(com.minecolonies.api.colony.ICitizenData.MAX_SATURATION * 0.25D);
+                        eaten0[0] = com.minecolonies.core.entity.citizen.CitizenSnack.eaten.get();
+                    }
+                    return false;
+                }
+                final boolean sameClaim = IdleCitizenArbiter.sessionOf(idle) instanceof LabourSession session && session.claim() == claim[0];
+                helper.assertTrue(sameClaim || inHut(f.builder, Items.WOODEN_PICKAXE) >= 1, "the labourer left his claim: " + describe(f, token, idle));
+                return com.minecolonies.core.entity.citizen.CitizenSnack.eaten.get() > eaten0[0];
+            }, () -> {
+                final int bread = InventoryUtils.getItemCountInItemHandler(idle.getInventory(), s -> s.is(Items.BREAD));
+                final boolean labouring = idle.getEntity().map(e -> e instanceof EntityCitizen ec
+                                                                      && ec.getCitizenAI().getState() == com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState.LABOUR).orElse(false);
+                Log.getLogger().info("R11 RESULT labour_snack bread={} saturation={} labouring={} {}", bread, idle.getSaturation(), labouring, describe(f, token, idle));
+                helper.assertTrue(bread < 8, "no bread eaten: " + bread);
+                helper.assertTrue(labouring && IdleCitizenArbiter.sessionOf(idle) != null, "the labourer stopped labouring to eat");
+                end();
+                helper.succeed();
+            }, () -> describe(f, token, idle));
+        });
+    }
+
+    /**
+     * Round 11 W4-10: a labourer carries logs for a request; the request is served by someone else. He brings the logs to the warehouse, they do not stay in his
+     * pockets.
+     */
+    public static void leftoversGoToTheWarehouse(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "labour stash", 2);
+        final Colony colony = (Colony) f.colony;
+        forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
+        helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
+        tree(helper, 34, 20, 5);
+        final java.util.function.Predicate<ItemStack> wood = s -> s.is(Items.OAK_LOG) || s.is(Items.OAK_PLANKS) || s.is(Items.STICK);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), false);
+            final IToken<?> token = ask(f.builder, new ItemStack(Items.WOODEN_PICKAXE));
+            final int stashes0 = LabourSession.stashes.get();
+            final boolean[] served = {false};
+            poll(helper, List.of(colony), 6000, () -> {
+                if (!served[0])
+                {
+                    if (IdleCitizenArbiter.sessionOf(idle) != null && InventoryUtils.getItemCountInItemHandler(idle.getInventory(), s -> s.is(Items.OAK_LOG)) >= 1)
+                    {
+                        // served by someone else (the player): the request is gone
+                        colony.getRequestManager().updateRequestState(token, com.minecolonies.api.colony.requestsystem.request.RequestState.OVERRULED);
+                        served[0] = true;
+                    }
+                    return false;
+                }
+                return IdleCitizenArbiter.sessionOf(idle) == null && InventoryUtils.getItemCountInItemHandler(idle.getInventory(), wood) == 0;
+            }, () -> {
+                final int stored = InventoryUtils.getItemCountInItemHandler(f.warehouse.getItemHandlerCap(), wood);
+                Log.getLogger().info("R11 RESULT labour_stash stored={} stashes={} {}", stored, LabourSession.stashes.get() - stashes0, describe(f, token, idle));
+                helper.assertTrue(stored >= 1 && LabourSession.stashes.get() > stashes0, "the leftovers did not reach the warehouse: stored " + stored);
+                end();
+                helper.succeed();
+            }, () -> "served " + served[0] + " " + describe(f, token, idle));
+        });
+    }
+
     private static Colony foundAt(final GameTestHelper helper, final String name, final int dx)
     {
         final ServerLevel level = helper.getLevel();

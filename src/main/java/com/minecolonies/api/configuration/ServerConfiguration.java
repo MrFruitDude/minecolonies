@@ -433,14 +433,15 @@ public class ServerConfiguration extends AbstractConfiguration
         labourersSmelt = defineEnum("smelt", com.minecolonies.api.colony.labour.LabourModes.SmeltMode.BASIC);
         labourersStoneTools = defineBoolean("stoneTools", true);
         labourersKeepTrees = defineInteger("keepTrees", 4, 0, 64);
-        // Off: no labourer digs sand, dirt, gravel or stone from the world, automatic or directed (a player's old build of them cannot be told from the world's own
-        // ground; a manager's chosen area does not change that).
+        // Off: labourers dig sand, dirt, gravel and stone from the world only inside the colony's quarry zones (a manager marks them in the Labour panel), automatic
+        // or directed; elsewhere a player's old build of them cannot be told from the world's own ground, and a directed order's area alone does not allow it.
         labourersDigUnprovenGround = defineBoolean("digUnprovenGround", false);
         labourersSupplyGraceTicks = defineInteger("supplyGraceTicks", 1200, 0, 72000);
         labourersSupplyMaxTicks = defineInteger("supplyMaxTicks", 6000, 200, 72000);
         // Quarry zones: a manager marks an area where labour may dig the ground even with digUnprovenGround off; never deeper than this below the zone's surface.
         labourersQuarryDepth = defineInteger("quarryDepth", 8, 1, 32);
-        // Early pace: while the colony has fewer built buildings than this, every unemployed citizen may labour and builder requests wait only earlyGraceTicks.
+        // Early pace: while the colony has fewer built buildings than this, every unemployed citizen may labour and builder requests wait only earlyGraceTicks;
+        // from this count on the pace eases to the normal one, one step per built building, and is normal from twice this count less one.
         labourersEarlyBuildings = defineInteger("earlyBuildings", 10, 0, 100);
         labourersEarlyGraceTicks = defineInteger("earlyGraceTicks", 200, 0, 72000);
         labourersEarlyAllUnemployed = defineBoolean("earlyAllUnemployed", true);

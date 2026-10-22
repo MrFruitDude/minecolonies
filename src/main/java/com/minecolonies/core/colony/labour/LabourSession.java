@@ -73,6 +73,16 @@ public final class LabourSession implements IIdleTaskSession
     private boolean ended;
     private boolean ok;
     private boolean stopped;
+    /**
+     * Round 11 (W4-10): the request was served by someone else while he worked on it; he brings what he carries of the basic goods to a warehouse before the
+     * session ends.
+     */
+    private boolean stashing;
+
+    /**
+     * Sessions that took their leftover goods to a warehouse after their request was served elsewhere (for the tests).
+     */
+    public static final java.util.concurrent.atomic.AtomicInteger stashes = new java.util.concurrent.atomic.AtomicInteger();
 
     private LabourPlanner.Action<Item> action;
 
@@ -233,7 +243,29 @@ public final class LabourSession implements IIdleTaskSession
         {
             return false;
         }
-        return claim.request() == null || board.stillWaiting(claim.request());
+        if (stashing)
+        {
+            // on his way to the warehouse with the leftovers (the unload ends the session)
+            return true;
+        }
+        if (claim.request() == null || board.stillWaiting(claim.request()))
+        {
+            return true;
+        }
+        // the request was served elsewhere: what he gathered for it goes to a warehouse first, if he carries such goods and the colony has one
+        if (claim.source() != LabourClaim.Source.SELF && toolKind == null && phase != Phase.UNLOAD && phase != Phase.END && !surplus().isEmpty()
+              && !board.sites().warehouses().isEmpty())
+        {
+            stashing = true;
+            stashes.incrementAndGet();
+            LabourStats.log("citizen {}: request served elsewhere, leftovers to a warehouse", citizen.getId());
+            cleanup();
+            phase = Phase.UNLOAD;
+            actionStart = colony.getWorld() == null ? 0L : colony.getWorld().getGameTime();
+            board.heartbeat(claim);
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -267,7 +299,8 @@ public final class LabourSession implements IIdleTaskSession
         stopped = true;
         LabourStats.log("session of citizen {} stops: {} (phase {}, ended {}, ok {})", citizen.getId(), reason, phase, ended, ok);
         cleanup();
-        board.release(claim, ok, !ok && reason == IdleStopReason.TASK_INVALID);
+        // (a stash after the request was served elsewhere is no failure of the request)
+        board.release(claim, ok && !stashing, !ok && !stashing && reason == IdleStopReason.TASK_INVALID);
         final AbstractEntityCitizen worker = citizen.getEntity().orElse(null);
         if (worker != null && reason != IdleStopReason.CITIZEN_GONE)
         {
@@ -396,6 +429,12 @@ public final class LabourSession implements IIdleTaskSession
         }
         if (!board.alive(claim))
         {
+            return;
+        }
+        if (stashing && now - actionStart > ACTION_TIMEOUT)
+        {
+            // no way to the warehouse: he keeps the goods (later offers count them)
+            end(false);
             return;
         }
         if (now - actionStart > ACTION_TIMEOUT && phase != Phase.SMELT_WAIT)
@@ -1425,9 +1464,9 @@ public final class LabourSession implements IIdleTaskSession
     }
 
     /**
-     * What the labourer still carries of the basic goods (surplus logs, planks he made too many of) goes into a warehouse, if the colony has one; his working tools stay.
+     * @return the stacks he carries of the basic goods (what labour gathers or makes, and what the claim brings), his working tools not counted.
      */
-    private void unload(final AbstractEntityCitizen worker, final long now)
+    private List<ItemStack> surplus()
     {
         final List<ItemStack> surplus = new ArrayList<>();
         final var inventory = citizen.getInventory();
@@ -1441,6 +1480,16 @@ public final class LabourSession implements IIdleTaskSession
                 surplus.add(stack);
             }
         }
+        return surplus;
+    }
+
+    /**
+     * What the labourer still carries of the basic goods (surplus logs, planks he made too many of) goes into a warehouse, if the colony has one; his working tools stay.
+     */
+    private void unload(final AbstractEntityCitizen worker, final long now)
+    {
+        final List<ItemStack> surplus = surplus();
+        final var inventory = citizen.getInventory();
         final IWareHouse warehouse = surplus.isEmpty() || claim.source() == LabourClaim.Source.SELF ? null
                                        : board.sites().warehouses().stream().min(Comparator.comparingDouble(w -> w.getID().distSqr(worker.blockPosition()))).orElse(null);
         if (warehouse == null)
