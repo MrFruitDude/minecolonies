@@ -16,6 +16,7 @@ import com.minecolonies.core.entity.ai.workers.service.EntityAIWorkDeliveryman;
 import com.minecolonies.core.entity.citizen.EntityCitizen;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.clock.WorldClocks;
+import com.minecolonies.core.MineColonies;
 import org.jetbrains.annotations.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -240,6 +241,13 @@ final class RequestCourierGameTests
                 case SLEEP -> level.getServer().clockManager().setTotalTicks(level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 18000L);
                 case RAIN ->
                 {
+                    // round 13 (D1): workers keep working in rain by default, so this break is only due with the switch off (restored by restoreWorld)
+                    final var rain = MineColonies.getConfig().getServer().workersAlwaysWorkInRain;
+                    if (rainWorkBefore == null)
+                    {
+                        rainWorkBefore = rain.get();
+                    }
+                    rain.set(false);
                     final var weather = level.getWeatherData();
                     weather.setClearWeatherTime(0);
                     weather.setRaining(true);
@@ -249,8 +257,19 @@ final class RequestCourierGameTests
         }
     }
 
+    /**
+     * The workersalwaysworkinrain value before a rain break was made due, or null.
+     */
+    @Nullable
+    private static Boolean rainWorkBefore = null;
+
     private static void restoreWorld(final ServerLevel level)
     {
+        if (rainWorkBefore != null)
+        {
+            MineColonies.getConfig().getServer().workersAlwaysWorkInRain.set(rainWorkBefore);
+            rainWorkBefore = null;
+        }
         level.getServer().clockManager().setTotalTicks(level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
         final var weather = level.getWeatherData();
         weather.setRaining(false);
