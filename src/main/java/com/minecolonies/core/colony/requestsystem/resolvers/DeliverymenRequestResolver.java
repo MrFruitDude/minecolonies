@@ -201,9 +201,11 @@ public abstract class DeliverymenRequestResolver<R extends IRequestable> extends
             final RequestWaitTracker tracker = RequestWaitTracker.of(manager);
             if (tracker != null)
             {
-                tracker.setReason(request, WaitReason.AWAITING_DELIVERY);
+                tracker.setReason(request, RequestWaitTracker.queuedReason(colony, request, WaitReason.AWAITING_DELIVERY));
             }
         }
+        // Round 13 (L4): an idle courier looks at the new task within a few ticks.
+        JobDeliveryman.wakeIdleCouriers(colony, wareHouse, null);
     }
 
     @Nullable
@@ -226,16 +228,14 @@ public abstract class DeliverymenRequestResolver<R extends IRequestable> extends
         if (!manager.getColony().getWorld().isClientSide())
         {
             final Colony colony = (Colony) manager.getColony();
-            final ICitizenData freeDeliveryMan = colony.getCitizenManager().getCitizens()
-                                                   .stream()
-                                                   .filter(c -> c.getJob() instanceof JobDeliveryman && ((JobDeliveryman) c.getJob()).getTaskQueue().contains(request.getId()))
-                                                   .findFirst()
-                                                   .orElse(null);
-
-            if (freeDeliveryMan != null)
+            // Round 13 (L10): only couriers are looked at, and their queues are not copied.
+            for (final ICitizenData citizen : colony.getCitizenManager().getCitizens())
             {
-                final JobDeliveryman job = (JobDeliveryman) freeDeliveryMan.getJob();
-                job.onTaskDeletion(request.getId());
+                if (citizen.getJob() instanceof final JobDeliveryman job && job.holdsTask(request.getId()))
+                {
+                    job.onTaskDeletion(request.getId());
+                    break;
+                }
             }
 
             final IWareHouse wareHouse = colony.getServerBuildingManager().getBuilding(getLocation().getInDimensionLocation(), IWareHouse.class);

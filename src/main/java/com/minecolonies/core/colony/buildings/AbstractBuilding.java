@@ -30,6 +30,9 @@ import com.minecolonies.api.colony.requestsystem.requestable.IRequestable;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Pickup;
 import com.minecolonies.api.colony.requestsystem.requester.IRequester;
 import com.minecolonies.api.colony.requestsystem.resolver.IRequestResolver;
+import com.minecolonies.api.colony.buildings.workerbuildings.IWareHouse;
+import com.minecolonies.core.colony.buildings.modules.BuildingModules;
+import com.minecolonies.core.colony.jobs.JobDeliveryman;
 import com.minecolonies.api.colony.requestsystem.resolver.player.IPlayerRequestResolver;
 import com.minecolonies.api.colony.requestsystem.resolver.retrying.IRetryingRequestResolver;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
@@ -87,6 +90,7 @@ import java.util.stream.Collectors;
 
 import static com.minecolonies.api.colony.requestsystem.requestable.deliveryman.AbstractDeliverymanRequestable.MAX_BUILDING_PRIORITY;
 import static com.minecolonies.api.colony.requestsystem.requestable.deliveryman.AbstractDeliverymanRequestable.getMaxBuildingPriority;
+import static com.minecolonies.api.colony.requestsystem.requestable.deliveryman.AbstractDeliverymanRequestable.getPlayerActionPriority;
 import static com.minecolonies.api.util.constant.BuildingConstants.CONST_DEFAULT_MAX_BUILDING_LEVEL;
 import static com.minecolonies.api.util.constant.BuildingConstants.NO_WORK_ORDER;
 import static com.minecolonies.api.util.constant.Constants.MOD_ID;
@@ -1589,26 +1593,40 @@ public abstract class AbstractBuilding extends AbstractBuildingContainer
     @Override
     public boolean createPickupRequest(final int qty, final boolean force)
     {
-        final int priority = force ? getMaxBuildingPriority(true) : this.getPickUpPriority();
+        // Round 13 (B1, L1): a forced pickup (a full hut whose worker cannot dump, "pick up now", a stash) carries the player-action
+        // priority, which aging never reaches, so that the courier scoring sees it as urgent.
+        final int priority = force ? getPlayerActionPriority(true) : this.getPickUpPriority();
         final List<IToken<?>> reqs = new ArrayList<>(getOpenRequestsByRequestableType().getOrDefault(TypeConstants.PICKUP, Collections.emptyList()));
         if (!reqs.isEmpty())
         {
             for (final IToken<?> req : reqs)
             {
+                // B1: the token is not the requestable; resolve it and test the request's requestable (the old `req instanceof Pickup` was always false).
                 final IRequest<?> request = colony.getRequestManager().getRequestForToken(req);
-                if (request != null && request.getState() == RequestState.IN_PROGRESS && req instanceof Pickup pickup)
+                if (request != null && request.getState() == RequestState.IN_PROGRESS && request.getRequest() instanceof Pickup pickup)
                 {
                     final IRequestResolver<?> resolver = colony.getRequestManager().getResolverForRequest(req);
                     if (resolver instanceof IPlayerRequestResolver || resolver instanceof IRetryingRequestResolver)
                     {
                         colony.getRequestManager().reassignRequest(req, Collections.emptyList());
                     }
-                    pickup.setQuantity(pickup.getQuantity() + qty);
-                    final int pickUpDay = colony.getDay() + Math.max(0, (10 - priority) - (pickup.getQuantity() / 16));
-                    if (pickup.getDay() > colony.getDay())
+                    raisePickup(pickup, qty, force, priority, colony.getDay());
+                    if (colony.getRequestManager() instanceof com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager standard)
                     {
-                        pickup.setDay(pickUpDay < pickup.getDay() ? pickUpDay : pickup.getDay() - 1);
+                        standard.getBuildingPriorities().forgetImportance(req);
                     }
+                    if (force)
+                    {
+                        // L4: a courier that waits for work comes now.
+                        for (final IWareHouse wareHouse : colony.getServerBuildingManager().getWareHouses())
+                        {
+                            if (wareHouse.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE).getMutableRequestList().contains(req))
+                            {
+                                JobDeliveryman.wakeIdleCouriers(colony, wareHouse, null);
+                            }
+                        }
+                    }
+                    markDirty();
                     break;
                 }
             }
@@ -1616,8 +1634,34 @@ public abstract class AbstractBuilding extends AbstractBuildingContainer
         }
 
         final int pickUpDay = colony.getDay() + Math.max(0, (10 - getPickUpPriority()) - (qty / 16));
-        createRequest(new Pickup(priority, pickUpDay, qty), true);
+        createRequest(new Pickup(priority, force ? colony.getDay() : pickUpDay, qty), true);
         return true;
+    }
+
+    /**
+     * Round 13 (B1): an open pickup gets more items. A forced one is due today and takes the forced priority; an unforced one comes a little
+     * earlier, as before.
+     *
+     * @param pickup   the open pickup.
+     * @param qty      the items added.
+     * @param force    whether the pickup is forced.
+     * @param priority the priority of the new call.
+     * @param today    the colony day.
+     */
+    public static void raisePickup(@NotNull final Pickup pickup, final int qty, final boolean force, final int priority, final int today)
+    {
+        pickup.setQuantity(Math.max(0, pickup.getQuantity()) + qty);
+        if (force)
+        {
+            pickup.raisePriority(priority);
+            pickup.setDay(Math.min(pickup.getDay(), today));
+            return;
+        }
+        final int pickUpDay = today + Math.max(0, (10 - priority) - (pickup.getQuantity() / 16));
+        if (pickup.getDay() > today)
+        {
+            pickup.setDay(pickUpDay < pickup.getDay() ? pickUpDay : pickup.getDay() - 1);
+        }
     }
 
     @Override

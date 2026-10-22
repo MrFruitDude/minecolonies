@@ -343,18 +343,45 @@ public final class RequestWaitTracker
      */
     public void wakeByReason(@NotNull final Set<WaitReason> reasons)
     {
-        if (waiters.isEmpty())
+        wakeByReason(reasons, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Round 13 (L9): wakes at most {@code limit} waiters whose reason is one of the given ones, the longest waiting first (for instance as many as
+     * there are free couriers, not every request that waits for one).
+     *
+     * @param reasons the reasons that the event could have resolved.
+     * @param limit   the most waiters woken.
+     * @return how many were woken (already due ones count).
+     */
+    public int wakeByReason(@NotNull final Set<WaitReason> reasons, final int limit)
+    {
+        if (waiters.isEmpty() || limit <= 0)
         {
-            return;
+            return 0;
         }
+        int added = 0;
         for (final Waiter waiter : waiters.values())
         {
             final IRequest<?> request = manager.getRequestForToken(waiter.token);
             if (request != null && reasons.contains(request.getWaitReason()))
             {
                 due.add(waiter.token);
+                if (++added >= limit)
+                {
+                    break;
+                }
             }
         }
+        return added;
+    }
+
+    /**
+     * @return how many waiters are due for a retry (tests).
+     */
+    public int dueCount()
+    {
+        return due.size();
     }
 
     /**
@@ -654,10 +681,12 @@ public final class RequestWaitTracker
         for (final IWareHouse wareHouse : colony.getServerBuildingManager().getWareHouses())
         {
             final WarehouseRequestQueueModule queue = wareHouse.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE);
-            if (queue == null)
+            if (queue == null || queue.getMutableRequestList().isEmpty())
             {
                 continue;
             }
+            // Round 13 (L10): once per warehouse, not once per queued task.
+            final WaitReason reason = allCouriersBusy(wareHouse, colony) ? WaitReason.COURIER_BUSY : WaitReason.AWAITING_DELIVERY;
             for (final IToken<?> token : ImmutableList.copyOf(queue.getMutableRequestList()))
             {
                 final IRequest<?> request = manager.getRequestForToken(token);
@@ -665,10 +694,34 @@ public final class RequestWaitTracker
                 {
                     continue;
                 }
-                final WaitReason reason = allCouriersBusy(wareHouse, colony) ? WaitReason.COURIER_BUSY : WaitReason.AWAITING_DELIVERY;
-                setReason(request, request.getRequest() instanceof Delivery && WaitDiagnosis.forCourierTask(colony, request) == WaitReason.UNLOADED ? WaitReason.UNLOADED : reason);
+                setReason(request, request.getRequest() instanceof Delivery && WaitDiagnosis.forCourierTask(colony, request) == WaitReason.UNLOADED ? WaitReason.UNLOADED
+                                     : queuedReason(colony, request, reason));
             }
         }
+    }
+
+    /**
+     * Round 13: the reason of a queued courier task. A pickup whose hut is full says so ({@link WaitReason#HUT_FULL_PICKUP_QUEUED}); everything
+     * else keeps the given reason.
+     *
+     * @param colony   the colony.
+     * @param request  the delivery or pickup.
+     * @param fallback the reason otherwise.
+     * @return the reason.
+     */
+    @NotNull
+    public static WaitReason queuedReason(@NotNull final IColony colony, @NotNull final IRequest<?> request, @NotNull final WaitReason fallback)
+    {
+        if (request.getRequest() instanceof Pickup && request.getRequester() != null && colony.getWorld() != null && !colony.getWorld().isClientSide())
+        {
+            final com.minecolonies.api.colony.buildings.IBuilding hut =
+              colony.getServerBuildingManager().getBuilding(request.getRequester().getLocation().getInDimensionLocation());
+            if (hut != null && !hut.getContainers().isEmpty() && com.minecolonies.api.util.InventoryUtils.isBuildingFull(hut))
+            {
+                return WaitReason.HUT_FULL_PICKUP_QUEUED;
+            }
+        }
+        return fallback;
     }
 
     private static boolean allCouriersBusy(final IWareHouse wareHouse, final Colony colony)

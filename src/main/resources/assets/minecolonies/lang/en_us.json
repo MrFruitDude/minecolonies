@@ -4052,6 +4052,7 @@
   "com.minecolonies.coremod.request.wait.awaiting_labour": "A citizen without a job is making it by hand",
   "com.minecolonies.coremod.request.wait.labour_blocked": "Nothing makes this, and the jobless cannot make it by hand right now (no tree, block, table or tool in reach, or a specialist is missing)",
   "com.minecolonies.coremod.request.wait.labour_blocked.notify": "The citizens without a job cannot make %s by hand right now. Place a crafting table in the colony, or hire a specialist for it.",
+  "com.minecolonies.coremod.request.wait.hut_full_pickup_queued": "The hut is full: a pickup is queued and goes first",
   "com.minecolonies.coremod.labour.hut_owed": "This hut was placed on credit and still owes its hut item. Store one in the warehouse or let labour make it first.",
   "com.minecolonies.coremod.labour.hut_owed.line": "Owes its hut item"
 }

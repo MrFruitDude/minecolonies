@@ -16,6 +16,12 @@ import org.jetbrains.annotations.Nullable;
  * <p>
  * The pure {@link #score} has no game types so it can be tested on its own; {@link #courierScore} and {@link #explain}
  * read the colony.
+ * <p>
+ * Round 13 (L3): the wait counts in buckets of {@value #WAIT_BUCKET_SECONDS} seconds, so that tasks that came in at about
+ * the same time tie on it and the tiebreak (the courier's estimated time to finish the task, from where it stands) decides:
+ * the courier no longer zig-zags across the colony for a task that is a few seconds older. A task that waited
+ * {@value #STARVATION_CAP_SECONDS} seconds or more counts its exact wait, which is above every bucket, so a faraway hut is
+ * never starved by nearer newcomers. (L1) A pickup's building term is the hut's pickup priority (the pickup slider).
  */
 public final class RequestScoring
 {
@@ -33,6 +39,16 @@ public final class RequestScoring
      * A pickup booked for a later day sorts below everything that is due, but above the unloaded.
      */
     private static final long NOT_DUE_PENALTY = 1L << 56;
+
+    /**
+     * Round 13 (L3): width of one wait bucket.
+     */
+    public static final long WAIT_BUCKET_SECONDS = 45L;
+
+    /**
+     * Round 13 (L3): from this wait on the exact wait counts, above every bucket.
+     */
+    public static final long STARVATION_CAP_SECONDS = 180L;
 
     private static final int  PRIORITY_MAX = BuildingPriorities.ALARM_PRIORITY;
     private static final long WAIT_MAX     = (1L << 24) - 1;
@@ -70,9 +86,70 @@ public final class RequestScoring
     {
         final long importanceTerm = RequestImportance.BACKGROUND.rank() - importance.rank();
         final long priorityTerm = Math.max(0, Math.min(PRIORITY_MAX, buildingPriority));
-        final long waitTerm = Math.max(0L, Math.min(WAIT_MAX, waitedTicks / TICKS_PER_SECOND));
+        final long waitTerm = Math.max(0L, Math.min(WAIT_MAX, waitTerm(waitedTicks)));
         final long distanceTerm = DISTANCE_MAX - Math.max(0, Math.min(DISTANCE_MAX, distance));
         return (((importanceTerm * (PRIORITY_MAX + 1) + priorityTerm) << 24 | waitTerm) << 16) | distanceTerm;
+    }
+
+    /**
+     * Round 13 (L3): the wait term of the score: whole buckets below the starvation cap, the exact seconds from it on. Never
+     * decreases as the wait grows.
+     *
+     * @param waitedTicks how long the task has waited, in game ticks.
+     * @return the term, in seconds.
+     */
+    public static long waitTerm(final long waitedTicks)
+    {
+        final long seconds = Math.max(0L, waitedTicks / TICKS_PER_SECOND);
+        if (seconds >= STARVATION_CAP_SECONDS)
+        {
+            return seconds;
+        }
+        return seconds / WAIT_BUCKET_SECONDS * WAIT_BUCKET_SECONDS;
+    }
+
+    /**
+     * Round 13 (L1): the building term of a pickup: the alarm, else the pickup priority clamped to the settable range.
+     *
+     * @param pickupPriority the pickup's priority (forced and aged pickups are clamped to the maximum).
+     * @param alarm          the hut's alarm is on.
+     * @return the term.
+     */
+    public static int pickupPriorityTerm(final int pickupPriority, final boolean alarm)
+    {
+        if (alarm)
+        {
+            return BuildingPriorities.ALARM_PRIORITY;
+        }
+        return Math.max(BuildingPriorities.MIN_PRIORITY, Math.min(BuildingPriorities.MAX_PRIORITY, pickupPriority));
+    }
+
+    /**
+     * Round 13 (L3): the courier's walk for a task in blocks, from where it stands: to the source and on to the target for a
+     * delivery, to the hut and back to its warehouse for a pickup. Clamped to the tiebreak range.
+     *
+     * @param courier where the courier stands, null when unknown (then only the task's own walk counts).
+     * @param source  where the task starts (a delivery's start, null for a pickup).
+     * @param target  the building the task serves.
+     * @param home    where a pickup's load goes, null when unknown.
+     * @return the walk in blocks, 0..65535.
+     */
+    public static int etaBlocks(@Nullable final BlockPos courier, @Nullable final BlockPos source, @Nullable final BlockPos target, @Nullable final BlockPos home)
+    {
+        if (target == null)
+        {
+            return 0;
+        }
+        long blocks;
+        if (source != null)
+        {
+            blocks = (courier == null ? 0 : courier.distManhattan(source)) + (long) source.distManhattan(target);
+        }
+        else
+        {
+            blocks = (courier == null ? 0 : courier.distManhattan(target)) + (home == null ? 0L : target.distManhattan(home));
+        }
+        return (int) Math.max(0L, Math.min(DISTANCE_MAX, blocks));
     }
 
     /**
@@ -129,9 +206,10 @@ public final class RequestScoring
         final BuildingPriorities priorities = manager instanceof IStandardRequestManager standard ? standard.getBuildingPriorities() : null;
         final long now = colony.getWorld().getGameTime();
 
-        final RequestImportance importance = RequestImportance.of(manager, task);
-        final int priority = priorities == null || target == null ? BuildingPriorities.DEFAULT_PRIORITY : priorities.effective(target, now);
+        final RequestImportance importance = priorities == null ? RequestImportance.of(manager, task) : priorities.importance(manager, task, now);
         final boolean alarm = priorities != null && target != null && priorities.isAlarm(target, now);
+        final int priority = task.getRequest() instanceof Pickup asked ? pickupPriorityTerm(asked.getPriority(), alarm)
+                               : priorities == null || target == null ? BuildingPriorities.DEFAULT_PRIORITY : priorities.effective(target, now);
         final long waited = priorities == null ? 0L : startClock ? priorities.waited(task.getId(), now) : priorities.peekWaited(task.getId(), now);
         final int distance = tiebreak >= 0 ? tiebreak : source == null || target == null ? 0 : (int) Math.sqrt(source.distManhattan(target));
 

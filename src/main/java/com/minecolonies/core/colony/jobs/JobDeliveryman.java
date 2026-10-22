@@ -51,8 +51,10 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
+import java.util.Map;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -74,9 +76,39 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
     public static final double BONUS_SPEED_PER_LEVEL = 0.003;
 
     /**
+     * Round 13 (L6): a courier carries at least this many stacks, whatever its hut level (was 2 at level 1).
+     */
+    public static final int MIN_CARRY_STACKS = 4;
+
+    /**
+     * Round 13 (L2): a courier batches at least this many tasks to one destination (was 1 below skill 5).
+     */
+    public static final int MIN_BATCH = 3;
+
+    /**
+     * Round 13 (L2): the most tasks a courier batches by carry capacity (its skill may allow more).
+     */
+    public static final int MAX_CAPACITY_BATCH = 8;
+
+    /**
+     * Round 13 (L4): a courier that waits for work looks at its queue within this many ticks of a new task.
+     */
+    public static final int WAKE_TICKS = 5;
+
+    /**
      * Old field for backwards compatibility.
      */
     private int ongoingDeliveries;
+
+    /**
+     * Round 13 (L11): where each task in the queue was taken from and when its wait began, so that a courier that goes on a
+     * break can put it back at the head of that queue with its wait. In memory only; after a load the home warehouse is used.
+     */
+    private record Taken(@Nullable BlockPos warehouse, long since)
+    {
+    }
+
+    private final Map<IToken<?>, Taken> taken = new HashMap<>();
 
     /**
      * RS2: deadline and stuck detection of the current task.
@@ -273,9 +305,13 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
     }
 
     /**
-     * The courier is leaving (a meal, sleep, shelter from the rain) with tasks still in its queue: hands every one of them, and the deliveries batched
-     * with them, back to the request system, so that another courier can take them. The queue of a courier is the only place its tasks are kept; a
-     * task left there while the courier is away stands still for the whole break.
+     * The courier is leaving (a meal, sleep, shelter from the rain) with tasks still in its queue: hands every one of them back, so that another
+     * courier can take them. The queue of a courier is the only place its tasks are kept; a task left there while the courier is away stands still
+     * for the whole break.
+     * <p>
+     * Round 13 (L11): a task the courier has not started yet goes back to the head of the warehouse queue it came from, with the wait it already
+     * had (its promises stay), instead of failing; an idle courier is woken for it. A delivery whose items the courier already carries fails as
+     * before (the items are in its bag; the request system serves the request again).
      *
      * @return how many tasks were handed back.
      */
@@ -283,20 +319,106 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
     {
         int handedBack = 0;
         final LinkedList<IToken<?>> queue = getTaskQueueFromDataStore();
-        while (!queue.isEmpty())
+        final List<IToken<?>> requeue = new ArrayList<>();
+        final List<IToken<?>> started = new ArrayList<>();
+        for (final IToken<?> token : new ArrayList<>(queue))
         {
-            final IToken<?> head = queue.peekFirst();
-            final int before = queue.size();
-            giveUp(head, getColony().getRequestManager().getRequestForToken(head));
-            if (queue.size() >= before)
+            final IRequest<?> request = getColony().getRequestManager().getRequestForToken(token);
+            if (request == null)
             {
-                queue.remove(head);
+                continue;
             }
-            handedBack += before - queue.size();
+            if (getDataStore().getOngoingDeliveries().contains(token) || !canRequeue(token))
+            {
+                started.add(token);
+            }
+            else
+            {
+                requeue.add(token);
+            }
+        }
+        queue.clear();
+        for (final IToken<?> token : started)
+        {
+            getDataStore().getOngoingDeliveries().remove(token);
+            final IRequest<?> failed = getColony().getRequestManager().getRequestForToken(token);
+            if (failed != null && failed.getState() == RequestState.IN_PROGRESS)
+            {
+                getColony().getRequestManager().updateRequestState(token, RequestState.FAILED);
+            }
+            handedBack++;
+        }
+        final Set<IWareHouse> woken = new HashSet<>();
+        for (int i = requeue.size() - 1; i >= 0; i--)
+        {
+            final IWareHouse wareHouse = requeueAtHead(requeue.get(i));
+            if (wareHouse != null)
+            {
+                woken.add(wareHouse);
+            }
+            handedBack++;
+        }
+        taken.clear();
+        if (getCitizen().getWorkBuilding() != null)
+        {
+            getCitizen().getWorkBuilding().markDirty();
         }
         watchdog.reset();
         headTask = null;
+        for (final IWareHouse wareHouse : woken)
+        {
+            wakeIdleCouriers(getColony(), wareHouse, getCitizen());
+        }
         return handedBack;
+    }
+
+    /**
+     * @return true when the queue the task came from is known (or the home warehouse can take it).
+     */
+    private boolean canRequeue(final IToken<?> token)
+    {
+        return queueOf(token) != null;
+    }
+
+    @Nullable
+    private IWareHouse queueOf(final IToken<?> token)
+    {
+        final Taken from = taken.get(token);
+        if (from != null && from.warehouse() != null)
+        {
+            final IWareHouse wareHouse = getColony().getServerBuildingManager().getBuilding(from.warehouse(), IWareHouse.class);
+            if (wareHouse != null && wareHouse.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE) != null)
+            {
+                return wareHouse;
+            }
+        }
+        final IWareHouse home = findWareHouse();
+        return home == null || home.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE) == null ? null : home;
+    }
+
+    /**
+     * Round 13 (L11): puts a task back at the head of its warehouse queue, with its wait clock.
+     *
+     * @return the warehouse whose queue took it.
+     */
+    @Nullable
+    private IWareHouse requeueAtHead(final IToken<?> token)
+    {
+        final IWareHouse wareHouse = queueOf(token);
+        if (wareHouse == null)
+        {
+            return null;
+        }
+        final WarehouseRequestQueueModule module = wareHouse.getModule(BuildingModules.WAREHOUSE_REQUEST_QUEUE);
+        module.getMutableRequestList().remove(token);
+        module.getMutableRequestList().add(0, token);
+        module.markDirty();
+        final Taken from = taken.get(token);
+        if (from != null && getColony().getRequestManager() instanceof IStandardRequestManager standard)
+        {
+            standard.getBuildingPriorities().restoreWait(token, from.since());
+        }
+        return wareHouse;
     }
 
     /**
@@ -349,7 +471,11 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         {
             return RequestScoring.courierScore(getColony(), req, getSource(req), target, WorldUtil.isBlockLoaded(getColony().getWorld(), target), estimateSeconds(req));
         }
-        return RequestScoring.courierScore(getColony(), req, getSource(req), target, WorldUtil.isBlockLoaded(getColony().getWorld(), target));
+        // Round 13 (L3): inside a wait bucket the courier's own walk decides, from where it stands.
+        final BlockPos start = req.getRequest() instanceof Delivery delivery ? delivery.getStart().getInDimensionLocation() : null;
+        final IWareHouse home = scoringHome != null ? scoringHome : findWareHouse();
+        final int eta = RequestScoring.etaBlocks(scoringHere, start, target, home == null ? null : home.getID());
+        return RequestScoring.courierScore(getColony(), req, getSource(req), target, WorldUtil.isBlockLoaded(getColony().getWorld(), target), eta);
     }
 
     /**
@@ -462,6 +588,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             return (IRequest<IDeliverymanRequestable>) getColony().getRequestManager().getRequestForToken(currentRequest);
         }
         watchdog.reset();
+        taken.clear();
 
         final IBuilding wareHouse = findWareHouse();
         if (wareHouse == null)
@@ -485,11 +612,9 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             adoptOrphanQueues(queues);
         }
 
-        if (network)
-        {
-            scoringHere = courierPosition();
-            scoringHome = (IWareHouse) wareHouse;
-        }
+        // Round 13 (L10): the courier's position and home warehouse are read once per decision, not per task.
+        scoringHere = courierPosition();
+        scoringHome = (IWareHouse) wareHouse;
         try
         {
             return chooseTask(queues);
@@ -555,6 +680,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         }
 
         reqsToRemove.add(resultRequestId);
+        remember(resultRequestId, resultModule);
         if (RsFlags.priorityClasses() && getColony().getRequestManager() instanceof IStandardRequestManager standard)
         {
             standard.getBuildingPriorities().forgetWait(resultRequestId);
@@ -602,6 +728,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
                 if (getTarget(localRequest).equals(getTarget(resultRequest)))
                 {
                     getTaskQueueFromDataStore().add(reqId);
+                    remember(reqId, wareHouseModule);
                     extendedReqs++;
                     reqsToRemove.add(reqId);
                 }
@@ -626,6 +753,16 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         }
 
         return (IRequest<IDeliverymanRequestable>) resultRequest;
+    }
+
+    /**
+     * Round 13 (L11): notes the queue a task was taken from and when its wait began.
+     */
+    private void remember(final IToken<?> token, @Nullable final WarehouseRequestQueueModule module)
+    {
+        final long now = getColony().getWorld().getGameTime();
+        final long waited = getColony().getRequestManager() instanceof IStandardRequestManager standard ? standard.getBuildingPriorities().peekWaited(token, now) : 0L;
+        taken.put(token, new Taken(module == null ? null : module.getBuilding().getID(), now - waited));
     }
 
     /**
@@ -760,7 +897,8 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
             final RequestWaitTracker tracker = RequestWaitTracker.of(getColony().getRequestManager());
             if (tracker != null)
             {
-                tracker.wakeByReason(Set.of(WaitReason.NO_COURIER, WaitReason.COURIER_BUSY));
+                // Round 13 (L9): as many waiters as there are free couriers, the longest waiting first, not every one of them.
+                tracker.wakeByReason(Set.of(WaitReason.NO_COURIER, WaitReason.COURIER_BUSY), Math.max(1, freeCouriers(getColony())));
             }
         }
     }
@@ -776,6 +914,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         {
             getTaskQueueFromDataStore().remove(token);
         }
+        taken.remove(token);
 
         if (getCitizen().getWorkBuilding() != null)
         {
@@ -891,7 +1030,113 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
         {
             return 1;
         }
-        return 1 + (getWorkModule().getAssignedCitizen().get(0).getCitizenSkillHandler().getLevel(((WorkerBuildingModule) getWorkModule()).getSecondarySkill()) / 5);
+        final int bySkill = 1 + (getWorkModule().getAssignedCitizen().get(0).getCitizenSkillHandler().getLevel(((WorkerBuildingModule) getWorkModule()).getSecondarySkill()) / 5);
+        final IBuilding hut = getCitizen().getWorkBuilding();
+        return maxParallelDeliveries(bySkill, hut == null ? 1 : hut.getBuildingLevel(), hut == null ? 5 : hut.getMaxBuildingLevel());
+    }
+
+    /**
+     * Round 13 (L2): how many tasks to one destination a courier carries together: as many as it can carry (at most
+     * {@value #MAX_CAPACITY_BATCH}), at least {@value #MIN_BATCH}, or more when its skill allows.
+     *
+     * @param bySkill  the old skill-based count, 1 + skill / 5.
+     * @param level    the courier hut's level.
+     * @param maxLevel the courier hut's maximum level.
+     * @return the batch size.
+     */
+    public static int maxParallelDeliveries(final int bySkill, final int level, final int maxLevel)
+    {
+        return Math.max(MIN_BATCH, Math.max(bySkill, Math.min(MAX_CAPACITY_BATCH, carryStacks(level, maxLevel))));
+    }
+
+    /**
+     * Round 13 (L6): how many stacks a courier carries: 2^(level-1)+1 as before, at least {@value #MIN_CARRY_STACKS}, no limit at the maximum
+     * level (decision 2026-10-22: 4 stacks at level 1).
+     *
+     * @param level    the courier hut's level.
+     * @param maxLevel the courier hut's maximum level.
+     * @return the stacks, {@link Integer#MAX_VALUE} for no limit.
+     */
+    public static int carryStacks(final int level, final int maxLevel)
+    {
+        if (level >= maxLevel)
+        {
+            return Integer.MAX_VALUE;
+        }
+        return Math.max(MIN_CARRY_STACKS, (1 << Math.max(0, level - 1)) + 1);
+    }
+
+    /**
+     * Round 13 (L10): whether the task sits in this courier's queue, without copying the queue.
+     *
+     * @param token a request token.
+     * @return true when it does.
+     */
+    public boolean holdsTask(@NotNull final IToken<?> token)
+    {
+        return getTaskQueueFromDataStore().contains(token);
+    }
+
+    /**
+     * @param colony a colony.
+     * @return how many of its couriers have nothing in their queue.
+     */
+    public static int freeCouriers(@NotNull final com.minecolonies.api.colony.IColony colony)
+    {
+        int free = 0;
+        for (final IWareHouse wareHouse : colony.getServerBuildingManager().getWareHouses())
+        {
+            for (final ICitizenData courier : wareHouse.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen())
+            {
+                if (courier.getJob() instanceof final JobDeliveryman job && job.getTaskQueueFromDataStore().isEmpty())
+                {
+                    free++;
+                }
+            }
+        }
+        return free;
+    }
+
+    /**
+     * Round 13 (L4): a task was queued at a warehouse: the couriers that serve it and wait for work look at their queue within
+     * {@value #WAKE_TICKS} ticks, instead of at the end of their 5 second decision delay.
+     *
+     * @param colony    the colony.
+     * @param wareHouse the warehouse whose queue got the task.
+     * @param except    a courier not to wake (the one that is leaving), may be null.
+     * @return how many couriers were woken.
+     */
+    public static int wakeIdleCouriers(@NotNull final com.minecolonies.api.colony.IColony colony, @NotNull final IWareHouse wareHouse, @Nullable final ICitizenData except)
+    {
+        if (colony.getWorld() == null || colony.getWorld().isClientSide())
+        {
+            return 0;
+        }
+        final List<ICitizenData> couriers = new ArrayList<>();
+        if (colony instanceof final Colony real && StorageNetwork.on(real))
+        {
+            for (final IWareHouse home : colony.getServerBuildingManager().getWareHouses())
+            {
+                if (StorageNetwork.inRange(home.getID(), wareHouse.getID()))
+                {
+                    couriers.addAll(home.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen());
+                }
+            }
+        }
+        else
+        {
+            couriers.addAll(wareHouse.getModule(BuildingModules.WAREHOUSE_COURIERS).getAssignedCitizen());
+        }
+        int woken = 0;
+        for (final ICitizenData courier : couriers)
+        {
+            if (courier != except && courier.getJob() instanceof final JobDeliveryman job && job.getTaskQueueFromDataStore().isEmpty()
+                  && job.getWorkerAI() instanceof final EntityAIWorkDeliveryman ai && ai.wakeSoon(WAKE_TICKS))
+            {
+                woken++;
+            }
+        }
+        return woken;
     }
 
     /**
@@ -909,7 +1154,7 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
 
         if (request.getRequest() instanceof Pickup)
         {
-            final IWareHouse wareHouse = findWareHouse();
+            final IWareHouse wareHouse = scoringHome != null ? scoringHome : findWareHouse();
             if (wareHouse != null)
             {
                 return wareHouse.getID();

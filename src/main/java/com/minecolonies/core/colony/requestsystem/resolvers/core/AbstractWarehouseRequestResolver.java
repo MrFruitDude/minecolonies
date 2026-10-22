@@ -311,7 +311,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             return null;
         }
 
-        if (totalAvailable >= totalRequested || totalAvailable >= request.getRequest().getMinimumCount())
+        if ((totalAvailable >= totalRequested || totalAvailable >= request.getRequest().getMinimumCount())
+              && !remainderToCrafters(colony, request, ledger, totalAvailable, totalRequested))
         {
             // Resolved from stock: the request manager asks for the follow-up next, before anything else runs.
             lastMatched = matched(wareHouse, request, raw);
@@ -543,6 +544,35 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
     }
 
     /**
+     * Round 13 (L7): the warehouse has a little of the item, enough for the request's minimum but less than a quarter of it, and a crafter with a
+     * worker can make it. Instead of handing out the little it has (and the crafters hearing of the rest only when the requester asks again), the
+     * warehouse holds what it has for the request and asks for the remainder at once, as it does when it is short of the minimum: the request is
+     * served in full once the remainder is made. Needs the reservation ledger (the hold keeps the stock from being promised to the remainder too).
+     */
+    private static boolean remainderToCrafters(@NotNull final Colony colony, @NotNull final IRequest<? extends IDeliverable> request, @Nullable final ReservationLedger ledger,
+      final int available, final int requested)
+    {
+        if (!remainderWorthCrafting(ledger != null, available, requested))
+        {
+            return false;
+        }
+        return com.minecolonies.core.colony.requestsystem.wait.WaitDiagnosis.recipeSupport(colony, request.getRequest()) == 2;
+    }
+
+    /**
+     * Round 13 (L7): the pure part of {@link #remainderToCrafters}.
+     *
+     * @param reservations the reservation ledger is on.
+     * @param available    what the warehouses can hand out now.
+     * @param requested    what the request asks for.
+     * @return true when the remainder is worth sending to the crafters at once (a crafter must still exist).
+     */
+    public static boolean remainderWorthCrafting(final boolean reservations, final int available, final int requested)
+    {
+        return reservations && available > 0 && available < requested && (long) available * 4 < requested;
+    }
+
+    /**
      * What the stacks of one warehouse offer when {@code keep} of each item stays in it.
      */
     private static int availableOf(@NotNull final List<Tuple<ItemStack, BlockPos>> stacks, final int keep)
@@ -597,7 +627,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         }
 
         final ColonyStorage storage = ColonyStorage.of(colony);
-        if (totalAvailable >= totalRequested || totalAvailable >= request.getRequest().getMinimumCount())
+        if ((totalAvailable >= totalRequested || totalAvailable >= request.getRequest().getMinimumCount())
+              && !remainderToCrafters(colony, request, ledger, totalAvailable, totalRequested))
         {
             lastNetworkMatched = new NetworkMatched(request.getId(), reads, storage.version(), WarehouseRackIndex.loadEpoch(), colony.getWorld().getGameTime());
             return Lists.newArrayList();

@@ -77,6 +77,13 @@ public final class BuildingPriorities
      */
     private final Map<IToken<?>, Long> firstSeen = new HashMap<>();
 
+    /**
+     * Round 13 (L10): the importance of each request, computed at most once per game tick (every courier deciding in the
+     * tick, and every task of its queue, reads the same parent walk).
+     */
+    private final Map<IToken<?>, RequestImportance> importanceCache = new HashMap<>();
+    private long importanceTick = Long.MIN_VALUE;
+
     private long revision;
 
     /**
@@ -251,6 +258,7 @@ public final class BuildingPriorities
     {
         entries.clear();
         firstSeen.clear();
+        importanceCache.clear();
         revision++;
     }
 
@@ -290,6 +298,55 @@ public final class BuildingPriorities
     {
         final Long first = firstSeen.get(token);
         return first == null ? 0L : Math.max(0L, now - first);
+    }
+
+    /**
+     * Round 13 (L11): restarts a request's clock at the time it first started (a courier that went on a break puts its task
+     * back into the queue, with the wait it already had).
+     *
+     * @param token the request token.
+     * @param since the game time its clock first started.
+     */
+    public void restoreWait(@NotNull final IToken<?> token, final long since)
+    {
+        firstSeen.merge(token, since, Math::min);
+    }
+
+    /**
+     * Round 13 (L10): the importance of a request, cached for the current game tick.
+     *
+     * @param manager the request manager.
+     * @param request the request.
+     * @param now     the game time.
+     * @return the importance.
+     */
+    @NotNull
+    public RequestImportance importance(@NotNull final com.minecolonies.api.colony.requestsystem.manager.IRequestManager manager,
+      @NotNull final com.minecolonies.api.colony.requestsystem.request.IRequest<?> request, final long now)
+    {
+        if (now != importanceTick)
+        {
+            importanceCache.clear();
+            importanceTick = now;
+        }
+        final RequestImportance cached = importanceCache.get(request.getId());
+        if (cached != null)
+        {
+            return cached;
+        }
+        final RequestImportance computed = RequestImportance.of(manager, request);
+        importanceCache.put(request.getId(), computed);
+        return computed;
+    }
+
+    /**
+     * Drops a cached importance (the request changed in this tick, for instance a forced pickup).
+     *
+     * @param token the request token.
+     */
+    public void forgetImportance(@NotNull final IToken<?> token)
+    {
+        importanceCache.remove(token);
     }
 
     /**
@@ -346,6 +403,7 @@ public final class BuildingPriorities
     {
         entries.clear();
         firstSeen.clear();
+        importanceCache.clear();
         revision++;
         final ListTag list = tag.getListOrEmpty(NBT_ENTRIES);
         for (int i = 0; i < list.size(); i++)
