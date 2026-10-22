@@ -1463,7 +1463,8 @@ public final class PathfindingGameTests
     // ------------------------------------------------------------------ real citizen
 
     /**
-     * path_citizen_walks_home: a homeless citizen 30+ blocks from the town hall at midnight walks home around a wall,
+     * path_citizen_walks_home: a homeless citizen 30+ blocks from the town hall at midnight walks home (since round 13: to its own sleeping spot around the
+     * town hall, or the town hall) around a wall,
      * through the real AI, navigator and pathfinding pool, within 1,200 ticks and without being teleported. (Clock pinned
      * to midnight, not 6000: walking home is the behaviour under test.)
      */
@@ -1510,7 +1511,9 @@ public final class PathfindingGameTests
                 last[0] = now;
                 data.setSaturation(20);
                 final double distSq = citizen.blockPosition().distSqr(townHall);
-                if (distSq <= 25)
+                // round 13 D6: a homeless citizen sleeps at its own spot on a ring around the town hall, not on the town hall itself
+                final BlockPos spot = com.minecolonies.core.entity.ai.minimal.EntityAISleep.homelessSpot(data.getHomePosition(), citizen.getCivilianID());
+                if (distSq <= 25 || (spot != null && citizen.blockPosition().distSqr(spot) <= 25))
                 {
                     final String s = String.format("CA1011 walk home: home after %d ticks, max step %.2f", level.getGameTime() - t0, maxStep[0]);
                     Log.getLogger().info(s);

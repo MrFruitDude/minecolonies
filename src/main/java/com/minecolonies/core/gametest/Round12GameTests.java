@@ -139,6 +139,12 @@ public final class Round12GameTests
             for (int z = -2; z <= 2; z++)
             {
                 level.setBlock(pos.offset(x, -1, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+                // round 13: clear the air above the pad; the place 200 blocks away can hold blocks of another test's plot (the test grid moves when tests
+                // are added), and the colony B citizen needs room to spawn
+                for (int y = 0; y <= 3; y++)
+                {
+                    level.setBlock(pos.offset(x, y, z), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                }
             }
         }
         level.setBlock(pos, com.minecolonies.api.blocks.ModBlocks.blockHutTownHall.defaultBlockState(), 3);
