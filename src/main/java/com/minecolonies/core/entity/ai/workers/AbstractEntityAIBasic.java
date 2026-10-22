@@ -889,8 +889,9 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     }
 
     /**
-     * W6: takes completed requests of one place in order while the worker has room. A request is accepted only when all its items are with
-     * him; the first one that does not fit and the rest stay completed for the next visit (after a dump). Public for tests.
+     * W6: takes completed requests of one place in order while the worker has room. The first request of a visit is always accepted (items
+     * that do not fit stay in the hut, as before), so every visit makes progress; a later one is accepted only when all its items are with
+     * him, else it and the rest stay completed for the next visit. Public for tests.
      *
      * @param blockEntity the block entity at the place (the worker stands there).
      * @param requests    the completed requests of that place.
@@ -907,7 +908,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
                 // no room for more: the rest waits for the next visit
                 break;
             }
-            final TakeResult result = takeCompletedRequest(request, blockEntity, takenDeliveries);
+            final TakeResult result = takeCompletedRequest(request, blockEntity, takenDeliveries, taken == 0);
             if (result == TakeResult.TAKEN)
             {
                 taken++;
@@ -970,9 +971,10 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
      * @param request         the request.
      * @param blockEntity     the block entity at the pickup place.
      * @param takenDeliveries the deliveries taken before in this visit; this request's are added when it is taken.
+     * @param first           whether it is the first request of this visit: then it is accepted even if not all items moved.
      * @return the outcome.
      */
-    private TakeResult takeCompletedRequest(final IRequest<?> request, final BlockEntity blockEntity, final List<ItemStack> takenDeliveries)
+    private TakeResult takeCompletedRequest(final IRequest<?> request, final BlockEntity blockEntity, final List<ItemStack> takenDeliveries, final boolean first)
     {
         final boolean async = worker.getCitizenData().isRequestAsync(request.getId());
 
@@ -987,8 +989,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             final List<ItemStorage> niceToHave = itemsNiceToHave();
             final List<ItemStack> contained = InventoryUtils.getContainedFromItemHandler(request.getDeliveries(), worker.getItemHandlerCitizen());
 
-            InventoryUtils.moveItemStacksWithPossibleSwap(
-              worker.getItemHandlerCitizen(),
+            moveAllDeliveries(
               InventoryUtils.getItemHandlersFromProvider(wrappedBlockEntity),
               request.getDeliveries(),
               itemStack ->
@@ -999,7 +1000,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             // (counted together with the deliveries taken before in this visit, so their items do not stand in for these)
             final List<ItemStack> carried = new ArrayList<>(takenDeliveries);
             carried.addAll(request.getDeliveries());
-            if (!InventoryUtils.areAllItemsInItemHandlerList(carried, List.of(worker.getItemHandlerCitizen())))
+            if (!first && !InventoryUtils.areAllItemsInItemHandlerList(carried, List.of(worker.getItemHandlerCitizen())))
             {
                 // W6: not everything moved (no room): not accepted, the request stays completed for the next visit
                 return TakeResult.NO_ROOM;
@@ -1030,6 +1031,35 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             worker.getCitizenData().createRequest(request.getRequest());
         }
         return TakeResult.REMADE;
+    }
+
+    /**
+     * W6: moves every delivery stack from the place into the worker, swapping out items he does not want to keep. (The InventoryUtils swap
+     * helper stops after the first stack, so a request with several delivery stacks never moved in full.)
+     *
+     * @param sources        the handlers at the place.
+     * @param deliveries     the delivery stacks.
+     * @param toKeepInTarget the items the worker keeps.
+     */
+    private void moveAllDeliveries(final Collection<IItemHandler> sources, final List<ItemStack> deliveries, final Predicate<ItemStack> toKeepInTarget)
+    {
+        final IItemHandler target = worker.getItemHandlerCitizen();
+        final Predicate<ItemStack> wantToKeep = toKeepInTarget.or(stack -> ItemStackUtils.compareItemStackListIgnoreStackSize(deliveries, stack));
+        for (final ItemStack itemStack : deliveries)
+        {
+            for (final IItemHandler source : sources)
+            {
+                if (InventoryUtils.tryRemoveStackFromItemHandler(source, itemStack))
+                {
+                    final ItemStack rest = InventoryUtils.forceItemStackToItemHandler(target, itemStack, wantToKeep);
+                    if (rest != null && !rest.isEmpty())
+                    {
+                        InventoryUtils.addItemStackToItemHandler(source, rest);
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     /**
