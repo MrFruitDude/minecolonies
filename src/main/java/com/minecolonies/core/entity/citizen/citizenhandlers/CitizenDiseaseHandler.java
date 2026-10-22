@@ -76,6 +76,18 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
      */
     private boolean sleepsAtHospital = false;
 
+    /**
+     * B2: ticks this citizen has been sick while the colony had no hospital.
+     */
+    private int sickWithoutHospitalTicks = 0;
+
+    /**
+     * B2 (round 13 decision): a sick citizen of a colony without a hospital recovers at home after one game day.
+     */
+    public static final int HOME_RECOVERY_TICKS = 24000;
+
+    private static final String TAG_SICK_NO_HOSPITAL = "sickNoHospital";
+
 
     /**
      * The population at or below which citizens do not fall sick: the free citizen floor (respawncitizenamount, at most the starting count).
@@ -111,6 +123,7 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
             if (citizenData.getRandom().nextInt(configModifier * DISEASE_FACTOR) < citizenModifier * 10)
             {
                 this.disease = DiseasesListener.getRandomDisease(citizenData.getEntity().map(AbstractEntityCitizen::getRandom).orElse(RandomSource.create()));
+                this.sickWithoutHospitalTicks = 0;
             }
         }
 
@@ -118,6 +131,45 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
         {
             immunityTicks -= tickRate;
         }
+
+        if (isSick() && !colonyHasHospital())
+        {
+            sickWithoutHospitalTicks += tickRate;
+            if (sickWithoutHospitalTicks >= HOME_RECOVERY_TICKS)
+            {
+                // B2: no hospital to go to, the citizen got over it at home
+                cure();
+                citizenData.getEntity().ifPresent(entity -> entity.setHealth(entity.getMaxHealth()));
+            }
+        }
+    }
+
+    /**
+     * @return true when the colony has a built hospital.
+     */
+    private boolean colonyHasHospital()
+    {
+        return citizenData.getColony() != null
+                 && citizenData.getColony().getServerBuildingManager().getFirstBuildingMatching(CitizenDiseaseHandler::isUsableHospital) != null;
+    }
+
+    /**
+     * B2: the one hospital check for both the home recovery count and the sick AI: a hospital that is built (level above 0).
+     *
+     * @param building the building.
+     * @return true when the building is a built hospital.
+     */
+    public static boolean isUsableHospital(final IBuilding building)
+    {
+        return building instanceof BuildingHospital && building.getBuildingLevel() > 0;
+    }
+
+    /**
+     * @return the ticks the citizen has been sick while the colony had no hospital (B2).
+     */
+    public int getSickWithoutHospitalTicks()
+    {
+        return sickWithoutHospitalTicks;
     }
 
     @Override
@@ -126,6 +178,7 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
         if (canBecomeSick())
         {
             this.disease = disease;
+            this.sickWithoutHospitalTicks = 0;
             return true;
         }
         return false;
@@ -157,6 +210,7 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
             if (masks <= 0 || citizen.getRandom().nextBoolean())
             {
                 this.disease = citizen.getCitizenDiseaseHandler().getDisease();
+                this.sickWithoutHospitalTicks = 0;
             }
             else
             {
@@ -194,6 +248,7 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
             diseaseTag.putString(TAG_DISEASE_ID, disease.id().toString());
         }
         diseaseTag.putInt(TAG_IMMUNITY, immunityTicks);
+        diseaseTag.putInt(TAG_SICK_NO_HOSPITAL, sickWithoutHospitalTicks);
         compound.put(TAG_DISEASE, diseaseTag);
     }
 
@@ -211,6 +266,7 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
             this.disease = DiseasesListener.getDisease(Identifier.parse(diseaseTag.getStringOr(TAG_DISEASE_ID, "")));
         }
         this.immunityTicks = diseaseTag.getIntOr(TAG_IMMUNITY, 0);
+        this.sickWithoutHospitalTicks = diseaseTag.getIntOr(TAG_SICK_NO_HOSPITAL, 0);
     }
 
     @Override
@@ -225,6 +281,7 @@ public class CitizenDiseaseHandler implements ICitizenDiseaseHandler
     {
         this.disease = null;
         sleepsAtHospital = false;
+        sickWithoutHospitalTicks = 0;
         if (citizenData.isAsleep() && citizenData.getEntity().isPresent())
         {
             citizenData.getEntity().get().stopSleeping();

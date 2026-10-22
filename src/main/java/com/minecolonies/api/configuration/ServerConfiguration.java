@@ -296,7 +296,8 @@ public class ServerConfiguration extends AbstractConfiguration
         maxCitizenPerColony = defineInteger("maxcitizenpercolony", 250, 25, CitizenConstants.CITIZEN_LIMIT_MAX);
         enableInDevelopmentFeatures = defineBoolean("enableindevelopmentfeatures", false);
         alwaysRenderNameTag = defineBoolean("alwaysrendernametag", true);
-        workersAlwaysWorkInRain = defineBoolean("workersalwaysworkinrain", false);
+        // round 13 decision: citizens keep working in the rain by default (an existing config file keeps its value)
+        workersAlwaysWorkInRain = defineBoolean("workersalwaysworkinrain", true);
         luckyBlockChance = defineInteger("luckyblockchance", 1, 0, 100);
         minThLevelToTeleport = defineInteger("minthleveltoteleport", 3, 0, 5);
         foodModifier = defineDouble("foodmodifier", 0.6, 0.1, 100);

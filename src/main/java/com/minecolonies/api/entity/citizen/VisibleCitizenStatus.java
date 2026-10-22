@@ -39,6 +39,14 @@ public class VisibleCitizenStatus
       new VisibleCitizenStatus(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "textures/icons/small_sick_icon.png"), MESSAGE_INFO_CITIZEN_STATUS_SICK, true);
     public final static VisibleCitizenStatus WORKING     =
       new VisibleCitizenStatus(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "textures/icons/working.png"), MESSAGE_INFO_CITIZEN_STATUS_WORKING);
+    /**
+     * Round 13: a worker on a leisure break (id 9) and an idle citizen without a home (id 10). Defined here, after the general icons, so their ids are fixed:
+     * this class creates its own statuses first, before any job status of another class.
+     */
+    public final static VisibleCitizenStatus LEISURE     =
+      new VisibleCitizenStatus(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "textures/icons/leisure.png"), MESSAGE_INFO_CITIZEN_STATUS_LEISURE, true);
+    public final static VisibleCitizenStatus HOMELESS    =
+      new VisibleCitizenStatus(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "textures/icons/warning.png"), MESSAGE_INFO_CITIZEN_STATUS_HOMELESS, true);
 
     /**
      * The status ID

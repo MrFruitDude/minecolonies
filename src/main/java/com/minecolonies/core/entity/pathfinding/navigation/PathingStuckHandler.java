@@ -137,6 +137,23 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
 
     private Random rand = new Random();
 
+    /**
+     * Round 13 D4: a trip that gets no closer to its goal for this many ticks may end in a quick rescue (see {@link IStuckHandlerEntity#getQuickRescueTarget}).
+     */
+    public static final int QUICK_RESCUE_TICKS = 1200;
+
+    /**
+     * D4: no quick rescue while a player is this close to the entity or to the target (the player would see the jump).
+     */
+    public static final int QUICK_RESCUE_PLAYER_RANGE = 32;
+
+    /**
+     * D4: progress on the current trip: the closest distance to the goal so far, and the global timeout at which it last improved by 2 blocks.
+     */
+    private double bestDistanceToGoal = Double.MAX_VALUE;
+    private int    lastProgressTimeout = 0;
+    private int    quickRescues = 0;
+
     private PathingStuckHandler()
     {
     }
@@ -212,6 +229,25 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
                 resetGlobalStuckTimers();
                 return;
             }
+
+            // D4: a non-work trip with no progress for about a minute ends with a quick move to its goal, if nobody would see it
+            if (distanceToGoal < bestDistanceToGoal - 2)
+            {
+                bestDistanceToGoal = distanceToGoal;
+                lastProgressTimeout = globalTimeout;
+            }
+            else if (quickRescueDue(globalTimeout, lastProgressTimeout))
+            {
+                if (tryQuickRescue(navigator.getOurEntity(), prevDestination))
+                {
+                    quickRescues++;
+                    navigator.stop();
+                    resetGlobalStuckTimers();
+                    return;
+                }
+                // not this time (a work trip, a player close by, no free spot): ask again in 10 seconds
+                lastProgressTimeout = globalTimeout - QUICK_RESCUE_TICKS + 200;
+            }
         }
 
         delayToNextUnstuckAction -= 10;
@@ -264,8 +300,70 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
     public void resetGlobalStuckTimers()
     {
         globalTimeout = 0;
+        bestDistanceToGoal = Double.MAX_VALUE;
+        lastProgressTimeout = 0;
         prevDestination = BlockPos.ZERO;
         resetStuckTimers();
+    }
+
+    /**
+     * D4: whether a trip is due a quick rescue.
+     *
+     * @param globalTimeout       the ticks on the trip so far.
+     * @param lastProgressTimeout the trip tick at which the entity last got 2 blocks closer to its goal.
+     * @return true after {@link #QUICK_RESCUE_TICKS} ticks without progress.
+     */
+    public static boolean quickRescueDue(final int globalTimeout, final int lastProgressTimeout)
+    {
+        return globalTimeout - lastProgressTimeout >= QUICK_RESCUE_TICKS;
+    }
+
+    /**
+     * D4: moves the entity next to the target its own rules give for this trip, when no player is within {@link #QUICK_RESCUE_PLAYER_RANGE} blocks of it or of
+     * the target. Server side only.
+     *
+     * @param entity      the entity.
+     * @param destination the destination of its trip.
+     * @return true when the entity was moved.
+     */
+    public static boolean tryQuickRescue(final Mob entity, final BlockPos destination)
+    {
+        if (!(entity instanceof IStuckHandlerEntity handlerEntity) || entity.level().isClientSide() || entity.isPassenger())
+        {
+            return false;
+        }
+        final BlockPos target = handlerEntity.getQuickRescueTarget(destination);
+        if (target == null)
+        {
+            return false;
+        }
+        final Level world = entity.level();
+        if (world.getNearestPlayer(entity, QUICK_RESCUE_PLAYER_RANGE) != null
+              || world.getNearestPlayer(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, QUICK_RESCUE_PLAYER_RANGE, false) != null)
+        {
+            return false;
+        }
+        // a free spot: walkable floor, and no collision where the body goes (a hut block counts as droppable for pathing, but is solid)
+        final BlockPos tpPos = BlockPosUtil.findAround(world, target, 6, 6,
+          (posworld, pos) -> SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos.below()), pos.below()) == SurfaceType.WALKABLE
+                               && SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos), pos) == SurfaceType.DROPABLE
+                               && SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos.above()), pos.above()) == SurfaceType.DROPABLE
+                               && posworld.getBlockState(pos).getCollisionShape(posworld, pos).isEmpty()
+                               && posworld.getBlockState(pos.above()).getCollisionShape(posworld, pos.above()).isEmpty());
+        if (tpPos == null)
+        {
+            return false;
+        }
+        entity.teleportTo(tpPos.getX() + 0.5, tpPos.getY(), tpPos.getZ() + 0.5);
+        return true;
+    }
+
+    /**
+     * @return how many quick rescues this handler made (for tests and diagnostics).
+     */
+    public int getQuickRescues()
+    {
+        return quickRescues;
     }
 
     /**

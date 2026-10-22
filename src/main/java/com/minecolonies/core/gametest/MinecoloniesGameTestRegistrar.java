@@ -169,6 +169,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 // round 13 lane mc-work: worker loops and the AI counters
                 Round13WorkGameTests.register(event);
             }
+            if (only.contains("life"))
+            {
+                registerLife(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -756,6 +760,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         registerBuilderScaffolding(event);
         registerHunger(event);
         Round13WorkGameTests.register(event);
+        registerLife(event);
         registerScaffoldRecipe(event);
         registerIdleHelpers(event);
         // C2 builder collaboration observability and controls (one glob: minecolonies:collab_obs_*).
@@ -1447,6 +1452,21 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "hunger_labourer_snack" -> LabourGameTests::labourerEatsAtWork;
                 default -> WorkHungerGameTests::startingSaturationSpread;
             };
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
+    }
+
+    /**
+     * Round 13 lane mc-life: citizen daily life and robustness (one glob: minecolonies:life_*).
+     */
+    private void registerLife(final RegisterGameTestsEvent event)
+    {
+        for (final String name : Round13LifeGameTests.NAMES)
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = Round13LifeGameTests.test(name);
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),

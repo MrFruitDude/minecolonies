@@ -52,6 +52,11 @@ public class LookAtEntityGoal extends Goal
         {
             return false;
         }
+        else if (mob instanceof EntityCitizen watched && !watched.isWatchedByPlayer())
+        {
+            // round 13 D7: nobody sees where this citizen looks, skip the entity scan
+            return false;
+        }
         else
         {
             if (this.mob.getTarget() != null)

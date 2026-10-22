@@ -28,7 +28,10 @@ import com.minecolonies.core.entity.ai.workers.service.EntityAIWorkDeliveryman;
 import com.minecolonies.core.entity.citizen.EntityCitizen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.level.Level;
+import com.minecolonies.api.entity.mobs.AbstractEntityMinecoloniesRaider;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -61,6 +64,37 @@ public class CitizenAI implements IStateAI
      * List of small AI's added
      */
     private List<IStateAI> minimalAI = new ArrayList<>();
+
+    /**
+     * The status the last decision asked for (B5): applied when the state changes, so a new state starts with its own status instead of none.
+     */
+    private VisibleCitizenStatus intendedStatus = null;
+
+    /**
+     * D3: whether the citizen hid from raiders at its last check, and the game time until which that answer holds.
+     */
+    private boolean hidingFromRaid    = false;
+    private long    raidCheckValidUntil = Long.MIN_VALUE;
+
+    /**
+     * D3: citizens within this many blocks of a raider hide; the others carry on.
+     */
+    public static final int RAID_HIDE_RANGE = 32;
+
+    /**
+     * D3: how long one raider check holds, in ticks.
+     */
+    private static final int RAID_CHECK_TICKS = 40;
+
+    /**
+     * D3: a worker inside its hut hides only from a raider this close.
+     */
+    public static final int RAID_INDOOR_RANGE = 8;
+
+    /**
+     * D5: the longest extra sleep after dawn, in ticks, spread over the citizens by id.
+     */
+    public static final int MAX_WAKE_DELAY = 600;
 
     public CitizenAI(final EntityCitizen citizen)
     {
@@ -122,6 +156,7 @@ public class CitizenAI implements IStateAI
      */
     private IState decideAiTask()
     {
+        intendedStatus = null;
         IState next = calculateNextState();
         if (next == null || next == lastState)
         {
@@ -132,7 +167,8 @@ public class CitizenAI implements IStateAI
             return null;
         }
 
-        citizen.getCitizenData().setVisibleStatus(null);
+        // B5: the new state starts with the status the decision asked for (MOURNING, RAIDED, ...), not with none; its own AI may set a finer one.
+        citizen.getCitizenData().setVisibleStatus(intendedStatus);
         if (lastState == CitizenAIState.LABOUR)
         {
             // sleep, food, care, a job: the idle task of the citizen ends
@@ -159,7 +195,7 @@ public class CitizenAI implements IStateAI
             // Sick
             if (citizen.getCitizenData().getCitizenDiseaseHandler().isSick() && guardJob.canAIBeInterrupted())
             {
-                citizen.getCitizenData().setVisibleStatus(VisibleCitizenStatus.SICK);
+                setStatus(VisibleCitizenStatus.SICK);
                 return CitizenAIState.SICK;
             }
 
@@ -169,24 +205,34 @@ public class CitizenAI implements IStateAI
         // Sick at hospital
         if (citizen.getCitizenData().getCitizenDiseaseHandler().isSick() && citizen.getCitizenData().getCitizenDiseaseHandler().sleepsAtHospital())
         {
-            citizen.getCitizenData().setVisibleStatus(VisibleCitizenStatus.SICK);
+            setStatus(VisibleCitizenStatus.SICK);
             return CitizenAIState.SICK;
         }
 
-        // Raiding
+        // Raiding (D3): only citizens near a raider hide; the others, indoor workers included, carry on.
         if (citizen.getCitizenColonyHandler().getColonyOrRegister().getRaiderManager().isRaided())
         {
-            citizen.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(COM_MINECOLONIES_COREMOD_ENTITY_CITIZEN_RAID), ChatPriority.IMPORTANT));
-            citizen.setVisibleStatusIfNone(RAIDED);
-            return CitizenAIState.SLEEP;
+            if (shouldHideFromRaid())
+            {
+                citizen.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(COM_MINECOLONIES_COREMOD_ENTITY_CITIZEN_RAID), ChatPriority.IMPORTANT));
+                want(RAIDED);
+                return CitizenAIState.SLEEP;
+            }
+        }
+        else
+        {
+            hidingFromRaid = false;
+            raidCheckValidUntil = Long.MIN_VALUE;
         }
 
-        // Sleeping
-        if (!WorldUtil.isPastTime(CompatibilityUtils.getWorldFromCitizen(citizen), WorkerSettings.nightStartFor(citizen.getCitizenData().getJob() != null) - 2000))
+        // Sleeping (D5: a sleeper wakes up to MAX_WAKE_DELAY ticks after dawn, spread by citizen id, so the town does not set off all at once)
+        final Level level = CompatibilityUtils.getWorldFromCitizen(citizen);
+        if (!WorldUtil.isPastTime(level, WorkerSettings.nightStartFor(citizen.getCitizenData().getJob() != null) - 2000)
+              || (lastState == CitizenAIState.SLEEP && stillSleepingAfterDawn(level.getOverworldClockTime() % 24000, citizen.getCivilianID())))
         {
             if (lastState == CitizenAIState.SLEEP)
             {
-                citizen.setVisibleStatusIfNone(SLEEP);
+                want(SLEEP);
                 citizen.getCitizenAI().setCurrentDelay(20 * 15);
                 return CitizenAIState.SLEEP;
             }
@@ -194,6 +240,7 @@ public class CitizenAI implements IStateAI
             if (citizen.getCitizenSleepHandler().shouldGoSleep() && !courierFinishesTaskFirst())
             {
                 citizen.getCitizenData().onGoSleep();
+                want(SLEEP);
                 return CitizenAIState.SLEEP;
             }
         }
@@ -219,13 +266,14 @@ public class CitizenAI implements IStateAI
         // Sick
         if (citizen.getCitizenData().getCitizenDiseaseHandler().isSick() || citizen.getCitizenData().getCitizenDiseaseHandler().isHurt())
         {
-            citizen.getCitizenData().setVisibleStatus(VisibleCitizenStatus.SICK);
+            setStatus(VisibleCitizenStatus.SICK);
             return CitizenAIState.SICK;
         }
 
         // Eating
         if (shouldEat() && !courierFinishesTaskFirst())
         {
+            want(EAT);
             return CitizenAIState.EATING;
         }
 
@@ -239,15 +287,16 @@ public class CitizenAI implements IStateAI
                   Component.translatableEscape(COM_MINECOLONIES_COREMOD_ENTITY_CITIZEN_MOURNING),
                   ChatPriority.IMPORTANT));
 
-                citizen.setVisibleStatusIfNone(MOURNING);
             }
+            // B5: mourners keep the MOURNING status for the whole mourning, not only on its first step
+            want(MOURNING);
             return CitizenAIState.MOURN;
         }
 
         // Raining
         if (CompatibilityUtils.getWorldFromCitizen(citizen).isRaining() && !shouldWorkWhileRaining() && !WorldUtil.isNetherType(citizen.level()) && !courierFinishesTaskFirst())
         {
-            citizen.setVisibleStatusIfNone(BAD_WEATHER);
+            want(BAD_WEATHER);
             if (!citizen.getCitizenData().getColony().getRaiderManager().isRaided()
                   && !citizen.getCitizenData().getCitizenMournHandler().isMourning())
             {
@@ -259,14 +308,14 @@ public class CitizenAI implements IStateAI
         // Work
         if (citizen.isBaby() && citizen.getCitizenJobHandler().getColonyJob() instanceof JobPupil && citizen.level().getOverworldClockTime() % 24000 > NOON)
         {
-            citizen.setVisibleStatusIfNone(HOUSE);
+            want(HOUSE);
             return CitizenAIState.IDLE;
         }
 
         // An unemployed citizen with a task of the idle citizen arbiter (after the needs above: they end it)
         if (citizen.getCitizenJobHandler().getColonyJob() == null && IdleCitizenArbiter.hasSession(citizen.getCitizenData()))
         {
-            citizen.setVisibleStatusIfNone(WORKING);
+            want(WORKING);
             return CitizenAIState.LABOUR;
         }
 
@@ -276,12 +325,121 @@ public class CitizenAI implements IStateAI
             || !citizen.getCitizenData().getJob().canAIBeInterrupted()
             || !abstractEntityAIBasic.canTakeLeisure()))
         {
-            citizen.setVisibleStatusIfNone(WORKING);
+            want(WORKING);
             return CitizenAIState.WORK;
         }
 
-        citizen.setVisibleStatusIfNone(HOUSE);
+        want(idleStatus(citizen.getCitizenJobHandler().getColonyJob() != null, citizen.getCitizenData().getLeisureTime(), citizen.getCitizenData().getHomeBuilding() != null));
         return CitizenAIState.IDLE;
+    }
+
+    /**
+     * The status of an idle citizen (B5): LEISURE for a worker on a leisure break, HOMELESS for one without a home, else HOUSE.
+     *
+     * @param hasJob      whether the citizen has a job.
+     * @param leisureTime the remaining leisure time in ticks.
+     * @param hasHome     whether the citizen has a home building.
+     * @return the status.
+     */
+    public static VisibleCitizenStatus idleStatus(final boolean hasJob, final int leisureTime, final boolean hasHome)
+    {
+        if (hasJob && leisureTime > 0)
+        {
+            return LEISURE;
+        }
+        return hasHome ? HOUSE : HOMELESS;
+    }
+
+    /**
+     * Asks for a status: set now if the citizen shows none, and applied when the state changes.
+     */
+    private void want(final VisibleCitizenStatus status)
+    {
+        intendedStatus = status;
+        citizen.setVisibleStatusIfNone(status);
+    }
+
+    /**
+     * Sets a status now (it replaces the current one), and applies it when the state changes.
+     */
+    private void setStatus(final VisibleCitizenStatus status)
+    {
+        intendedStatus = status;
+        citizen.getCitizenData().setVisibleStatus(status);
+    }
+
+    /**
+     * D5: the extra sleep of a citizen after dawn.
+     *
+     * @param citizenId the citizen id.
+     * @return 0 to {@link #MAX_WAKE_DELAY} ticks, fixed per citizen.
+     */
+    public static int wakeDelay(final int citizenId)
+    {
+        return Math.floorMod(citizenId * 7919, MAX_WAKE_DELAY + 1);
+    }
+
+    /**
+     * D5: whether a sleeper still sleeps at this time of the day.
+     *
+     * @param dayTime   the time of the day, 0 is dawn.
+     * @param citizenId the citizen id.
+     * @return true in the first {@link #wakeDelay} ticks after dawn.
+     */
+    public static boolean stillSleepingAfterDawn(final long dayTime, final int citizenId)
+    {
+        return dayTime >= 0 && dayTime < wakeDelay(citizenId);
+    }
+
+    /**
+     * D3: whether this citizen hides from the raid: only when a raider is within {@link #RAID_HIDE_RANGE} blocks. One check holds for
+     * {@link #RAID_CHECK_TICKS} ticks; a hider keeps hiding until no raider is within the range plus 8 blocks.
+     *
+     * @return true when the citizen should hide.
+     */
+    private boolean shouldHideFromRaid()
+    {
+        final long now = citizen.level().getGameTime();
+        if (now < raidCheckValidUntil)
+        {
+            return hidingFromRaid;
+        }
+        raidCheckValidUntil = now + RAID_CHECK_TICKS;
+        hidingFromRaid = raiderWithin(citizen, raidHideRange(hidingFromRaid, isIndoorsAtWork()));
+        return hidingFromRaid;
+    }
+
+    /**
+     * D3: a worker at work inside its hut keeps working unless a raider comes within {@link #RAID_INDOOR_RANGE} blocks.
+     *
+     * @return true when the citizen works and stands inside its work building.
+     */
+    private boolean isIndoorsAtWork()
+    {
+        final var work = citizen.getCitizenColonyHandler().getWorkBuilding();
+        return (lastState == CitizenAIState.WORK || lastState == CitizenAIState.WORKING) && work != null && work.isInBuilding(citizen.blockPosition());
+    }
+
+    /**
+     * D3: the raider range at which a citizen hides.
+     *
+     * @param hiding          whether the citizen hides already (it keeps hiding until the raiders are 8 blocks further away).
+     * @param indoorsAtWork   whether the citizen works inside its hut.
+     * @return the range in blocks.
+     */
+    public static int raidHideRange(final boolean hiding, final boolean indoorsAtWork)
+    {
+        return (indoorsAtWork ? RAID_INDOOR_RANGE : RAID_HIDE_RANGE) + (hiding ? 8 : 0);
+    }
+
+    /**
+     * @param entity the citizen.
+     * @param range  the range in blocks.
+     * @return true when a living raider is within the range of the citizen.
+     */
+    public static boolean raiderWithin(final Entity entity, final double range)
+    {
+        return !entity.level().getEntitiesOfClass(AbstractEntityMinecoloniesRaider.class, entity.getBoundingBox().inflate(range), Entity::isAlive).isEmpty();
     }
 
     /**

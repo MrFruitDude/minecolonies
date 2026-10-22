@@ -71,6 +71,19 @@ public class EntityAISleep implements IStateAI
      */
     private int bedTicks = 0;
 
+    /**
+     * D6: whether a homeless citizen has set off to its spot in this sleep.
+     */
+    private boolean homelessWalkStarted = false;
+
+    /**
+     * Homeless walks that ended short of the spot in this sleep, and the game time of the next try: the walk is tried again with a growing wait
+     * (30 ticks, doubling, at most {@link #MAX_HOMELESS_RETRY} ticks).
+     */
+    private int  homelessRetries   = 0;
+    private long nextHomelessWalk  = 0;
+    public static final int MAX_HOMELESS_RETRY = 600;
+
     public enum SleepState implements IState
     {
         WALKING_HOME,
@@ -115,8 +128,13 @@ public class EntityAISleep implements IStateAI
         final IBuilding homeBuilding = citizen.getCitizenData().getHomeBuilding();
         if (homeBuilding == null)
         {
-            @Nullable final BlockPos homePosition = citizen.getCitizenData().getHomePosition();
-            if (homePosition.distSqr(BlockPos.containing(Math.floor(citizen.getX()), citizen.getY(), Math.floor(citizen.getZ()))) <= RANGE_TO_BE_HOME)
+            // D6: each homeless citizen sleeps at its own spot around the town hall (or tavern), not all on one block
+            @Nullable final BlockPos center = citizen.getCitizenData().getHomePosition();
+            @Nullable final BlockPos homePosition = homelessSpot(center, citizen.getCivilianID());
+            final BlockPos at = BlockPos.containing(Math.floor(citizen.getX()), citizen.getY(), Math.floor(citizen.getZ()));
+            if (homePosition == null || homePosition.distSqr(at) <= RANGE_TO_BE_HOME
+                  // the spot may be out of reach (a wall, water): a walk that ended near the town hall counts as home
+                  || (homelessWalkStarted && citizen.getNavigation().isDone() && center.distSqr(at) <= 16 * 16))
             {
                 return FIND_BED;
             }
@@ -127,6 +145,16 @@ public class EntityAISleep implements IStateAI
         }
 
         citizen.getCitizenData().setVisibleStatus(VisibleCitizenStatus.SLEEP);
+        if (homeBuilding == null && homelessWalkStarted && citizen.getNavigation().isDone())
+        {
+            // the walk to an unreachable spot ended far from the town hall: wait longer before each new try
+            final long now = citizen.level().getGameTime();
+            if (now < nextHomelessWalk)
+            {
+                return WALKING_HOME;
+            }
+            nextHomelessWalk = now + homelessRetryDelay(++homelessRetries);
+        }
         goHome();
         return WALKING_HOME;
     }
@@ -153,6 +181,9 @@ public class EntityAISleep implements IStateAI
     {
         usedBed = null;
         bedTicks = 0;
+        homelessWalkStarted = false;
+        homelessRetries = 0;
+        nextHomelessWalk = 0;
     }
 
     private void findBedAndTryToSleep()
@@ -242,6 +273,35 @@ public class EntityAISleep implements IStateAI
     }
 
     /**
+     * @param retries the homeless walks that ended short of the spot, from 1.
+     * @return the wait before the next walk, in ticks.
+     */
+    public static int homelessRetryDelay(final int retries)
+    {
+        return Math.min(MAX_HOMELESS_RETRY, 30 << Math.min(Math.max(0, retries - 1), 5));
+    }
+
+    /**
+     * D6: the sleeping spot of a homeless citizen: on a ring of 6 to 14 blocks around the shared home position, at an angle set by the citizen id (golden
+     * angle steps, so neighbouring ids land apart).
+     *
+     * @param center    the shared home position (town hall or tavern).
+     * @param citizenId the citizen id.
+     * @return the spot, or null without a center.
+     */
+    @Nullable
+    public static BlockPos homelessSpot(@Nullable final BlockPos center, final int citizenId)
+    {
+        if (center == null)
+        {
+            return null;
+        }
+        final double angle = Math.floorMod(citizenId, 1000) * 2.399963229728653D;
+        final int radius = 6 + Math.floorMod(citizenId * 3, 5) * 2;
+        return center.offset((int) Math.round(Math.cos(angle) * radius), 0, (int) Math.round(Math.sin(angle) * radius));
+    }
+
+    /**
      * While going home play a goHome sound for the specific worker by chance.
      */
     private void goHome()
@@ -253,7 +313,12 @@ public class EntityAISleep implements IStateAI
         }
         else
         {
-            EntityNavigationUtils.walkToPos(citizen, citizen.getCitizenData().getHomePosition(), 4, true);
+            final BlockPos spot = homelessSpot(citizen.getCitizenData().getHomePosition(), citizen.getCivilianID());
+            if (spot != null)
+            {
+                EntityNavigationUtils.walkToPos(citizen, spot, 4, true);
+                homelessWalkStarted = true;
+            }
         }
 
         final int chance = citizen.getRandom().nextInt(CHANCE);

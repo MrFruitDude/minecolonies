@@ -1667,6 +1667,19 @@ public class CitizenData implements ICitizenData
         }
     }
 
+    /**
+     * Round 13 decision: the same leisure chance at every home level (the level 1 rate, about one break per two hours of play), so a better home does not
+     * mean less work. Before, the chance grew with the home level.
+     *
+     * @param homeLevel the level of the citizen's home (ignored, kept for callers and tests).
+     * @param tickRate  the update rate in ticks.
+     * @return the bound of the random roll: a break starts when the roll is 0.
+     */
+    public static int leisureRollBound(final int homeLevel, final int tickRate)
+    {
+        return Math.max(1, TICKS_SECOND * 60 * 120 / Math.max(1, tickRate));
+    }
+
     @Override
     public void setInteractedRecently(final UUID player)
     {
@@ -1687,7 +1700,7 @@ public class CitizenData implements ICitizenData
         {
             leisureTime -= tickRate;
         }
-        else if (MathUtils.RANDOM.nextInt(TICKS_SECOND * 60 * (int) (60 / (homeBuildingLevel / 2.0)) / tickRate) <= 0)
+        else if (MathUtils.RANDOM.nextInt(leisureRollBound(homeBuildingLevel, tickRate)) <= 0)
         {
             leisureTime = (int) (TICKS_SECOND * 60 * 3.0);
         }

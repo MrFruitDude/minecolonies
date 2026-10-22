@@ -8,6 +8,7 @@ import com.minecolonies.api.colony.interactionhandling.ChatPriority;
 import com.minecolonies.api.colony.jobs.IJob;
 import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.entity.ai.IStateAI;
+import com.minecolonies.api.entity.citizen.VisibleCitizenStatus;
 import com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState;
 import com.minecolonies.api.entity.ai.statemachine.states.IState;
 import com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.TickingTransition;
@@ -126,6 +127,11 @@ public class EntityAIEatTask implements IStateAI
     private IBuilding restaurant;
 
     /**
+     * D7: the restaurant the citizen waits at, kept for 30 seconds.
+     */
+    private final CachedBuildingLookup waitingRestaurant = new CachedBuildingLookup(BuildingCook.class);
+
+    /**
      * Timeout for walking
      */
     private int timeOutWalking = 0;
@@ -147,6 +153,8 @@ public class EntityAIEatTask implements IStateAI
 
         citizen.getCitizenAI().addTransition(new TickingTransition<>(CitizenAIState.EATING, () -> true, () -> {
             reset();
+            // B5: the card shows "Hungry" for the whole meal, from the walk to the food to the last bite
+            citizen.getCitizenData().setVisibleStatus(VisibleCitizenStatus.EAT);
             return CHECK_FOR_FOOD;
         }, 20));
 
@@ -344,7 +352,9 @@ public class EntityAIEatTask implements IStateAI
     {
         final ICitizenData citizenData = citizen.getCitizenData();
         final IColony colony = citizenData.getColony();
-        restaurantPos = colony.getServerBuildingManager().getBestBuilding(citizenData.getWorkBuilding() != null ? citizenData.getWorkBuilding().getPosition() : citizen.blockPosition(), BuildingCook.class);
+        // D7: this runs every second while the citizen waits; the best restaurant is kept for 30 seconds
+        restaurantPos = waitingRestaurant.get(colony, citizen.level().getGameTime(), () -> colony.getServerBuildingManager().getBestBuilding(
+          citizenData.getWorkBuilding() != null ? citizenData.getWorkBuilding().getPosition() : citizen.blockPosition(), BuildingCook.class));
         if (restaurantPos == null)
         {
             return SEARCH_RESTAURANT;
