@@ -66,7 +66,12 @@ public enum WaitReason
      * Labourers could serve the request but cannot: no tree or block in reach, no table, no tool material, a covered intermediate nobody has, or every labourer is busy.
      * The hint of the request says which.
      */
-    LABOUR_BLOCKED(Severity.WARNING);
+    LABOUR_BLOCKED(Severity.WARNING),
+    /**
+     * Round 13: a pickup for a hut that is full (its worker cannot dump) waits for a courier. The pickup is urgent.
+     * Appended last: the reason travels as its ordinal, and older readers show an unknown ordinal as {@link #NONE}.
+     */
+    HUT_FULL_PICKUP_QUEUED(Severity.INFO);
 
     /**
      * How loud a reason is.

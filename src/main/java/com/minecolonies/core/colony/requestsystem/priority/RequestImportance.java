@@ -24,7 +24,10 @@ import java.util.Locale;
  * <ul>
  *   <li>{@link #BACKGROUND}: the root asks for a {@link MinimumStack}, i.e. a minimum-stock top-up of a warehouse, post box
  *   or any other building with the minimum-stock module; or the root is a {@link Pickup}, the periodic sweep of a building's
- *   output. A pickup the player forced ("pick up now", priority at the building maximum) is {@link #NORMAL}.</li>
+ *   output. A sweep that aged to the building maximum is {@link #NORMAL}.</li>
+ *   <li>Round 13 (L1): a pickup is {@link #URGENT} when it was forced (a full hut whose worker could not dump, the player's
+ *   "pick up now", a stash; see {@link #isForcedPickup}) or when the hut is full right now: its worker stands still until the
+ *   courier comes.</li>
  *   <li>{@link #URGENT}: the root was asked by a building that has at least one assigned worker (a
  *   {@link WorkerBuildingModule} with a citizen): the builder's current bucket, the crafter's current recipe, a miner's pickaxe.
  *   That worker's AI is parked until the request is served.</li>
@@ -123,17 +126,72 @@ public enum RequestImportance
         }
 
         final Object asked = root.getRequest();
-        final boolean minimumStock = asked instanceof MinimumStack;
-        final boolean sweep = asked instanceof Pickup pickup && pickup.getPriority() < AbstractDeliverymanRequestable.getMaxBuildingPriority(true);
-        if (minimumStock || sweep)
+        if (asked instanceof MinimumStack)
         {
             return BACKGROUND;
         }
-        if (asked instanceof Pickup)
+        if (asked instanceof Pickup pickup)
         {
-            return NORMAL;
+            return ofPickup(pickup.getPriority(), isForcedPickup(pickup) || hutFull(manager, root));
         }
         return classify(false, false, workerBlocked(manager, root));
+    }
+
+    /**
+     * Round 13 (L1): the importance of a pickup, on facts.
+     *
+     * @param priority the pickup's priority (aging raises it).
+     * @param blocking the pickup was forced, or the hut is full now.
+     * @return URGENT when blocking, NORMAL for a sweep that aged to the building maximum, else BACKGROUND.
+     */
+    @NotNull
+    public static RequestImportance ofPickup(final int priority, final boolean blocking)
+    {
+        if (blocking)
+        {
+            return URGENT;
+        }
+        return priority >= AbstractDeliverymanRequestable.getMaxBuildingPriority(true) ? NORMAL : BACKGROUND;
+    }
+
+    /**
+     * Round 13 (L1, B1): a forced pickup carries the player-action priority, which aging never reaches.
+     *
+     * @param pickup a pickup.
+     * @return true when it was forced.
+     */
+    public static boolean isForcedPickup(@NotNull final Pickup pickup)
+    {
+        return pickup.getPriority() >= AbstractDeliverymanRequestable.getPlayerActionPriority(true);
+    }
+
+    /**
+     * @return true when the building that asked for the pickup has no free slot left (its worker cannot dump).
+     */
+    private static boolean hutFull(final IRequestManager manager, final IRequest<?> root)
+    {
+        final IColony colony = manager.getColony();
+        final IRequester requester = root.getRequester();
+        if (colony == null || requester == null || colony.getWorld() == null || colony.getWorld().isClientSide())
+        {
+            return false;
+        }
+        return loadedHutFull(colony, colony.getServerBuildingManager().getBuilding(requester.getLocation().getInDimensionLocation()));
+    }
+
+    /**
+     * Round 13 (c2): a hut counts as full only when it is loaded and its loaded racks have no free slot. Unloaded is checked first, so an
+     * unloaded hut never makes a pickup URGENT or {@code HUT_FULL_PICKUP_QUEUED}.
+     *
+     * @param colony   the colony.
+     * @param building the hut, may be null.
+     * @return true when it is loaded and full.
+     */
+    public static boolean loadedHutFull(@NotNull final IColony colony, @Nullable final IBuilding building)
+    {
+        return building != null && !building.getContainers().isEmpty()
+                 && com.minecolonies.api.util.WorldUtil.isBlockLoaded(colony.getWorld(), building.getPosition())
+                 && com.minecolonies.api.util.InventoryUtils.isBuildingFull(building);
     }
 
     private static boolean workerBlocked(final IRequestManager manager, final IRequest<?> root)

@@ -173,6 +173,16 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerLife(event);
             }
+            if (only.contains("logistics"))
+            {
+                // round 13: the request system, courier and logistics tests (no long headline runs)
+                registerRequestSystem(event, false);
+                if (!only.contains("courier"))
+                {
+                    RequestCourierGameTests.register(event);
+                }
+                LogisticsGameTests.register(event);
+            }
             return;
         }
         StorageNetworkGameTests.register(event);
@@ -782,10 +792,21 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         // CA-1 + CA-3 request-system / citizen view sync (one glob: minecolonies:reqsync_*).
         RequestSyncGameTests.register(event);
         RequestCourierGameTests.register(event);
+        LogisticsGameTests.register(event);
         // Citizens' tools wear like a player's tools (one glob: minecolonies:tooldur_*).
         ToolDurabilityGameTests.register(event);
         // A blank blueprint path (source stashes) stays blank and breaks nothing (one glob: minecolonies:emptybp_*).
         EmptyBlueprintGameTests.register(event);
+        registerRequestSystem(event, true);
+    }
+
+    /**
+     * The request system checks (globs minecolonies:rs_* and, with {@code headline}, the long minecolonies:rsx_* acceptance runs). Part of the
+     * default suite; round 13: also the group {@code MINECOLONIES_GAMETEST_ONLY=logistics} (without the long headline runs), with the courier
+     * tests and the round 13 logistics tests.
+     */
+    private void registerRequestSystem(final RegisterGameTestsEvent event, final boolean headline)
+    {
         // Request system defect checks (one glob: minecolonies:rs_*).
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_craft_batch_zero"),
@@ -852,23 +873,26 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_reserve_building_handout"),
           info -> new MinecoloniesGameTestInstance(info, RequestReservationGameTests::buildingHandoutHeld),
           isolatedColonyData(event, "rs_reserve_building_handout"));
-        // The acceptance test (own glob: minecolonies:rsx_*): a hut placed with zero materials gets built.
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_flags_off"),
-          info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, false)),
-          longIsolatedColonyData(event, "rsx_headline_flags_off", 60_000));
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_flags_on"),
-          info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, true)),
-          longIsolatedColonyData(event, "rsx_headline_flags_on", 60_000));
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_split_off"),
-          info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, false, true)),
-          longIsolatedColonyData(event, "rsx_headline_split_off", 60_000));
-        event.registerTest(
-          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_split_on"),
-          info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, true, true)),
-          longIsolatedColonyData(event, "rsx_headline_split_on", 60_000));
+        if (headline)
+        {
+            // The acceptance test (own glob: minecolonies:rsx_*): a hut placed with zero materials gets built.
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_flags_off"),
+              info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, false)),
+              longIsolatedColonyData(event, "rsx_headline_flags_off", 60_000));
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_flags_on"),
+              info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, true)),
+              longIsolatedColonyData(event, "rsx_headline_flags_on", 60_000));
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_split_off"),
+              info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, false, true)),
+              longIsolatedColonyData(event, "rsx_headline_split_off", 60_000));
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rsx_headline_split_on"),
+              info -> new MinecoloniesGameTestInstance(info, helper -> RequestSystemHeadlineGameTests.headline(helper, true, true)),
+              longIsolatedColonyData(event, "rsx_headline_split_on", 60_000));
+        }
         // RS2: named wait reasons, event-driven re-evaluation.
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_unproducible_player_once"),

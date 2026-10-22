@@ -109,6 +109,31 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
     @Nullable
     private NetworkMatched lastNetworkMatched;
 
+    /**
+     * Round 13 (L7): a remainder the last attempt planned, sent when the request is assigned here (not in the attempt, which another resolver
+     * may still win).
+     *
+     * @param request   the request that was served from stock.
+     * @param remainder what goes to the crafters.
+     * @param key       the item key.
+     */
+    private record PendingRemainder(IToken<?> request, IDeliverable remainder, Object key)
+    {
+    }
+
+    @Nullable
+    private PendingRemainder pendingRemainder;
+
+    /**
+     * Round 13 (L7): the open remainder per item key. Transient: after a load a second remainder may be sent while an old one is still open.
+     */
+    private final Map<Object, IToken<?>> openRemainders = new HashMap<>();
+
+    /**
+     * Test and bench counter: remainders sent to crafters.
+     */
+    public static long remaindersSent;
+
     public AbstractWarehouseRequestResolver(
       @NotNull final ILocation location,
       @NotNull final IToken<?> token)
@@ -249,6 +274,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         final TileEntityWareHouse wareHouse = wareHouseBuilding == null ? null : (TileEntityWareHouse) wareHouseBuilding.getTileEntity();
         lastMatched = null;
         lastNetworkMatched = null;
+        pendingRemainder = null;
         if (wareHouse == null)
         {
             return Lists.newArrayList();
@@ -315,6 +341,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         {
             // Resolved from stock: the request manager asks for the follow-up next, before anything else runs.
             lastMatched = matched(wareHouse, request, raw);
+            pendingRemainder = planRemainder(colony, manager, request, ledger, totalAvailable, totalRequested);
             return Lists.newArrayList();
         }
 
@@ -441,6 +468,22 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
     public void onRequestAssigned(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends IDeliverable> request, final boolean simulation)
     {
         super.onRequestAssigned(manager, request, simulation);
+        final PendingRemainder pending = pendingRemainder;
+        final boolean sendPending = !simulation && pending != null && pending.request().equals(request.getId());
+        if (sendPending)
+        {
+            pendingRemainder = null;
+        }
+        holdAssigned(manager, request, simulation);
+        if (sendPending)
+        {
+            // Sent after the holds: the crafter's input requests can re-enter this resolver and clear the remembered match.
+            sendRemainder(manager, pending);
+        }
+    }
+
+    private void holdAssigned(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends IDeliverable> request, final boolean simulation)
+    {
         final ReservationLedger ledger = RsAccess.ledger(manager);
         if (!simulation && ledger != null && StorageNetwork.on(manager) && lastNetworkMatched != null && lastNetworkMatched.request().equals(request.getId()))
         {
@@ -543,6 +586,108 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
     }
 
     /**
+     * Round 13 (L7, c2 decision): the warehouse hands out what it has now, as before, and when that is less than a quarter of the request and a
+     * staffed crafter can actually make the item (its inputs are in store or another staffed crafter makes them), the remainder goes to the
+     * crafters as a separate request of the warehouse's own, delivered into the warehouse. Stock is never held back while a request waits. One
+     * open remainder per item and warehouse at a time.
+     *
+     * @return the remainder to send once the request is assigned here, null for none.
+     */
+    @Nullable
+    private PendingRemainder planRemainder(@NotNull final Colony colony, @NotNull final IRequestManager manager, @NotNull final IRequest<? extends IDeliverable> request,
+      @Nullable final ReservationLedger ledger, final int available, final int requested)
+    {
+        if (!remainderWorthCrafting(ledger != null, available, requested))
+        {
+            return null;
+        }
+        final Object key = com.minecolonies.core.colony.requestsystem.wait.WaitDiagnosis.itemKey(request.getRequest());
+        if (key == null || remainderOpen(manager, key) || !com.minecolonies.core.colony.requestsystem.wait.WaitDiagnosis.crafterCanMake(colony, request.getRequest()))
+        {
+            return null;
+        }
+        return new PendingRemainder(request.getId(), request.getRequest().copyWithCount(requested - available), key);
+    }
+
+    /**
+     * @return true while the remainder this warehouse sent for the item is still being made or carried.
+     */
+    private boolean remainderOpen(@NotNull final IRequestManager manager, @NotNull final Object key)
+    {
+        final IToken<?> token = openRemainders.get(key);
+        if (token == null)
+        {
+            return false;
+        }
+        final IRequest<?> open = manager.getRequestForToken(token);
+        if (open == null || open.getState().ordinal() >= RequestState.COMPLETED.ordinal())
+        {
+            openRemainders.remove(key);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Round 13 (L7, c2): creates and assigns the remainder. It stays only when a crafter took it; anything else (the player, a retry) is cancelled,
+     * so nothing new reaches the player.
+     */
+    private void sendRemainder(@NotNull final IRequestManager manager, @NotNull final PendingRemainder pending)
+    {
+        try
+        {
+            final IToken<?> token = manager.createRequest(this, pending.remainder());
+            manager.assignRequest(token);
+            final IRequest<?> created = manager.getRequestForToken(token);
+            if (created == null || created.getState().ordinal() >= RequestState.COMPLETED.ordinal())
+            {
+                return;
+            }
+            final Object resolver = manager.getResolverForRequest(token);
+            if (resolver instanceof AbstractCraftingRequestResolver || resolver instanceof AbstractCraftingProductionResolver<?>)
+            {
+                openRemainders.put(pending.key(), token);
+                remaindersSent++;
+            }
+            else
+            {
+                manager.updateRequestState(token, RequestState.CANCELLED);
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            Log.getLogger().warn("Warehouse remainder request for {} failed", pending.remainder(), e);
+        }
+    }
+
+    /**
+     * Round 13 (L7): the open remainder this warehouse sent for the deliverable's items, for tests and the UI.
+     *
+     * @param manager the request manager.
+     * @param wanted  the deliverable.
+     * @return its token, null for none.
+     */
+    @Nullable
+    public IToken<?> openRemainder(@NotNull final IRequestManager manager, @NotNull final IDeliverable wanted)
+    {
+        final Object key = com.minecolonies.core.colony.requestsystem.wait.WaitDiagnosis.itemKey(wanted);
+        return key != null && remainderOpen(manager, key) ? openRemainders.get(key) : null;
+    }
+
+    /**
+     * Round 13 (L7): the pure part of {@link #planRemainder}.
+     *
+     * @param reservations the reservation ledger is on.
+     * @param available    what the warehouses can hand out now.
+     * @param requested    what the request asks for.
+     * @return true when the remainder is worth sending to the crafters at once (a crafter must still exist).
+     */
+    public static boolean remainderWorthCrafting(final boolean reservations, final int available, final int requested)
+    {
+        return reservations && available > 0 && available < requested && (long) available * 4 < requested;
+    }
+
+    /**
      * What the stacks of one warehouse offer when {@code keep} of each item stays in it.
      */
     private static int availableOf(@NotNull final List<Tuple<ItemStack, BlockPos>> stacks, final int keep)
@@ -600,6 +745,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         if (totalAvailable >= totalRequested || totalAvailable >= request.getRequest().getMinimumCount())
         {
             lastNetworkMatched = new NetworkMatched(request.getId(), reads, storage.version(), WarehouseRackIndex.loadEpoch(), colony.getWorld().getGameTime());
+            pendingRemainder = planRemainder(colony, manager, request, ledger, totalAvailable, totalRequested);
             return Lists.newArrayList();
         }
         if (ledger != null)
@@ -885,11 +1031,18 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
     @Override
     public void onRequestedRequestComplete(@NotNull final IRequestManager manager, @NotNull final IRequest<?> request)
     {
+        if (!request.hasParent())
+        {
+            // Round 13 (L7): a remainder (the warehouse's only request without a parent) is in the racks now: done with it.
+            openRemainders.values().remove(request.getId());
+            manager.updateRequestState(request.getId(), RequestState.RECEIVED);
+        }
     }
 
     @Override
     public void onRequestedRequestCancelled(@NotNull final IRequestManager manager, @NotNull final IRequest<?> request)
     {
+        openRemainders.values().remove(request.getId());
     }
 
     @NotNull

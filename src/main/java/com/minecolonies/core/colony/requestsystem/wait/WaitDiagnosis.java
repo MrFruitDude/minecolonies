@@ -21,6 +21,7 @@ import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingWareHouse;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.function.Predicate;
@@ -45,6 +46,126 @@ public final class WaitDiagnosis
      */
     public static int recipeSupport(@NotNull final Colony colony, @NotNull final IDeliverable wanted)
     {
+        // Round 13 (c2): one building scan per item per game tick, not one per resolve attempt.
+        final Object key = itemKey(wanted);
+        if (key == null)
+        {
+            return scanRecipeSupport(colony, wanted);
+        }
+        return cache(colony).support.computeIfAbsent(key, k -> scanRecipeSupport(colony, wanted));
+    }
+
+    /**
+     * Round 13 (L7, c2): whether a staffed crafter can actually make the item: it has the recipe and every input of it is in the warehouses or the
+     * crafter's hut, or another staffed crafter has a recipe for that input. Cached per item per game tick.
+     *
+     * @param colony the colony.
+     * @param wanted the deliverable.
+     * @return true when a staffed crafter can make it.
+     */
+    public static boolean crafterCanMake(@NotNull final Colony colony, @NotNull final IDeliverable wanted)
+    {
+        final Object key = itemKey(wanted);
+        if (key == null)
+        {
+            return false;
+        }
+        return cache(colony).canMake.computeIfAbsent(key, k -> scanCrafterCanMake(colony, wanted));
+    }
+
+    /**
+     * @param wanted a deliverable.
+     * @return a cache key for its items (count left out), null when it names no items.
+     */
+    @Nullable
+    public static Object itemKey(@NotNull final IDeliverable wanted)
+    {
+        if (!(wanted instanceof final IConcreteDeliverable concrete))
+        {
+            return null;
+        }
+        final List<ItemStorage> items = new java.util.ArrayList<>();
+        for (final ItemStack stack : concrete.getRequestedItems())
+        {
+            items.add(new ItemStorage(stack.copyWithCount(1)));
+        }
+        return List.of(wanted.getClass(), items);
+    }
+
+    /**
+     * Per colony, per game tick answers.
+     */
+    private static final class TickCache
+    {
+        private long tick = Long.MIN_VALUE;
+        private final java.util.Map<Object, Integer> support = new java.util.HashMap<>();
+        private final java.util.Map<Object, Boolean> canMake = new java.util.HashMap<>();
+    }
+
+    /**
+     * Server thread only, like the request system.
+     */
+    private static final java.util.Map<Colony, TickCache> CACHES = new java.util.WeakHashMap<>();
+
+    /**
+     * Test and bench counter: building scans {@link #recipeSupport} made.
+     */
+    public static long recipeScans;
+
+    private static TickCache cache(@NotNull final Colony colony)
+    {
+        final TickCache cache = CACHES.computeIfAbsent(colony, c -> new TickCache());
+        final long now = colony.getWorld().getGameTime();
+        if (cache.tick != now)
+        {
+            cache.tick = now;
+            cache.support.clear();
+            cache.canMake.clear();
+        }
+        return cache;
+    }
+
+    private static boolean scanCrafterCanMake(@NotNull final Colony colony, @NotNull final IDeliverable wanted)
+    {
+        final Predicate<ItemStack> matches = wanted::matches;
+        for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
+        {
+            if (building.getBuildingLevel() <= 0)
+            {
+                continue;
+            }
+            for (final ICraftingBuildingModule module : building.getModulesByType(ICraftingBuildingModule.class))
+            {
+                final com.minecolonies.api.crafting.IRecipeStorage recipe = module.getFirstRecipe(matches);
+                if (recipe != null && hasWorker(building, module) && inputsObtainable(colony, building, recipe))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean inputsObtainable(@NotNull final Colony colony, @NotNull final IBuilding crafter, @NotNull final com.minecolonies.api.crafting.IRecipeStorage recipe)
+    {
+        for (final ItemStorage input : recipe.getCleanedInput())
+        {
+            final int need = Math.max(1, input.getAmount());
+            final Stack asked = new Stack(input.getItemStack().copyWithCount(1), need, need);
+            if (physicalStock(colony, asked) >= need
+                  || com.minecolonies.api.util.InventoryUtils.getCountFromBuilding(crafter, input) >= need
+                  || recipeSupport(colony, asked) == 2)
+            {
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    private static int scanRecipeSupport(@NotNull final Colony colony, @NotNull final IDeliverable wanted)
+    {
+        recipeScans++;
         final Predicate<ItemStack> matches = wanted::matches;
         int best = 0;
         for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())

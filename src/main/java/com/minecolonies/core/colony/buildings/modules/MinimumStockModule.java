@@ -1,5 +1,7 @@
 package com.minecolonies.core.colony.buildings.modules;
 
+import com.minecolonies.core.colony.jobs.JobDeliveryman;
+
 import com.google.common.reflect.TypeToken;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.modules.*;
@@ -138,8 +140,9 @@ public class MinimumStockModule extends AbstractBuildingModule implements IMinim
                 {
                     if (request == null)
                     {
-                        final int qty = Math.min(itemStack.getMaxStackSize(), delta);
-                        final MinimumStack stack = new MinimumStack(itemStack, false, true, ItemStackUtils.EMPTY, qty, 1);
+                        // Round 13 (L5): up to what a courier carries at once, with a minimum of a quarter stack, not one stack with a minimum of one.
+                        final int qty = refillCount(itemStack.getMaxStackSize(), delta);
+                        final MinimumStack stack = new MinimumStack(itemStack, false, true, ItemStackUtils.EMPTY, qty, refillMinimum(itemStack.getMaxStackSize(), qty));
                         stack.setCanBeResolvedByBuilding(false);
                         building.createRequest(stack, true);
                     }
@@ -150,6 +153,32 @@ public class MinimumStockModule extends AbstractBuildingModule implements IMinim
                 }
             }
         }
+    }
+
+    /**
+     * Round 13 (L5): the size of a minimum-stock refill: the missing amount, at most {@link JobDeliveryman#MIN_CARRY_STACKS} stacks (what every
+     * courier carries in one trip).
+     *
+     * @param maxStackSize the item's stack size.
+     * @param missing      how many are missing.
+     * @return the count to ask for.
+     */
+    public static int refillCount(final int maxStackSize, final int missing)
+    {
+        return Math.max(1, Math.min(Math.max(1, maxStackSize) * JobDeliveryman.MIN_CARRY_STACKS, missing));
+    }
+
+    /**
+     * Round 13 (L5): the least a refill is served with: a quarter of a stack (of the count when it is smaller), at least one, so that a refill is
+     * not served one item at a time.
+     *
+     * @param maxStackSize the item's stack size.
+     * @param count        the refill's count.
+     * @return the minimum count.
+     */
+    public static int refillMinimum(final int maxStackSize, final int count)
+    {
+        return Math.max(1, Math.min(count, Math.max(1, maxStackSize)) / 4);
     }
 
     @Override

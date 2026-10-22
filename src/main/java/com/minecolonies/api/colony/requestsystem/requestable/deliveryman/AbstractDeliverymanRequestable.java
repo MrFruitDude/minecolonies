@@ -97,7 +97,21 @@ public abstract class AbstractDeliverymanRequestable implements IDeliverymanRequ
     {
         // The priority set by by the aging mechanism can actually exceed the maximum priority that requesters can choose.
         // Worst case, the priority queue turns into a FIFO queue for really old requests, with new maximum-priority requests having to wait.
-        priority = Math.min(getMaxAgingPriority(true), priority + 1);
+        // Round 13: a priority above the aging maximum (a forced pickup) is never lowered by aging.
+        if (priority < getMaxAgingPriority(true))
+        {
+            priority = Math.min(getMaxAgingPriority(true), priority + 1);
+        }
+    }
+
+    /**
+     * Round 13 (B1): raises the priority to at least the given one (a pickup that is forced while it waits). Never lowers it.
+     *
+     * @param atLeast the new lowest priority.
+     */
+    public void raisePriority(final int atLeast)
+    {
+        priority = Math.max(priority, atLeast);
     }
 
     @Override

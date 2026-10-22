@@ -103,6 +103,11 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     private static final int PICKUP_DELAY = 5;
 
     /**
+     * Round 13 (L4): slots a courier takes from a hut in one pickup step (was one slot per step).
+     */
+    public static final int PICKUP_SLOTS_PER_STEP = 8;
+
+    /**
      * The inventory's slot which is held in hand.
      */
     private static final int SLOT_HAND = 0;
@@ -227,6 +232,28 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     private long breakPendingAt = Long.MIN_VALUE / 2;
 
     /**
+     * Round 13 (L4): a task was queued where this courier works. A courier that waits for work in the deciding state looks at its queue within
+     * {@code ticks} ticks instead of at the end of its decision delay.
+     *
+     * @param ticks the longest wait.
+     * @return true when the courier's next decision was brought forward.
+     */
+    public boolean wakeSoon(final int ticks)
+    {
+        final IAIState state = getState();
+        if (state != START_WORKING && state != IDLE)
+        {
+            return false;
+        }
+        if (decisionTarget.countdownTicksToUpdate(0) > ticks)
+        {
+            decisionTarget.setTicksToUpdate(ticks);
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Back to deciding after a task was finished. With the {@code courierImmediateNextTask} switch on the courier looks for its next task at once.
      *
      * @return the deciding state.
@@ -305,84 +332,82 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
             return DUMPING;
         }
 
-        setDelay(5);
-        currentSlot++;
+        setDelay(PICKUP_DELAY);
         return PICKUP;
     }
 
     /**
-     * Gather not needed Items from building.
+     * Gather not needed Items from building. Round 13 (L4): up to {@value #PICKUP_SLOTS_PER_STEP} slots in one step, as long as the courier can
+     * carry more.
      *
      * @param targetBuilding building to gather it from.
      * @return true when finished.
      */
     private boolean pickupFromBuilding(@NotNull final IBuilding targetBuilding)
     {
-        if (cannotHoldMoreItems() || InventoryUtils.openSlotCount(worker.getInventoryCitizen()) <= 0)
-        {
-            return false;
-        }
-
         final IItemHandler handler = targetBuilding.getItemHandlerCap();
         if (handler == null)
         {
             return false;
         }
 
-        if (currentSlot >= handler.getSlots())
+        int taken = 0;
+        boolean moved = false;
+        while (currentSlot < handler.getSlots())
         {
-            return true;
-        }
-
-        ItemStack stack = handler.getStackInSlot(currentSlot);
-
-        while (stack.isEmpty())
-        {
-            currentSlot++;
-            if (currentSlot >= handler.getSlots())
+            if (cannotHoldMoreItems() || InventoryUtils.openSlotCount(worker.getInventoryCitizen()) <= 0)
             {
-                return true;
+                break;
             }
-            stack = handler.getStackInSlot(currentSlot);
-        }
+            final ItemStack stack = handler.getStackInSlot(currentSlot);
+            if (stack.isEmpty())
+            {
+                currentSlot++;
+                continue;
+            }
 
-        final int amount = workerRequiresItem(targetBuilding, stack, alreadyKept);
-        if (amount <= 0)
-        {
-            return false;
-        }
-
-        if (StorageNetwork.on(job.getColony()) && ColonyStorage.of(job.getColony()).isAtCap(new ItemStorage(stack)))
-        {
+            final int amount = workerRequiresItem(targetBuilding, stack, alreadyKept);
             // The colony holds as much of it as the cap allows: it stays with its producer.
-            return false;
+            if (amount > 0 && !(StorageNetwork.on(job.getColony()) && ColonyStorage.of(job.getColony()).isAtCap(new ItemStorage(stack))))
+            {
+                final ItemStack activeStack = handler.extractItem(currentSlot, amount, false);
+                final ItemStack rest = InventoryUtils.transferItemStackIntoNextBestSlotInItemHandlerWithResult(activeStack, worker.getInventoryCitizen());
+                if (!rest.isEmpty())
+                {
+                    // The bag took less than expected: the rest goes back where it came from.
+                    handler.insertItem(currentSlot, rest, false);
+                }
+                moved = true;
+                taken++;
+            }
+            currentSlot++;
+            if (taken >= PICKUP_SLOTS_PER_STEP)
+            {
+                break;
+            }
         }
-
-        if (ItemStackUtils.isEmpty(handler.getStackInSlot(currentSlot)))
+        if (moved)
         {
-            return false;
+            targetBuilding.markDirty();
+            CitizenItemUtils.setHeldItem(worker, InteractionHand.MAIN_HAND, SLOT_HAND);
         }
-
-        final ItemStack activeStack = handler.extractItem(currentSlot, amount, false);
-        InventoryUtils.transferItemStackIntoNextBestSlotInItemHandler(activeStack, worker.getInventoryCitizen());
-        targetBuilding.markDirty();
-        CitizenItemUtils.setHeldItem(worker, InteractionHand.MAIN_HAND, SLOT_HAND);
-
-        return false;
+        return currentSlot >= handler.getSlots();
     }
 
     /**
-     * Check if the worker can hold that much items. It depends on his building level. Level 1: 1 stack Level 2: 2 stacks, 4 stacks, 8, unlimited. That's 2^buildingLevel-1.
+     * Check if the worker can hold that much items. It depends on his building level: see {@link JobDeliveryman#carryStacks} (round 13: at
+     * least 4 stacks, no limit at the maximum level).
      *
      * @return whether this deliveryman can hold more items
      */
     private boolean cannotHoldMoreItems()
     {
-        if (building.getBuildingLevel() >= building.getMaxBuildingLevel())
+        final int stacks = JobDeliveryman.carryStacks(building.getBuildingLevel(), building.getMaxBuildingLevel());
+        if (stacks == Integer.MAX_VALUE)
         {
             return false;
         }
-        return InventoryUtils.getAmountOfStacksInItemHandler(worker.getInventoryCitizen()) >= Math.pow(2, building.getBuildingLevel() - 1.0D) + 1;
+        return InventoryUtils.getAmountOfStacksInItemHandler(worker.getInventoryCitizen()) >= stacks;
     }
 
     /**
