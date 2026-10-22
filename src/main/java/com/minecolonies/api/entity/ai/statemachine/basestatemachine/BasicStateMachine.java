@@ -188,7 +188,7 @@ public class BasicStateMachine<T extends IStateMachineTransition<S>, S extends I
         }
         catch (final RuntimeException e)
         {
-            Log.getLogger().warn("Condition check for state " + getState() + " threw an exception:", e);
+            logTransitionException("Condition check for state " + getState() + " threw an exception:", e);
             this.onException(e);
             return false;
         }
@@ -205,7 +205,7 @@ public class BasicStateMachine<T extends IStateMachineTransition<S>, S extends I
         }
         catch (final RuntimeException e)
         {
-            Log.getLogger().warn("Statemachine for state " + getState() + " threw an exception:", e);
+            logTransitionException("Statemachine for state " + getState() + " threw an exception:", e);
             this.onException(e);
             return false;
         }
@@ -243,6 +243,17 @@ public class BasicStateMachine<T extends IStateMachineTransition<S>, S extends I
             return true;
         }
         return false;
+    }
+
+    /**
+     * Logs an exception of a transition. A subclass may limit how often it logs (round 13 B4: the citizen AI).
+     *
+     * @param message the message.
+     * @param e       the exception.
+     */
+    protected void logTransitionException(final String message, final RuntimeException e)
+    {
+        Log.getLogger().warn(message, e);
     }
 
     /**

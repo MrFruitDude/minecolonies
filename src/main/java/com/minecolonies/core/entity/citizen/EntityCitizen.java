@@ -3,6 +3,7 @@ import net.minecraft.util.Prediction;
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.blocks.AbstractBlockHut;
 import com.minecolonies.api.colony.*;
+import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.buildings.IGuardBuilding;
 import com.minecolonies.api.colony.buildings.registry.BuildingEntry;
 import com.minecolonies.api.colony.jobs.IJob;
@@ -205,7 +206,8 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
     /**
      * The citizen AI
      */
-    private ITickRateStateMachine<IState> citizenAI = new TickRateStateMachine<>(CitizenAIState.IDLE, e -> {}, ENTITY_AI_TICKRATE);
+    private ITickRateStateMachine<IState> citizenAI = new CitizenAIStateMachine(() -> level().getGameTime(),
+      () -> "citizen " + citizenId + " of colony " + citizenColonyHandler.getColonyId(), ENTITY_AI_TICKRATE);
 
     /**
      * Eating at work when hungry, before the trip to a restaurant.
@@ -223,6 +225,12 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
      * Cached decrease of saturation. Is processed every minute in the main loop.
      */
     private double cachedActionSaturationDecrease;
+
+    /**
+     * Round 13 D7: whether a player is close enough to see this citizen (within the server view distance), refreshed every second. Looking at others and
+     * the item pickup scan of a citizen off work are skipped while nobody watches.
+     */
+    private boolean watchedByPlayer = true;
     /**
      * Constructor for a new citizen typed entity.
      *
@@ -315,6 +323,18 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
     private void initTasks()
     {
         new CitizenAI(this);
+        if (citizenAI instanceof CitizenAIStateMachine machine)
+        {
+            // B4: after repeated failures the AI starts over from IDLE: stop walking, empty the hand, clear the status
+            machine.setOnReset(() -> {
+                getNavigation().stop();
+                setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+                if (citizenData != null)
+                {
+                    citizenData.setVisibleStatus(null);
+                }
+            });
+        }
         int priority = 0;
         this.goalSelector.addGoal(priority, new EntityAIFloat(this));
         this.goalSelector.addGoal(priority, new EntityAIInteractToggleAble(this, FENCE_TOGGLE, TRAP_TOGGLE, DOOR_TOGGLE));
@@ -685,7 +705,12 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
     {
         // Every 20 ticks
         citizenExperienceHandler.gatherXp();
-        CitizenItemUtils.pickupItems(this);
+        watchedByPlayer = computeWatchedByPlayer();
+        if (watchedByPlayer || isOnWorkTrip())
+        {
+            // D7: a worker keeps picking up its drops; an idle, eating or sleeping citizen nobody watches skips the scan
+            CitizenItemUtils.pickupItems(this);
+        }
         citizenData.setLastPosition(blockPosition());
         onLivingSoundUpdate();
         final ChunkPos currentChunk = chunkPosition();
@@ -1064,6 +1089,84 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
     {
         return citizenSleepHandler;
     }
+    /**
+     * D7: whether a player stands within the server view distance of this citizen (horizontally, same level).
+     *
+     * @return true if so.
+     */
+    private boolean computeWatchedByPlayer()
+    {
+        if (!(level() instanceof ServerLevel serverLevel) || serverLevel.getServer() == null)
+        {
+            return true;
+        }
+        final double range = Math.max(4, serverLevel.getServer().getPlayerList().getViewDistance()) * 16.0D;
+        for (final Player player : serverLevel.players())
+        {
+            if (!player.isSpectator())
+            {
+                final double dx = player.getX() - getX();
+                final double dz = player.getZ() - getZ();
+                if (dx * dx + dz * dz <= range * range)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * D7: whether a player watches this citizen (refreshed every second on the server; true on the client).
+     *
+     * @return true if so.
+     */
+    public boolean isWatchedByPlayer()
+    {
+        return watchedByPlayer;
+    }
+
+    /**
+     * @return true when the citizen AI works (a job, or an idle task of an unemployed citizen).
+     */
+    public boolean isOnWorkTrip()
+    {
+        final IState state = citizenAI.getState();
+        return state == CitizenAIState.WORK || state == CitizenAIState.WORKING || state == CitizenAIState.LABOUR;
+    }
+
+    /**
+     * Round 13 D4: a citizen stuck for about a minute on a trip that is not work may be moved to its home, its bed or a restaurant (when no player is near:
+     * see {@link com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler#tryQuickRescue}).
+     */
+    @Override
+    @Nullable
+    public BlockPos getQuickRescueTarget(final BlockPos destination)
+    {
+        if (citizenData == null || destination == null || BlockPos.ZERO.equals(destination) || isOnWorkTrip())
+        {
+            return null;
+        }
+        final IBuilding home = citizenData.getHomeBuilding();
+        if (home != null && home.isInBuilding(destination))
+        {
+            return destination;
+        }
+        final BlockPos homePos = citizenData.getHomePosition();
+        if (homePos != null && homePos.distSqr(destination) <= 16 * 16)
+        {
+            return destination;
+        }
+        final IColony colony = citizenData.getColony();
+        if (colony != null
+              && colony.getServerBuildingManager().getFirstBuildingMatching(b -> b instanceof com.minecolonies.core.colony.buildings.workerbuildings.BuildingCook
+                                                                                   && b.isInBuilding(destination)) != null)
+        {
+            return destination;
+        }
+        return null;
+    }
+
     /**
      * Sets the visible status if there is none
      *

@@ -3,6 +3,7 @@ package com.minecolonies.core.entity.ai.minimal;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.entity.ai.IStateAI;
+import com.minecolonies.api.entity.citizen.VisibleCitizenStatus;
 import com.minecolonies.api.entity.ai.statemachine.states.CitizenAIState;
 import com.minecolonies.api.entity.ai.statemachine.states.IState;
 import com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.TickingTransition;
@@ -322,7 +323,8 @@ public class EntityAIMournCitizen implements IStateAI
 
     public void reset()
     {
-        citizen.getCitizenData().setVisibleStatus(null);
+        // B5: the MOURNING status stays for the whole mourning (this runs on every step back into MOURN)
+        citizen.getCitizenData().setVisibleStatus(VisibleCitizenStatus.MOURNING);
         this.graveyard = null;
         this.gravePos = null;
     }

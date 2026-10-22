@@ -97,7 +97,8 @@ public class EntityAISickTask implements IStateAI
         WAIT_FOR_CURE,
         FIND_EMPTY_BED,
         APPLY_CURE,
-        WANDER
+        WANDER,
+        REST_AT_HOME
     }
 
     /**
@@ -109,6 +110,11 @@ public class EntityAISickTask implements IStateAI
      * Restaurant to which the citizen should path.
      */
     private BlockPos bestHospital;
+
+    /**
+     * D7: the best hospital for this citizen, kept for 30 seconds (it was searched up to twice a second).
+     */
+    private final CachedBuildingLookup hospitalLookup = new CachedBuildingLookup(BuildingHospital.class);
 
     /**
      * Instantiates this task.
@@ -124,6 +130,7 @@ public class EntityAISickTask implements IStateAI
         citizen.getCitizenAI().addTransition(new TickingTransition<>(CitizenAIState.SICK, this::isSick, () -> CHECK_FOR_CURE, 20));
         citizen.getCitizenAI().addTransition(new TickingTransition<>(CHECK_FOR_CURE, () -> true, this::checkForCure, 20));
         citizen.getCitizenAI().addTransition(new TickingTransition<>(WANDER, () -> true, this::wander, 200));
+        citizen.getCitizenAI().addTransition(new TickingTransition<>(REST_AT_HOME, () -> true, this::restAtHome, 100));
 
         citizen.getCitizenAI().addTransition(new TickingTransition<>(CHECK_FOR_CURE, () -> true, this::checkForCure, 20));
         citizen.getCitizenAI().addTransition(new TickingTransition<>(GO_TO_HUT, () -> true, this::goToHut, 20));
@@ -144,6 +151,53 @@ public class EntityAISickTask implements IStateAI
         }
 
         return false;
+    }
+
+    /**
+     * @return the best hospital for the citizen, kept for 30 seconds (D7).
+     */
+    private BlockPos bestHospitalPos()
+    {
+        final IColony colony = citizen.getCitizenColonyHandler().getColonyOrRegister();
+        return hospitalLookup.get(colony, citizen.level().getGameTime(), () -> colony.getServerBuildingManager().getBestBuilding(citizen, BuildingHospital.class));
+    }
+
+    /**
+     * B2: with no hospital the citizen rests at home (or near the town hall without a home) and recovers there after a game day
+     * ({@link com.minecolonies.core.entity.citizen.citizenhandlers.CitizenDiseaseHandler#HOME_RECOVERY_TICKS}). Every 5 seconds it checks for the cure items in
+     * its inventory and for a new hospital (the hut is not visited on each check).
+     *
+     * @return the next state.
+     */
+    public IState restAtHome()
+    {
+        final IState cure = checkForCure();
+        if (cure == APPLY_CURE || cure == CitizenAIState.IDLE)
+        {
+            return cure;
+        }
+        if (bestHospitalPos() != null)
+        {
+            return SEARCH_HOSPITAL;
+        }
+
+        final IBuilding home = citizenData.getHomeBuilding();
+        if (home != null)
+        {
+            if (!home.isInBuilding(citizen.blockPosition()))
+            {
+                EntityNavigationUtils.walkToBuilding(citizen, home);
+            }
+        }
+        else
+        {
+            final BlockPos spot = citizenData.getHomePosition();
+            if (spot != null && BlockPosUtil.getDistance2D(spot, citizen.blockPosition()) > 6)
+            {
+                EntityNavigationUtils.walkToPos(citizen, spot, 4, true);
+            }
+        }
+        return REST_AT_HOME;
     }
 
     /**
@@ -174,7 +228,7 @@ public class EntityAISickTask implements IStateAI
             }
         }
 
-        final BlockPos hospitalPos = citizen.getCitizenColonyHandler().getColonyOrRegister().getServerBuildingManager().getBestBuilding(citizen, BuildingHospital.class);
+        final BlockPos hospitalPos = bestHospitalPos();
         final IColony colony = citizen.getCitizenColonyHandler().getColonyOrRegister();
         final IBuilding hospital = colony.getServerBuildingManager().getBuilding(hospitalPos);
 
@@ -289,7 +343,7 @@ public class EntityAISickTask implements IStateAI
 
         if (usedBed != null)
         {
-            final BlockPos hospitalPos = citizen.getCitizenColonyHandler().getColonyOrRegister().getServerBuildingManager().getBestBuilding(citizen, BuildingHospital.class);
+            final BlockPos hospitalPos = bestHospitalPos();
             final IColony colony = citizen.getCitizenColonyHandler().getColonyOrRegister();
             final IBuilding hospital = colony.getServerBuildingManager().getBuilding(hospitalPos);
             ((BuildingHospital) hospital).registerPatient(usedBed, 0);
@@ -310,7 +364,7 @@ public class EntityAISickTask implements IStateAI
     private IState waitForCure()
     {
         final IColony colony = citizenData.getColony();
-        bestHospital = colony.getServerBuildingManager().getBestBuilding(citizen, BuildingHospital.class);
+        bestHospital = bestHospitalPos();
 
         if (bestHospital == null)
         {
@@ -336,7 +390,7 @@ public class EntityAISickTask implements IStateAI
 
         if (citizen.getCitizenSleepHandler().isAsleep())
         {
-            final BlockPos hospital = colony.getServerBuildingManager().getBestBuilding(citizen, BuildingHospital.class);
+            final BlockPos hospital = bestHospitalPos();
             if (hospital != null)
             {
                 final IBuilding building = colony.getServerBuildingManager().getBuilding(hospital);
@@ -411,7 +465,7 @@ public class EntityAISickTask implements IStateAI
     {
         final IColony colony = citizenData.getColony();
         final Disease disease = citizen.getCitizenData().getCitizenDiseaseHandler().getDisease();
-        bestHospital = colony.getServerBuildingManager().getBestBuilding(citizen, BuildingHospital.class);
+        bestHospital = bestHospitalPos();
 
         if (bestHospital == null)
         {
@@ -422,7 +476,8 @@ public class EntityAISickTask implements IStateAI
             citizenData.triggerInteraction(new StandardInteraction(Component.translatable(NO_HOSPITAL, disease.name(), disease.getCureString()),
               Component.translatable(NO_HOSPITAL),
               ChatPriority.BLOCKING));
-            return WANDER;
+            // B2: rest at home instead of wandering about; the disease handler cures the citizen after a game day
+            return REST_AT_HOME;
         }
         else if (disease != null)
         {

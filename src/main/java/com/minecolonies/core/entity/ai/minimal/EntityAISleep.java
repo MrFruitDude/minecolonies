@@ -115,8 +115,9 @@ public class EntityAISleep implements IStateAI
         final IBuilding homeBuilding = citizen.getCitizenData().getHomeBuilding();
         if (homeBuilding == null)
         {
-            @Nullable final BlockPos homePosition = citizen.getCitizenData().getHomePosition();
-            if (homePosition.distSqr(BlockPos.containing(Math.floor(citizen.getX()), citizen.getY(), Math.floor(citizen.getZ()))) <= RANGE_TO_BE_HOME)
+            // D6: each homeless citizen sleeps at its own spot around the town hall (or tavern), not all on one block
+            @Nullable final BlockPos homePosition = homelessSpot(citizen.getCitizenData().getHomePosition(), citizen.getCivilianID());
+            if (homePosition == null || homePosition.distSqr(BlockPos.containing(Math.floor(citizen.getX()), citizen.getY(), Math.floor(citizen.getZ()))) <= RANGE_TO_BE_HOME)
             {
                 return FIND_BED;
             }
@@ -242,6 +243,26 @@ public class EntityAISleep implements IStateAI
     }
 
     /**
+     * D6: the sleeping spot of a homeless citizen: on a ring of 6 to 14 blocks around the shared home position, at an angle set by the citizen id (golden
+     * angle steps, so neighbouring ids land apart).
+     *
+     * @param center    the shared home position (town hall or tavern).
+     * @param citizenId the citizen id.
+     * @return the spot, or null without a center.
+     */
+    @Nullable
+    public static BlockPos homelessSpot(@Nullable final BlockPos center, final int citizenId)
+    {
+        if (center == null)
+        {
+            return null;
+        }
+        final double angle = Math.floorMod(citizenId, 1000) * 2.399963229728653D;
+        final int radius = 6 + Math.floorMod(citizenId * 3, 5) * 2;
+        return center.offset((int) Math.round(Math.cos(angle) * radius), 0, (int) Math.round(Math.sin(angle) * radius));
+    }
+
+    /**
      * While going home play a goHome sound for the specific worker by chance.
      */
     private void goHome()
@@ -253,7 +274,11 @@ public class EntityAISleep implements IStateAI
         }
         else
         {
-            EntityNavigationUtils.walkToPos(citizen, citizen.getCitizenData().getHomePosition(), 4, true);
+            final BlockPos spot = homelessSpot(citizen.getCitizenData().getHomePosition(), citizen.getCivilianID());
+            if (spot != null)
+            {
+                EntityNavigationUtils.walkToPos(citizen, spot, 4, true);
+            }
         }
 
         final int chance = citizen.getRandom().nextInt(CHANCE);

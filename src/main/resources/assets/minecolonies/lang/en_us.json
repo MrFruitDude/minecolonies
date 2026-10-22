@@ -1999,6 +1999,8 @@
   "com.minecolonies.gui.visiblestatus.farmer": "Farming",
   "com.minecolonies.gui.visiblestatus.florist": "Gardening",
   "com.minecolonies.gui.visiblestatus.idle": "Idle",
+  "com.minecolonies.gui.visiblestatus.leisure": "On a leisure break",
+  "com.minecolonies.gui.visiblestatus.homeless": "Idle, no home",
   "com.minecolonies.gui.visiblestatus.knight_combat": "Fighting",
   "com.minecolonies.gui.visiblestatus.lumberjack_search": "Searching for trees",
   "com.minecolonies.gui.visiblestatus.miner": "Mining",
