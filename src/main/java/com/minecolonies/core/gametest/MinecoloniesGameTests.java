@@ -2118,6 +2118,14 @@ public final class MinecoloniesGameTests
         return makeConnectedPlayer(helper, playerUuid, GameType.SURVIVAL);
     }
 
+    /**
+     * A connected mock player in creative mode (its game mode is fixed: setGameMode does not change it).
+     */
+    static ServerPlayer makeConnectedCreativePlayer(final GameTestHelper helper)
+    {
+        return makeConnectedPlayer(helper, UUID.randomUUID(), GameType.CREATIVE);
+    }
+
     private static ServerPlayer makeConnectedPlayer(final GameTestHelper helper, final UUID playerUuid, final GameType gameType)
     {
         final ServerPlayer player = new ServerPlayer(

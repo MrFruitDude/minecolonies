@@ -18,7 +18,6 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.GameType;
 
 /**
  * Round 12 lane H: the server-side citizen and worker actions Colony Command calls ({@link ColonyPlayerActions}). One test: labour_player_actions.
@@ -92,8 +91,10 @@ public final class Round12GameTests
 
             final int before = citizen.getCitizenSkillHandler().getLevel(Skill.Strength);
             helper.assertTrue(!ColonyPlayerActions.adjustSkill(player, colony, id, Skill.Strength, 1), "skill cheat in survival");
-            player.setGameMode(GameType.CREATIVE);
-            helper.assertTrue(ColonyPlayerActions.adjustSkill(player, colony, id, Skill.Strength, 1) && citizen.getCitizenSkillHandler().getLevel(Skill.Strength) == before + 1,
+            final ServerPlayer creative = MinecoloniesGameTests.makeConnectedCreativePlayer(helper);
+            helper.assertTrue(!ColonyPlayerActions.adjustSkill(creative, colony, id, Skill.Strength, 1), "skill cheat by a creative stranger");
+            colony.getPermissions().addPlayer(creative.getUUID(), creative.getGameProfile().name(), colony.getPermissions().getRankOfficer());
+            helper.assertTrue(ColonyPlayerActions.adjustSkill(creative, colony, id, Skill.Strength, 1) && citizen.getCitizenSkillHandler().getLevel(Skill.Strength) == before + 1,
               "skill cheat in creative: " + before + " -> " + citizen.getCitizenSkillHandler().getLevel(Skill.Strength));
 
             helper.assertTrue(ColonyPlayerActions.fireWorker(player, colony, id) && citizen.getWorkBuilding() == null, "fire: work " + citizen.getWorkBuilding());
