@@ -224,12 +224,89 @@ public final class LabourSettings
     }
 
     /**
-     * @return how long a builder's request waits before he fetches it himself: {@link #earlyGraceTicks} while the colony is {@link #early}, else
-     *   {@link #supplyGraceTicks()}.
+     * @return how long a builder's request waits before he fetches it himself: {@link #earlyGraceTicks} while the colony is {@link #early}, then rising
+     *   linearly with the built buildings ({@link #earlyEase}) to {@link #supplyGraceTicks()}.
      */
     public static int supplyGraceTicks(final IColony colony)
     {
-        return early(colony) ? Math.min(earlyGraceTicks(), supplyGraceTicks()) : supplyGraceTicks();
+        return graceFor(earlyEase(colony), earlyGraceTicks(), supplyGraceTicks());
+    }
+
+    /**
+     * The grace of a colony at the given ease (0 young, 1 grown): from the early grace (never above the normal one) linearly to the normal grace.
+     */
+    public static int graceFor(final double ease, final int earlyGrace, final int normalGrace)
+    {
+        final int from = Math.min(earlyGrace, normalGrace);
+        final double t = Math.max(0.0D, Math.min(1.0D, ease));
+        return (int) Math.round(from + (normalGrace - from) * t);
+    }
+
+    /**
+     * The labour share of a colony whose share is at its default, at the given ease: every unemployed citizen while young, then down in steps to the default.
+     */
+    public static double shareFor(final double ease, final double normalShare)
+    {
+        final double t = Math.max(0.0D, Math.min(1.0D, ease));
+        return 1.0D - (1.0D - normalShare) * t;
+    }
+
+    /**
+     * Round 11 (W2-10): the early pace ends gently. Below {@code limit} built buildings the ease is 0 (the full early pace); from {@code limit} on it rises by
+     * 1/{@code limit} per built building, so it is 1 (the normal pace) from {@code 2 * limit - 1} on. A limit of 0 or less switches the early pace off (1).
+     */
+    public static double easeFor(final int built, final int limit)
+    {
+        if (limit <= 0)
+        {
+            return 1.0D;
+        }
+        if (built < limit)
+        {
+            return 0.0D;
+        }
+        return Math.min(1.0D, (built - limit + 1) / (double) limit);
+    }
+
+    /**
+     * @return how far the colony is from its early pace to the normal one (0 young, 1 grown), from its built buildings ({@link #easeFor}).
+     */
+    public static double earlyEase(final IColony colony)
+    {
+        final Object forced = OVERRIDES.get("early");
+        if (forced instanceof Boolean b)
+        {
+            return b ? 0.0D : 1.0D;
+        }
+        final int limit = earlyBuildings();
+        if (limit <= 0)
+        {
+            return 1.0D;
+        }
+        try
+        {
+            int built = 0;
+            for (final com.minecolonies.api.colony.buildings.IBuilding building : colony.getServerBuildingManager().getBuildings().values())
+            {
+                if (building.getBuildingLevel() > 0 && ++built >= 2 * limit)
+                {
+                    break;
+                }
+            }
+            return easeFor(built, limit);
+        }
+        catch (final RuntimeException e)
+        {
+            return 1.0D;
+        }
+    }
+
+    /**
+     * @return whether some of the early pace is still on (the colony is young or easing towards the normal pace).
+     */
+    public static boolean earlyPace(final IColony colony)
+    {
+        return earlyEase(colony) < 1.0D;
     }
 
     /**
@@ -252,36 +329,12 @@ public final class LabourSettings
 
     /**
      * @return whether the colony is young: it has fewer built buildings (level 1 or more) than {@link #earlyBuildings}. A young colony's labour runs at the early pace:
-     *   every unemployed citizen may labour ({@link #share}) and a builder's request waits only {@link #earlyGraceTicks}.
+     *   every unemployed citizen may labour ({@link #share}) and a builder's request waits only {@link #earlyGraceTicks}. After that the pace eases to the normal
+     *   one ({@link #earlyEase}).
      */
     public static boolean early(final IColony colony)
     {
-        final Object forced = OVERRIDES.get("early");
-        if (forced instanceof Boolean b)
-        {
-            return b;
-        }
-        final int limit = earlyBuildings();
-        if (limit <= 0)
-        {
-            return false;
-        }
-        try
-        {
-            int built = 0;
-            for (final com.minecolonies.api.colony.buildings.IBuilding building : colony.getServerBuildingManager().getBuildings().values())
-            {
-                if (building.getBuildingLevel() > 0 && ++built >= limit)
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-        catch (final RuntimeException e)
-        {
-            return false;
-        }
+        return earlyEase(colony) <= 0.0D;
     }
 
     /**
@@ -360,11 +413,11 @@ public final class LabourSettings
     public static final int DEFAULT_SHARE = 50;
 
     /**
-     * @return whether the early pace raises the colony's labour share now (young colony, share at its default).
+     * @return whether the early pace raises the colony's labour share now (young or easing colony, share at its default).
      */
     public static boolean earlyShare(final IColony colony)
     {
-        return OVERRIDES.get("share") == null && colonyInt(colony, BuildingTownHall.LABOUR_SHARE, DEFAULT_SHARE) == DEFAULT_SHARE && earlyAllUnemployed() && early(colony);
+        return OVERRIDES.get("share") == null && colonyInt(colony, BuildingTownHall.LABOUR_SHARE, DEFAULT_SHARE) == DEFAULT_SHARE && earlyAllUnemployed() && earlyPace(colony);
     }
 
     /**
@@ -374,11 +427,15 @@ public final class LabourSettings
     {
         final Object forced = OVERRIDES.get("share");
         final int percent = forced instanceof Number n ? n.intValue() : colonyInt(colony, BuildingTownHall.LABOUR_SHARE, DEFAULT_SHARE);
-        if (!(forced instanceof Number) && percent == DEFAULT_SHARE && earlyAllUnemployed() && early(colony))
+        if (!(forced instanceof Number) && percent == DEFAULT_SHARE && earlyAllUnemployed())
         {
-            // a young colony whose manager left the share at its default: every unemployed citizen may labour (the colony cap and their needs still apply); a
-            // share the manager set, 0 included, is kept
-            return 1.0D;
+            // a young colony whose manager left the share at its default: every unemployed citizen may labour (the colony cap and their needs still apply), then
+            // the share steps down with the built buildings to the default; a share the manager set, 0 included, is kept
+            final double ease = earlyEase(colony);
+            if (ease < 1.0D)
+            {
+                return shareFor(ease, DEFAULT_SHARE / 100.0D);
+            }
         }
         return Math.max(0, Math.min(100, percent)) / 100.0D;
     }
