@@ -38,6 +38,7 @@ import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.interactionhandling.PosBasedInteraction;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.AbstractJob;
+import com.minecolonies.core.entity.ai.AiCounters;
 import com.minecolonies.core.entity.ai.workers.util.AbstractWalking;
 import com.minecolonies.core.entity.ai.workers.util.StandSpots;
 import com.minecolonies.core.entity.ai.workers.util.WorkStuckTracker;
@@ -307,6 +308,12 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
      */
     private IAIState getNeededItem()
     {
+        if (pendingNeedsOwner != needsCurrently)
+        {
+            // the pending list belongs to an earlier gathering: the current need was set without it
+            pendingNeeds.clear();
+            pendingNeedsOwner = null;
+        }
         if (needsCurrently == null)
         {
             return getStateAfterPickUp();
@@ -318,7 +325,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
                 final BlockPos pos = building.getTileEntity().getPositionOfChestWithItemStack(needsCurrently.getA());
                 if (pos == null)
                 {
-                    return getStateAfterPickUp();
+                    return nextNeedOrDone();
                 }
                 walkTo = pos;
             }
@@ -330,7 +337,11 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
 
             pickUpCounter = 0;
 
-            if (!tryTransferFromPosToWorkerIfNeeded(walkTo, needsCurrently))
+            final int gainedBefore = itemsGainedSinceDump();
+            final boolean transferred = tryTransferFromPosToWorkerIfNeeded(walkTo, needsCurrently);
+            // W8: what he took from his own hut is no gain
+            keepGains(gainedBefore);
+            if (!transferred)
             {
                 walkTo = null;
                 return getState();
@@ -338,7 +349,65 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         }
 
         walkTo = null;
+        return nextNeedOrDone();
+    }
+
+    /**
+     * W5: the next item of the same gathering pass, or the state after the pass.
+     */
+    private IAIState nextNeedOrDone()
+    {
+        walkTo = null;
+        if (!pendingNeeds.isEmpty() && pendingNeedsOwner == needsCurrently)
+        {
+            needsCurrently = pendingNeeds.remove(0);
+            pendingNeedsOwner = needsCurrently;
+            return GATHERING_REQUIRED_MATERIALS;
+        }
+        pendingNeeds.clear();
+        pendingNeedsOwner = null;
         return getStateAfterPickUp();
+    }
+
+    /**
+     * W5: the items still to take in this gathering pass after {@link #needsCurrently}.
+     */
+    private final List<Tuple<Predicate<ItemStack>, Integer>> pendingNeeds = new ArrayList<>();
+
+    /**
+     * W5: the need the pending list was queued with (the list is dropped when {@link #needsCurrently} is set without it).
+     */
+    @Nullable
+    private Tuple<Predicate<ItemStack>, Integer> pendingNeedsOwner = null;
+
+    /**
+     * W5: gather several items in one pass through the hut (one {@link AIWorkerState#GATHERING_REQUIRED_MATERIALS} visit per item, no return to the
+     * decision in between). Sets {@link #needsCurrently} to the first.
+     *
+     * @param needs the items and amounts, in order (not empty).
+     * @return the gathering state.
+     */
+    protected final IAIState gatherAll(final List<Tuple<Predicate<ItemStack>, Integer>> needs)
+    {
+        pendingNeeds.clear();
+        needsCurrently = needs.get(0);
+        pendingNeedsOwner = needsCurrently;
+        for (int i = 1; i < needs.size(); i++)
+        {
+            pendingNeeds.add(needs.get(i));
+        }
+        walkTo = null;
+        return GATHERING_REQUIRED_MATERIALS;
+    }
+
+    /**
+     * W5: items still queued in the current gathering pass (tests and debug).
+     *
+     * @return the count.
+     */
+    public int pendingNeedCount()
+    {
+        return pendingNeedsOwner == needsCurrently ? pendingNeeds.size() : 0;
     }
 
     /**
@@ -382,11 +451,15 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
 
         try
         {
+            // B3: the back-off starts again after a quiet spell, and stops growing at a cap
+            final long now = world == null ? 0L : world.getGameTime();
+            exceptionTimer = exceptionBackoff(exceptionTimer, lastExceptionTick < 0 ? Long.MAX_VALUE : now - lastExceptionTick);
+            lastExceptionTick = now;
             final int timeout = EXCEPTION_TIMEOUT * exceptionTimer;
             this.setDelay(FMLEnvironment.isProduction() ? timeout : EXCEPTION_TIMEOUT);
             setCurrentDelay(FMLEnvironment.isProduction() ? timeout : EXCEPTION_TIMEOUT);
-            // wait for longer now
-            exceptionTimer *= 2;
+            // wait for longer next time
+            exceptionTimer = Math.min(exceptionTimer * 2, EXCEPTION_BACKOFF_CAP);
             if (worker != null)
             {
                 final String name = this.worker.getName().getString();
@@ -395,11 +468,11 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
                 final String jobName = colonyJob == null ? "null" : colonyJob.getJobRegistryEntry().getTranslationKey();
                 Log.getLogger()
                   .error("Pausing Citizen " + name + " (" + jobName + ") in colony:" + worker.getCitizenData().getColony().getID() + " at " + workerPosition + " for " + timeout
-                           + " Seconds because of error:");
+                           + " ticks because of error:");
             }
             else
             {
-                Log.getLogger().error("Pausing Entity that is null for " + timeout + " Seconds because of error:");
+                Log.getLogger().error("Pausing Entity that is null for " + timeout + " ticks because of error:");
             }
 
             // fix for printing the actual exception
@@ -413,6 +486,38 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             Log.getLogger().error("Caused by ai exception:");
             e.printStackTrace();
         }
+    }
+
+    /**
+     * B3: the largest multiplier of {@code EXCEPTION_TIMEOUT} (64 x 100 ticks, about 5 minutes).
+     */
+    public static final int EXCEPTION_BACKOFF_CAP = 64;
+
+    /**
+     * B3: ticks without an error after which the back-off starts again at 1 (5 minutes).
+     */
+    public static final long EXCEPTION_QUIET_RESET = 6000L;
+
+    /**
+     * B3: game time of the last error of this AI, -1 before the first.
+     */
+    private long lastExceptionTick = -1L;
+
+    /**
+     * B3: the back-off multiplier for an error now: 1 again after {@link #EXCEPTION_QUIET_RESET} ticks without an error, else the current one
+     * (at most {@link #EXCEPTION_BACKOFF_CAP}). The caller doubles it for the next error, up to the cap.
+     *
+     * @param current          the current multiplier.
+     * @param ticksSinceLast   ticks since the last error ({@link Long#MAX_VALUE} for the first).
+     * @return the multiplier to use now.
+     */
+    public static int exceptionBackoff(final int current, final long ticksSinceLast)
+    {
+        if (ticksSinceLast >= EXCEPTION_QUIET_RESET || current < 1)
+        {
+            return 1;
+        }
+        return Math.min(current, EXCEPTION_BACKOFF_CAP);
     }
 
     /**
@@ -540,6 +645,12 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
      */
     private boolean waitingForSomething()
     {
+        if (delay > 0 && shouldWakeEarly())
+        {
+            // W3: new work came in during an idle wait
+            clearWorkTarget();
+            onWokeEarly();
+        }
         if (delay > 0)
         {
             if (currentWorkingLocation != null && EntityUtils.isLivingAtSite(worker,
@@ -565,6 +676,23 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         }
         creditActionStep();
         return false;
+    }
+
+    /**
+     * W3: whether a running delay ends now because there is work (checked every AI step while the delay runs). Cheap checks only.
+     *
+     * @return true to stop waiting.
+     */
+    protected boolean shouldWakeEarly()
+    {
+        return false;
+    }
+
+    /**
+     * W3: called when {@link #shouldWakeEarly()} ended a delay.
+     */
+    protected void onWokeEarly()
+    {
     }
 
     /**
@@ -688,16 +816,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             if (!deliverableRequests.isEmpty())
             {
                 final IRequest<?> firstDeliverableRequest = deliverableRequests.get(0);
-                IRequestResolver<?> resolver = null;
-                try
-                {
-                    resolver = building.getColony().getRequestManager().getResolverForRequest(firstDeliverableRequest.getId());
-                }
-                catch (final Exception ex)
-                {
-                    Log.getLogger().warn("Resolver died for finished request. Oopsy. " + worker.getCitizenData().getName() + " witnessed it.", ex);
-                }
-                final ILocation pickupLocation = resolver instanceof StationRequestResolver ? resolver.getLocation() : building.getLocation();
+                final ILocation pickupLocation = pickupLocationOf(firstDeliverableRequest);
 
                 if (!walkToWorkPos(pickupLocation.getInDimensionLocation()) || !WorldUtil.isBlockLoaded(world, pickupLocation.getInDimensionLocation()))
                 {
@@ -709,49 +828,30 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
                     return NEEDS_ITEM;
                 }
 
-                boolean async = false;
-                if (worker.getCitizenData().isRequestAsync(firstDeliverableRequest.getId()))
+                // W6: every completed request waiting at this place is taken in this one visit (it was one per 40 ticks)
+                final int gainedBefore = itemsGainedSinceDump();
+                int taken = 0;
+                for (final IRequest<?> request : deliverableRequests)
                 {
-                    async = true;
-                    job.getAsyncRequests().remove(firstDeliverableRequest.getId());
-                }
-
-                building.markRequestAsAccepted(worker.getCitizenData(), firstDeliverableRequest.getId());
-
-                final IItemHandlerCapProvider wrappedBlockEntity = IItemHandlerCapProvider.wrap(blockEntity);
-                final List<IItemHandler> validHandlers = Lists.newArrayList();
-                validHandlers.add(worker.getItemHandlerCitizen());
-                validHandlers.addAll(InventoryUtils.getItemHandlersFromProvider(wrappedBlockEntity));
-
-                //Check if we either have the requested Items in our inventory or if they are in the building.
-                if (InventoryUtils.areAllItemsInItemHandlerList(firstDeliverableRequest.getDeliveries(), validHandlers))
-                {
-                    final List<ItemStorage> niceToHave = itemsNiceToHave();
-                    final List<ItemStack> contained = InventoryUtils.getContainedFromItemHandler(firstDeliverableRequest.getDeliveries(), worker.getItemHandlerCitizen());
-
-                    InventoryUtils.moveItemStacksWithPossibleSwap(
-                      worker.getItemHandlerCitizen(),
-                      InventoryUtils.getItemHandlersFromProvider(wrappedBlockEntity),
-                      firstDeliverableRequest.getDeliveries(),
-                      itemStack ->
-                        contained.stream().anyMatch(stack -> ItemStackUtils.compareItemStacksIgnoreStackSize(itemStack, stack)) ||
-                          niceToHave.stream().anyMatch(storage -> ItemStackUtils.compareItemStacksIgnoreStackSize(itemStack, storage.getItemStack()))
-                    );
-                    return NEEDS_ITEM;
-                }
-                else
-                {
-                    //Seems like somebody else picked up our stack.
-                    //Lets try this again.
-                    if (async)
+                    if (request != firstDeliverableRequest && !pickupLocation.equals(pickupLocationOf(request)))
                     {
-                        worker.getCitizenData().createRequestAsync(firstDeliverableRequest.getRequest());
+                        // another place (a station): the next visit
+                        continue;
                     }
-                    else
+                    if (takeCompletedRequest(request, blockEntity))
                     {
-                        worker.getCitizenData().createRequest(firstDeliverableRequest.getRequest());
+                        taken++;
                     }
                 }
+                final AiCounters.JobCounters jobCounters = counters();
+                if (jobCounters != null && taken > 0)
+                {
+                    jobCounters.pickup(taken);
+                }
+                lastPickupRequests = taken;
+                // W8: deliveries are no gain
+                keepGains(gainedBefore);
+                return NEEDS_ITEM;
             }
         }
         else
@@ -760,6 +860,89 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         }
 
         return NEEDS_ITEM;
+    }
+
+    /**
+     * W6: requests taken by the last hut visit that took completed requests (tests).
+     */
+    private int lastPickupRequests = 0;
+
+    /**
+     * @return the completed requests taken by the last pickup visit (W6: all of one place at once).
+     */
+    public int getLastPickupRequests()
+    {
+        return lastPickupRequests;
+    }
+
+    /**
+     * The place to take a completed request from: the station of a station resolver, else the own building.
+     */
+    private ILocation pickupLocationOf(final IRequest<?> request)
+    {
+        IRequestResolver<?> resolver = null;
+        try
+        {
+            resolver = building.getColony().getRequestManager().getResolverForRequest(request.getId());
+        }
+        catch (final Exception ex)
+        {
+            Log.getLogger().warn("Resolver died for finished request. Oopsy. " + worker.getCitizenData().getName() + " witnessed it.", ex);
+        }
+        return resolver instanceof StationRequestResolver ? resolver.getLocation() : building.getLocation();
+    }
+
+    /**
+     * Takes the items of one completed request from the block entity at its place (the worker stands there).
+     *
+     * @param request     the request.
+     * @param blockEntity the block entity at the pickup place.
+     * @return true if the items were there and the request is accepted, false if it was made again.
+     */
+    private boolean takeCompletedRequest(final IRequest<?> request, final BlockEntity blockEntity)
+    {
+        boolean async = false;
+        if (worker.getCitizenData().isRequestAsync(request.getId()))
+        {
+            async = true;
+            job.getAsyncRequests().remove(request.getId());
+        }
+
+        building.markRequestAsAccepted(worker.getCitizenData(), request.getId());
+
+        final IItemHandlerCapProvider wrappedBlockEntity = IItemHandlerCapProvider.wrap(blockEntity);
+        final List<IItemHandler> validHandlers = Lists.newArrayList();
+        validHandlers.add(worker.getItemHandlerCitizen());
+        validHandlers.addAll(InventoryUtils.getItemHandlersFromProvider(wrappedBlockEntity));
+
+        //Check if we either have the requested Items in our inventory or if they are in the building.
+        if (InventoryUtils.areAllItemsInItemHandlerList(request.getDeliveries(), validHandlers))
+        {
+            final List<ItemStorage> niceToHave = itemsNiceToHave();
+            final List<ItemStack> contained = InventoryUtils.getContainedFromItemHandler(request.getDeliveries(), worker.getItemHandlerCitizen());
+
+            InventoryUtils.moveItemStacksWithPossibleSwap(
+              worker.getItemHandlerCitizen(),
+              InventoryUtils.getItemHandlersFromProvider(wrappedBlockEntity),
+              request.getDeliveries(),
+              itemStack ->
+                contained.stream().anyMatch(stack -> ItemStackUtils.compareItemStacksIgnoreStackSize(itemStack, stack)) ||
+                  niceToHave.stream().anyMatch(storage -> ItemStackUtils.compareItemStacksIgnoreStackSize(itemStack, storage.getItemStack()))
+            );
+            return true;
+        }
+
+        //Seems like somebody else picked up our stack.
+        //Lets try this again.
+        if (async)
+        {
+            worker.getCitizenData().createRequestAsync(request.getRequest());
+        }
+        else
+        {
+            worker.getCitizenData().createRequest(request.getRequest());
+        }
+        return false;
     }
 
     /**
@@ -882,8 +1065,28 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             return true;
         }
 
-        return checkedWalkToBuilding(ownBuilding);
+        final boolean arrived = checkedWalkToBuilding(ownBuilding);
+        if (arrived)
+        {
+            walkingToHut = false;
+        }
+        else if (!walkingToHut)
+        {
+            // round 13: one more walk to the own hut (AiCounters)
+            walkingToHut = true;
+            final AiCounters.JobCounters jobCounters = counters();
+            if (jobCounters != null)
+            {
+                jobCounters.hutWalk();
+            }
+        }
+        return arrived;
     }
+
+    /**
+     * Round 13: whether a walk to the own hut is under way (counted once per walk in {@link AiCounters}).
+     */
+    private boolean walkingToHut = false;
 
     /**
      * The walk to a building with a way out for a worker who cannot get there (fallen into a hole, shut in): when he stands still for too
@@ -1337,7 +1540,18 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             return afterDump();
         }
 
-        if (InventoryUtils.isBuildingFull(building))
+        boolean full = InventoryUtils.isBuildingFull(building);
+        if (!full)
+        {
+            final DumpStep step = dumpAllSlots();
+            if (step == DumpStep.WALKING)
+            {
+                return INVENTORY_FULL;
+            }
+            // the building filled up during this dump: the rest stays with the worker (nothing is dropped)
+            full = step == DumpStep.BUILDING_FULL;
+        }
+        if (full)
         {
             final ICitizenData citizenData = worker.getCitizenData();
             if (citizenData != null)
@@ -1357,16 +1571,14 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             alreadyKept.clear();
             slotAt = 0;
             this.clearActionsDone();
+            dumpFinished();
             return afterDump();
-        }
-        else if (dumpOneMoreSlot())
-        {
-            return INVENTORY_FULL;
         }
 
         alreadyKept.clear();
         slotAt = 0;
         this.clearActionsDone();
+        dumpFinished();
 
         // Worker is not currently crafting, pickup is allowed.
         // Note that this will not create a pickup request when another request is already in progress.
@@ -1395,75 +1607,251 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     }
 
     /**
-     * Dumps one inventory slot into the building chest.
+     * The result of one dump step.
+     */
+    private enum DumpStep
+    {
+        /** Still on the way to the building. */
+        WALKING,
+        /** Every slot was looked at. */
+        DONE,
+        /** The building could not take a stack: the rest stays with the worker. */
+        BUILDING_FULL
+    }
+
+    /**
+     * W1: dump steps after arrival in the current dump (one when the whole inventory went in one call); read by tests.
+     */
+    private int dumpCallsThisDump = 0;
+
+    /**
+     * W1: stacks moved into the building in the current dump.
+     */
+    private int dumpedStacksThisDump = 0;
+
+    /**
+     * W1: dump steps after arrival of the last finished dump (tests: 1 when all slots went in one call).
+     */
+    private int lastDumpCalls = 0;
+
+    /**
+     * W8: the item count of the inventory after the last finished dump (what the worker kept), see {@link #itemsGainedSinceDump()}.
+     */
+    private int itemsAfterLastDump = -1;
+
+    /**
+     * @return the dump steps after arrival of the last finished dump (1 when every slot went in one call).
+     */
+    public int getLastDumpCalls()
+    {
+        return lastDumpCalls;
+    }
+
+    /**
+     * A dump finished: counters and the baseline for {@link #itemsGainedSinceDump()}.
+     */
+    private void dumpFinished()
+    {
+        lastDumpCalls = dumpCallsThisDump;
+        final AiCounters.JobCounters jobCounters = counters();
+        if (jobCounters != null)
+        {
+            jobCounters.dump(dumpedStacksThisDump);
+        }
+        dumpCallsThisDump = 0;
+        dumpedStacksThisDump = 0;
+        itemsAfterLastDump = carriedItemCount();
+    }
+
+    /**
+     * @return the number of items the worker carries.
+     */
+    protected final int carriedItemCount()
+    {
+        int count = 0;
+        final InventoryCitizen inventory = worker.getInventoryCitizen();
+        for (int slot = 0; slot < inventory.getSlots(); slot++)
+        {
+            count += inventory.getStackInSlot(slot).getCount();
+        }
+        return count;
+    }
+
+    /**
+     * W8: items picked up or made since the last dump (the items kept at the dump do not count, so keeping seeds or saplings never starts
+     * another dump).
      *
-     * @return true if is has to dump more.
+     * @return the items gained.
+     */
+    protected final int itemsGainedSinceDump()
+    {
+        final int carried = carriedItemCount();
+        if (itemsAfterLastDump < 0)
+        {
+            // no dump yet since the AI started: what he carried then is his baseline
+            itemsAfterLastDump = carried;
+        }
+        return Math.max(0, carried - itemsAfterLastDump);
+    }
+
+    /**
+     * W8: after taking items from a building: the gain since the last dump stays what it was before.
+     *
+     * @param gainedBefore the gain before.
+     */
+    private void keepGains(final int gainedBefore)
+    {
+        itemsAfterLastDump = Math.max(0, carriedItemCount() - gainedBefore);
+    }
+
+    /**
+     * W8: items a gatherer (fisher, planter, farmer, herder) collects before he takes them to his hut (he also goes when his inventory is
+     * full). It was 5 to 10 actions.
+     */
+    public static final int GATHERER_DUMP_ITEMS = 64;
+
+    /**
+     * W8: actions after which a gatherer dumps even without {@link #GATHERER_DUMP_ITEMS} items (a safety for actions that yield nothing).
+     */
+    public static final int GATHERER_DUMP_ACTIONS = 256;
+
+    /**
+     * W8: whether a gatherer has collected enough to take it to his hut.
+     *
+     * @param gained items gained since the last dump.
+     * @return true if so.
+     */
+    public static boolean gathererShouldDump(final int gained)
+    {
+        return gained >= GATHERER_DUMP_ITEMS;
+    }
+
+    /**
+     * W8: {@link #gathererShouldDump} for this worker.
+     *
+     * @return true if the gatherer should take his items to the hut now.
+     */
+    protected final boolean gatheredEnoughToDump()
+    {
+        return gathererShouldDump(itemsGainedSinceDump());
+    }
+
+    /**
+     * W4: the share of used slots above which a worker who still has work dumps anyway.
+     */
+    public static final double DUMP_FILL_RATIO = 0.7D;
+
+    /**
+     * W4: whether used slots are more than {@link #DUMP_FILL_RATIO} of all slots.
+     *
+     * @param usedSlots  used slots.
+     * @param totalSlots all slots.
+     * @return true if over the ratio.
+     */
+    public static boolean overDumpRatio(final int usedSlots, final int totalSlots)
+    {
+        return totalSlots <= 0 || usedSlots > totalSlots * DUMP_FILL_RATIO;
+    }
+
+    /**
+     * W4: whether the worker's inventory is more than 70% used.
+     *
+     * @return true if so.
+     */
+    protected final boolean inventoryOverDumpRatio()
+    {
+        final InventoryCitizen inventory = worker.getInventoryCitizen();
+        final int total = inventory.getSlots();
+        return overDumpRatio(total - (int) InventoryUtils.openSlotCount(inventory), total);
+    }
+
+    /**
+     * W1: dumps every slot into the building in one call once the worker is there (it was one slot per 20 ticks). B7: only slots inside the
+     * inventory are read. A stack the building cannot take stays in its slot.
+     *
+     * @return the step result.
      */
     @SuppressWarnings("PMD.PrematureDeclaration")
-    private boolean dumpOneMoreSlot()
+    private DumpStep dumpAllSlots()
     {
-        if (!walkToWorkPos(getBuildingToDump().getPosition()))
+        final IBuilding target = getBuildingToDump();
+        if (!walkToWorkPos(target.getPosition()))
         {
-            return true;
+            return DumpStep.WALKING;
         }
+        dumpCallsThisDump++;
 
         @Nullable final IBuilding buildingWorker = building;
-
-        ItemStack stackToDump = worker.getInventoryCitizen().getStackInSlot(slotAt);
-        final int totalSize = worker.getInventoryCitizen().getSlots();
-
-        while (stackToDump.isEmpty())
+        final InventoryCitizen inventory = worker.getInventoryCitizen();
+        final int totalSize = inventory.getSlots();
+        for (; slotAt >= 0 && slotAt < totalSize; slotAt++)
         {
-            if (slotAt >= totalSize)
+            final ItemStack stackToDump = inventory.getStackInSlot(slotAt);
+            if (stackToDump.isEmpty())
             {
-                return false;
+                continue;
             }
-            slotAt++;
-            stackToDump = worker.getInventoryCitizen().getStackInSlot(slotAt);
-        }
 
-        boolean dumpAnyway = false;
-        if (slotAt + MIN_OPEN_SLOTS * 2 >= totalSize)
-        {
-            final long openSlots = InventoryUtils.openSlotCount(worker.getInventoryCitizen());
-            if (openSlots < MIN_OPEN_SLOTS * 2)
+            boolean dumpAnyway = false;
+            if (slotAt + MIN_OPEN_SLOTS * 2 >= totalSize)
             {
-                if (stackToDump.getCount() < CHANCE_TO_DUMP_50)
+                final long openSlots = InventoryUtils.openSlotCount(inventory);
+                if (openSlots < MIN_OPEN_SLOTS * 2)
                 {
-                    dumpAnyway = worker.getRandom().nextBoolean();
-                }
-                else
-                {
-                    dumpAnyway = worker.getRandom().nextInt(stackToDump.getCount()) < CHANCE_TO_DUMP;
+                    if (stackToDump.getCount() < CHANCE_TO_DUMP_50)
+                    {
+                        dumpAnyway = worker.getRandom().nextBoolean();
+                    }
+                    else
+                    {
+                        dumpAnyway = worker.getRandom().nextInt(stackToDump.getCount()) < CHANCE_TO_DUMP;
+                    }
                 }
             }
-        }
 
-        if (buildingWorker != null && !ItemStackUtils.isEmpty(stackToDump))
-        {
+            if (buildingWorker == null)
+            {
+                continue;
+            }
             final int amount = dumpAnyway ? stackToDump.getCount() : buildingWorker.buildingRequiresCertainAmountOfItem(stackToDump, alreadyKept, true, job.getJobRegistryEntry());
-            if (amount > 0)
+            if (amount <= 0)
             {
-                final ItemStack activeStack = getInventory().extractItem(slotAt, amount, false);
-                InventoryUtils.transferItemStackIntoNextBestSlotInItemHandler(activeStack, getBuildingToDump().getItemHandlerCap());
+                continue;
+            }
+            final ItemStack activeStack = getInventory().extractItem(slotAt, amount, false);
+            final ItemStack rest = InventoryUtils.transferItemStackIntoNextBestSlotInItemHandlerWithResult(activeStack, target.getItemHandlerCap());
+            final int moved = activeStack.getCount() - rest.getCount();
+            if (!rest.isEmpty())
+            {
+                // the building is full: put the rest back (it used to be dropped from existence)
+                final ItemStack left = getInventory().insertItem(slotAt, rest, false);
+                if (!left.isEmpty())
+                {
+                    InventoryUtils.addItemStackToItemHandler(getInventory(), left);
+                }
+            }
 
-                if (getInventory().getHeldItemSlot(InteractionHand.MAIN_HAND) == slotAt)
+            if (moved > 0)
+            {
+                if (getInventory().getHeldItemSlot(InteractionHand.MAIN_HAND) == slotAt && getInventory().getStackInSlot(slotAt).isEmpty())
                 {
                     getInventory().setHeldItem(InteractionHand.MAIN_HAND, -1);
                     worker.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
                 }
-                if (getInventory().getHeldItemSlot(InteractionHand.OFF_HAND) == slotAt)
+                if (getInventory().getHeldItemSlot(InteractionHand.OFF_HAND) == slotAt && getInventory().getStackInSlot(slotAt).isEmpty())
                 {
                     getInventory().setHeldItem(InteractionHand.OFF_HAND, -1);
                     worker.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
                 }
-
-                dumpedItems += amount;
+                dumpedItems += moved;
+                dumpedStacksThisDump++;
+            }
+            if (!rest.isEmpty())
+            {
+                return DumpStep.BUILDING_FULL;
             }
         }
-        slotAt++;
-
-        return slotAt < totalSize;
+        return DumpStep.DONE;
     }
 
     /**
