@@ -405,17 +405,58 @@ public abstract class AbstractEntityAIUsesFurnace<J extends AbstractJob<?, J>, B
     }
 
     /**
-     * W4: the products of a furnace are dumped when nothing else is ready to take out of a furnace, or the inventory is more than 70%
-     * full (it was after every furnace emptied).
+     * W4: finished products the worker carries before he takes them to the hut even while other furnaces are ready (a quarter stack): with
+     * staggered furnaces one is nearly always ready, and food or bars must not wait in his inventory until it is 70% full.
+     */
+    public static final int PRODUCT_DUMP_ITEMS = 16;
+
+    /**
+     * W4: the products of a furnace are dumped when nothing else is ready to take out of a furnace, the inventory is more than 70% full, or
+     * he carries {@link #PRODUCT_DUMP_ITEMS} finished products (it was after every furnace emptied).
      */
     @Override
     protected boolean inventoryNeedsDump()
     {
+        if (getState() != INVENTORY_FULL && canBeInterrupted() && productsToDump())
+        {
+            return true;
+        }
         if (!super.inventoryNeedsDump())
         {
             return false;
         }
         return worker.getCitizenInventoryHandler().isInventoryFull() || wantInventoryDumped() || inventoryOverDumpRatio() || getPositionOfOvenToRetrieveFrom() == null;
+    }
+
+    /**
+     * W4: whether the finished products he carries reach {@link #PRODUCT_DUMP_ITEMS}.
+     *
+     * @return true if so.
+     */
+    public boolean productsToDump()
+    {
+        return carriedProducts() >= PRODUCT_DUMP_ITEMS;
+    }
+
+    /**
+     * W4: items the worker carries that are neither smeltable nor fuel nor tools (furnace products).
+     *
+     * @return the count.
+     */
+    public int carriedProducts()
+    {
+        final ItemListModule fuels = building.getModule(ITEMLIST_FUEL);
+        int count = 0;
+        final var inventory = worker.getInventoryCitizen();
+        for (int slot = 0; slot < inventory.getSlots(); slot++)
+        {
+            final ItemStack stack = inventory.getStackInSlot(slot);
+            if (!stack.isEmpty() && stack.getMaxStackSize() > 1 && !isSmeltable(stack) && !fuels.isItemInList(new ItemStorage(stack)))
+            {
+                count += stack.getCount();
+            }
+        }
+        return count;
     }
 
     /**

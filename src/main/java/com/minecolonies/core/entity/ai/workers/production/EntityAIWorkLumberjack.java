@@ -175,9 +175,17 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private static final int SAPLING_FETCH_RANGE = 24;
 
     /**
-     * W11: saplings taken from the hut before a felling (tests).
+     * W11: saplings taken from the hut before a felling (this worker, tests).
      */
-    public static final java.util.concurrent.atomic.AtomicInteger saplingsFetchedAhead = new java.util.concurrent.atomic.AtomicInteger();
+    private int saplingsFetchedAhead = 0;
+
+    /**
+     * @return saplings taken from the hut before a felling (this worker only, since his AI started).
+     */
+    public int getSaplingsFetchedAhead()
+    {
+        return saplingsFetchedAhead;
+    }
 
     /**
      * The active pathfinding job used to walk to trees.
@@ -543,7 +551,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             fetchSaplingFirst = false;
             if (checkAndTransferFromHut(job.getTree().getSapling()))
             {
-                saplingsFetchedAhead.incrementAndGet();
+                saplingsFetchedAhead++;
             }
         }
 

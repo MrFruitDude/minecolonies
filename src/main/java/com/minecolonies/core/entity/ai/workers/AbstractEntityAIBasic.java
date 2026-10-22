@@ -451,15 +451,15 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
 
         try
         {
-            // B3: the back-off starts again after a quiet spell, and stops growing at a cap
+            // B3: the back-off starts again after a quiet spell (counted from the end of the last pause), and stops growing at a cap
             final long now = world == null ? 0L : world.getGameTime();
-            exceptionTimer = exceptionBackoff(exceptionTimer, lastExceptionTick < 0 ? Long.MAX_VALUE : now - lastExceptionTick);
-            lastExceptionTick = now;
-            final int timeout = EXCEPTION_TIMEOUT * exceptionTimer;
-            this.setDelay(FMLEnvironment.isProduction() ? timeout : EXCEPTION_TIMEOUT);
-            setCurrentDelay(FMLEnvironment.isProduction() ? timeout : EXCEPTION_TIMEOUT);
+            final ExceptionStep step = exceptionStep(exceptionTimer, pauseEndTick, now, FMLEnvironment.isProduction());
+            final int timeout = step.pause();
+            this.setDelay(timeout);
+            setCurrentDelay(timeout);
+            pauseEndTick = step.pauseEnd();
             // wait for longer next time
-            exceptionTimer = Math.min(exceptionTimer * 2, EXCEPTION_BACKOFF_CAP);
+            exceptionTimer = step.next();
             if (worker != null)
             {
                 final String name = this.worker.getName().getString();
@@ -499,16 +499,45 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     public static final long EXCEPTION_QUIET_RESET = 6000L;
 
     /**
-     * B3: game time of the last error of this AI, -1 before the first.
+     * B3: game time at which the last error pause of this AI ends, -1 before the first error.
      */
-    private long lastExceptionTick = -1L;
+    private long pauseEndTick = -1L;
+
+    /**
+     * B3: one error of a worker AI.
+     *
+     * @param used     the multiplier used for this pause.
+     * @param pause    the pause in ticks.
+     * @param pauseEnd the game time the pause ends.
+     * @param next     the multiplier kept for the next error.
+     */
+    public record ExceptionStep(int used, int pause, long pauseEnd, int next)
+    {
+    }
+
+    /**
+     * B3: the pause for an error at {@code now}. The quiet time is measured from the end of the last pause, so an AI that fails again right
+     * after each pause holds at {@link #EXCEPTION_BACKOFF_CAP} (measured from the last error, the 6400 tick pause at the cap counted as quiet).
+     *
+     * @param current      the current multiplier.
+     * @param pauseEndTick the end of the last pause, -1 before the first error.
+     * @param now          the game time of this error.
+     * @param production   whether the pause grows (outside production it stays {@code EXCEPTION_TIMEOUT}).
+     * @return the step.
+     */
+    public static ExceptionStep exceptionStep(final int current, final long pauseEndTick, final long now, final boolean production)
+    {
+        final int used = exceptionBackoff(current, pauseEndTick < 0 ? Long.MAX_VALUE : Math.max(0L, now - pauseEndTick));
+        final int pause = production ? EXCEPTION_TIMEOUT * used : EXCEPTION_TIMEOUT;
+        return new ExceptionStep(used, pause, now + pause, Math.min(used * 2, EXCEPTION_BACKOFF_CAP));
+    }
 
     /**
      * B3: the back-off multiplier for an error now: 1 again after {@link #EXCEPTION_QUIET_RESET} ticks without an error, else the current one
      * (at most {@link #EXCEPTION_BACKOFF_CAP}). The caller doubles it for the next error, up to the cap.
      *
      * @param current          the current multiplier.
-     * @param ticksSinceLast   ticks since the last error ({@link Long#MAX_VALUE} for the first).
+     * @param ticksSinceLast   ticks since the end of the last pause ({@link Long#MAX_VALUE} for the first error).
      * @return the multiplier to use now.
      */
     public static int exceptionBackoff(final int current, final long ticksSinceLast)
@@ -830,19 +859,16 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
 
                 // W6: every completed request waiting at this place is taken in this one visit (it was one per 40 ticks)
                 final int gainedBefore = itemsGainedSinceDump();
-                int taken = 0;
+                final List<IRequest<?>> here = new ArrayList<>();
                 for (final IRequest<?> request : deliverableRequests)
                 {
-                    if (request != firstDeliverableRequest && !pickupLocation.equals(pickupLocationOf(request)))
+                    // another place (a station): the next visit
+                    if (request == firstDeliverableRequest || pickupLocation.equals(pickupLocationOf(request)))
                     {
-                        // another place (a station): the next visit
-                        continue;
-                    }
-                    if (takeCompletedRequest(request, blockEntity))
-                    {
-                        taken++;
+                        here.add(request);
                     }
                 }
+                final int taken = takeCompletedRequestsHere(blockEntity, here);
                 final AiCounters.JobCounters jobCounters = counters();
                 if (jobCounters != null && taken > 0)
                 {
@@ -860,6 +886,38 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         }
 
         return NEEDS_ITEM;
+    }
+
+    /**
+     * W6: takes completed requests of one place in order while the worker has room. A request is accepted only when all its items are with
+     * him; the first one that does not fit and the rest stay completed for the next visit (after a dump). Public for tests.
+     *
+     * @param blockEntity the block entity at the place (the worker stands there).
+     * @param requests    the completed requests of that place.
+     * @return the requests taken.
+     */
+    public int takeCompletedRequestsHere(final BlockEntity blockEntity, final List<IRequest<?>> requests)
+    {
+        int taken = 0;
+        final List<ItemStack> takenDeliveries = new ArrayList<>();
+        for (final IRequest<?> request : requests)
+        {
+            if (taken > 0 && worker.getCitizenInventoryHandler().isInventoryFull())
+            {
+                // no room for more: the rest waits for the next visit
+                break;
+            }
+            final TakeResult result = takeCompletedRequest(request, blockEntity, takenDeliveries);
+            if (result == TakeResult.TAKEN)
+            {
+                taken++;
+            }
+            else if (result == TakeResult.NO_ROOM)
+            {
+                break;
+            }
+        }
+        return taken;
     }
 
     /**
@@ -893,22 +951,30 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     }
 
     /**
-     * Takes the items of one completed request from the block entity at its place (the worker stands there).
-     *
-     * @param request     the request.
-     * @param blockEntity the block entity at the pickup place.
-     * @return true if the items were there and the request is accepted, false if it was made again.
+     * W6: the outcome of taking one completed request.
      */
-    private boolean takeCompletedRequest(final IRequest<?> request, final BlockEntity blockEntity)
+    private enum TakeResult
     {
-        boolean async = false;
-        if (worker.getCitizenData().isRequestAsync(request.getId()))
-        {
-            async = true;
-            job.getAsyncRequests().remove(request.getId());
-        }
+        /** The items are with the worker and the request is accepted. */
+        TAKEN,
+        /** The items are still (partly) at the place: the request stays completed for the next visit. */
+        NO_ROOM,
+        /** The items were gone: the request was made again. */
+        REMADE
+    }
 
-        building.markRequestAsAccepted(worker.getCitizenData(), request.getId());
+    /**
+     * Takes the items of one completed request from the block entity at its place (the worker stands there). W6: the request is accepted
+     * only once all its items are with the worker, and the items of requests taken before in this visit are never swapped out for these.
+     *
+     * @param request         the request.
+     * @param blockEntity     the block entity at the pickup place.
+     * @param takenDeliveries the deliveries taken before in this visit; this request's are added when it is taken.
+     * @return the outcome.
+     */
+    private TakeResult takeCompletedRequest(final IRequest<?> request, final BlockEntity blockEntity, final List<ItemStack> takenDeliveries)
+    {
+        final boolean async = worker.getCitizenData().isRequestAsync(request.getId());
 
         final IItemHandlerCapProvider wrappedBlockEntity = IItemHandlerCapProvider.wrap(blockEntity);
         final List<IItemHandler> validHandlers = Lists.newArrayList();
@@ -927,10 +993,31 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
               request.getDeliveries(),
               itemStack ->
                 contained.stream().anyMatch(stack -> ItemStackUtils.compareItemStacksIgnoreStackSize(itemStack, stack)) ||
+                  takenDeliveries.stream().anyMatch(stack -> ItemStackUtils.compareItemStacksIgnoreStackSize(itemStack, stack)) ||
                   niceToHave.stream().anyMatch(storage -> ItemStackUtils.compareItemStacksIgnoreStackSize(itemStack, storage.getItemStack()))
             );
-            return true;
+            // (counted together with the deliveries taken before in this visit, so their items do not stand in for these)
+            final List<ItemStack> carried = new ArrayList<>(takenDeliveries);
+            carried.addAll(request.getDeliveries());
+            if (!InventoryUtils.areAllItemsInItemHandlerList(carried, List.of(worker.getItemHandlerCitizen())))
+            {
+                // W6: not everything moved (no room): not accepted, the request stays completed for the next visit
+                return TakeResult.NO_ROOM;
+            }
+            if (async)
+            {
+                job.getAsyncRequests().remove(request.getId());
+            }
+            building.markRequestAsAccepted(worker.getCitizenData(), request.getId());
+            takenDeliveries.addAll(request.getDeliveries());
+            return TakeResult.TAKEN;
         }
+
+        if (async)
+        {
+            job.getAsyncRequests().remove(request.getId());
+        }
+        building.markRequestAsAccepted(worker.getCitizenData(), request.getId());
 
         //Seems like somebody else picked up our stack.
         //Lets try this again.
@@ -942,7 +1029,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         {
             worker.getCitizenData().createRequest(request.getRequest());
         }
-        return false;
+        return TakeResult.REMADE;
     }
 
     /**

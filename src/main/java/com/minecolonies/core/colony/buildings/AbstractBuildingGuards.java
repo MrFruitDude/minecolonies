@@ -400,6 +400,14 @@ public abstract class AbstractBuildingGuards extends AbstractBuilding implements
         arrivedAtPatrol.clear();
     }
 
+    /**
+     * @return whether a random patrol point may be used: not in manual patrol mode with manual points set.
+     */
+    public boolean randomPatrolAllowed()
+    {
+        return !getSetting(PATROL_MODE).getValue().equals(GuardPatrolModeSetting.MANUAL) || patrolTargets == null || patrolTargets.isEmpty();
+    }
+
     @Override
     @Nullable
     public BlockPos getNextPatrolTarget(final boolean newTarget)
@@ -412,7 +420,8 @@ public abstract class AbstractBuildingGuards extends AbstractBuilding implements
             {
                 final BlockPos found = pathResult.getPath() == null ? null : pathResult.getPath().getTarget();
                 pathResult = null;
-                if (found != null)
+                // (not after a switch to manual patrol with points set meanwhile: the manual points rule)
+                if (found != null && randomPatrolAllowed())
                 {
                     lastPatrolPoint = BlockPosUtil.getDistance(found, getPosition()) > getPatrolDistance() ? getPosition() : found;
                     arrivedAtPatrol.clear();
@@ -435,7 +444,7 @@ public abstract class AbstractBuildingGuards extends AbstractBuilding implements
             return lastPatrolPoint;
         }
 
-        if (!getSetting(PATROL_MODE).getValue().equals(GuardPatrolModeSetting.MANUAL) || patrolTargets == null || patrolTargets.isEmpty())
+        if (randomPatrolAllowed())
         {
             BlockPos pos = null;
             if (this.pathResult != null)

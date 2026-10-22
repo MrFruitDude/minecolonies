@@ -568,14 +568,22 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return INVENTORY_FULL;
         }
-        skippedPickupDumps.incrementAndGet();
+        skippedPickupDumps++;
         return PICK_UP;
     }
 
     /**
-     * W7: pickups after which the full dump was skipped (tests).
+     * W7: pickups after which the full dump was skipped (this worker, tests).
      */
-    public static final java.util.concurrent.atomic.AtomicInteger skippedPickupDumps = new java.util.concurrent.atomic.AtomicInteger();
+    private int skippedPickupDumps = 0;
+
+    /**
+     * @return pickups after which the full dump was skipped (this worker only, since his AI started).
+     */
+    public int getSkippedPickupDumps()
+    {
+        return skippedPickupDumps;
+    }
 
     /**
      * @return true while the current structure is in its clearing stage.

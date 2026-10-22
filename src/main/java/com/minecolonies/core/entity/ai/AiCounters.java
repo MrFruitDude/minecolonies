@@ -17,8 +17,10 @@ import java.util.TreeMap;
  * dumps and the stacks they moved, request pickups (hut visits that took completed requests) and the requests taken. Per colony: courier
  * trips and the requests they served ({@link #courierTrip}, fed by the courier AI).
  * <p>
- * Runtime only: the counters start when the server starts (or at {@link #reset}) and are not saved. Server thread only: the maps are not
- * thread safe, and {@link #snapshot} copies them so a reader keeps a stable view.
+ * Runtime only: the counters start when the server starts (or at {@link #reset}) and are not saved; {@link #clearAll} drops them when the
+ * server stops. Server thread only: the maps are not thread safe, so every call off the server thread counts nothing, and {@link #snapshot}
+ * returns an empty copy there (a CC peripheral must read with mainThread=true). {@link #snapshot} copies the maps so a reader keeps a stable
+ * view.
  */
 public final class AiCounters
 {
@@ -217,10 +219,20 @@ public final class AiCounters
         return colony.getDimension().identifier() + "#" + colony.getID();
     }
 
+    /**
+     * @param colony the colony.
+     * @return whether the colony is on a server and the caller runs on that server's thread.
+     */
+    private static boolean onServerThread(@Nullable final IColony colony)
+    {
+        return colony != null && colony.getWorld() != null && !colony.getWorld().isClientSide() && colony.getWorld().getServer() != null
+                 && colony.getWorld().getServer().isSameThread();
+    }
+
     @Nullable
     private static ColonyCounters colony(@Nullable final IColony colony, final boolean create)
     {
-        if (colony == null || colony.getWorld() == null || colony.getWorld().isClientSide())
+        if (!onServerThread(colony))
         {
             return null;
         }
@@ -277,10 +289,10 @@ public final class AiCounters
     }
 
     /**
-     * A read-only copy of the counters of a colony.
+     * A read-only copy of the counters of a colony. Server thread only.
      *
      * @param colony the colony.
-     * @return the copy (empty when nothing was counted yet).
+     * @return the copy (empty when nothing was counted yet, or when called off the server thread).
      */
     public static Snapshot snapshot(final IColony colony)
     {
@@ -305,7 +317,20 @@ public final class AiCounters
      */
     public static void reset(final IColony colony)
     {
+        if (!onServerThread(colony))
+        {
+            return;
+        }
         COLONIES.remove(key(colony));
+        generation++;
+    }
+
+    /**
+     * Drops the counters of every colony (server stop): a singleplayer world switch starts from zero.
+     */
+    public static void clearAll()
+    {
+        COLONIES.clear();
         generation++;
     }
 

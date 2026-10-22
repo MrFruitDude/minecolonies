@@ -728,9 +728,17 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
     }
 
     /**
-     * W4: tasks finished without a full dump (tests).
+     * W4: tasks finished without a full dump (this worker, tests).
      */
-    public static final java.util.concurrent.atomic.AtomicInteger finishedWithoutDump = new java.util.concurrent.atomic.AtomicInteger();
+    private int finishedWithoutDump = 0;
+
+    /**
+     * @return tasks finished without a full dump (this worker only, since his AI started).
+     */
+    public int getFinishedWithoutDump()
+    {
+        return finishedWithoutDump;
+    }
 
     /**
      * W4: puts the outputs of the finished request (its deliveries) into the hut and finishes the request, as a full dump would, without
@@ -792,7 +800,7 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
         }
         completeFinishedRequest();
         resetActionsDone();
-        finishedWithoutDump.incrementAndGet();
+        finishedWithoutDump++;
         return true;
     }
 

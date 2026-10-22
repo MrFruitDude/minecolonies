@@ -110,9 +110,17 @@ public class EntityAIStructureMiner extends AbstractEntityAIStructureWithWorkOrd
     public static final int LADDER_LOW_WATER = 4;
 
     /**
-     * W11: requests made ahead (tests).
+     * W11: requests made ahead (this worker, tests).
      */
-    public static final java.util.concurrent.atomic.AtomicInteger requestedAhead = new java.util.concurrent.atomic.AtomicInteger();
+    private int requestedAhead = 0;
+
+    /**
+     * @return requests made ahead (this worker only, since his AI started).
+     */
+    public int getRequestedAhead()
+    {
+        return requestedAhead;
+    }
 
     /**
      * W11: whether to ask for the next batch now.
@@ -142,8 +150,33 @@ public class EntityAIStructureMiner extends AbstractEntityAIStructureWithWorkOrd
         if (shouldRequestAhead(have, lowWater, open))
         {
             worker.getCitizenData().createRequestAsync(new com.minecolonies.api.colony.requestsystem.requestable.Stack(stack, batch, 1));
-            requestedAhead.incrementAndGet();
+            requestedAhead++;
         }
+    }
+
+    /**
+     * W11: ticks between two fill request-ahead checks while mining the shaft or a node.
+     */
+    private static final int FILL_AHEAD_INTERVAL = 100;
+
+    /**
+     * W11: game time of the last fill request-ahead check.
+     */
+    private long lastFillAheadCheck = -FILL_AHEAD_INTERVAL;
+
+    /**
+     * W11: while mining the shaft or a node, the main fill block (for fluids and unsafe walls) is asked for while some are left, so securing a
+     * block does not stop until they come. At most every {@link #FILL_AHEAD_INTERVAL} ticks.
+     */
+    private void fillAhead()
+    {
+        final long now = world.getGameTime();
+        if (now - lastFillAheadCheck < FILL_AHEAD_INTERVAL)
+        {
+            return;
+        }
+        lastFillAheadCheck = now;
+        requestAhead(new ItemStack(getMainFillBlock()), COBBLE_REQUEST_BATCHES, COBBLE_LOW_WATER);
     }
 
     public static final String RENDER_META_TORCH   = "torch";
@@ -502,6 +535,7 @@ public class EntityAIStructureMiner extends AbstractEntityAIStructureWithWorkOrd
 
     private IAIState doShaftMining()
     {
+        fillAhead();
 
         minerWorkingLocation = getNextBlockInShaftToMine();
         if (minerWorkingLocation == null)
@@ -723,6 +757,7 @@ public class EntityAIStructureMiner extends AbstractEntityAIStructureWithWorkOrd
     @NotNull
     private IAIState executeNodeMining()
     {
+        fillAhead();
         final MinerLevelManagementModule module = building.getFirstModuleOccurance(MinerLevelManagementModule.class);
         ;
         @Nullable final MinerLevel currentLevel = module.getCurrentLevel();

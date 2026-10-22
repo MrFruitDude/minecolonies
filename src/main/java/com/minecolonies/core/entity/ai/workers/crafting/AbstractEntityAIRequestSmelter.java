@@ -492,7 +492,8 @@ public abstract class AbstractEntityAIRequestSmelter<J extends AbstractJobCrafte
             return RETRIEVING_UNRELATED_PRODUCT_FROM_FURNACE;
         }
 
-        if (InventoryUtils.hasBuildingEnoughElseCount(building, isCorrectFuel(possibleFuels), 1) > 1 || InventoryUtils.hasItemInItemHandler(worker.getInventoryCitizen(), isCorrectFuel(possibleFuels)))
+        // (>= 1 as in the other fuel checks: the count stops at the first rack holding any, so "> 1" missed a single fuel item there)
+        if (InventoryUtils.hasBuildingEnoughElseCount(building, isCorrectFuel(possibleFuels), 1) >= 1 || InventoryUtils.hasItemInItemHandler(worker.getInventoryCitizen(), isCorrectFuel(possibleFuels)))
         {
             furnacePos = getFurnaceWithoutFuel();
             if (furnacePos != null)

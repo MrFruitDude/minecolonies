@@ -118,7 +118,13 @@ public abstract class AbstractEntityAIGuard<J extends AbstractJobGuard<J>, B ext
     /**
      * Interval between guard task updates
      */
-    private static final int GUARD_TASK_INTERVAL = 40;
+    private static final int GUARD_TASK_INTERVAL = 60;
+
+    /**
+     * W10: the old decide interval (ticks). The per-decide action count and armor check are scaled to it, so the faster decide keeps their
+     * rate per game time.
+     */
+    private static final int LEGACY_TASK_INTERVAL = 100;
 
     /**
      * Interval between guard regen updates
@@ -688,13 +694,15 @@ public abstract class AbstractEntityAIGuard<J extends AbstractJobGuard<J>, B ext
     {
         final ILocation rallyLocation = buildingGuards.getRallyLocation();
 
-        if (regularActionTimer++ > ACTION_INCREASE_INTERVAL)
+        // (ticks now: one action every ACTION_INCREASE_INTERVAL old 100-tick decides, as before)
+        regularActionTimer += GUARD_TASK_INTERVAL;
+        if (regularActionTimer > ACTION_INCREASE_INTERVAL * LEGACY_TASK_INTERVAL)
         {
             incrementActionsDone();
             regularActionTimer = 0;
         }
 
-        if (worker.getRandom().nextDouble() < 0.05)
+        if (worker.getRandom().nextDouble() < 0.05 * GUARD_TASK_INTERVAL / LEGACY_TASK_INTERVAL)
         {
             equipInventoryArmor();
         }
