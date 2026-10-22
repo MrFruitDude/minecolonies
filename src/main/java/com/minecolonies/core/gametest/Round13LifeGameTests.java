@@ -375,7 +375,8 @@ public final class Round13LifeGameTests
             final CitizenAIStateMachine machine = (CitizenAIStateMachine) citizen.getCitizenAI();
             final AtomicInteger thrown = new AtomicInteger();
             final int resetsBefore = machine.getResets();
-            // fails until the machine resets: a working step of the citizen between two failures restarts the count, so this may take more than 3 throws
+            // fails until the machine resets (at most 15 throws): the other steps of the citizen work in between, but only this transition's own clean run
+            // would restart its count, so the reset comes at the 3rd throw
             citizen.getCitizenAI().addTransition(new AIEventTarget<IState>(AIBlockingEventType.EVENT, () -> {
                 if (machine.getResets() == resetsBefore && thrown.get() < 15)
                 {
@@ -386,7 +387,7 @@ public final class Round13LifeGameTests
             }, () -> null, 1));
             helper.succeedWhen(() -> {
                 helper.assertTrue(machine.getResets() == resetsBefore + 1, "B4: resets " + machine.getResets() + " after " + thrown + " throws");
-                helper.assertTrue(thrown.get() >= 3, "B4: reset after " + thrown + " throws");
+                helper.assertTrue(thrown.get() == 3, "B4: reset after " + thrown + " throws");
                 helper.assertTrue(citizen.isAlive() && machine.getState() != null, "B4: citizen gone");
                 Log.getLogger().info("R13 LIFE RESULT ai_exception thrown={} resets={} state={} logged={}", thrown, machine.getResets(), machine.getState(), machine.getLogged());
             });

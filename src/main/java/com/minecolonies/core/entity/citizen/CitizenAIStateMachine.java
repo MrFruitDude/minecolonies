@@ -18,7 +18,8 @@ import java.util.function.Supplier;
  * <li>a failing transition waits before it runs again: 40 ticks after the first failure, then 80;</li>
  * <li>at failure number {@link #RESET_AFTER} in a row the citizen AI goes back to IDLE (and the citizen's own reset runs) to choose its state afresh, so the
  * real sequence is: fail, wait 40, fail, wait 80, fail, reset ({@link #MAX_BACKOFF} is the longest wait);</li>
- * <li>"in a row": a transition that fires without an exception clears the count, and so do {@link #QUIET_TICKS} quiet ticks;</li>
+ * <li>"in a row": the failures of one transition; when that transition runs again without an exception, or another one fails, the count starts over, and
+ * {@link #QUIET_TICKS} quiet ticks clear it too;</li>
  * <li>the log is limited for all citizens together, per exception type and throw site: the first one logs its stack trace, then one line at most every
  * {@link #LOG_INTERVAL} ticks, with the number suppressed.</li>
  * </ul>
@@ -47,6 +48,12 @@ public class CitizenAIStateMachine extends TickRateStateMachine<IState>
     private int  resets       = 0;
     private int  logged       = 0;
     private int  exceptions   = 0;
+
+    /**
+     * The transition being checked, and the one whose failures are counted.
+     */
+    private ITickingTransition<IState> checking = null;
+    private ITickingTransition<IState> failing  = null;
 
     /**
      * @param gameTime the game time.
@@ -112,14 +119,18 @@ public class CitizenAIStateMachine extends TickRateStateMachine<IState>
     }
 
     @Override
-    public boolean transitionToNext(final ITickingTransition<IState> transition)
+    public boolean checkTransition(final ITickingTransition<IState> transition)
     {
-        final int failuresBefore = exceptions;
-        final boolean fired = super.transitionToNext(transition);
-        if (fired && exceptions == failuresBefore)
+        // read the countdown without changing it: the transition runs this tick when the tick rate brings it to 0
+        final boolean runs = transition.countdownTicksToUpdate(0) <= getTickRate();
+        final int exceptionsBefore = exceptions;
+        checking = transition;
+        final boolean fired = super.checkTransition(transition);
+        if (runs && exceptions == exceptionsBefore && transition == failing)
         {
-            // a step that worked: the failures so far were not in a row
+            // the failing step ran without an exception: its failures so far were not in a row
             failures = 0;
+            failing = null;
         }
         return fired;
     }
@@ -135,10 +146,17 @@ public class CitizenAIStateMachine extends TickRateStateMachine<IState>
             failures = 0;
         }
         lastFailure = now;
+        if (checking != failing)
+        {
+            // another step fails: count it from 1
+            failures = 0;
+            failing = checking;
+        }
         failures++;
         if (failures >= RESET_AFTER)
         {
             failures = 0;
+            failing = null;
             resets++;
             reset();
             try
