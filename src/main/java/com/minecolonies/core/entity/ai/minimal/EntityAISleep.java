@@ -71,6 +71,11 @@ public class EntityAISleep implements IStateAI
      */
     private int bedTicks = 0;
 
+    /**
+     * D6: whether a homeless citizen has set off to its spot in this sleep.
+     */
+    private boolean homelessWalkStarted = false;
+
     public enum SleepState implements IState
     {
         WALKING_HOME,
@@ -116,8 +121,12 @@ public class EntityAISleep implements IStateAI
         if (homeBuilding == null)
         {
             // D6: each homeless citizen sleeps at its own spot around the town hall (or tavern), not all on one block
-            @Nullable final BlockPos homePosition = homelessSpot(citizen.getCitizenData().getHomePosition(), citizen.getCivilianID());
-            if (homePosition == null || homePosition.distSqr(BlockPos.containing(Math.floor(citizen.getX()), citizen.getY(), Math.floor(citizen.getZ()))) <= RANGE_TO_BE_HOME)
+            @Nullable final BlockPos center = citizen.getCitizenData().getHomePosition();
+            @Nullable final BlockPos homePosition = homelessSpot(center, citizen.getCivilianID());
+            final BlockPos at = BlockPos.containing(Math.floor(citizen.getX()), citizen.getY(), Math.floor(citizen.getZ()));
+            if (homePosition == null || homePosition.distSqr(at) <= RANGE_TO_BE_HOME
+                  // the spot may be out of reach (a wall, water): a walk that ended near the town hall counts as home
+                  || (homelessWalkStarted && citizen.getNavigation().isDone() && center.distSqr(at) <= 16 * 16))
             {
                 return FIND_BED;
             }
@@ -154,6 +163,7 @@ public class EntityAISleep implements IStateAI
     {
         usedBed = null;
         bedTicks = 0;
+        homelessWalkStarted = false;
     }
 
     private void findBedAndTryToSleep()
@@ -278,6 +288,7 @@ public class EntityAISleep implements IStateAI
             if (spot != null)
             {
                 EntityNavigationUtils.walkToPos(citizen, spot, 4, true);
+                homelessWalkStarted = true;
             }
         }
 
