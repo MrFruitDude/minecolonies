@@ -235,7 +235,7 @@ public final class MinecoloniesGameTests
         // manager.  This catches registry/component schema regressions that a
         // live in-memory colony would otherwise hide.
         final CompoundTag saved = colony.write(new CompoundTag(), level.registryAccess());
-        final Colony restored = Colony.loadColony(saved, level, level.registryAccess());
+        final Colony restored = loadDetached(saved, level);
         helper.assertTrue(restored != null, "colony NBT could not be loaded");
         helper.assertTrue(restored.getID() == colony.getID(), "colony id was not preserved across reload");
         helper.assertTrue(restored.getCenter().equals(colony.getCenter()), "colony center was not preserved across reload");
@@ -6793,6 +6793,21 @@ public final class MinecoloniesGameTests
         mob.setPersistenceRequired();
         level.addFreshEntity(mob);
         return mob;
+    }
+
+    /**
+     * Reads a saved colony back into a detached copy for checks. Loading with a level registers the copy's permission handler on the event bus; the copy is
+     * never deleted, so the handler is taken off again here. Left on, it outlived the test and, once a later test colony reused the id, cancelled that
+     * colony's block placements (the copy's claim check matched and its permissions did not know the player).
+     */
+    static Colony loadDetached(final CompoundTag saved, final ServerLevel level)
+    {
+        final Colony restored = Colony.loadColony(saved, level, level.registryAccess());
+        if (restored != null && restored.getEventHandler() != null)
+        {
+            net.neoforged.neoforge.common.NeoForge.EVENT_BUS.unregister(restored.getEventHandler());
+        }
+        return restored;
     }
 
     /**

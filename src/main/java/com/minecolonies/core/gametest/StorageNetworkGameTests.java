@@ -655,7 +655,7 @@ public final class StorageNetworkGameTests
         final var reservationsBefore = n.f.ledger().all();
 
         final var saved = ((Colony) n.f.colony).write(new net.minecraft.nbt.CompoundTag(), n.f.level.registryAccess());
-        final Colony restored = Colony.loadColony(saved, n.f.level, n.f.level.registryAccess());
+        final Colony restored = MinecoloniesGameTests.loadDetached(saved, n.f.level);
         helper.assertTrue(restored != null, "colony could not be loaded");
         final ReservationLedger after = ((StandardRequestManager) restored.getRequestManager()).getReservationLedger();
         helper.assertTrue(after.all().size() == reservationsBefore.size(), "the reservations came back: " + after.all() + " vs " + reservationsBefore);

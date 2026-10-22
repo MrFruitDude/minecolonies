@@ -245,7 +245,7 @@ public final class RequestReservationGameTests
         ledger.reserveStock(f.warehouse.getID(), f.racks.get(0), new ItemStorage(new ItemStack(Items.OAK_LOG)), 1, orphan, "ghost", ReservationReason.OTHER, 0L);
 
         final var saved = ((Colony) f.colony).write(new net.minecraft.nbt.CompoundTag(), f.level.registryAccess());
-        final Colony restored = Colony.loadColony(saved, f.level, f.level.registryAccess());
+        final Colony restored = MinecoloniesGameTests.loadDetached(saved, f.level);
         helper.assertTrue(restored != null, "colony could not be loaded");
         final ReservationLedger after = ((StandardRequestManager) restored.getRequestManager()).getReservationLedger();
 

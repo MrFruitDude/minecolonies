@@ -259,7 +259,7 @@ public final class RequestPriorityGameTests
         p.setPriority(f.warehouse.getID(), 2);
 
         final var saved = ((Colony) f.colony).write(new net.minecraft.nbt.CompoundTag(), f.level.registryAccess());
-        final Colony restored = Colony.loadColony(saved, f.level, f.level.registryAccess());
+        final Colony restored = MinecoloniesGameTests.loadDetached(saved, f.level);
         helper.assertTrue(restored != null, "colony could not be loaded");
         final BuildingPriorities after = ((StandardRequestManager) restored.getRequestManager()).getBuildingPriorities();
         helper.assertTrue(after.priority(f.builder.getID()) == 8, "builder priority kept: " + after.snapshot());
@@ -279,7 +279,7 @@ public final class RequestPriorityGameTests
         final RsFixture f = RsFixture.found(helper, "rs-prio-oldsave", 2);
         helper.assertTrue(f.standard().getBuildingPriorities().isEmpty(), "nothing set: nothing written");
         final var saved = ((Colony) f.colony).write(new net.minecraft.nbt.CompoundTag(), f.level.registryAccess());
-        final Colony restored = Colony.loadColony(saved, f.level, f.level.registryAccess());
+        final Colony restored = MinecoloniesGameTests.loadDetached(saved, f.level);
         helper.assertTrue(restored != null, "colony could not be loaded");
         final BuildingPriorities after = ((StandardRequestManager) restored.getRequestManager()).getBuildingPriorities();
         helper.assertTrue(after.isEmpty() && after.priority(f.builder.getID()) == 5, "defaults");
