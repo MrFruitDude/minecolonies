@@ -191,13 +191,13 @@ public final class Round13WorkGameTests
 
     /**
      * Extra E1: the hut fills up during a dump: the stack it cannot take stays with the worker (the old dump dropped the rest of the stack).
+     * The sawmill worker with nothing to craft dumps three stacks of dirt into a hut with one free slot.
      */
     public static void dumpFullHutKeeps(final GameTestHelper helper)
     {
-        WorkerEfficiencyGameTests.scene(helper, "R13 dump full hut", live -> {
-            // the dirt comes before the bricks in his inventory: the dump reaches it first
-            atWork(live, "r13_dump_full", true, () -> fill(live.citizen, firstFreeSlot(live.citizen), 3, Items.DIRT));
-            final var cap = live.hut.getItemHandlerCap();
+        crafterScene(helper, "R13 dump full hut", (colony, worker) -> {
+            final IBuilding sawmill = worker.getWorkBuilding();
+            final var cap = sawmill.getItemHandlerCap();
             for (int slot = 0; slot < cap.getSlots(); slot++)
             {
                 cap.insertItem(slot, new ItemStack(Items.COBBLESTONE, 64), false);
@@ -205,17 +205,17 @@ public final class Round13WorkGameTests
             // one free slot
             cap.extractItem(0, 64, false);
             helper.assertTrue(InventoryUtils.openSlotCount(cap) == 1, "fixture: the hut should have exactly one free slot, has " + InventoryUtils.openSlotCount(cap));
-            final long dumps0 = jobSnapshot(live.colony, live.citizen).dumps();
-            ((AbstractJob<?, ?>) live.citizen.getJob()).incrementActionsDone(64);
-            WorkerEfficiencyGameTests.everyTick(live, 1200, tick -> jobSnapshot(live.colony, live.citizen).dumps() > dumps0, () -> {
+            fill(worker, firstFreeSlot(worker), 3, Items.DIRT);
+            final long dumps0 = jobSnapshot(colony, worker).dumps();
+            ((AbstractJob<?, ?>) worker.getJob()).incrementActionsDone(1);
+            poll(helper, worker, 2000, tick -> jobSnapshot(colony, worker).dumps() > dumps0, () -> {
                 final int inHut = InventoryUtils.getItemCountInItemHandler(cap, stack -> stack.is(Items.DIRT));
-                final int carried = count(live.citizen, Items.DIRT);
+                final int carried = count(worker, Items.DIRT);
                 Log.getLogger().info("R13W dump_full_hut inHut={} carried={}", inHut, carried);
                 helper.assertTrue(inHut + carried == 192, "dirt was lost in the dump: hut " + inHut + " + carried " + carried + " of 192");
                 helper.assertTrue(inHut == 64, "the free slot was not used: " + inHut);
-                WorkerSettings.clearOverrides();
                 helper.succeed();
-            }, () -> "no dump finished " + live.ai());
+            }, () -> "no dump finished " + crafterState(worker));
         });
     }
 
@@ -282,7 +282,8 @@ public final class Round13WorkGameTests
                 Log.getLogger().info("R13W pickup_all madeAt={} doneAt={} last={} pickups {}->{} requests {}->{} skippedDumps={} dumps {}->{}", madeAt[0], doneAt[0],
                   ai == null ? -1 : ai.getLastPickupRequests(), before[0].pickups(), after.pickups(), before[0].pickupRequests(), after.pickupRequests(),
                   EntityAIStructureBuilder.skippedPickupDumps.get() - skipped0[0], dumpsAtPickup[0], after.dumps());
-                helper.assertTrue(after.pickups() - before[0].pickups() == 1 && after.pickupRequests() - before[0].pickupRequests() == 3,
+                // (the builder may have completed requests of his own at the hut: they come along in the same visit)
+                helper.assertTrue(after.pickups() - before[0].pickups() == 1 && after.pickupRequests() - before[0].pickupRequests() >= 3,
                   "the three requests were not taken in one visit: " + before[0] + " -> " + after);
                 helper.assertTrue(EntityAIStructureBuilder.skippedPickupDumps.get() > skipped0[0], "the builder did not skip the dump after the pickup");
                 helper.assertTrue(after.dumps() == dumpsAtPickup[0], "the builder dumped right after the pickup: " + dumpsAtPickup[0] + " -> " + after.dumps());
