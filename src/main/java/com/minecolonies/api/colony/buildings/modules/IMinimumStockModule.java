@@ -41,4 +41,12 @@ public interface IMinimumStockModule extends IBuildingModule
     {
         return Map.of();
     }
+
+    /**
+     * @return a number that changes whenever an entry is added, changed or removed (cache {@link #getMinimumStock()} against it).
+     */
+    default int getMinimumStockRevision()
+    {
+        return 0;
+    }
 }

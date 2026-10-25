@@ -1002,6 +1002,10 @@ public final class LabourBoard
         return claim;
     }
 
+    private List<LabourDataListener.StockpileGoal> goalsCache;
+    private long                                   goalsSignature;
+    private List<LabourDataListener.StockpileGoal> goalsSeed;
+
     /**
      * Prefix of the ids of the stock goals taken from a warehouse's minimum-stock entries.
      */
@@ -1010,12 +1014,34 @@ public final class LabourBoard
     /**
      * The colony's labour stock goals: every minimum-stock entry of its warehouses for a basic good labourers can make
      * ({@link LabourRules#candidateItems()}; keep from the entry's quantity in stacks, start below it), then the data pack's stockpile goals
-     * ({@code labour/stockpile.json}, the default seed) except those naming exactly an item a warehouse entry already sets. Goods a building covers
+     * ({@code labour/stockpile.json}, the default seed) except those naming exactly an item a warehouse entry already sets. Cached until a warehouse or entry changes. Goods a building covers
      * stay in the list; the board does not gather them (see {@link #stockGoalViews()}).
      *
      * @return the goals, warehouse entries first.
      */
     public List<LabourDataListener.StockpileGoal> stockGoals()
+    {
+        long signature = 1;
+        for (final IWareHouse wareHouse : sites.warehouses())
+        {
+            final IMinimumStockModule module = wareHouse.getModule(IMinimumStockModule.class);
+            signature = signature * 31 + wareHouse.getID().asLong() * 17 + (module == null ? -1 : module.getMinimumStockRevision());
+        }
+        final List<LabourDataListener.StockpileGoal> cached = goalsCache;
+        if (cached != null && signature == goalsSignature && LabourDataListener.stockpile() == goalsSeed)
+        {
+            return cached;
+        }
+        goalsSeed = LabourDataListener.stockpile();
+        goalsCache = List.copyOf(buildStockGoals());
+        goalsSignature = signature;
+        return goalsCache;
+    }
+
+    /**
+     * {@link #stockGoals()} rebuilt: only when a warehouse, a minimum-stock entry or the data pack seed changed.
+     */
+    private List<LabourDataListener.StockpileGoal> buildStockGoals()
     {
         final Map<Item, Integer> fromWarehouses = new LinkedHashMap<>();
         Set<Item> basic = null;
@@ -1046,7 +1072,9 @@ public final class LabourBoard
         {
             final String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(entry.getKey()).toString();
             set.add(id);
-            goals.add(new LabourDataListener.StockpileGoal(MIN_STOCK_GOAL + id, id, entry.getValue(), entry.getValue()));
+            // start below three quarters of the target (as a minimum-stock refill), so one item taken out does not send a labourer for one item
+            final int target = entry.getValue();
+            goals.add(new LabourDataListener.StockpileGoal(MIN_STOCK_GOAL + id, id, target - Math.max(1, target / 4), target));
         }
         for (final LabourDataListener.StockpileGoal goal : LabourDataListener.stockpile())
         {
@@ -1056,6 +1084,35 @@ public final class LabourBoard
             }
         }
         return goals;
+    }
+
+    /**
+     * Whether the board works on a goal: it starts once the stock drops below the goal's start and stops once the stock reaches its target.
+     *
+     * @param goal   the goal.
+     * @param stock  the matching stock nobody holds.
+     * @param active whether it was active.
+     * @return whether it is active now.
+     */
+    public static boolean goalActive(final LabourDataListener.StockpileGoal goal, final int stock, final boolean active)
+    {
+        return active ? stock < goal.target() : stock < goal.startBelow();
+    }
+
+    /**
+     * The lot a labourer is offered for an active goal: what is missing after what is on its way, at most {@link #MAX_LOT}; a warehouse goal offers nothing below
+     * a quarter of its target (at most 16), so labourers are not sent for one or two items.
+     *
+     * @param goal     the goal.
+     * @param stock    the matching stock nobody holds.
+     * @param inFlight what labourers are bringing for it now.
+     * @return the lot, 0 for none.
+     */
+    public static int goalLot(final LabourDataListener.StockpileGoal goal, final int stock, final int inFlight)
+    {
+        final int lot = Math.min(MAX_LOT, goal.target() - stock - inFlight);
+        final int least = goal.id().startsWith(MIN_STOCK_GOAL) ? Math.max(1, Math.min(16, goal.target() / 4)) : 1;
+        return lot >= least ? lot : 0;
     }
 
     /**
@@ -1125,15 +1182,7 @@ public final class LabourBoard
                     }
                 }
             }
-            boolean active = goalActive.getOrDefault(goal.id(), false);
-            if (!active && stock < goal.startBelow())
-            {
-                active = true;
-            }
-            else if (active && stock >= goal.target())
-            {
-                active = false;
-            }
+            final boolean active = goalActive(goal, stock, goalActive.getOrDefault(goal.id(), false));
             goalActive.put(goal.id(), active);
             if (!active || items.isEmpty() || claimsOnGoal(goal.id()) >= 2)
             {
@@ -1147,7 +1196,7 @@ public final class LabourBoard
                     inFlight += claim.amount();
                 }
             }
-            final int lot = Math.min(MAX_LOT, goal.target() - stock - inFlight);
+            final int lot = goalLot(goal, stock, inFlight);
             if (lot <= 0)
             {
                 continue;

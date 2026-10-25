@@ -57,6 +57,11 @@ public class MinimumStockModule extends AbstractBuildingModule implements IMinim
     protected final Map<ItemStorage, Integer> minimumStock = new HashMap<>();
 
     /**
+     * Bumped on every change of {@link #minimumStock}.
+     */
+    private int revision;
+
+    /**
      * Calculate the minimum stock size.
      *
      * @return the size.
@@ -74,6 +79,7 @@ public class MinimumStockModule extends AbstractBuildingModule implements IMinim
         if (minimumStock.containsKey(new ItemStorage(itemStack)) || minimumStock.size() < minimumStockSize())
         {
             minimumStock.put(new ItemStorage(itemStack), quantity);
+            revision++;
             markDirty();
         }
     }
@@ -101,6 +107,7 @@ public class MinimumStockModule extends AbstractBuildingModule implements IMinim
     public void removeMinimumStock(final ItemStack itemStack)
     {
         minimumStock.remove(new ItemStorage(itemStack));
+        revision++;
 
         final Collection<IToken<?>> list = building.getOpenRequestsByRequestableType().getOrDefault(TypeToken.of(MinimumStack.class), new ArrayList<>());
         final IToken<?> token = getMatchingRequest(itemStack, list);
@@ -182,6 +189,12 @@ public class MinimumStockModule extends AbstractBuildingModule implements IMinim
     }
 
     @Override
+    public int getMinimumStockRevision()
+    {
+        return revision;
+    }
+
+    @Override
     public Map<ItemStorage, Integer> getMinimumStock()
     {
         return new HashMap<>(minimumStock);
@@ -209,6 +222,7 @@ public class MinimumStockModule extends AbstractBuildingModule implements IMinim
     public void deserializeNBT(@NotNull final HolderLookup.Provider provider, final CompoundTag compound)
     {
         minimumStock.clear();
+        revision++;
         final ListTag minimumStockTagList = compound.getListOrEmpty(TAG_MINIMUM_STOCK);
         for (int i = 0; i < minimumStockTagList.size(); i++)
         {
