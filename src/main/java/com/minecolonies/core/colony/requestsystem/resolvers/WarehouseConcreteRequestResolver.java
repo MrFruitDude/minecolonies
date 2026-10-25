@@ -53,12 +53,12 @@ public class WarehouseConcreteRequestResolver extends AbstractWarehouseRequestRe
             if (requestToCheck.getRequest() instanceof INonExhaustiveDeliverable neDeliverable)
             {
                 totalCount += Math.max(0, wareHouse.availableCount(
-                  new ItemStorage(possible, requestToCheck.getRequest().getMinimumCount(), ignoreDamage, ignoreNBT), requestToCheck.getRequest().getCount() + neDeliverable.getLeftOver()) - neDeliverable.getLeftOver());
+                  new ItemStorage(possible, requestToCheck.getRequest().getMinimumCount(), ignoreDamage, ignoreNBT), requestToCheck.getRequest().getCount() + neDeliverable.getLeftOver(), requestToCheck) - neDeliverable.getLeftOver());
             }
             else
             {
                 totalCount += wareHouse.availableCount(
-                  new ItemStorage(possible, requestToCheck.getRequest().getMinimumCount(), ignoreDamage, ignoreNBT), requestToCheck.getRequest().getCount());
+                  new ItemStorage(possible, requestToCheck.getRequest().getMinimumCount(), ignoreDamage, ignoreNBT), requestToCheck.getRequest().getCount(), requestToCheck);
             }
 
             if (totalCount >= requestToCheck.getRequest().getCount())

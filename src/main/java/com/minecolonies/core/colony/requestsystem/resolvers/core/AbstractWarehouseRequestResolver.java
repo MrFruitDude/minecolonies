@@ -25,6 +25,8 @@ import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
 import com.minecolonies.core.colony.requestsystem.RsAccess;
 import com.minecolonies.core.colony.requestsystem.reservation.DestinationRoom;
+import com.minecolonies.core.colony.requestsystem.reservation.Reservation;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationKind;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationReason;
 import com.minecolonies.core.colony.requestsystem.wait.RequestWaitTracker;
@@ -49,6 +51,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import static com.minecolonies.api.colony.requestsystem.requestable.deliveryman.AbstractDeliverymanRequestable.getDefaultDeliveryPriority;
 import static com.minecolonies.api.util.constant.RSConstants.CONST_WAREHOUSE_RESOLVER_PRIORITY;
@@ -294,7 +297,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         final ReservationLedger ledger = RsAccess.ledger(manager);
         final List<Tuple<ItemStack, BlockPos>> raw = wareHouse.getMatchingItemStacksInWarehouse(itemStack -> request.getRequest().matches(itemStack));
         // RS1: what is promised to other requests is not there.
-        final List<Tuple<ItemStack, BlockPos>> inv = unreserved(ledger, raw);
+        final List<Tuple<ItemStack, BlockPos>> inv = unreserved(ledger, raw, wareHouseBuilding.getID(), counts(manager, request));
         for (final Tuple<ItemStack, BlockPos> stack : inv)
         {
             final ItemStack s = stack.getA();
@@ -397,12 +400,15 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         final int keep = completedRequest.getRequest() instanceof INonExhaustiveDeliverable ? ((INonExhaustiveDeliverable) completedRequest.getRequest()).getLeftOver() : 0;
 
         final ReservationLedger ledger = RsAccess.ledger(manager);
+        final Map<ItemStorage, Integer> heldByHold = heldByKey(ledger, completedRequest.getId());
+        final Set<BlockPos> chain = ledger == null ? Set.of() : ReservationLedger.requesterChain(manager, completedRequest);
         if (ledger != null)
         {
             // The hold the attempt put on this request turns into one hold per delivery below.
             ledger.releaseQuiet(completedRequest.getId(), RsAccess.now(manager));
         }
-        final List<Tuple<ItemStack, BlockPos>> targetStacks = unreserved(ledger, matchingStacksForFollowup(wareHouse, completedRequest));
+        final List<Tuple<ItemStack, BlockPos>> targetStacks = unreserved(ledger, matchingStacksForFollowup(wareHouse, completedRequest), wareHouse.getBuilding().getID(),
+          ReservationLedger.countsAgainst(chain));
         final String requesterName = ledger == null ? "" : describe(manager, completedRequest);
         for (final Tuple<ItemStack, BlockPos> tuple : targetStacks)
         {
@@ -449,6 +455,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
                 final ItemStorage key = new ItemStorage(matchingStack);
                 ledger.reserveStock(wareHouse.getBuilding().getID(), tuple.getB(), key, count, requestToken, requesterName, ReservationReason.WAREHOUSE_DELIVERY, now);
                 ledger.reserveSpace(completedRequest.getRequester().getLocation().getInDimensionLocation(), key, count, requestToken, requesterName, ReservationReason.WAREHOUSE_DELIVERY, now);
+                handOverBeyondHold(ledger, wareHouse.getBuilding().getID(), key, count, heldByHold, chain, now);
             }
             remainingCount -= count;
             if (remainingCount <= 0)
@@ -504,7 +511,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         int remaining = request.getRequest().getCount();
         final Map<ItemStorage, Integer> kept = new HashMap<>();
         final String name = describe(manager, request);
-        for (final Tuple<ItemStack, BlockPos> tuple : unreserved(ledger, matched.stacks()))
+        final Set<BlockPos> chain = ReservationLedger.requesterChain(manager, request);
+        for (final Tuple<ItemStack, BlockPos> tuple : unreserved(ledger, matched.stacks(), wareHouse.getID(), ReservationLedger.countsAgainst(chain)))
         {
             if (remaining <= 0)
             {
@@ -523,6 +531,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             if (count > 0)
             {
                 ledger.reserveStock(wareHouse.getID(), tuple.getB(), new ItemStorage(tuple.getA()), count, request.getId(), name, ReservationReason.WAREHOUSE_DELIVERY, RsAccess.now(manager));
+                // stock an add-on held for this request's building is held by the request from now on
+                ledger.handOver(wareHouse.getID(), new ItemStorage(tuple.getA()), count, chain, RsAccess.now(manager));
                 remaining -= count;
             }
         }
@@ -575,7 +585,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             reads.add(new WarehouseRead(candidate.warehouse().getID(), raw));
             if (!all)
             {
-                covered += availableOf(unreserved(ledger, raw), keep);
+                covered += availableOf(unreserved(ledger, raw, candidate.warehouse().getID(), counts(manager, request)), keep);
                 if (covered >= request.getRequest().getCount())
                 {
                     break;
@@ -725,7 +735,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         final List<Tuple<ItemStack, BlockPos>> readable = new ArrayList<>();
         for (final WarehouseRead read : reads)
         {
-            final List<Tuple<ItemStack, BlockPos>> inv = unreserved(ledger, read.stacks());
+            final List<Tuple<ItemStack, BlockPos>> inv = unreserved(ledger, read.stacks(), read.warehouse(), counts(manager, request));
             totalAvailable += availableOf(inv, keep);
             readable.addAll(inv);
         }
@@ -772,7 +782,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
       @NotNull final List<WarehouseRead> reads,
       @Nullable final ReservationLedger ledger,
       final int wanted,
-      final int keep)
+      final int keep,
+      @NotNull final Predicate<Reservation> counts)
     {
         final List<Allocation> result = new ArrayList<>();
         int remaining = wanted;
@@ -783,7 +794,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
                 break;
             }
             final Map<ItemStorage, Integer> kept = new HashMap<>();
-            for (final Tuple<ItemStack, BlockPos> tuple : unreserved(ledger, read.stacks()))
+            for (final Tuple<ItemStack, BlockPos> tuple : unreserved(ledger, read.stacks(), read.warehouse(), counts))
             {
                 if (remaining <= 0)
                 {
@@ -826,10 +837,12 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         final int keep = request.getRequest() instanceof final INonExhaustiveDeliverable nonExhaustive ? nonExhaustive.getLeftOver() : 0;
         final String name = describe(manager, request);
         final long now = RsAccess.now(manager);
-        for (final Allocation allocation : allocate(matched.reads(), ledger, request.getRequest().getCount(), keep))
+        final Set<BlockPos> chain = ReservationLedger.requesterChain(manager, request);
+        for (final Allocation allocation : allocate(matched.reads(), ledger, request.getRequest().getCount(), keep, ReservationLedger.countsAgainst(chain)))
         {
             ledger.reserveStock(allocation.warehouse(), allocation.rack(), new ItemStorage(allocation.stack()), allocation.count(), request.getId(), name,
               ReservationReason.WAREHOUSE_DELIVERY, now);
+            ledger.handOver(allocation.warehouse(), new ItemStorage(allocation.stack()), allocation.count(), chain, now);
         }
     }
 
@@ -841,6 +854,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
       @NotNull final IRequest<? extends IDeliverable> completedRequest)
     {
         final ReservationLedger ledger = RsAccess.ledger(manager);
+        final Map<ItemStorage, Integer> heldByHold = heldByKey(ledger, completedRequest.getId());
+        final Set<BlockPos> chain = ledger == null ? Set.of() : ReservationLedger.requesterChain(manager, completedRequest);
         if (ledger != null)
         {
             // The hold the attempt put on this request turns into one hold per delivery below.
@@ -866,7 +881,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
 
         final List<IRequest<?>> deliveries = Lists.newArrayList();
         final String requesterName = ledger == null ? "" : describe(manager, completedRequest);
-        for (final Allocation allocation : allocate(reads, ledger, completedRequest.getRequest().getCount(), keep))
+        for (final Allocation allocation : allocate(reads, ledger, completedRequest.getRequest().getCount(), keep, ReservationLedger.countsAgainst(chain)))
         {
             final ItemStack matchingStack = allocation.stack().copy();
             matchingStack.setCount(allocation.count());
@@ -883,9 +898,61 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
                 ledger.reserveStock(allocation.warehouse(), allocation.rack(), key, allocation.count(), requestToken, requesterName, ReservationReason.WAREHOUSE_DELIVERY, now);
                 ledger.reserveSpace(completedRequest.getRequester().getLocation().getInDimensionLocation(), key, allocation.count(), requestToken, requesterName,
                   ReservationReason.WAREHOUSE_DELIVERY, now);
+                handOverBeyondHold(ledger, allocation.warehouse(), key, allocation.count(), heldByHold, chain, now);
             }
         }
         return deliveries.isEmpty() ? null : deliveries;
+    }
+
+    /**
+     * @return which ledger claims keep stock from the request (all but an add-on's claims held for a building of its chain).
+     */
+    @NotNull
+    private static Predicate<Reservation> counts(@NotNull final IRequestManager manager, @NotNull final IRequest<?> request)
+    {
+        return ReservationLedger.countsAgainst(ReservationLedger.requesterChain(manager, request));
+    }
+
+    /**
+     * @return what the request's own hold holds per item (normalised key), before the hold turns into deliveries.
+     */
+    @NotNull
+    private static Map<ItemStorage, Integer> heldByKey(@Nullable final ReservationLedger ledger, @NotNull final IToken<?> token)
+    {
+        final Map<ItemStorage, Integer> held = new HashMap<>();
+        if (ledger != null)
+        {
+            for (final Reservation reservation : ledger.reservationsOf(token))
+            {
+                if (reservation.kind() == ReservationKind.STOCK)
+                {
+                    held.merge(reservation.key(), reservation.amount(), Integer::sum);
+                }
+            }
+        }
+        return held;
+    }
+
+    /**
+     * A delivery reserved {@code count}: the part its request's hold did not already hold is handed over from an add-on's claims for the chain
+     * ({@link ReservationLedger#handOver}); the hold's part was handed over when the hold was made.
+     */
+    private static void handOverBeyondHold(
+      final ReservationLedger ledger,
+      final BlockPos scope,
+      final ItemStorage key,
+      final int count,
+      final Map<ItemStorage, Integer> heldByHold,
+      final Set<BlockPos> chain,
+      final long now)
+    {
+        final ItemStorage normal = new ItemStorage(key.getItemStack().copyWithCount(1));
+        final int covered = Math.min(count, heldByHold.getOrDefault(normal, 0));
+        heldByHold.merge(normal, -covered, Integer::sum);
+        if (count > covered)
+        {
+            ledger.handOver(scope, key, count - covered, chain, now);
+        }
     }
 
     /**
@@ -896,7 +963,11 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
      * @return the stacks that are not promised, possibly shortened.
      */
     @NotNull
-    private static List<Tuple<ItemStack, BlockPos>> unreserved(@Nullable final ReservationLedger ledger, @NotNull final List<Tuple<ItemStack, BlockPos>> raw)
+    private static List<Tuple<ItemStack, BlockPos>> unreserved(
+      @Nullable final ReservationLedger ledger,
+      @NotNull final List<Tuple<ItemStack, BlockPos>> raw,
+      @NotNull final BlockPos scope,
+      @NotNull final Predicate<Reservation> counts)
     {
         if (ledger == null || ledger.isEmpty())
         {
@@ -906,6 +977,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         {
         }
         final Map<RackItem, Integer> held = new HashMap<>();
+        // an add-on's rack-less MAKE/BUILD claims at the warehouse, except those held for the asking request's chain
+        final Map<ItemStorage, Integer> heldForOthers = new HashMap<>();
         final List<Tuple<ItemStack, BlockPos>> result = new ArrayList<>(raw.size());
         for (final Tuple<ItemStack, BlockPos> tuple : raw)
         {
@@ -918,8 +991,12 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             final ItemStorage item = new ItemStorage(stack);
             final RackItem key = new RackItem(tuple.getB(), item);
             final int heldHere = held.computeIfAbsent(key, k -> ledger.reservedInContainer(k.rack(), k.item()));
-            final int skipped = Math.min(heldHere, stack.getCount());
-            held.put(key, heldHere - skipped);
+            final int rackSkipped = Math.min(heldHere, stack.getCount());
+            held.put(key, heldHere - rackSkipped);
+            final int othersHere = heldForOthers.computeIfAbsent(item, k -> ledger.heldForOthers(scope, k, counts));
+            final int othersSkipped = Math.min(othersHere, stack.getCount() - rackSkipped);
+            heldForOthers.put(item, othersHere - othersSkipped);
+            final int skipped = rackSkipped + othersSkipped;
             if (skipped >= stack.getCount())
             {
                 continue;

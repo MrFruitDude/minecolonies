@@ -4,7 +4,9 @@ import com.minecolonies.core.colony.requestsystem.RsProbe;
 
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.requestsystem.factory.IFactoryController;
-import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
+import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
+import com.minecolonies.api.colony.requestsystem.request.IRequest;
+import com.minecolonies.core.colony.requestsystem.RsAccess;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.util.ItemStackUtils;
@@ -52,6 +54,7 @@ public final class ReservationLedger
     private static final String NBT_REQUESTER    = "Requester";
     private static final String NBT_REASON       = "Reason";
     private static final String NBT_TICK         = "Tick";
+    private static final String NBT_FOR          = "For";
 
     /**
      * All open claims by request token.
@@ -80,12 +83,13 @@ public final class ReservationLedger
 
     /**
      * @param colony a server colony.
-     * @return its reservation ledger, null when the colony's request manager has none (a view, or not loaded yet).
+     * @return its reservation ledger, null when reservations are off ({@code RsFlags.reservations()}: couriers and warehouses ignore the ledger then) or the
+     * colony's request manager has none (a view, or not loaded yet). The same ledger the warehouses read.
      */
     @Nullable
     public static ReservationLedger of(@NotNull final IColony colony)
     {
-        return colony.getRequestManager() instanceof IStandardRequestManager manager ? manager.getReservationLedger() : null;
+        return RsAccess.ledger(colony.getRequestManager());
     }
 
     public void setOnFreed(@Nullable final Consumer<Reservation> onFreed)
@@ -123,7 +127,7 @@ public final class ReservationLedger
       @NotNull final ReservationReason reason,
       final long tick)
     {
-        return add(ReservationKind.STOCK, scope, container, key, amount, token, requester, reason, tick);
+        return add(ReservationKind.STOCK, scope, container, key, amount, token, requester, reason, tick, null);
     }
 
     /**
@@ -147,13 +151,13 @@ public final class ReservationLedger
       @NotNull final ReservationReason reason,
       final long tick)
     {
-        return add(ReservationKind.SPACE, destination, null, key, amount, token, requester, reason, tick);
+        return add(ReservationKind.SPACE, destination, null, key, amount, token, requester, reason, tick, null);
     }
 
     /**
      * Sets a token's stock claim on one item at one source to exactly {@code amount}: grows it as {@link #reserveStock} does, shrinks it (the shrunk part is
      * reported as freed), or ends it at 0. For holders that recompute what they still need, like an add-on's make orders and builds
-     * ({@link ReservationReason#MAKE}, {@link ReservationReason#BUILD}).
+     * ({@link ReservationReason#MAKE}, {@link ReservationReason#BUILD}). The claim holds the stock for nobody in particular: every request is kept off it.
      *
      * @param scope     the building holding the stock (the warehouse).
      * @param key       the item.
@@ -173,6 +177,30 @@ public final class ReservationLedger
       @NotNull final ReservationReason reason,
       final long tick)
     {
+        return setStock(scope, key, amount, token, requester, reason, tick, null);
+    }
+
+    /**
+     * {@link #setStock(BlockPos, ItemStorage, int, IToken, String, ReservationReason, long)} for a beneficiary: the stock is held <em>for</em> a building (the
+     * producer of a make order, the builder of a build). That building's own requests (and every request in a chain it started) are served from the held stock
+     * as if it were free, and when a warehouse resolver reserves stock for such a request the claim hands that amount over to the delivery quietly
+     * ({@link #handOver}), so the items stay held all the way. Other requests are kept off it. Recompute the amount as "still needed minus what is already on
+     * its way" ({@link #reservedSpace} at the beneficiary), so a handed-over part is not claimed twice. One claim per token, source, item, reason and
+     * beneficiary.
+     *
+     * @param forBuilding the building the stock is held for, null for nobody in particular.
+     * @return the amount the token holds afterwards.
+     */
+    public int setStock(
+      @NotNull final BlockPos scope,
+      @NotNull final ItemStorage key,
+      final int amount,
+      @NotNull final IToken<?> token,
+      @NotNull final String requester,
+      @NotNull final ReservationReason reason,
+      final long tick,
+      @Nullable final BlockPos forBuilding)
+    {
         final ItemStorage stored = normalized(key);
         final int want = Math.max(0, amount);
         final List<Reservation> mine = byToken.get(token);
@@ -182,7 +210,8 @@ public final class ReservationLedger
         {
             for (final Reservation reservation : mine)
             {
-                if (reservation.kind() == ReservationKind.STOCK && reservation.scope().equals(scope) && reservation.container() == null && reservation.key().equals(stored))
+                if (reservation.kind() == ReservationKind.STOCK && reservation.scope().equals(scope) && reservation.container() == null && reservation.key().equals(stored)
+                      && reservation.reason() == reason && Objects.equals(reservation.forBuilding(), forBuilding))
                 {
                     claim = reservation;
                     held = reservation.amount();
@@ -192,27 +221,137 @@ public final class ReservationLedger
         }
         if (want > held)
         {
-            return held + add(ReservationKind.STOCK, scope, null, stored, want - held, token, requester, reason, tick);
+            return held + add(ReservationKind.STOCK, scope, null, stored, want - held, token, requester, reason, tick, forBuilding);
         }
         if (claim != null && want < held)
         {
-            final Reservation shrunk = claim;
-            if (want == 0)
-            {
-                end(token, ReservationKind.STOCK, tick, LedgerEvent.Op.RELEASE, true, r -> r == shrunk);
-            }
-            else
-            {
-                claim.setAmount(want);
-                record(tick, LedgerEvent.Op.RELEASE, claim, held - want);
-                revision++;
-                if (onFreed != null)
-                {
-                    onFreed.accept(claim);
-                }
-            }
+            shrink(claim, held - want, tick, true);
         }
         return want;
+    }
+
+    /**
+     * Shrinks one claim by {@code by} (ends it when nothing is left).
+     */
+    private void shrink(final Reservation claim, final int by, final long tick, final boolean freed)
+    {
+        if (by >= claim.amount())
+        {
+            end(claim.token(), claim.kind(), tick, LedgerEvent.Op.RELEASE, freed, r -> r == claim);
+            return;
+        }
+        claim.setAmount(claim.amount() - by);
+        record(tick, LedgerEvent.Op.RELEASE, claim, by);
+        revision++;
+        if (freed && onFreed != null)
+        {
+            onFreed.accept(claim);
+        }
+    }
+
+    /**
+     * A warehouse resolver reserved {@code amount} of an item at a source for a request of a beneficiary: its {@link ReservationReason#MAKE} and
+     * {@link ReservationReason#BUILD} claims there shrink by that amount, without telling anyone that stock became free (the delivery holds it now).
+     *
+     * @param scope         the source.
+     * @param key           the item.
+     * @param amount        how many the delivery reserved.
+     * @param beneficiaries the buildings of the request's chain ({@link #requesterChain}).
+     * @param tick          the game time.
+     * @return the amount handed over.
+     */
+    public int handOver(@NotNull final BlockPos scope, @NotNull final ItemStorage key, final int amount, @NotNull final Set<BlockPos> beneficiaries, final long tick)
+    {
+        final List<Reservation> list = stockByScope.get(scope);
+        if (list == null || amount <= 0 || beneficiaries.isEmpty())
+        {
+            return 0;
+        }
+        final ItemStorage stored = normalized(key);
+        int left = amount;
+        for (final Reservation claim : new ArrayList<>(list))
+        {
+            if (left <= 0)
+            {
+                break;
+            }
+            if ((claim.reason() == ReservationReason.MAKE || claim.reason() == ReservationReason.BUILD) && claim.container() == null && claim.forBuilding() != null
+                  && beneficiaries.contains(claim.forBuilding()) && claim.key().equals(stored))
+            {
+                final int used = Math.min(left, claim.amount());
+                shrink(claim, used, tick, false);
+                left -= used;
+            }
+        }
+        return amount - left;
+    }
+
+    /**
+     * @param manager the request manager.
+     * @param request a request.
+     * @return the requester buildings of the request and of every parent up the chain: the beneficiaries whose held stock serves it.
+     */
+    @NotNull
+    public static Set<BlockPos> requesterChain(@NotNull final IRequestManager manager, @NotNull final IRequest<?> request)
+    {
+        final Set<BlockPos> chain = new HashSet<>(2);
+        IRequest<?> at = request;
+        for (int depth = 0; at != null && depth < 32; depth++)
+        {
+            if (at.getRequester() != null && at.getRequester().getLocation() != null)
+            {
+                chain.add(at.getRequester().getLocation().getInDimensionLocation());
+            }
+            if (!at.hasParent())
+            {
+                break;
+            }
+            try
+            {
+                at = manager.getRequestForToken(at.getParent());
+            }
+            catch (final RuntimeException e)
+            {
+                break;
+            }
+        }
+        return chain;
+    }
+
+    /**
+     * @param chain the requester chain of a request ({@link #requesterChain}).
+     * @return whether a claim keeps stock from that request: every claim except one held for a building of the chain.
+     */
+    @NotNull
+    public static Predicate<Reservation> countsAgainst(@NotNull final Set<BlockPos> chain)
+    {
+        return chain.isEmpty() ? r -> true : r -> r.forBuilding() == null || !chain.contains(r.forBuilding());
+    }
+
+    /**
+     * @param scope  the source.
+     * @param key    the item.
+     * @param counts which claims count ({@link #countsAgainst}).
+     * @return the amount of the source-wide (rack-less) {@link ReservationReason#MAKE} and {@link ReservationReason#BUILD} claims on the item that count.
+     */
+    public int heldForOthers(@NotNull final BlockPos scope, @NotNull final ItemStorage key, @NotNull final Predicate<Reservation> counts)
+    {
+        final List<Reservation> list = stockByScope.get(scope);
+        if (list == null)
+        {
+            return 0;
+        }
+        final ItemStorage stored = normalized(key);
+        int total = 0;
+        for (final Reservation claim : list)
+        {
+            if ((claim.reason() == ReservationReason.MAKE || claim.reason() == ReservationReason.BUILD) && claim.container() == null && claim.key().equals(stored)
+                  && counts.test(claim))
+            {
+                total += claim.amount();
+            }
+        }
+        return total;
     }
 
     private int add(
@@ -224,16 +363,17 @@ public final class ReservationLedger
       final IToken<?> token,
       final String requester,
       final ReservationReason reason,
-      final long tick)
+      final long tick,
+      @Nullable final BlockPos beneficiary)
     {
         if (!RsProbe.enabled)
         {
-            return add0(kind, scope, container, key, amount, token, requester, reason, tick);
+            return add0(kind, scope, container, key, amount, token, requester, reason, tick, beneficiary);
         }
         RsProbe.begin(RsProbe.LEDGER);
         try
         {
-            return add0(kind, scope, container, key, amount, token, requester, reason, tick);
+            return add0(kind, scope, container, key, amount, token, requester, reason, tick, beneficiary);
         }
         finally
         {
@@ -250,7 +390,8 @@ public final class ReservationLedger
       final IToken<?> token,
       final String requester,
       final ReservationReason reason,
-      final long tick)
+      final long tick,
+      @Nullable final BlockPos beneficiary)
     {
         if (amount <= 0)
         {
@@ -260,7 +401,9 @@ public final class ReservationLedger
         final List<Reservation> mine = byToken.computeIfAbsent(token, t -> new ArrayList<>(2));
         for (final Reservation existing : mine)
         {
-            if (existing.kind() == kind && existing.scope().equals(scope) && Objects.equals(existing.container(), container) && existing.key().equals(stored))
+            // one claim per slot, reason and beneficiary: a token that claims the same item for two reasons keeps two claims
+            if (existing.kind() == kind && existing.scope().equals(scope) && Objects.equals(existing.container(), container) && existing.key().equals(stored)
+                  && existing.reason() == reason && Objects.equals(existing.forBuilding(), beneficiary))
             {
                 existing.setAmount(existing.amount() + amount);
                 record(tick, LedgerEvent.Op.RESERVE, existing, amount);
@@ -268,7 +411,7 @@ public final class ReservationLedger
                 return amount;
             }
         }
-        final Reservation reservation = new Reservation(kind, scope, container, stored, amount, token, requester, reason, tick);
+        final Reservation reservation = new Reservation(kind, scope, container, stored, amount, token, requester, reason, tick, beneficiary);
         mine.add(reservation);
         (kind == ReservationKind.STOCK ? stockByScope : spaceByScope).computeIfAbsent(scope, s -> new ArrayList<>(2)).add(reservation);
         record(tick, LedgerEvent.Op.RESERVE, reservation, amount);
@@ -1028,6 +1171,10 @@ public final class ReservationLedger
             entry.putString(NBT_REQUESTER, reservation.requester());
             entry.putString(NBT_REASON, reservation.reason().name());
             entry.putLong(NBT_TICK, reservation.tick());
+            if (reservation.forBuilding() != null)
+            {
+                entry.putLong(NBT_FOR, reservation.forBuilding().asLong());
+            }
             list.add(entry);
         }
         tag.put(NBT_RESERVATIONS, list);
@@ -1061,7 +1208,8 @@ public final class ReservationLedger
                     continue;
                 }
                 add(kind, scope, container, new ItemStorage(stack), entry.getIntOr(NBT_AMOUNT, 0), token, entry.getStringOr(NBT_REQUESTER, ""),
-                  ReservationReason.valueOf(entry.getStringOr(NBT_REASON, ReservationReason.OTHER.name())), entry.getLongOr(NBT_TICK, 0L));
+                  ReservationReason.valueOf(entry.getStringOr(NBT_REASON, ReservationReason.OTHER.name())), entry.getLongOr(NBT_TICK, 0L),
+                  entry.contains(NBT_FOR) ? BlockPos.of(entry.getLongOr(NBT_FOR, 0L)) : null);
             }
             catch (final RuntimeException e)
             {

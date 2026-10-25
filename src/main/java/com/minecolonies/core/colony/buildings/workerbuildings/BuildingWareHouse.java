@@ -7,6 +7,7 @@ import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.buildings.workerbuildings.IWareHouse;
+import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.resolver.IRequestResolver;
 import com.minecolonies.api.tileentities.*;
 import com.minecolonies.api.util.constant.BuildingConstants;
@@ -35,6 +36,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Class of the warehouse building.
@@ -178,6 +180,51 @@ public class BuildingWareHouse extends AbstractBuilding implements IWareHouse
             return hasEnoughElseCount(predicate, count);
         }
         return Math.max(0, hasEnoughElseCount(predicate, count + reserved) - reserved);
+    }
+
+    /**
+     * Like {@link #availableCount(Predicate, int)} for one request: stock an add-on holds for a building of the request's chain
+     * ({@link ReservationLedger#setStock(BlockPos, ItemStorage, int, com.minecolonies.api.colony.requestsystem.token.IToken, String,
+     * com.minecolonies.core.colony.requestsystem.reservation.ReservationReason, long, BlockPos) setStock for a building}) counts as available to it.
+     *
+     * @param predicate  the predicate.
+     * @param count      the count wanted.
+     * @param forRequest the request asking, null for any.
+     * @return the available count, stopping once it reaches {@code count}.
+     */
+    public int availableCount(@NotNull final Predicate<ItemStack> predicate, final int count, @Nullable final IRequest<?> forRequest)
+    {
+        final ReservationLedger ledger = RsAccess.ledger(getColony().getRequestManager());
+        if (ledger == null || forRequest == null)
+        {
+            return availableCount(predicate, count);
+        }
+        final int reserved = ledger.reservedStockWhere(getID(), predicate,
+          ReservationLedger.countsAgainst(ReservationLedger.requesterChain(getColony().getRequestManager(), forRequest)));
+        if (reserved <= 0)
+        {
+            return hasEnoughElseCount(predicate, count);
+        }
+        return Math.max(0, hasEnoughElseCount(predicate, count + reserved) - reserved);
+    }
+
+    /**
+     * Like {@link #availableCount(ItemStorage, int)} for one request, see {@link #availableCount(Predicate, int, IRequest)}.
+     */
+    public int availableCount(@NotNull final ItemStorage storage, final int count, @Nullable final IRequest<?> forRequest)
+    {
+        final ReservationLedger ledger = RsAccess.ledger(getColony().getRequestManager());
+        if (ledger == null || forRequest == null)
+        {
+            return availableCount(storage, count);
+        }
+        final int reserved = ledger.reservedStockWhere(getID(), stack -> storage.equals(new ItemStorage(stack)),
+          ReservationLedger.countsAgainst(ReservationLedger.requesterChain(getColony().getRequestManager(), forRequest)));
+        if (reserved <= 0)
+        {
+            return hasEnoughElseCount(storage, count);
+        }
+        return Math.max(0, hasEnoughElseCount(storage, count + reserved) - reserved);
     }
 
     @Override

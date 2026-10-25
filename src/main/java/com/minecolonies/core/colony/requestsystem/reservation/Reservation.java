@@ -20,6 +20,8 @@ public final class Reservation
     private final String            requester;
     private final ReservationReason reason;
     private final long              tick;
+    @Nullable
+    private final BlockPos          beneficiary;
     private       int               amount;
 
     Reservation(
@@ -31,7 +33,8 @@ public final class Reservation
       final IToken<?> token,
       final String requester,
       final ReservationReason reason,
-      final long tick)
+      final long tick,
+      @Nullable final BlockPos beneficiary)
     {
         this.kind = kind;
         this.scope = scope;
@@ -42,6 +45,7 @@ public final class Reservation
         this.requester = requester;
         this.reason = reason;
         this.tick = tick;
+        this.beneficiary = beneficiary;
     }
 
     @NotNull
@@ -119,9 +123,19 @@ public final class Reservation
         return tick;
     }
 
+    /**
+     * @return the building a {@link ReservationReason#MAKE} or {@link ReservationReason#BUILD} claim holds the stock for (its own requests are served from it, see
+     * {@link ReservationLedger#countsAgainst}), null when the claim holds it for nobody in particular.
+     */
+    @Nullable
+    public BlockPos forBuilding()
+    {
+        return beneficiary;
+    }
+
     @Override
     public String toString()
     {
-        return kind + " " + amount + "x " + key.getItemStack().getItem() + " @" + scope + (container == null ? "" : "/" + container) + " for " + token + " (" + requester + ", " + reason + ")";
+        return kind + " " + amount + "x " + key.getItemStack().getItem() + " @" + scope + (container == null ? "" : "/" + container) + " for " + token + " (" + requester + ", " + reason + (beneficiary == null ? "" : ", for " + beneficiary.toShortString()) + ")";
     }
 }

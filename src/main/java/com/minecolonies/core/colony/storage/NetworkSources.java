@@ -118,6 +118,8 @@ public final class NetworkSources
         final Predicate<ItemStack> matches = wanted::matches;
         final int keep = wanted instanceof final INonExhaustiveDeliverable nonExhaustive ? nonExhaustive.getLeftOver() : 0;
         final BlockPos destination = request.getRequester().getLocation().getInDimensionLocation();
+        final java.util.function.Predicate<com.minecolonies.core.colony.requestsystem.reservation.Reservation> counts = ledger == null ? r -> true
+          : ReservationLedger.countsAgainst(ReservationLedger.requesterChain(colony.getRequestManager(), request));
         final boolean anyCourier = StorageNetwork.anyCourier(colony);
         final List<Candidate> candidates = new ArrayList<>();
         int total = 0;
@@ -137,7 +139,8 @@ public final class NetworkSources
             {
                 continue;
             }
-            final int reserved = ledger == null ? 0 : ledger.reservedStock(building.getID(), matches);
+            // stock an add-on holds for a building of this request's chain counts as free for it (ReservationLedger#setStock for a building)
+            final int reserved = ledger == null ? 0 : ledger.reservedStockWhere(building.getID(), matches, counts);
             final int physical = keep > 0 ? stock.table().countKeeping(matches, keep, Integer.MAX_VALUE) : stock.table().count(matches, Integer.MAX_VALUE);
             final int available = Math.max(0, physical - reserved);
             if (available <= 0)

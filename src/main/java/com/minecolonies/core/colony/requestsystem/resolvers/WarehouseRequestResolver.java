@@ -35,6 +35,6 @@ public class WarehouseRequestResolver extends AbstractWarehouseRequestResolver
             return 0;
         }
 
-        return wareHouse.availableCount(itemStack -> requestToCheck.getRequest().matches(itemStack), requestToCheck.getRequest().getCount());
+        return wareHouse.availableCount(itemStack -> requestToCheck.getRequest().matches(itemStack), requestToCheck.getRequest().getCount(), requestToCheck);
     }
 }
