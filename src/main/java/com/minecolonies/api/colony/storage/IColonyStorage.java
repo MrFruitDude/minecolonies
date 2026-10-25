@@ -14,7 +14,9 @@ import java.util.function.Predicate;
  * capacity. The index is kept up to date from the racks' own change events, so a question costs no walk over the racks.
  * <p>
  * Read it on the server only. {@code available = physical - reserved}: what the request system's reservation ledger holds
- * for planned deliveries is not available (when reservations are off, available equals physical).
+ * for planned deliveries is not available (when reservations are off, available equals physical). {@code available} excludes every claim, also an
+ * add-on's stock held for a building ({@code ReservationLedger.setStock(..., forBuilding)}); for what one request may use, the request system reads
+ * {@code BuildingWareHouse.availableCount(..., IRequest)} and {@code ColonyStorage.availableFor}.
  */
 public interface IColonyStorage
 {

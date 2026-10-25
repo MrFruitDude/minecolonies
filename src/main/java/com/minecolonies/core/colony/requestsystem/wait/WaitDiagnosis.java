@@ -14,6 +14,7 @@ import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
 import com.minecolonies.api.colony.requestsystem.requestable.Stack;
 import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.AbstractBuilding;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
@@ -284,11 +285,23 @@ public final class WaitDiagnosis
      */
     public static int availableStock(@NotNull final Colony colony, @NotNull final IDeliverable wanted)
     {
+        return availableStock(colony, wanted, null);
+    }
+
+    /**
+     * {@link #availableStock(Colony, IDeliverable)} for one request: stock an add-on holds for a building of the request's chain counts as available to it.
+     *
+     * @param forRequest the request, null for any.
+     */
+    public static int availableStock(@NotNull final Colony colony, @NotNull final IDeliverable wanted, @Nullable final IRequest<?> forRequest)
+    {
         int total = 0;
         final int upTo = Math.max(1, wanted.getCount());
         if (com.minecolonies.core.colony.storage.StorageNetwork.on(colony))
         {
-            return com.minecolonies.core.colony.storage.ColonyStorage.of(colony).available(wanted::matches, upTo);
+            final com.minecolonies.core.colony.storage.ColonyStorage storage = com.minecolonies.core.colony.storage.ColonyStorage.of(colony);
+            return forRequest == null ? storage.available(wanted::matches, upTo)
+                     : storage.availableFor(wanted::matches, upTo, ReservationLedger.countsAgainst(ReservationLedger.requesterChain(colony.getRequestManager(), forRequest)));
         }
         for (final IWareHouse wareHouse : colony.getServerBuildingManager().getWareHouses())
         {
@@ -298,12 +311,12 @@ public final class WaitDiagnosis
                 {
                     for (final ItemStack possible : concrete.getRequestedItems())
                     {
-                        total += building.availableCount(storageOf(wanted, possible), upTo);
+                        total += building.availableCount(storageOf(wanted, possible), upTo, forRequest);
                     }
                 }
                 else
                 {
-                    total += building.availableCount(wanted::matches, upTo);
+                    total += building.availableCount(wanted::matches, upTo, forRequest);
                 }
             }
         }
@@ -356,7 +369,7 @@ public final class WaitDiagnosis
         }
         // Enough is there, but promised to others.
         final int wantedCount = Math.max(1, wanted.getMinimumCount());
-        if (physicalStock(colony, wanted) >= wantedCount && availableStock(colony, wanted) < wantedCount)
+        if (physicalStock(colony, wanted) >= wantedCount && availableStock(colony, wanted, request) < wantedCount)
         {
             return WaitReason.RESERVED_ELSEWHERE;
         }

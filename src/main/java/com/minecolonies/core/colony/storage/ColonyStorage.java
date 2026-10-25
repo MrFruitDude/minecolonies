@@ -267,6 +267,38 @@ public final class ColonyStorage implements IColonyStorage, StockSink
         return sum;
     }
 
+    /**
+     * Like {@link #available(Predicate, int)} for one request: claims that do not count against it ({@link ReservationLedger#countsAgainst}, e.g. an add-on's
+     * stock held for its building) are available to it.
+     *
+     * @param predicate which items.
+     * @param upTo      stop counting at this amount.
+     * @param counts    which claims count.
+     * @return the available count.
+     */
+    public int availableFor(@NotNull final Predicate<ItemStack> predicate, final int upTo, @NotNull final Predicate<com.minecolonies.core.colony.requestsystem.reservation.Reservation> counts)
+    {
+        sync();
+        final ReservationLedger ledger = RsAccess.ledger(colony.getRequestManager());
+        if (ledger == null || ledger.isEmpty())
+        {
+            return total.count(predicate, upTo);
+        }
+        int sum = 0;
+        for (final Map.Entry<BlockPos, WarehouseStock> entry : attached.entrySet())
+        {
+            final int reserved = ledger.reservedStockWhere(entry.getKey(), predicate, counts);
+            final int left = upTo - sum;
+            sum += reserved <= 0 ? entry.getValue().table().count(predicate, left)
+                     : Math.max(0, entry.getValue().table().count(predicate, left > Integer.MAX_VALUE - reserved ? Integer.MAX_VALUE : left + reserved) - reserved);
+            if (sum >= upTo)
+            {
+                return sum;
+            }
+        }
+        return sum;
+    }
+
     @Override
     public int physicalIn(@NotNull final BlockPos warehouse, @NotNull final Predicate<ItemStack> predicate, final int upTo)
     {
