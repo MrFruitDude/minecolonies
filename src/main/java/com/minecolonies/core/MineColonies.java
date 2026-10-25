@@ -146,7 +146,10 @@ public class MineColonies
 
         ModCreativeTabs.TAB_REG.register(modBus);
 
-        Consumer<TagsUpdatedEvent> onTagsLoaded = (event) -> ModTags.tagsLoaded = true;
+        Consumer<TagsUpdatedEvent> onTagsLoaded = (event) -> {
+            ModTags.tagsLoaded = true;
+            ModTags.tagsEpoch++;
+        };
         NeoForge.EVENT_BUS.addListener(onTagsLoaded);
         forgeBus.addListener(DefaultDataComponentsBoundEvent.class, event -> {
             if (event.shouldUpdateStaticData())

@@ -23,6 +23,11 @@ public class ModTags
     /**
      * Flag to check if tags are already loaded.
      */
+    /**
+     * Bumped on every tag (re)load, so caches built from item tags can tell that they are stale.
+     */
+    public static volatile int tagsEpoch = 0;
+
     public static boolean tagsLoaded = false;
 
     public static final TagKey<Block> decorationItems = BlockTags.create(TagConstants.DECORATION_ITEMS);

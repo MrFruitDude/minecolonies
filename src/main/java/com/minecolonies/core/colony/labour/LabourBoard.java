@@ -1021,7 +1021,8 @@ public final class LabourBoard
      */
     public List<LabourDataListener.StockpileGoal> stockGoals()
     {
-        long signature = 1;
+        // the goods filter comes from item tags: a /reload with other tags rebuilds the goals
+        long signature = com.minecolonies.api.items.ModTags.tagsEpoch;
         for (final IWareHouse wareHouse : sites.warehouses())
         {
             final IMinimumStockModule module = wareHouse.getModule(IMinimumStockModule.class);
