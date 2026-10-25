@@ -31,8 +31,9 @@ import java.util.Map;
  * of the straight line and the route an add-on suggests along its roads ({@link RouteHints}), both sampled block by block
  * on loaded chunks only. Without roads the result equals the plain straight-line estimate.
  * <p>
- * Cached per (warehouse, building) for {@link #MAX_AGE} ticks; a road block placed, broken or made with a tool in the
- * level, or {@link #invalidate(Level)} (an add-on's road network changed), drops the cache of that level. Bounded: at most
+ * Cached per (warehouse, building) for {@link #MAX_AGE} ticks. A road block placed, broken or made with a tool marks stale only the pairs whose corridor
+ * (the box around start, end and route waypoints, 2 blocks wider) holds the block; {@link #invalidate(Level)} (an add-on's road network changed) marks every
+ * pair of the level stale. A stale pair is recomputed when it is next asked and the budget allows, and answers with its last factor until then. Bounded: at most
  * {@link #MAX_ENTRIES} pairs per level, {@link #MAX_SAMPLES} samples per estimate and {@link #FRESH_PER_TICK} fresh
  * estimates per server tick (the rest use the straight line until a later tick). Server thread only.
  */
@@ -67,9 +68,46 @@ public final class DispatchPaths
     {
     }
 
-    private record Cached(double factor, long at)
+    private static final class Cached
     {
+        final double factor;
+        final long   at;
+        final int    minX, minY, minZ, maxX, maxY, maxZ;
+        boolean      stale;
+
+        Cached(final double factor, final long at, final List<BlockPos> points)
+        {
+            this.factor = factor;
+            this.at = at;
+            int x0 = Integer.MAX_VALUE, y0 = Integer.MAX_VALUE, z0 = Integer.MAX_VALUE, x1 = Integer.MIN_VALUE, y1 = Integer.MIN_VALUE, z1 = Integer.MIN_VALUE;
+            for (final BlockPos p : points)
+            {
+                x0 = Math.min(x0, p.getX());
+                y0 = Math.min(y0, p.getY());
+                z0 = Math.min(z0, p.getZ());
+                x1 = Math.max(x1, p.getX());
+                y1 = Math.max(y1, p.getY());
+                z1 = Math.max(z1, p.getZ());
+            }
+            // the sampled floor is up to two below the walking height
+            this.minX = x0 - CORRIDOR;
+            this.minY = y0 - CORRIDOR - 2;
+            this.minZ = z0 - CORRIDOR;
+            this.maxX = x1 + CORRIDOR;
+            this.maxY = y1 + CORRIDOR;
+            this.maxZ = z1 + CORRIDOR;
+        }
+
+        boolean contains(final BlockPos pos)
+        {
+            return pos.getX() >= minX && pos.getX() <= maxX && pos.getY() >= minY && pos.getY() <= maxY && pos.getZ() >= minZ && pos.getZ() <= maxZ;
+        }
     }
+
+    /**
+     * Blocks the corridor of a pair reaches past its start, end and waypoints.
+     */
+    public static final int CORRIDOR = 2;
 
     private static final class LevelCache
     {
@@ -81,7 +119,6 @@ public final class DispatchPaths
                 return size() > MAX_ENTRIES;
             }
         };
-        long revision;
     }
 
     private DispatchPaths()
@@ -122,9 +159,9 @@ public final class DispatchPaths
         final Key key = new Key(from.asLong(), to.asLong());
         final long now = level.getGameTime();
         final Cached cached = cache.entries.get(key);
-        if (cached != null && now - cached.at() <= MAX_AGE && now >= cached.at())
+        if (cached != null && !cached.stale && now - cached.at <= MAX_AGE && now >= cached.at)
         {
-            return cached.factor();
+            return cached.factor;
         }
         final long serverTick = level.getServer() == null ? now : level.getServer().getTickCount();
         if (serverTick != tick)
@@ -134,10 +171,11 @@ public final class DispatchPaths
         }
         if (freshThisTick >= FRESH_PER_TICK)
         {
-            return cached != null ? cached.factor() : DispatchCost.PATH_FACTOR;
+            // over the budget: a stale or old pair answers with its last factor
+            return cached != null ? cached.factor : DispatchCost.PATH_FACTOR;
         }
         freshThisTick++;
-        final long revision = cache.revision;
+        List<BlockPos> corridor = List.of(from, to);
         final double line = cost(level, List.of(from, to));
         double best = Double.isNaN(line) ? DispatchCost.PATH_FACTOR : Math.min(DispatchCost.PATH_FACTOR, line / straight);
         boolean complete = true;
@@ -152,6 +190,7 @@ public final class DispatchPaths
                     route.add(from);
                     route.addAll(waypoints);
                     route.add(to);
+                    corridor = route;
                     final double viaRoads = cost(level, route);
                     if (!Double.isNaN(viaRoads))
                     {
@@ -165,9 +204,9 @@ public final class DispatchPaths
                 complete = false;
             }
         }
-        if (complete && revision == cache.revision)
+        if (complete)
         {
-            cache.entries.put(key, new Cached(best, now));
+            cache.entries.put(key, new Cached(best, now, corridor));
         }
         return best;
     }
@@ -241,7 +280,8 @@ public final class DispatchPaths
     }
 
     /**
-     * Drops the cached estimates of a level: its roads changed. Call when an add-on's road network changes.
+     * Marks every cached estimate of a level stale: its roads changed. Call when an add-on's road network changes. Stale pairs keep answering with their last
+     * factor until the budget lets them be recomputed.
      *
      * @param level the level.
      */
@@ -250,9 +290,51 @@ public final class DispatchPaths
         final LevelCache cache = LEVELS.get(level.dimension());
         if (cache != null)
         {
-            cache.entries.clear();
-            cache.revision++;
+            cache.entries.values().forEach(c -> c.stale = true);
         }
+    }
+
+    /**
+     * Marks stale the cached estimates of a level whose corridor holds a position (a road block changed there).
+     *
+     * @param level the level.
+     * @param pos   the changed block.
+     * @return the number of pairs marked.
+     */
+    public static synchronized int invalidate(@NotNull final Level level, @NotNull final BlockPos pos)
+    {
+        final LevelCache cache = LEVELS.get(level.dimension());
+        int marked = 0;
+        if (cache != null)
+        {
+            for (final Cached c : cache.entries.values())
+            {
+                if (!c.stale && c.contains(pos))
+                {
+                    c.stale = true;
+                    marked++;
+                }
+            }
+        }
+        return marked;
+    }
+
+    /**
+     * @param level a level.
+     * @return the stale pairs of the level (for the tests).
+     */
+    public static synchronized int stalePairs(@NotNull final Level level)
+    {
+        final LevelCache cache = LEVELS.get(level.dimension());
+        return cache == null ? 0 : (int) cache.entries.values().stream().filter(c -> c.stale).count();
+    }
+
+    /**
+     * Gives the current server tick its full budget of fresh estimates again (for the tests).
+     */
+    public static synchronized void resetTickBudget()
+    {
+        freshThisTick = 0;
     }
 
     /**
@@ -273,12 +355,12 @@ public final class DispatchPaths
         return cache == null ? 0 : cache.entries.size();
     }
 
-    private static void changed(final LevelAccessor accessor, @Nullable final BlockState before, @Nullable final BlockState after)
+    private static void changed(final LevelAccessor accessor, final BlockPos pos, @Nullable final BlockState before, @Nullable final BlockState after)
     {
         if (accessor instanceof final Level level && !level.isClientSide()
               && (before != null && WorkerUtil.isPathBlock(before.getBlock()) || after != null && WorkerUtil.isPathBlock(after.getBlock())))
         {
-            invalidate(level);
+            invalidate(level, pos);
         }
     }
 
@@ -291,13 +373,13 @@ public final class DispatchPaths
     @SubscribeEvent
     public static void onBreak(final BreakBlockEvent event)
     {
-        changed(event.getLevel(), event.getState(), null);
+        changed(event.getLevel(), event.getPos(), event.getState(), null);
     }
 
     @SubscribeEvent
     public static void onPlace(final BlockEvent.EntityPlaceEvent event)
     {
-        changed(event.getLevel(), event.getBlockSnapshot().getState(), event.getPlacedBlock());
+        changed(event.getLevel(), event.getPos(), event.getBlockSnapshot().getState(), event.getPlacedBlock());
     }
 
     @SubscribeEvent
@@ -305,7 +387,7 @@ public final class DispatchPaths
     {
         if (!event.isSimulated())
         {
-            changed(event.getLevel(), event.getState(), event.getFinalState());
+            changed(event.getLevel(), event.getPos(), event.getState(), event.getFinalState());
         }
     }
 }
