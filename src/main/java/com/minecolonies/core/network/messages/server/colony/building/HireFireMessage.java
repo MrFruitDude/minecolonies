@@ -79,21 +79,36 @@ public class HireFireMessage extends AbstractBuildingServerMessage<IBuilding>
         buf.writeInt(moduleId);
     }
 
+    /**
+     * Whether an add-on refuses the hire ({@link com.minecolonies.api.colony.IColonyRulesProvider#hireRefusal}, e.g. a workforce tier); the player is told
+     * why instead of nothing happening.
+     *
+     * @param player   the player who hires.
+     * @param citizen  the citizen.
+     * @param building the building.
+     * @param module   the module the citizen would be assigned to.
+     * @return true when the hire is refused.
+     */
+    public static boolean refused(final ServerPlayer player, final ICitizenData citizen, final IBuilding building, final IAssignsJob module)
+    {
+        final Component refusal = IMinecoloniesAPI.getInstance().getColonyRulesProvider().hireRefusal(citizen, building, module.getJobEntry());
+        if (refusal == null)
+        {
+            return false;
+        }
+        player.sendOverlayMessage(refusal);
+        return true;
+    }
+
     @Override
     protected void onExecute(final IPayloadContext ctxIn, final ServerPlayer player, final IColony colony, final IBuilding building)
     {
         if (building.getModule(moduleId) instanceof final IAssignsJob module)
         {
             final ICitizenData citizen = colony.getCitizenManager().getCivilian(citizenID);
-            if (hire && citizen != null)
+            if (hire && citizen != null && refused(player, citizen, building, module))
             {
-                // an add-on may refuse the hire (e.g. a workforce tier); the player sees why instead of nothing happening
-                final Component refusal = IMinecoloniesAPI.getInstance().getColonyRulesProvider().hireRefusal(citizen, building, module.getJobEntry());
-                if (refusal != null)
-                {
-                    player.sendOverlayMessage(refusal);
-                    return;
-                }
+                return;
             }
             citizen.setPaused(false);
             if (hire)

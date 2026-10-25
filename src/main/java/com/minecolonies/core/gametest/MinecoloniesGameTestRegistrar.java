@@ -173,6 +173,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerLife(event);
             }
+            if (only.contains("cohesion"))
+            {
+                // cohesion wave 2026-10-25: the fork side of Colony Command's findings (add-on rules, ledger reasons, stock goals, roads, resolver dry run)
+                CohesionGameTests.register(event);
+            }
             if (only.contains("logistics"))
             {
                 // round 13: the request system, courier and logistics tests (no long headline runs)
@@ -638,6 +643,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "claims_other_owner_chunks_are_skipped"),
           info -> new MinecoloniesGameTestInstance(info, ClaimOwnerGameTests::building_claim_skips_other_owners_chunks),
           isolatedColonyData(event, "claims_other_owner_chunks_are_skipped"));
+        // Cohesion wave: the fork side of Colony Command's findings (one glob: minecolonies:cohesion_*).
+        CohesionGameTests.register(event);
         // MULTIPLAYER (MP-A): two messages that let one player write to another's colony (one glob: minecolonies:mpsec_*).
         for (final String name : new String[] {"mpsec_trigger_connection_needs_both_colonies", "mpsec_create_colony_changes_the_hut_only_after_the_checks",
           "mpsec_create_colony_too_close_names_nobody", "mpsec_decoders_refuse_junk"})
