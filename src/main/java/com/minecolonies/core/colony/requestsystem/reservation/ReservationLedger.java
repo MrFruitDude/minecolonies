@@ -184,9 +184,10 @@ public final class ReservationLedger
      * {@link #setStock(BlockPos, ItemStorage, int, IToken, String, ReservationReason, long)} for a beneficiary: the stock is held <em>for</em> a building (the
      * producer of a make order, the builder of a build). That building's own requests (and every request in a chain it started) are served from the held stock
      * as if it were free, and when a warehouse resolver reserves stock for such a request the claim hands that amount over to the delivery quietly
-     * ({@link #handOver}), so the items stay held all the way. Other requests are kept off it. Recompute the amount as "still needed minus what is already on
-     * its way" ({@link #reservedSpace} at the beneficiary), so a handed-over part is not claimed twice. One claim per token, source, item, reason and
-     * beneficiary.
+     * ({@link #handOver}), so the items stay held all the way. Other requests are kept off it. One claim per token, source, item, reason and beneficiary.
+     * <p>
+     * Recompute per (building, item) over all of the holder's tokens, never per token: claimed in total = max(0, still needed in total -
+     * {@link #inFlightFor}), split over the tokens; {@link #recomputeFor} does exactly that.
      *
      * @param forBuilding the building the stock is held for, null for nobody in particular.
      * @return the amount the token holds afterwards.
@@ -228,6 +229,131 @@ public final class ReservationLedger
             shrink(claim, held - want, tick, true);
         }
         return want;
+    }
+
+    /**
+     * One token's share of a building's need for an item, for {@link #recomputeFor}.
+     *
+     * @param token  the holder's token (one make order, one build).
+     * @param amount how many of the item it still needs.
+     */
+    public record Need(@NotNull IToken<?> token, int amount)
+    {
+    }
+
+    /**
+     * What is already on its way to a building for an item, or already there for its requests: room reserved at the building (deliveries planned or carried),
+     * items handed out at the building and not taken yet ({@link ReservationReason#BUILDING_HANDOUT}), and stock held at a source by the open hold of a request
+     * whose chain contains the building (a warehouse holding stock while the rest of the request is made elsewhere).
+     *
+     * @param manager  the request manager (to read the requests behind holds).
+     * @param building the building.
+     * @param item     the item.
+     * @return the amount.
+     */
+    public int inFlightFor(@NotNull final IRequestManager manager, @NotNull final BlockPos building, @NotNull final ItemStorage item)
+    {
+        final ItemStorage stored = normalized(item);
+        int total = 0;
+        final List<Reservation> room = spaceByScope.get(building);
+        if (room != null)
+        {
+            for (final Reservation r : room)
+            {
+                if (r.key().equals(stored))
+                {
+                    total += r.amount();
+                }
+            }
+        }
+        final List<Reservation> there = stockByScope.get(building);
+        if (there != null)
+        {
+            for (final Reservation r : there)
+            {
+                if (r.reason() == ReservationReason.BUILDING_HANDOUT && r.key().equals(stored))
+                {
+                    total += r.amount();
+                }
+            }
+        }
+        for (final Map.Entry<IToken<?>, List<Reservation>> entry : byToken.entrySet())
+        {
+            int held = 0;
+            boolean delivery = false;
+            for (final Reservation r : entry.getValue())
+            {
+                if (r.kind() == ReservationKind.SPACE)
+                {
+                    // a delivery: its room is counted above
+                    delivery = true;
+                    break;
+                }
+                if (r.reason() == ReservationReason.WAREHOUSE_DELIVERY && !r.scope().equals(building) && r.key().equals(stored))
+                {
+                    held += r.amount();
+                }
+            }
+            if (delivery || held == 0)
+            {
+                continue;
+            }
+            IRequest<?> request;
+            try
+            {
+                request = manager.getRequestForToken(entry.getKey());
+            }
+            catch (final RuntimeException e)
+            {
+                request = null;
+            }
+            if (request != null && requesterChain(manager, request).contains(building))
+            {
+                total += held;
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Recomputes a holder's claims for one building and item at one source: claimed in total = max(0, sum of the needs - {@link #inFlightFor}), given to the
+     * needs in their order (each up to its amount, the rest 0), each through {@link #setStock(BlockPos, ItemStorage, int, IToken, String, ReservationReason, long,
+     * BlockPos) setStock for the building}. Hold one (building, item) at one source; to move it, set the old source's claims to 0 first.
+     *
+     * @param manager   the request manager.
+     * @param scope     the source (warehouse).
+     * @param building  the building the stock is held for.
+     * @param key       the item.
+     * @param needs     every token of the holder that needs the item for the building, in priority order.
+     * @param requester who asks, for the insight views.
+     * @param reason    {@link ReservationReason#MAKE} or {@link ReservationReason#BUILD}.
+     * @param tick      the game time.
+     * @return the amount claimed in total afterwards.
+     */
+    public int recomputeFor(
+      @NotNull final IRequestManager manager,
+      @NotNull final BlockPos scope,
+      @NotNull final BlockPos building,
+      @NotNull final ItemStorage key,
+      @NotNull final List<Need> needs,
+      @NotNull final String requester,
+      @NotNull final ReservationReason reason,
+      final long tick)
+    {
+        int needed = 0;
+        for (final Need need : needs)
+        {
+            needed += Math.max(0, need.amount());
+        }
+        int left = Math.max(0, needed - inFlightFor(manager, building, key));
+        int claimed = 0;
+        for (final Need need : needs)
+        {
+            final int amount = Math.min(Math.max(0, need.amount()), left);
+            claimed += setStock(scope, key, amount, need.token(), requester, reason, tick, building);
+            left -= amount;
+        }
+        return claimed;
     }
 
     /**
