@@ -3,6 +3,7 @@ package com.minecolonies.core.colony.labour;
 import com.google.common.collect.ImmutableList;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.buildings.IBuilding;
+import com.minecolonies.api.colony.buildings.modules.IMinimumStockModule;
 import com.minecolonies.api.colony.buildings.workerbuildings.IWareHouse;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
@@ -1001,6 +1002,107 @@ public final class LabourBoard
         return claim;
     }
 
+    /**
+     * Prefix of the ids of the stock goals taken from a warehouse's minimum-stock entries.
+     */
+    public static final String MIN_STOCK_GOAL = "minstock:";
+
+    /**
+     * The colony's labour stock goals: every minimum-stock entry of its warehouses for a basic good labourers can make
+     * ({@link LabourRules#candidateItems()}; keep from the entry's quantity in stacks, start below it), then the data pack's stockpile goals
+     * ({@code labour/stockpile.json}, the default seed) except those naming exactly an item a warehouse entry already sets. Goods a building covers
+     * stay in the list; the board does not gather them (see {@link #stockGoalViews()}).
+     *
+     * @return the goals, warehouse entries first.
+     */
+    public List<LabourDataListener.StockpileGoal> stockGoals()
+    {
+        final Map<Item, Integer> fromWarehouses = new LinkedHashMap<>();
+        Set<Item> basic = null;
+        for (final IWareHouse wareHouse : sites.warehouses())
+        {
+            final IMinimumStockModule module = wareHouse.getModule(IMinimumStockModule.class);
+            final Map<ItemStorage, Integer> entries = module == null ? Map.of() : module.getMinimumStock();
+            if (entries.isEmpty())
+            {
+                continue;
+            }
+            if (basic == null)
+            {
+                basic = new HashSet<>(LabourRules.candidateItems());
+            }
+            for (final Map.Entry<ItemStorage, Integer> entry : entries.entrySet())
+            {
+                final ItemStack stack = entry.getKey().getItemStack();
+                if (!stack.isEmpty() && entry.getValue() > 0 && basic.contains(stack.getItem()))
+                {
+                    fromWarehouses.merge(stack.getItem(), entry.getValue() * stack.getMaxStackSize(), Math::max);
+                }
+            }
+        }
+        final List<LabourDataListener.StockpileGoal> goals = new ArrayList<>();
+        final Set<String> set = new HashSet<>();
+        for (final Map.Entry<Item, Integer> entry : fromWarehouses.entrySet())
+        {
+            final String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(entry.getKey()).toString();
+            set.add(id);
+            goals.add(new LabourDataListener.StockpileGoal(MIN_STOCK_GOAL + id, id, entry.getValue(), entry.getValue()));
+        }
+        for (final LabourDataListener.StockpileGoal goal : LabourDataListener.stockpile())
+        {
+            if (!set.contains(goal.item()))
+            {
+                goals.add(goal);
+            }
+        }
+        return goals;
+    }
+
+    /**
+     * One stock goal as a panel shows it.
+     *
+     * @param goal      the goal (id, item or #tag, start below, target).
+     * @param stock     the matching stock in the warehouses nobody holds.
+     * @param inFlight  what labourers are bringing for it now.
+     * @param active    whether the board works on it (it dropped below its start and has not reached its target yet).
+     * @param covered   whether every matching good is made by a building of the colony, so labourers leave it alone.
+     * @param warehouse whether it comes from a warehouse's minimum-stock entry (else from the data pack seed).
+     */
+    public record StockGoalView(LabourDataListener.StockpileGoal goal, int stock, int inFlight, boolean active, boolean covered, boolean warehouse)
+    {
+    }
+
+    /**
+     * @return the stock goals with their stock and state, for display; server thread.
+     */
+    public List<StockGoalView> stockGoalViews()
+    {
+        final List<StockGoalView> views = new ArrayList<>();
+        for (final LabourDataListener.StockpileGoal goal : stockGoals())
+        {
+            int stock = 0;
+            boolean covered = true;
+            for (final Item item : LabourRules.candidateItems())
+            {
+                if (LabourDataListener.matches(goal.item(), item))
+                {
+                    stock += stock(item);
+                    covered &= coverage.covered(item);
+                }
+            }
+            int inFlight = 0;
+            for (final LabourClaim claim : byCitizen.values())
+            {
+                if (goal.id().equals(claim.goalId()))
+                {
+                    inFlight += claim.amount();
+                }
+            }
+            views.add(new StockGoalView(goal, stock, inFlight, goalActive.getOrDefault(goal.id(), false), covered, goal.id().startsWith(MIN_STOCK_GOAL)));
+        }
+        return views;
+    }
+
     @Nullable
     private LabourClaim offerStockpile(final ICitizenData citizen, final LabourEnv env, final Map<Item, Integer> inventory, final long now)
     {
@@ -1008,7 +1110,7 @@ public final class LabourBoard
         {
             return null;
         }
-        for (final LabourDataListener.StockpileGoal goal : LabourDataListener.stockpile())
+        for (final LabourDataListener.StockpileGoal goal : stockGoals())
         {
             final List<Item> items = new ArrayList<>();
             int stock = 0;

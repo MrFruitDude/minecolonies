@@ -1,8 +1,11 @@
 package com.minecolonies.api.colony.buildings.modules;
 
+import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
 import net.minecraft.world.item.ItemStack;
+
+import java.util.Map;
 
 /**
  * Module for adding minimum stocks to buildings.
@@ -30,4 +33,12 @@ public interface IMinimumStockModule extends IBuildingModule
      * @return true if stocked.
      */
     boolean isStocked(ItemStack stack);
+
+    /**
+     * @return a copy of the entries: item (amount ignored) to the quantity to keep, in stacks.
+     */
+    default Map<ItemStorage, Integer> getMinimumStock()
+    {
+        return Map.of();
+    }
 }

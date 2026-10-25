@@ -182,6 +182,12 @@ public class MinimumStockModule extends AbstractBuildingModule implements IMinim
     }
 
     @Override
+    public Map<ItemStorage, Integer> getMinimumStock()
+    {
+        return new HashMap<>(minimumStock);
+    }
+
+    @Override
     public boolean isStocked(final ItemStack stack)
     {
         return minimumStock.containsKey(new ItemStorage(stack));
