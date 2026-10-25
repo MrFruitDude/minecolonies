@@ -93,6 +93,10 @@ public final class CohesionGameTests
         TESTS.put("cohesion_claim_recompute_short", CohesionGameTests::claimRecomputeShort);
         TESTS.put("cohesion_claim_recompute_tokens", CohesionGameTests::claimRecomputeTokens);
         TESTS.put("cohesion_dispatch_hint_budget", CohesionGameTests::dispatchHintBudget);
+        TESTS.put("cohesion_claim_for_use_arrival", CohesionGameTests::claimForUseArrival);
+        TESTS.put("cohesion_claim_for_use_two_tokens", CohesionGameTests::claimForUseTwoTokens);
+        TESTS.put("cohesion_claim_for_use_short", CohesionGameTests::claimForUseShort);
+        TESTS.put("cohesion_claim_for_use_chain_hold", CohesionGameTests::claimForUseChainHold);
     }
 
     static void register(final RegisterGameTestsEvent event)
@@ -759,6 +763,181 @@ public final class CohesionGameTests
         finally
         {
             com.minecolonies.api.pathfinding.RouteHints.unregister(hints);
+        }
+        helper.succeed();
+    }
+
+    // ------------------------------------------------------------------ mc-c3 M1: claimForUse
+
+    /** Moves {@code count} logs from rack 0 into the builder's hut, as a courier's pickup and drop, through the real ledger hooks. */
+    @SuppressWarnings("unchecked")
+    private static void carry(final RsFixture f, final IToken<?> delivery, final int count)
+    {
+        com.minecolonies.core.colony.requestsystem.RsCourierHooks.stockTaken(f.manager(), f.request(delivery));
+        int left = count;
+        final var rack = f.rack(0).getInventory();
+        for (int slot = 0; slot < rack.getSlots() && left > 0; slot++)
+        {
+            left -= rack.extractItem(slot, left, false).getCount();
+        }
+        f.helper.assertTrue(left == 0, "the rack did not have " + count + " logs");
+        final ItemStack rest = com.minecolonies.api.util.InventoryUtils.addItemStackToItemHandlerWithResult(f.builder.getTileEntity().getInventory(), new ItemStack(Items.OAK_LOG, count));
+        f.helper.assertTrue(rest.isEmpty(), "the hut could not take the logs");
+        com.minecolonies.core.colony.requestsystem.RsCourierHooks.arrived(f.manager(),
+          (com.minecolonies.api.colony.requestsystem.request.IRequest<? extends com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery>) f.request(delivery));
+    }
+
+    /** Takes {@code count} logs out of the builder's hut (the order used them). */
+    private static void consume(final RsFixture f, final int count)
+    {
+        int left = count;
+        final var hut = f.builder.getTileEntity().getInventory();
+        for (int slot = 0; slot < hut.getSlots() && left > 0; slot++)
+        {
+            if (hut.getStackInSlot(slot).is(Items.OAK_LOG))
+            {
+                left -= hut.extractItem(slot, left, false).getCount();
+            }
+        }
+        f.helper.assertTrue(left == 0, "the hut did not have " + count + " logs");
+    }
+
+    private static IToken<?> servedDelivery(final RsFixture f, final IToken<?> request)
+    {
+        final var r = f.request(request);
+        f.helper.assertTrue(r != null && r.getChildren().size() == 1, "the request is served by one delivery: " + f.describe(request) + " " + f.ledger().all());
+        return r.getChildren().iterator().next();
+    }
+
+    /**
+     * One token that will still use 8 logs, one delivery of 8 arrives through the courier hooks: the claim is 0 while the delivery is on its way, once it
+     * arrived (handout open, not counted twice) and after the requester received it (logs in the hut, no handout).
+     */
+    public static void claimForUseArrival(final GameTestHelper helper)
+    {
+        RsFlags.overrideReservations(true);
+        try
+        {
+            final RsFixture f = RsFixture.found(helper, "cohesion use arrival", 4);
+            f.stock(0, new ItemStack(Items.OAK_LOG, 8));
+            final ReservationLedger ledger = f.ledger();
+            final ItemStorage logs = new ItemStorage(new ItemStack(Items.OAK_LOG));
+            final long now = helper.getLevel().getGameTime();
+            final List<ReservationLedger.Need> order = List.of(new ReservationLedger.Need(new StandardToken(), 8));
+            helper.assertTrue(ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, order, "make", ReservationReason.MAKE, now) == 8, "8 claimed");
+            final IToken<?> mine = ask(f.builder, Items.OAK_LOG, 8);
+            final IToken<?> delivery = servedDelivery(f, mine);
+            helper.assertTrue(ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, order, "make", ReservationReason.MAKE, now + 1) == 0, "on its way: 0");
+            carry(f, delivery, 8);
+            helper.assertTrue(ledger.reservedStock(f.builder.getID(), stack -> stack.is(Items.OAK_LOG)) == 8, "the arrival opened a handout: " + ledger.all());
+            helper.assertTrue(ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, order, "make", ReservationReason.MAKE, now + 2) == 0,
+              "arrived, handout open: 0, not re-claimed: " + ledger.all());
+            f.manager().updateRequestState(mine, RequestState.RECEIVED);
+            helper.assertTrue(ledger.reservedStock(f.builder.getID(), stack -> stack.is(Items.OAK_LOG)) == 0, "received: no handout");
+            helper.assertTrue(ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, order, "make", ReservationReason.MAKE, now + 3) == 0,
+              "received, logs in the hut: 0");
+        }
+        finally
+        {
+            RsFlags.overrideReservations(null);
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Two tokens that will use 8 logs each, one delivery of 8 arrives: 8 stay claimed (the arrived logs are neither claimed again nor counted twice), also after
+     * the requester received them; once the first order used its 8 and the second still needs 8, 8 are claimed.
+     */
+    public static void claimForUseTwoTokens(final GameTestHelper helper)
+    {
+        RsFlags.overrideReservations(true);
+        try
+        {
+            final RsFixture f = RsFixture.found(helper, "cohesion use tokens", 4);
+            f.stock(0, new ItemStack(Items.OAK_LOG, 16));
+            final ReservationLedger ledger = f.ledger();
+            final ItemStorage logs = new ItemStorage(new ItemStack(Items.OAK_LOG));
+            final long now = helper.getLevel().getGameTime();
+            final IToken<?> first = new StandardToken();
+            final IToken<?> second = new StandardToken();
+            final List<ReservationLedger.Need> both = List.of(new ReservationLedger.Need(first, 8), new ReservationLedger.Need(second, 8));
+            helper.assertTrue(ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, both, "make", ReservationReason.MAKE, now) == 16, "16 claimed");
+            final IToken<?> mine = ask(f.builder, Items.OAK_LOG, 8);
+            final IToken<?> delivery = servedDelivery(f, mine);
+            helper.assertTrue(ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, both, "make", ReservationReason.MAKE, now + 1) == 8, "8 on its way, 8 claimed");
+            carry(f, delivery, 8);
+            helper.assertTrue(ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, both, "make", ReservationReason.MAKE, now + 2) == 8,
+              "arrived: 8 claimed, not 16 (re-claimed) nor 0 (counted twice): " + ledger.all());
+            f.manager().updateRequestState(mine, RequestState.RECEIVED);
+            helper.assertTrue(ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, both, "make", ReservationReason.MAKE, now + 3) == 8, "received: still 8");
+            consume(f, 8);
+            final List<ReservationLedger.Need> after = List.of(new ReservationLedger.Need(first, 0), new ReservationLedger.Need(second, 8));
+            helper.assertTrue(ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, after, "make", ReservationReason.MAKE, now + 4) == 8,
+              "the first order used its 8, the second still needs 8: 8 claimed");
+            helper.assertTrue(ledger.reservationsOf(first).isEmpty() && ledger.reservationsOf(second).get(0).amount() == 8, "on the second token: " + ledger.all());
+        }
+        finally
+        {
+            RsFlags.overrideReservations(null);
+        }
+        helper.succeed();
+    }
+
+    /** Short stock: 3 logs in store, a token that will use 8, the builder asks 8 (minimum 1): the 3 are on their way and 5 are claimed, 8 in all. */
+    public static void claimForUseShort(final GameTestHelper helper)
+    {
+        RsFlags.overrideReservations(true);
+        try
+        {
+            final RsFixture f = RsFixture.found(helper, "cohesion use short", 4);
+            f.stock(0, new ItemStack(Items.OAK_LOG, 3));
+            final ReservationLedger ledger = f.ledger();
+            final ItemStorage logs = new ItemStorage(new ItemStack(Items.OAK_LOG));
+            final long now = helper.getLevel().getGameTime();
+            final List<ReservationLedger.Need> order = List.of(new ReservationLedger.Need(new StandardToken(), 8));
+            ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, order, "make", ReservationReason.MAKE, now);
+            f.builder.createRequest(new Stack(new ItemStack(Items.OAK_LOG, 8), 8, 1), false);
+            final int claimed = ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, order, "make", ReservationReason.MAKE, now + 1);
+            final int coming = ledger.comingTo(f.manager(), f.builder.getID(), logs);
+            helper.assertTrue(coming == 3 && claimed == 5, "3 on their way, 5 claimed: " + coming + " / " + claimed + " " + ledger.all());
+        }
+        finally
+        {
+            RsFlags.overrideReservations(null);
+        }
+        helper.succeed();
+    }
+
+    /**
+     * L1: a warehouse hold for a request of building B made to fill building A's request counts as coming to B only. Claims for both buildings, short stock:
+     * claims plus the hold equal the sum of the needs.
+     */
+    public static void claimForUseChainHold(final GameTestHelper helper)
+    {
+        RsFlags.overrideReservations(true);
+        try
+        {
+            final RsFixture f = RsFixture.found(helper, "cohesion use chain", 4);
+            final IBuilding b = f.place(ModBlocks.blockHutBuilder, new BlockPos(24, 1, 2), "fundamentals/builder1.blueprint");
+            final ReservationLedger ledger = f.ledger();
+            final ItemStorage logs = new ItemStorage(new ItemStack(Items.OAK_LOG));
+            final long now = helper.getLevel().getGameTime();
+            final IToken<?> top = ask(f.builder, Items.OAK_PLANKS, 4);
+            final IToken<?> child = ask(b, Items.OAK_LOG, 8);
+            f.request(child).setParent(top);
+            helper.assertTrue(ReservationLedger.requesterChain(f.manager(), f.request(child)).contains(f.builder.getID()), "the chain reaches the first building");
+            ledger.reserveStock(f.warehouse.getID(), f.racks.get(0), logs, 3, child, "hold", ReservationReason.WAREHOUSE_DELIVERY, now);
+            helper.assertTrue(ledger.comingTo(f.manager(), b.getID(), logs) == 3 && ledger.comingTo(f.manager(), f.builder.getID(), logs) == 0,
+              "the hold comes to its own requester only");
+            final int forA = ledger.claimForUse(f.manager(), f.warehouse.getID(), f.builder, logs, List.of(new ReservationLedger.Need(new StandardToken(), 8)), "a",
+              ReservationReason.MAKE, now);
+            final int forB = ledger.claimForUse(f.manager(), f.warehouse.getID(), b, logs, List.of(new ReservationLedger.Need(new StandardToken(), 8)), "b",
+              ReservationReason.MAKE, now);
+            helper.assertTrue(forA + forB + 3 == 16, "claims plus the hold are the needs: " + forA + " + " + forB + " + 3");
+        }
+        finally
+        {
+            RsFlags.overrideReservations(null);
         }
         helper.succeed();
     }
