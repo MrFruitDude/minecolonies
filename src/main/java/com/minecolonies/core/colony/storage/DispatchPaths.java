@@ -198,6 +198,12 @@ public final class DispatchPaths
                     }
                 }
             }
+            else if (cached != null)
+            {
+                // no hint turn this tick: the pair keeps its last factor (it may have come from a route) and stays stale; the fresh slot is given back
+                freshThisTick--;
+                return cached.factor;
+            }
             else
             {
                 // no hint turn this tick: use the answer, do not keep it
