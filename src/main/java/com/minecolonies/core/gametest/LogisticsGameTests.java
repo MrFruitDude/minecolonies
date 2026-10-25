@@ -474,7 +474,7 @@ final class LogisticsGameTests
     /**
      * A sawmill that makes 4 planks from a log, with a worker unless there is no crafter.
      */
-    private static IBuilding plankSawmill(final RsFixture f, final boolean staffed, final boolean ai)
+    static IBuilding plankSawmill(final RsFixture f, final boolean staffed, final boolean ai)
     {
         final IBuilding sawmill = f.place(ModBlocks.blockHutSawmill, new BlockPos(8, 1, 22), "craftsmanship/carpentry/sawmill1.blueprint");
         final ICraftingBuildingModule craft = sawmill.getModule(BuildingModules.SAWMILL_CRAFT);

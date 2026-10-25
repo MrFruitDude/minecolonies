@@ -1,5 +1,13 @@
 package com.minecolonies.core.gametest;
 
+import java.util.Set;
+import java.util.HashSet;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationKind;
+import com.minecolonies.core.colony.requestsystem.RsFlags;
+import com.minecolonies.api.colony.requestsystem.requestable.Stack;
+import com.minecolonies.api.colony.requestsystem.request.RequestState;
+import com.minecolonies.api.blocks.ModBlocks;
+import com.ldtteam.structurize.api.util.Tuple;
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
@@ -59,8 +67,8 @@ import static com.minecolonies.core.gametest.MinecoloniesGameTests.makeConnected
  * {@code MINECOLONIES_GAMETEST_ONLY=cohesion}): the emerald market is gone, the add-on rules ({@link IColonyRulesProvider}) apply and change nothing
  * when unset, the ledger's MAKE and BUILD reasons, labour stock goals from minimum stock, road-aware dispatch and the resolver dry run.
  * <p>
- * Each test sets the rules provider and puts the default back inside its one synchronous body, and its provider only answers for its own colony, so
- * tests of other groups in the same batch are not affected.
+ * Each test sets the rules provider and puts the previous one back (an add-on's, when one is loaded) inside its one synchronous body, and its provider only
+ * answers for its own colony, so tests of other groups in the same batch are not affected.
  */
 public final class CohesionGameTests
 {
@@ -79,6 +87,9 @@ public final class CohesionGameTests
         TESTS.put("cohesion_dispatch_roads", CohesionGameTests::dispatchRoads);
         TESTS.put("cohesion_request_targets", CohesionGameTests::requestTargets);
         TESTS.put("cohesion_hire_refusal", CohesionGameTests::hireRefusal);
+        TESTS.put("cohesion_make_claim_handover", h -> makeClaimHandover(h, null));
+        TESTS.put("cohesion_make_claim_handover_network", h -> makeClaimHandover(h, true));
+        TESTS.put("cohesion_make_claim_handover_classic", h -> makeClaimHandover(h, false));
     }
 
     static void register(final RegisterGameTestsEvent event)
@@ -93,9 +104,26 @@ public final class CohesionGameTests
         }
     }
 
-    private static void setRules(final IColonyRulesProvider provider)
+    /**
+     * Runs the body with the rules provider set (null: the default) and puts the previous provider back.
+     */
+    private static void withRules(final IColonyRulesProvider provider, final Runnable body)
     {
+        final IColonyRulesProvider previous = IMinecoloniesAPI.getInstance().getColonyRulesProvider();
         IMinecoloniesAPI.getInstance().setColonyRulesProvider(provider);
+        try
+        {
+            body.run();
+        }
+        finally
+        {
+            IMinecoloniesAPI.getInstance().setColonyRulesProvider(previous);
+        }
+    }
+
+    private static IToken<?> ask(final IBuilding requester, final Item item, final int count)
+    {
+        return requester.createRequest(new Stack(new ItemStack(item, count), count, count), false);
     }
 
     // ------------------------------------------------------------------ A-1
@@ -117,43 +145,42 @@ public final class CohesionGameTests
 
     // ------------------------------------------------------------------ A-5
 
-    /** The raid level is multiplied for the provider's colony; 0 gives 0, an unusable answer and no provider leave it unchanged. */
+    /** The raid level is multiplied for the provider's colony (capped at 10); 0 gives 0, an unusable answer and no provider leave it unchanged. */
     public static void raidLevelMultiplier(final GameTestHelper helper)
     {
         final RsFixture f = RsFixture.found(helper, "cohesion raid", 0, false);
         f.spawn(new BlockPos(4, 1, 6), true);
         f.spawn(new BlockPos(6, 1, 6), true);
         final IColony colony = f.colony;
-        try
+        final int[] base = {0};
+        withRules(null, () -> base[0] = colony.getRaiderManager().getColonyRaidLevel());
+        helper.assertTrue(base[0] > 0, "the fixture has no raid level: " + base[0]);
+        final double[] answer = {2.0D};
+        withRules(new IColonyRulesProvider()
         {
-            final int base = colony.getRaiderManager().getColonyRaidLevel();
-            helper.assertTrue(base > 0, "the fixture has no raid level: " + base);
-            final double[] answer = {2.0D};
-            setRules(new IColonyRulesProvider()
+            @Override
+            public double raidLevelMultiplier(@NotNull final IColony c)
             {
-                @Override
-                public double raidLevelMultiplier(@NotNull final IColony c)
-                {
-                    return c == colony ? answer[0] : 1.0D;
-                }
-            });
+                return c == colony ? answer[0] : 1.0D;
+            }
+        }, () -> {
             final int doubled = colony.getRaiderManager().getColonyRaidLevel();
-            helper.assertTrue(doubled >= 2 * base && doubled <= 2 * base + 1, "x2: " + base + " -> " + doubled);
+            helper.assertTrue(doubled >= 2 * base[0] && doubled <= 2 * base[0] + 1, "x2: " + base[0] + " -> " + doubled);
             answer[0] = 0.0D;
             helper.assertTrue(colony.getRaiderManager().getColonyRaidLevel() == 0, "x0 gives 0");
+            answer[0] = 50.0D;
+            final int capped = colony.getRaiderManager().getColonyRaidLevel();
+            helper.assertTrue(capped >= 10 * base[0] && capped <= 10 * base[0] + 1, "x50 is capped at x10: " + capped);
             for (final double broken : new double[] {Double.NaN, -1.0D, Double.POSITIVE_INFINITY})
             {
                 answer[0] = broken;
-                helper.assertTrue(colony.getRaiderManager().getColonyRaidLevel() == base, "an unusable answer " + broken + " is ignored");
+                helper.assertTrue(colony.getRaiderManager().getColonyRaidLevel() == base[0], "an unusable answer " + broken + " is ignored");
             }
-            setRules(null);
-            helper.assertTrue(colony.getRaiderManager().getColonyRaidLevel() == base, "no provider: unchanged");
-            helper.assertTrue(IMinecoloniesAPI.getInstance().getColonyRulesProvider() == IColonyRulesProvider.DEFAULT, "null puts the default back");
-        }
-        finally
-        {
-            setRules(null);
-        }
+        });
+        withRules(null, () -> {
+            helper.assertTrue(IMinecoloniesAPI.getInstance().getColonyRulesProvider() == IColonyRulesProvider.DEFAULT, "null puts the default in");
+            helper.assertTrue(colony.getRaiderManager().getColonyRaidLevel() == base[0], "no provider: unchanged");
+        });
         helper.succeed();
     }
 
@@ -166,8 +193,8 @@ public final class CohesionGameTests
     }
 
     /**
-     * A building claim stops at the provider's radius (chunks from the centre chunk, square); without a limit it reaches its full radius; a direct
-     * {@code tryClaimBuilding} (an add-on's ring purchase) and unclaiming are not limited.
+     * A building's radius claim stops at the provider's radius (chunks from the centre chunk, square); its footprint box does not; without a limit it reaches
+     * its full radius; a direct {@code tryClaimBuilding} (an add-on's ring purchase) and unclaiming are not limited.
      */
     public static void claimRadiusLimit(final GameTestHelper helper)
     {
@@ -177,47 +204,44 @@ public final class CohesionGameTests
         final ChunkPos center = ChunkPos.containing(hall);
         final ChunkPos two = new ChunkPos(center.x() + 2, center.z());
         final ChunkPos three = new ChunkPos(center.x() + 3, center.z() - 3);
+        final ChunkPos threeBox = new ChunkPos(center.x() - 3, center.z());
+        final ChunkPos threeDirect = new ChunkPos(center.x() - 3, center.z() + 3);
         final ChunkPos four = new ChunkPos(center.x(), center.z() + 4);
-        try
+        final IColonyRulesProvider limit = new IColonyRulesProvider()
         {
-            setRules(new IColonyRulesProvider()
+            @Override
+            public int claimRadiusLimit(@NotNull final IColony c)
             {
-                @Override
-                public int claimRadiusLimit(@NotNull final IColony c)
-                {
-                    return c == colony ? 2 : -1;
-                }
-            });
+                return c == colony ? 2 : -1;
+            }
+        };
+        withRules(limit, () -> {
             ChunkDataHelper.claimBuildingChunks((Colony) colony, true, hall, 4, null);
             helper.assertTrue(buildingClaims(level, colony, two), "inside the limit the building claims");
-            helper.assertTrue(!buildingClaims(level, colony, three) && !buildingClaims(level, colony, four), "past the limit the building claims nothing");
+            helper.assertTrue(!buildingClaims(level, colony, three) && !buildingClaims(level, colony, four), "past the limit the radius claims nothing");
             helper.assertTrue(ChunkDataHelper.beyondClaimLimit(colony, center, three) && !ChunkDataHelper.beyondClaimLimit(colony, center, two), "limit check is square");
 
-            // the ring purchase path claims directly, past the building limit
-            helper.assertTrue(ChunkDataHelper.tryClaimBuilding(level, three, true, (Colony) colony, hall) && buildingClaims(level, colony, three),
-              "a direct claim is not limited");
+            // a footprint that straddles the limit is claimed whole
+            final BlockPos corner = new BlockPos(threeBox.getMinBlockX(), hall.getY(), threeBox.getMinBlockZ());
+            ChunkDataHelper.claimBuildingChunks((Colony) colony, true, hall, 0, new Tuple<>(corner, corner.offset(15, 4, 15)));
+            helper.assertTrue(buildingClaims(level, colony, threeBox), "the footprint box is not limited");
 
-            // no limit: the full radius, as before
-            setRules(null);
+            // the ring purchase path claims directly, past the building limit
+            helper.assertTrue(ChunkDataHelper.tryClaimBuilding(level, threeDirect, true, (Colony) colony, hall) && buildingClaims(level, colony, threeDirect),
+              "a direct claim is not limited");
+        });
+
+        // no limit: the full radius, as before
+        withRules(null, () -> {
             ChunkDataHelper.claimBuildingChunks((Colony) colony, true, hall, 4, null);
             helper.assertTrue(buildingClaims(level, colony, four), "without a limit the building claims its whole radius");
+        });
 
-            // unclaiming is never limited
-            setRules(new IColonyRulesProvider()
-            {
-                @Override
-                public int claimRadiusLimit(@NotNull final IColony c)
-                {
-                    return c == colony ? 2 : -1;
-                }
-            });
+        // unclaiming is never limited
+        withRules(limit, () -> {
             ChunkDataHelper.claimBuildingChunks((Colony) colony, false, hall, 4, null);
             helper.assertTrue(!buildingClaims(level, colony, four) && !buildingClaims(level, colony, two), "unclaiming reaches past the limit");
-        }
-        finally
-        {
-            setRules(null);
-        }
+        });
         helper.succeed();
     }
 
@@ -279,8 +303,36 @@ public final class CohesionGameTests
         helper.assertTrue(ledger.sweepStale(ReservationReason.BUILD, t -> false, 30L, 10L) == 1 && ledger.byReason(ReservationReason.BUILD).isEmpty(), "stale BUILD claims go");
         helper.assertTrue(ledger.byReason(ReservationReason.MAKE).size() == 1, "the MAKE claim is still there");
 
+        // one claim per reason (L7) and per beneficiary; a beneficiary's own requests do not count its claim; handOver shrinks it quietly
+        final BlockPos hut = new BlockPos(70, 64, 10);
+        final IToken<?> both = new StandardToken();
+        final ReservationLedger second = new ReservationLedger();
+        final List<Reservation> freedToo = new ArrayList<>();
+        second.setOnFreed(freedToo::add);
+        second.setStock(warehouseA, logs, 3, both, "x", ReservationReason.MAKE, 1L);
+        second.setStock(warehouseA, logs, 2, both, "x", ReservationReason.BUILD, 1L);
+        helper.assertTrue(second.reservationsOf(both).size() == 2 && second.reservedStock(logs, ReservationReason.MAKE) == 3, "two reasons, two claims");
+        final IToken<?> forHut = new StandardToken();
+        helper.assertTrue(second.setStock(warehouseA, logs, 8, forHut, "make", ReservationReason.MAKE, 2L, hut) == 8, "a claim for a building");
+        helper.assertTrue(second.reservedStockWhere(warehouseA, stack -> stack.is(Items.OAK_LOG), ReservationLedger.countsAgainst(Set.of(hut))) == 5,
+          "the beneficiary's requests do not count its own claim");
+        helper.assertTrue(second.reservedStockWhere(warehouseA, stack -> stack.is(Items.OAK_LOG), ReservationLedger.countsAgainst(Set.of(warehouseB))) == 13,
+          "anyone else's do");
+        helper.assertTrue(second.heldForOthers(warehouseA, logs, ReservationLedger.countsAgainst(Set.of(hut))) == 5, "heldForOthers skips the beneficiary");
+        final CompoundTag forTag = second.write(level.registryAccess(), StandardFactoryController.getInstance());
+        final ReservationLedger readFor = new ReservationLedger();
+        readFor.read(level.registryAccess(), StandardFactoryController.getInstance(), forTag);
+        helper.assertTrue(readFor.reservationsOf(forHut).size() == 1 && hut.equals(readFor.reservationsOf(forHut).get(0).forBuilding()), "the beneficiary survives a save");
+        helper.assertTrue(second.handOver(warehouseA, logs, 6, Set.of(hut), 3L) == 6 && second.reservationsOf(forHut).get(0).amount() == 2 && freedToo.isEmpty(),
+          "handOver shrinks the beneficiary's claim without freeing");
+        helper.assertTrue(second.handOver(warehouseA, logs, 6, Set.of(warehouseB), 3L) == 0, "nothing is handed over to another building");
+        helper.assertTrue(second.handOver(warehouseA, logs, 6, Set.of(hut), 4L) == 2 && second.reservationsOf(forHut).isEmpty(), "handing over the rest ends the claim");
+
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "cohesion ledger");
         helper.assertTrue(ReservationLedger.of(colony) != null, "a server colony has a ledger");
+        RsFlags.overrideReservations(false);
+        helper.assertTrue(ReservationLedger.of(colony) == null, "with reservations off there is no ledger to count (L6)");
+        RsFlags.overrideReservations(null);
         helper.succeed();
     }
 
@@ -311,7 +363,8 @@ public final class CohesionGameTests
         final List<LabourDataListener.StockpileGoal> goals = board.stockGoals();
         final LabourDataListener.StockpileGoal mine = goals.stream().filter(g -> g.id().equals(LabourBoard.MIN_STOCK_GOAL + goodId)).findFirst().orElse(null);
         final int target = 2 * new ItemStack(good).getMaxStackSize();
-        helper.assertTrue(mine != null && mine.target() == target && mine.startBelow() == target && mine.item().equals(goodId), "the entry is a goal: " + goals);
+        helper.assertTrue(mine != null && mine.target() == target && mine.startBelow() == target - Math.max(1, target / 4) && mine.item().equals(goodId),
+          "the entry is a goal, starting below three quarters: " + goals);
         helper.assertTrue(goals.stream().noneMatch(g -> !g.id().startsWith(LabourBoard.MIN_STOCK_GOAL) && g.item().equals(goodId)), "the seed goal for the same item is replaced");
         helper.assertTrue(goals.stream().noneMatch(g -> g.item().contains(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(other).getPath())),
           "a good labourers cannot make is no goal");
@@ -321,14 +374,26 @@ public final class CohesionGameTests
         helper.assertTrue(views.size() == goals.size(), "one view per goal");
         final LabourBoard.StockGoalView view = views.stream().filter(v -> v.goal().id().equals(mine.id())).findFirst().orElse(null);
         helper.assertTrue(view != null && view.warehouse() && view.stock() == 0 && view.inFlight() == 0, "the view: " + view);
+
+        // hysteresis and the least lot (M2): 2 stacks of sticks, target 128, start below 96
+        final LabourDataListener.StockpileGoal sticks = new LabourDataListener.StockpileGoal(LabourBoard.MIN_STOCK_GOAL + "minecraft:stick", "minecraft:stick", 96, 128);
+        helper.assertTrue(!LabourBoard.goalActive(sticks, 127, false) && !LabourBoard.goalActive(sticks, 100, false), "127 or 100 sticks start nothing");
+        helper.assertTrue(LabourBoard.goalActive(sticks, 95, false) && LabourBoard.goalLot(sticks, 95, 0) == 33, "95 sticks: a lot of 33");
+        helper.assertTrue(LabourBoard.goalActive(sticks, 127, true) && !LabourBoard.goalActive(sticks, 128, true), "active until 128");
+        helper.assertTrue(!LabourBoard.goalActive(sticks, 96, false) && LabourBoard.goalActive(sticks, 95, false), "then inactive until under 96");
+        helper.assertTrue(LabourBoard.goalLot(sticks, 95, 20) == 0 && LabourBoard.goalLot(sticks, 112, 0) == 16, "no lot under 16 items");
+        final LabourDataListener.StockpileGoal seedSticks = new LabourDataListener.StockpileGoal("sticks", "minecraft:stick", 8, 16);
+        helper.assertTrue(LabourBoard.goalLot(seedSticks, 15, 0) == 1, "seed goals keep their lots");
+        module.removeMinimumStock(new ItemStack(good));
+        helper.assertTrue(board.stockGoals().stream().noneMatch(g -> g.id().equals(mine.id())), "removing the entry drops the goal (the cache follows the module)");
         helper.succeed();
     }
 
     // ------------------------------------------------------------------ B-4
 
     /**
-     * Off road the estimate is the straight line (exactly {@link DispatchCost#PATH_FACTOR}); a road along the way makes it cheaper; the answer is cached until a
-     * road block changes or the cache is dropped.
+     * Off road the estimate is the straight line (exactly {@link DispatchCost#PATH_FACTOR}); a road along the way makes it cheaper; a road change outside a
+     * pair's corridor leaves it alone, one on its line marks it stale; over the budget a stale pair answers with its last factor.
      */
     public static void dispatchRoads(final GameTestHelper helper)
     {
@@ -338,20 +403,35 @@ public final class CohesionGameTests
         final BlockPos to = helper.absolutePos(new BlockPos(36, 1, 6));
         for (int x = from.getX() >> 4; x <= to.getX() >> 4; x++)
         {
-            level.setChunkForced(x, from.getZ() >> 4, true);
+            for (int z = (from.getZ() - 2) >> 4; z <= (from.getZ() + 20) >> 4; z++)
+            {
+                level.setChunkForced(x, z, true);
+            }
         }
         DispatchPaths.invalidate(level);
+        DispatchPaths.resetTickBudget();
         final double offRoad = DispatchPaths.factor(level, null, from, to);
         helper.assertTrue(offRoad == DispatchCost.PATH_FACTOR, "off road: " + offRoad);
         helper.assertTrue(DispatchPaths.travelTicks(null, from, to) == DispatchCost.travelTicks(from, to), "no colony: the straight line");
 
-        // a road on the floor along the whole way; placed without an event, so the cached answer stays until the cache is dropped
+        // a road on the floor along the whole way; placed without an event, so the cached answer stays
         for (int x = from.getX(); x <= to.getX(); x++)
         {
             level.setBlock(new BlockPos(x, from.getY() - 1, from.getZ()), Blocks.POLISHED_ANDESITE.defaultBlockState(), 3);
         }
         helper.assertTrue(DispatchPaths.factor(level, null, from, to) == DispatchCost.PATH_FACTOR && DispatchPaths.cachedPairs(level) >= 1, "cached");
-        DispatchPaths.invalidate(level);
+        final int stale = DispatchPaths.stalePairs(level);
+
+        // a road block changed outside the corridor (planks are path blocks): the pair is untouched
+        final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
+        DispatchPaths.onBreak(new BreakBlockEvent(level, from.offset(0, -1, 12), Blocks.OAK_PLANKS.defaultBlockState(), player));
+        helper.assertTrue(DispatchPaths.stalePairs(level) == stale && DispatchPaths.factor(level, null, from, to) == DispatchCost.PATH_FACTOR, "outside the corridor: still cached");
+
+        // one on its line: marked stale, kept, recomputed when asked
+        final int cached = DispatchPaths.cachedPairs(level);
+        DispatchPaths.onBreak(new BreakBlockEvent(level, from.offset(10, -1, 0), Blocks.POLISHED_ANDESITE.defaultBlockState(), player));
+        helper.assertTrue(DispatchPaths.stalePairs(level) == stale + 1 && DispatchPaths.cachedPairs(level) == cached, "on the line: stale, not dropped");
+        DispatchPaths.resetTickBudget();
         final double onRoad = DispatchPaths.factor(level, null, from, to);
         helper.assertTrue(Math.abs(onRoad - DispatchCost.PATH_FACTOR / 1.3D) < 0.01D, "on a road the walk counts 1.3x faster: " + onRoad);
 
@@ -361,83 +441,185 @@ public final class CohesionGameTests
             level.setBlock(new BlockPos(x, from.getY() - 1, from.getZ()), Blocks.STONE.defaultBlockState(), 3);
         }
         DispatchPaths.invalidate(level);
+        DispatchPaths.resetTickBudget();
         final double half = DispatchPaths.factor(level, null, from, to);
         helper.assertTrue(half > onRoad && half < offRoad, "half on road is in between: " + half);
 
-        // breaking a road block drops the cache
-        final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
-        DispatchPaths.onBreak(new BreakBlockEvent(level, from.below(), Blocks.POLISHED_ANDESITE.defaultBlockState(), player));
-        helper.assertTrue(DispatchPaths.cachedPairs(level) == 0, "a road change drops the cache");
-        DispatchPaths.onBreak(new BreakBlockEvent(level, from.below(), Blocks.STONE.defaultBlockState(), player));
+        // over the budget a stale pair answers with its last factor, not the off-road one
+        for (int x = from.getX(); x <= to.getX(); x++)
+        {
+            level.setBlock(new BlockPos(x, from.getY() - 1, from.getZ()), Blocks.STONE.defaultBlockState(), 3);
+        }
+        DispatchPaths.invalidate(level);
+        DispatchPaths.resetTickBudget();
+        for (int k = 0; k < DispatchPaths.FRESH_PER_TICK; k++)
+        {
+            DispatchPaths.factor(level, null, from.offset(0, 0, 4 + k), to.offset(0, 0, 4 + k));
+        }
+        helper.assertTrue(DispatchPaths.factor(level, null, from, to) == half, "budget spent: the stale factor");
+        DispatchPaths.resetTickBudget();
+        helper.assertTrue(DispatchPaths.factor(level, null, from, to) == DispatchCost.PATH_FACTOR, "with budget: recomputed, the road is gone");
         helper.succeed();
     }
 
     // ------------------------------------------------------------------ B-6
 
-    /** The dry run names the resolvers that could take a request for logs, the stocked warehouse among them, and changes nothing. */
-    public static void requestTargets(final GameTestHelper helper)
+    private static Map<IToken<?>, Set<IToken<?>>> assignments(final RsFixture f)
     {
-        final RsFixture f = RsFixture.found(helper, "cohesion targets", 1, false);
-        f.stock(0, new ItemStack(Items.OAK_LOG, 16));
-        final long revision = f.ledger().revision();
-        final int requests = f.standard().getRequestIdentitiesDataStore().getIdentities().size();
+        final Map<IToken<?>, Set<IToken<?>>> copy = new LinkedHashMap<>();
+        f.standard().getRequestResolverRequestAssignmentDataStore().getAssignments().forEach((k, v) -> copy.put(k, new HashSet<>(v)));
+        return copy;
+    }
 
-        final List<RequestTargets.Candidate> found = RequestTargets.forItem(f.colony, f.builder, new ItemStack(Items.OAK_LOG), 4);
-        final StringBuilder said = new StringBuilder();
+    private static String said(final List<RequestTargets.Candidate> found)
+    {
+        final StringBuilder out = new StringBuilder();
         for (final RequestTargets.Candidate c : found)
         {
-            said.append(c.resolver().getClass().getSimpleName()).append('@').append(c.building()).append(" p").append(c.priority()).append(" m").append(c.metric()).append("; ");
+            out.append(c.resolver().getClass().getSimpleName()).append('@').append(c.building()).append(" p").append(c.priority()).append(" m").append(c.metric()).append("; ");
         }
-        helper.assertTrue(!found.isEmpty(), "nobody would take a request for logs");
-        helper.assertTrue(found.stream().anyMatch(c -> f.warehouse.getID().equals(c.building()) || c.resolver().getClass().getSimpleName().contains("Warehouse")),
-          "the stocked warehouse is a candidate: " + said);
-        helper.assertTrue(f.ledger().revision() == revision, "the dry run reserved nothing");
-        helper.assertTrue(f.standard().getRequestIdentitiesDataStore().getIdentities().size() == requests, "the dry run registered no request");
+        return out.toString();
+    }
+
+    /**
+     * The dry run changes nothing, and its first candidate is the resolver the request system then really assigns: a stocked warehouse (logs), a crafter
+     * when the warehouse has none (planks from a staffed sawmill), the retrying or player resolver when nothing can make it (diamonds).
+     */
+    public static void requestTargets(final GameTestHelper helper)
+    {
+        final RsFixture f = RsFixture.found(helper, "cohesion targets", 2, false);
+        f.stock(0, new ItemStack(Items.OAK_LOG, 16));
+        LogisticsGameTests.plankSawmill(f, true, false);
         helper.assertTrue(RequestTargets.forItem(f.colony, f.builder, ItemStack.EMPTY, 1).isEmpty(), "an empty stack has no target");
+
+        for (final Item item : new Item[] {Items.OAK_LOG, Items.OAK_PLANKS, Items.DIAMOND})
+        {
+            final long revision = f.ledger().revision();
+            final int requests = f.standard().getRequestIdentitiesDataStore().getIdentities().size();
+            final Map<IToken<?>, Set<IToken<?>>> before = assignments(f);
+            final List<RequestTargets.Candidate> found = RequestTargets.forItem(f.colony, f.builder, new ItemStack(item), 4);
+            helper.assertTrue(!found.isEmpty(), "nobody would take a request for " + item);
+            helper.assertTrue(f.ledger().revision() == revision, "the dry run reserved nothing");
+            helper.assertTrue(f.standard().getRequestIdentitiesDataStore().getIdentities().size() == requests, "the dry run registered no request");
+            helper.assertTrue(assignments(f).equals(before), "the dry run assigned nothing");
+
+            final IToken<?> real = ask(f.builder, item, 4);
+            final var assigned = f.manager().getResolverForRequest(real);
+            helper.assertTrue(assigned != null && assigned.getId().equals(found.get(0).resolver().getId()),
+              item + ": the request system chose " + (assigned == null ? "nobody" : assigned.getClass().getSimpleName()) + ", the dry run said " + said(found));
+            if (item == Items.OAK_LOG)
+            {
+                helper.assertTrue(f.warehouse.getID().equals(found.get(0).building()) || found.get(0).resolver().getClass().getSimpleName().contains("Warehouse"),
+                  "logs come from the warehouse: " + said(found));
+            }
+            if (item == Items.DIAMOND)
+            {
+                helper.assertTrue(found.get(0).resolver().getId().equals(f.manager().getRetryingRequestResolver().getId())
+                                    || found.get(0).resolver().getId().equals(f.manager().getPlayerResolver().getId()), "diamonds: retry or player first: " + said(found));
+            }
+        }
         helper.succeed();
     }
 
     // ------------------------------------------------------------------ C-4, C-6
 
-    /** The provider refuses a hire through MineColonies' hire message (the citizen stays unassigned); no provider, no refusal; the client defaults change nothing. */
+    /**
+     * The provider refuses a hire through MineColonies' hire message: the citizen stays unassigned and the module unchanged; without a provider the same message
+     * hires; the client defaults change nothing.
+     */
     public static void hireRefusal(final GameTestHelper helper)
     {
         final RsFixture f = RsFixture.found(helper, "cohesion hire", 0, false);
         final ICitizenData citizen = f.spawn(new BlockPos(4, 1, 6), true);
-        IAssignsJob module = null;
+        IAssignsJob found = null;
         for (final IBuildingModule m : f.builder.getModules())
         {
             if (m instanceof final IAssignsJob assigns)
             {
-                module = assigns;
+                found = assigns;
                 break;
             }
         }
-        helper.assertTrue(module != null, "the builder has no job module");
+        helper.assertTrue(found != null, "the builder has no job module");
+        final IAssignsJob module = found;
+        final int moduleId = ((IBuildingModule) module).getProducer().getRuntimeID();
         final ServerPlayer player = makeConnectedSurvivalPlayer(helper);
         final IColony colony = f.colony;
-        try
+        withRules(new IColonyRulesProvider()
         {
-            helper.assertTrue(!HireFireMessage.refused(player, citizen, f.builder, module), "no provider: no refusal");
-            setRules(new IColonyRulesProvider()
+            @Override
+            public Component hireRefusal(@NotNull final ICitizenData c, @NotNull final IBuilding building, @NotNull final JobEntry job)
             {
-                @Override
-                public Component hireRefusal(@NotNull final ICitizenData c, @NotNull final IBuilding building, @NotNull final JobEntry job)
-                {
-                    return building.getColony() == colony ? Component.literal("needs a tier 2 citizen") : null;
-                }
-            });
-            helper.assertTrue(HireFireMessage.refused(player, citizen, f.builder, module), "the provider refuses");
-            helper.assertTrue(citizen.getWorkBuilding() == null, "the refused citizen is not hired");
-        }
-        finally
-        {
-            setRules(null);
-        }
+                return building.getColony() == colony ? Component.literal("needs a tier 2 citizen") : null;
+            }
+        }, () -> {
+            HireFireMessage.execute(player, colony, f.builder, true, citizen.getId(), moduleId);
+            helper.assertTrue(citizen.getWorkBuilding() == null && module.getAssignedCitizen().isEmpty(), "the refused citizen is not hired: " + module.getAssignedCitizen());
+        });
+        withRules(null, () -> {
+            HireFireMessage.execute(player, colony, f.builder, true, citizen.getId(), moduleId);
+            helper.assertTrue(citizen.getWorkBuilding() == f.builder && module.getAssignedCitizen().contains(citizen), "without a provider the message hires");
+        });
         final IColonyRulesProvider rules = IColonyRulesProvider.DEFAULT;
         helper.assertTrue(rules.claimRadiusLimit(colony) < 0 && rules.raidLevelMultiplier(colony) == 1.0D && rules.hireRefusal(citizen, f.builder, module.getJobEntry()) == null,
           "the default changes nothing");
         helper.assertTrue(!rules.openQuestLog(player, null, ItemStack.EMPTY), "the default quest log opens MineColonies' window");
+        helper.succeed();
+    }
+
+    // ------------------------------------------------------------------ H1
+
+    /**
+     * A MAKE claim held for a building: another building's request is not served from it; the building's own request is, the claim hands its stock over to the
+     * delivery (held all the way), and the ledger is empty once the delivery is done. Without a beneficiary the claim keeps everyone off, as before.
+     *
+     * @param network storage network on, off, or the default (null).
+     */
+    public static void makeClaimHandover(final GameTestHelper helper, final Boolean network)
+    {
+        RsFlags.overrideReservations(true);
+        RsFlags.overrideStorageNetwork(network);
+        try
+        {
+            final RsFixture f = RsFixture.found(helper, "cohesion handover " + network, 4);
+            final IBuilding other = f.place(ModBlocks.blockHutBuilder, new BlockPos(24, 1, 2), "fundamentals/builder1.blueprint");
+            f.stock(0, new ItemStack(Items.OAK_LOG, 8));
+            final ReservationLedger ledger = f.ledger();
+            final ItemStorage logs = new ItemStorage(new ItemStack(Items.OAK_LOG));
+            final long now = helper.getLevel().getGameTime();
+            final IToken<?> make = new StandardToken();
+            ledger.setStock(f.warehouse.getID(), logs, 8, make, "make for the builder", ReservationReason.MAKE, now, f.builder.getID());
+
+            // (b) another building is not served from the held logs
+            final IToken<?> theirs = ask(other, Items.OAK_LOG, 8);
+            helper.assertTrue(!f.request(theirs).hasChildren() && ledger.reservedSpace(other.getID(), stack -> true) == 0,
+              "the other building gets no delivery of the held logs: " + f.describe(theirs));
+            helper.assertTrue(ledger.reservedStock(logs, ReservationReason.MAKE) == 8, "the MAKE claim still holds 8");
+            f.manager().updateRequestState(theirs, RequestState.CANCELLED);
+
+            // (a) the beneficiary is served from them, and the claim hands over to the delivery
+            final IToken<?> mine = ask(f.builder, Items.OAK_LOG, 8);
+            final var request = f.request(mine);
+            helper.assertTrue(request.getChildren().size() == 1, "the builder's request is served by one delivery: " + f.describe(mine) + " " + ledger.all());
+            final IToken<?> delivery = request.getChildren().iterator().next();
+            helper.assertTrue(ledger.byReason(ReservationReason.MAKE).isEmpty(), "the MAKE claim handed over: " + ledger.all());
+            helper.assertTrue(ledger.reservedStock(f.warehouse.getID(), stack -> stack.is(Items.OAK_LOG)) == 8 && ledger.reservedSpace(f.builder.getID(), stack -> true) == 8,
+              "the delivery holds the 8 logs and the room: " + ledger.all());
+            ledger.commit(delivery, ReservationKind.STOCK, now + 1);
+            ledger.commit(delivery, ReservationKind.SPACE, now + 2);
+            helper.assertTrue(ledger.isEmpty(), "the ledger is empty after the delivery: " + ledger.all());
+
+            // (c) without a beneficiary the claim keeps everyone off, the builder too
+            final IToken<?> anyone = new StandardToken();
+            ledger.setStock(f.warehouse.getID(), logs, 8, anyone, "make", ReservationReason.MAKE, now + 3);
+            final IToken<?> again = ask(f.builder, Items.OAK_LOG, 8);
+            helper.assertTrue(!f.request(again).hasChildren() && ledger.reservedStock(logs, ReservationReason.MAKE) == 8,
+              "a claim for nobody keeps the builder off: " + f.describe(again));
+        }
+        finally
+        {
+            RsFlags.overrideStorageNetwork(null);
+        }
         helper.succeed();
     }
 }
