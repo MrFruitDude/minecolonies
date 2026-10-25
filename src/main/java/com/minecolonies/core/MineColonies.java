@@ -158,6 +158,7 @@ public class MineColonies
         forgeBus.register(EventHandler.class);
         // Colony Command: the emerald market (core/economy) is not registered; the colony's money is Colony Command's coins.
         forgeBus.register(QuestObjectiveEventHandler.class);
+        forgeBus.register(com.minecolonies.core.colony.storage.DispatchPaths.class);
         forgeBus.register(FMLEventHandler.class);
         forgeBus.register(DataPackSyncEventHandler.ServerEvents.class);
         if (dist.isClient())

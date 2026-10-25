@@ -82,7 +82,8 @@ public final class DispatchCost
      */
     public static int fetchTicks(@NotNull final IWareHouse warehouse, final int queued, @NotNull final BlockPos destination, final int items)
     {
-        return queueTicks(warehouse.getBuildingLevel(), queued) + handlingTicks(items) + travelTicks(warehouse.getID(), destination);
+        // the warehouse-to-building walk counts roads (cached per pair, see DispatchPaths); without roads it is travelTicks
+        return queueTicks(warehouse.getBuildingLevel(), queued) + handlingTicks(items) + DispatchPaths.travelTicks(warehouse.getColony(), warehouse.getID(), destination);
     }
 
     /**
