@@ -63,8 +63,8 @@ public class EntryPoint
             .addNode(new CommandRSReset().build())
             .addNode(new CommandRSResetAll().build())
             .addNode(new CommandSetAbandoned().build())
-            .addNode(new CommandExportColony().build())
-            .addNode(new CommandEconomy().build());
+            .addNode(new CommandExportColony().build());
+        // Colony Command: no "economy" node; the emerald market stays unregistered (core/economy classes kept for reference).
 
         /*
          * Citizen commands subtree
