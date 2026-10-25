@@ -97,11 +97,29 @@ public class HireFireMessage extends AbstractBuildingServerMessage<IBuilding>
             return false;
         }
         player.sendOverlayMessage(refusal);
+        // the window may have updated its view already (a stale synced reason): send the true state back
+        building.markDirty();
+        citizen.markDirty(0);
         return true;
     }
 
     @Override
     protected void onExecute(final IPayloadContext ctxIn, final ServerPlayer player, final IColony colony, final IBuilding building)
+    {
+        execute(player, colony, building, hire, citizenID, moduleId);
+    }
+
+    /**
+     * What the message does on the server: hires (unless an add-on refuses, see {@link #refused}) or fires a citizen for a module of the building.
+     *
+     * @param player    the player who sent it.
+     * @param colony    the colony.
+     * @param building  the building.
+     * @param hire      hire, else fire.
+     * @param citizenID the citizen.
+     * @param moduleId  the module's runtime id.
+     */
+    public static void execute(final ServerPlayer player, final IColony colony, final IBuilding building, final boolean hire, final int citizenID, final int moduleId)
     {
         if (building.getModule(moduleId) instanceof final IAssignsJob module)
         {

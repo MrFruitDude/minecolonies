@@ -28,7 +28,9 @@ public interface IColonyRulesProvider
 
     /**
      * Server. Multiplies the colony's raid level (citizens, building levels, research) before raids are sized and chosen.
-     * A value that is not a finite number of at least zero is ignored (treated as 1.0).
+     * A value that is not a finite number of at least zero is ignored (treated as 1.0); a value above
+     * {@code RaidManager.MAX_RAID_LEVEL_MULTIPLIER} (10) is capped. The raid level also sets raider attributes and the PvP check whether a colony may get guard
+     * help against another, so the multiplier applies there too.
      *
      * @param colony the colony.
      * @return the multiplier, default 1.0.
@@ -40,9 +42,9 @@ public interface IColonyRulesProvider
 
     /**
      * Server. The farthest a building's claim may reach, in chunks from the chunk of the colony's centre (the larger of
-     * the x and z distance, so the claim area is a square). A building never claims a chunk beyond it, unclaiming is not
-     * limited, and the founding claim and direct {@code tryClaimBuilding} calls (an add-on's own ring purchase) are not
-     * limited either. MineColonies' {@code maxColonySize} still applies.
+     * the x and z distance, so the claim area is a square). A building's radius claim never reaches a chunk beyond it; unclaiming is not
+     * limited, and the founding claim, a building's own footprint (so a hut that straddles the limit is protected) and direct {@code tryClaimBuilding} calls
+     * (an add-on's own ring purchase) are not limited either. MineColonies' {@code maxColonySize} still applies.
      *
      * @param colony the colony.
      * @return the limit in chunks, or a negative number for no limit (the default).
@@ -54,7 +56,10 @@ public interface IColonyRulesProvider
 
     /**
      * Server. Whether a citizen may not be hired for a job in a building, checked when a player hires through
-     * MineColonies' hire window. A refusal leaves the citizen unassigned and shows the reason to the player.
+     * MineColonies' hire window ({@code HireFireMessage}). A refusal leaves the citizen unassigned, shows the reason to the player and resyncs the building and
+     * citizen views. This is advisory: auto-hire, colony actions and other assignment paths do not ask it, so enforcement belongs in the module's
+     * {@code assignCitizen} (an add-on's mixin); answer a refusal only for the modules that enforcement covers. Keep {@link #hireRefusalView} in step with
+     * this answer: the window fires the citizen's old job before it asks to hire.
      *
      * @param citizen  the citizen.
      * @param building the building.

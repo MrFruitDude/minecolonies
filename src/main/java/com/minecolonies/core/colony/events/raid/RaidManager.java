@@ -870,15 +870,20 @@ public class RaidManager implements IRaiderManager
     }
 
     /**
+     * The largest raid level multiplier an add-on may set.
+     */
+    public static final double MAX_RAID_LEVEL_MULTIPLIER = 10.0D;
+
+    /**
      * The add-on's raid level multiplier for a colony ({@link IColonyRulesProvider#raidLevelMultiplier}); 1.0 without a provider or for an unusable answer.
      *
      * @param colony the colony.
-     * @return the multiplier, finite and at least zero.
+     * @return the multiplier, from zero to {@link #MAX_RAID_LEVEL_MULTIPLIER}.
      */
     public static double raidLevelMultiplier(final IColony colony)
     {
         final double multiplier = IMinecoloniesAPI.getInstance().getColonyRulesProvider().raidLevelMultiplier(colony);
-        return Double.isFinite(multiplier) && multiplier >= 0.0D ? multiplier : 1.0D;
+        return Double.isFinite(multiplier) && multiplier >= 0.0D ? Math.min(MAX_RAID_LEVEL_MULTIPLIER, multiplier) : 1.0D;
     }
 
     /**

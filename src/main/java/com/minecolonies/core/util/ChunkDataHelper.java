@@ -222,7 +222,6 @@ public final class ChunkDataHelper
         final ServerLevel world = (ServerLevel) colony.getWorld();
         final int maxColonySize = MineColonies.getConfig().getServer().maxColonySize.get();
         final BlockPos colonyCenterCompare = new BlockPos(colony.getCenter().getX(), 0, colony.getCenter().getZ());
-        final ChunkPos colonyCenterChunk = ChunkPos.containing(colonyCenterCompare);
 
         for (final ChunkPos chunk : ChunkPos.rangeClosed(ChunkPos.containing(corners.getA()), ChunkPos.containing(corners.getB())).toList())
         {
@@ -236,11 +235,7 @@ public final class ChunkDataHelper
                 continue;
             }
 
-            if (add && beyondClaimLimit(colony, colonyCenterChunk, chunk))
-            {
-                continue;
-            }
-
+            // the footprint box is not held to the add-on's claim radius limit: a hut that straddles it stays protected
             tryClaimBuilding(world, chunk, add, colony, anchor);
         }
     }
