@@ -400,7 +400,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         final int keep = completedRequest.getRequest() instanceof INonExhaustiveDeliverable ? ((INonExhaustiveDeliverable) completedRequest.getRequest()).getLeftOver() : 0;
 
         final ReservationLedger ledger = RsAccess.ledger(manager);
-        final Map<ItemStorage, Integer> heldByHold = heldByKey(ledger, completedRequest.getId());
+        final Map<HoldKey, Integer> heldByHold = heldByKey(ledger, completedRequest.getId());
         final Set<BlockPos> chain = ledger == null ? Set.of() : ReservationLedger.requesterChain(manager, completedRequest);
         if (ledger != null)
         {
@@ -854,7 +854,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
       @NotNull final IRequest<? extends IDeliverable> completedRequest)
     {
         final ReservationLedger ledger = RsAccess.ledger(manager);
-        final Map<ItemStorage, Integer> heldByHold = heldByKey(ledger, completedRequest.getId());
+        final Map<HoldKey, Integer> heldByHold = heldByKey(ledger, completedRequest.getId());
         final Set<BlockPos> chain = ledger == null ? Set.of() : ReservationLedger.requesterChain(manager, completedRequest);
         if (ledger != null)
         {
@@ -914,19 +914,26 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
     }
 
     /**
-     * @return what the request's own hold holds per item (normalised key), before the hold turns into deliveries.
+     * A hold's amount at one source for one item (normalised key).
+     */
+    private record HoldKey(BlockPos scope, ItemStorage item)
+    {
+    }
+
+    /**
+     * @return what the request's own hold holds per source and item, before the hold turns into deliveries.
      */
     @NotNull
-    private static Map<ItemStorage, Integer> heldByKey(@Nullable final ReservationLedger ledger, @NotNull final IToken<?> token)
+    private static Map<HoldKey, Integer> heldByKey(@Nullable final ReservationLedger ledger, @NotNull final IToken<?> token)
     {
-        final Map<ItemStorage, Integer> held = new HashMap<>();
+        final Map<HoldKey, Integer> held = new HashMap<>();
         if (ledger != null)
         {
             for (final Reservation reservation : ledger.reservationsOf(token))
             {
                 if (reservation.kind() == ReservationKind.STOCK)
                 {
-                    held.merge(reservation.key(), reservation.amount(), Integer::sum);
+                    held.merge(new HoldKey(reservation.scope(), reservation.key()), reservation.amount(), Integer::sum);
                 }
             }
         }
@@ -942,11 +949,11 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
       final BlockPos scope,
       final ItemStorage key,
       final int count,
-      final Map<ItemStorage, Integer> heldByHold,
+      final Map<HoldKey, Integer> heldByHold,
       final Set<BlockPos> chain,
       final long now)
     {
-        final ItemStorage normal = new ItemStorage(key.getItemStack().copyWithCount(1));
+        final HoldKey normal = new HoldKey(scope, new ItemStorage(key.getItemStack().copyWithCount(1)));
         final int covered = Math.min(count, heldByHold.getOrDefault(normal, 0));
         heldByHold.merge(normal, -covered, Integer::sum);
         if (count > covered)
