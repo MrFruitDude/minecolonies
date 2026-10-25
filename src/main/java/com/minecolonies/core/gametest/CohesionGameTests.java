@@ -90,6 +90,9 @@ public final class CohesionGameTests
         TESTS.put("cohesion_make_claim_handover", h -> makeClaimHandover(h, null));
         TESTS.put("cohesion_make_claim_handover_network", h -> makeClaimHandover(h, true));
         TESTS.put("cohesion_make_claim_handover_classic", h -> makeClaimHandover(h, false));
+        TESTS.put("cohesion_claim_recompute_short", CohesionGameTests::claimRecomputeShort);
+        TESTS.put("cohesion_claim_recompute_tokens", CohesionGameTests::claimRecomputeTokens);
+        TESTS.put("cohesion_dispatch_hint_budget", CohesionGameTests::dispatchHintBudget);
     }
 
     static void register(final RegisterGameTestsEvent event)
@@ -619,6 +622,143 @@ public final class CohesionGameTests
         finally
         {
             RsFlags.overrideStorageNetwork(null);
+            RsFlags.overrideReservations(null);
+        }
+        helper.succeed();
+    }
+    // ------------------------------------------------------------------ mc-c2 M1: the recompute contract
+
+    private static int claimedFor(final ReservationLedger ledger, final BlockPos building)
+    {
+        int total = 0;
+        for (final Reservation r : ledger.byReason(ReservationReason.MAKE))
+        {
+            if (building.equals(r.forBuilding()))
+            {
+                total += r.amount();
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Short stock (acceptance 1): 3 logs in store, a MAKE claim of 8 for the builder, the builder asks 8 (minimum 1): the warehouse serves the 3 and hands them over;
+     * after the recompute the claims plus what is on its way for the builder are exactly the 8 needed, not 11.
+     */
+    public static void claimRecomputeShort(final GameTestHelper helper)
+    {
+        RsFlags.overrideReservations(true);
+        try
+        {
+            final RsFixture f = RsFixture.found(helper, "cohesion recompute short", 4);
+            f.stock(0, new ItemStack(Items.OAK_LOG, 3));
+            final ReservationLedger ledger = f.ledger();
+            final ItemStorage logs = new ItemStorage(new ItemStack(Items.OAK_LOG));
+            final BlockPos x = f.builder.getID();
+            final long now = helper.getLevel().getGameTime();
+            final List<ReservationLedger.Need> needs = List.of(new ReservationLedger.Need(new StandardToken(), 8));
+            helper.assertTrue(ledger.recomputeFor(f.manager(), f.warehouse.getID(), x, logs, needs, "make", ReservationReason.MAKE, now) == 8, "nothing on its way: 8 claimed");
+            f.builder.createRequest(new Stack(new ItemStack(Items.OAK_LOG, 8), 8, 1), false);
+            final int onItsWay = ledger.inFlightFor(f.manager(), x, logs);
+            helper.assertTrue(onItsWay == 3, "the 3 in store are on their way or held for the builder: " + onItsWay + " " + ledger.all());
+            ledger.recomputeFor(f.manager(), f.warehouse.getID(), x, logs, needs, "make", ReservationReason.MAKE, now + 1);
+            helper.assertTrue(claimedFor(ledger, x) + ledger.inFlightFor(f.manager(), x, logs) == 8, "claims plus on its way are 8: " + ledger.all());
+        }
+        finally
+        {
+            RsFlags.overrideReservations(null);
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Two tokens of 8 logs for one building (acceptance 3), one request of 8 served: after the recompute exactly 8 stay claimed for it. The delivery arrives and
+     * its logs wait at the building as a handout (acceptance 2): the recompute does not claim them again.
+     */
+    public static void claimRecomputeTokens(final GameTestHelper helper)
+    {
+        RsFlags.overrideReservations(true);
+        try
+        {
+            final RsFixture f = RsFixture.found(helper, "cohesion recompute tokens", 4);
+            f.stock(0, new ItemStack(Items.OAK_LOG, 16));
+            final ReservationLedger ledger = f.ledger();
+            final ItemStorage logs = new ItemStorage(new ItemStack(Items.OAK_LOG));
+            final BlockPos x = f.builder.getID();
+            final long now = helper.getLevel().getGameTime();
+            final List<ReservationLedger.Need> needs = List.of(new ReservationLedger.Need(new StandardToken(), 8), new ReservationLedger.Need(new StandardToken(), 8));
+            helper.assertTrue(ledger.recomputeFor(f.manager(), f.warehouse.getID(), x, logs, needs, "make", ReservationReason.MAKE, now) == 16, "two orders: 16 claimed");
+
+            final IToken<?> mine = ask(f.builder, Items.OAK_LOG, 8);
+            final var request = f.request(mine);
+            helper.assertTrue(request.getChildren().size() == 1, "the builder's request is served: " + f.describe(mine) + " " + ledger.all());
+            ledger.recomputeFor(f.manager(), f.warehouse.getID(), x, logs, needs, "make", ReservationReason.MAKE, now + 1);
+            helper.assertTrue(claimedFor(ledger, x) == 8, "exactly 8 stay claimed for the second order: " + ledger.all());
+
+            // the delivery arrives: stock and room committed, the logs wait at the building for the request (as RsCourierHooks records them)
+            final IToken<?> delivery = request.getChildren().iterator().next();
+            ledger.commit(delivery, ReservationKind.STOCK, now + 2);
+            ledger.commit(delivery, ReservationKind.SPACE, now + 3);
+            ledger.reserveStock(x, null, logs, 8, mine, "builder", ReservationReason.BUILDING_HANDOUT, now + 3);
+            helper.assertTrue(ledger.inFlightFor(f.manager(), x, logs) == 8, "the arrived logs count as there: " + ledger.all());
+            ledger.recomputeFor(f.manager(), f.warehouse.getID(), x, logs, needs, "make", ReservationReason.MAKE, now + 4);
+            helper.assertTrue(claimedFor(ledger, x) == 8, "the recompute does not claim the arrived logs again: " + ledger.all());
+        }
+        finally
+        {
+            RsFlags.overrideReservations(null);
+        }
+        helper.succeed();
+    }
+
+    // ------------------------------------------------------------------ mc-c2 L1
+
+    /** With the hint budget spent, a stale pair whose factor came from a route keeps that factor instead of falling back to the straight line. */
+    public static void dispatchHintBudget(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        MinecoloniesGameTests.foundGameTestColony(helper, "cohesion hints");
+        final BlockPos from = helper.absolutePos(new BlockPos(-6, 1, 0));
+        final BlockPos to = helper.absolutePos(new BlockPos(38, 1, 30));
+        final BlockPos bend = helper.absolutePos(new BlockPos(20, 1, 7));
+        for (int cx = (from.getX() - 2) >> 4; cx <= (to.getX() + 2) >> 4; cx++)
+        {
+            for (int cz = (from.getZ() - 2) >> 4; cz <= (to.getZ() + 2) >> 4; cz++)
+            {
+                level.setChunkForced(cx, cz, true);
+            }
+        }
+        // a road along from -> bend -> to, away from the straight line except near the ends
+        for (final BlockPos[] leg : new BlockPos[][] {{from, bend}, {bend, to}})
+        {
+            for (int s = 0; s <= 200; s++)
+            {
+                final double t = s / 200.0D;
+                final int px = (int) Math.floor(leg[0].getX() + (leg[1].getX() - leg[0].getX()) * t);
+                final int pz = (int) Math.floor(leg[0].getZ() + (leg[1].getZ() - leg[0].getZ()) * t);
+                level.setBlock(new BlockPos(px, from.getY() - 1, pz), Blocks.POLISHED_ANDESITE.defaultBlockState(), 3);
+            }
+        }
+        final com.minecolonies.api.pathfinding.IRouteHintProvider hints = (l, c, a, b) -> a.equals(from) && b.equals(to) ? List.of(bend) : null;
+        com.minecolonies.api.pathfinding.RouteHints.register(hints);
+        try
+        {
+            DispatchPaths.invalidate(level);
+            DispatchPaths.resetTickBudget();
+            final double route = DispatchPaths.factor(level, null, from, to);
+            helper.assertTrue(route < 1.15D, "the route over the road is cheap: " + route);
+            DispatchPaths.invalidate(level);
+            for (int i = 0; i < 64 && com.minecolonies.api.pathfinding.RouteHints.admit(level, null); i++)
+            {
+                com.minecolonies.api.pathfinding.RouteHints.query(level, null, from, to);
+            }
+            helper.assertTrue(!com.minecolonies.api.pathfinding.RouteHints.admit(level, null), "the hint budget of this tick is spent");
+            DispatchPaths.resetTickBudget();
+            helper.assertTrue(DispatchPaths.factor(level, null, from, to) == route && DispatchPaths.stalePairs(level) >= 1, "no hint turn: the stale pair keeps its route factor");
+        }
+        finally
+        {
+            com.minecolonies.api.pathfinding.RouteHints.unregister(hints);
         }
         helper.succeed();
     }
