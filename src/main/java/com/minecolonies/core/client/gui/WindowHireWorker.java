@@ -8,6 +8,7 @@ import com.ldtteam.blockui.controls.Button;
 import com.ldtteam.blockui.controls.ButtonImage;
 import com.ldtteam.blockui.controls.Text;
 import com.ldtteam.blockui.views.ScrollingList;
+import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.ICitizenDataView;
 import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.buildings.HiringMode;
@@ -241,6 +242,10 @@ public class WindowHireWorker extends AbstractWindowSkeleton
     {
         final int row = citizenList.getListElementIndexByPane(button);
         @NotNull final ICitizenDataView citizen = citizens.get(row);
+        if (hireRefusal(citizen) != null)
+        {
+            return;
+        }
 
         // Fire citizen if they already have a job
         if (citizen.getWorkBuilding() != null && selectedModule instanceof WorkerBuildingModuleView)
@@ -268,7 +273,7 @@ public class WindowHireWorker extends AbstractWindowSkeleton
         {
             return 0;
         }
-        else if (!selectedModule.canAssign(citizen))
+        else if (!selectedModule.canAssign(citizen) || hireRefusal(citizen) != null)
         {
             return 3;
         }
@@ -343,6 +348,17 @@ public class WindowHireWorker extends AbstractWindowSkeleton
     }
 
     /**
+     * Why an add-on refuses the citizen for the selected job ({@link com.minecolonies.api.colony.IColonyRulesProvider#hireRefusalView}).
+     *
+     * @param citizen the citizen.
+     * @return the reason, or null when the citizen may be hired.
+     */
+    private Component hireRefusal(final ICitizenDataView citizen)
+    {
+        return IMinecoloniesAPI.getInstance().getColonyRulesProvider().hireRefusalView(citizen, building, selectedModule.getJobEntry());
+    }
+
+    /**
      * Clears and resets/updates all citizens.
      */
     protected void updateCitizens()
@@ -402,8 +418,17 @@ public class WindowHireWorker extends AbstractWindowSkeleton
             {
                 @NotNull final ICitizenDataView citizen = citizens.get(index);
                 final Button isPaused = rowPane.findPaneOfTypeByID(BUTTON_PAUSE, Button.class);
+                final boolean assigned = selectedModule.getAssignedCitizens().contains(citizen.getId());
+                final Component refusal = assigned ? null : hireRefusal(citizen);
 
-                if (canAssign(citizen)
+                if (refusal != null)
+                {
+                    // refused by an add-on: no hire button, the row is greyed out and the distance line names the reason
+                    rowPane.findPaneOfTypeByID(BUTTON_FIRE, Button.class).off();
+                    rowPane.findPaneOfTypeByID(BUTTON_DONE, Button.class).off();
+                    isPaused.off();
+                }
+                else if (canAssign(citizen)
                     && !selectedModule.isFull()
                     && !selectedModule.getAssignedCitizens().contains(citizen.getId()))
                 {
@@ -474,8 +499,12 @@ public class WindowHireWorker extends AbstractWindowSkeleton
                 Component citizenLabelComponent = Component.translatableEscape(citizen.getJob().isEmpty() ? COM_MINECOLONIES_COREMOD_GUI_TOWNHALL_CITIZEN_UNEMPLOYED : citizen.getJob())
                   .append(": ")
                   .append(citizen.getName());
-                rowPane.findPaneOfTypeByID(CITIZEN_LABEL, Text.class).setText(citizenLabelComponent);
-                if (citizen.getHomeBuilding() == null)
+                rowPane.findPaneOfTypeByID(CITIZEN_LABEL, Text.class).setText(refusal == null ? citizenLabelComponent : citizenLabelComponent.copy().withStyle(ChatFormatting.GRAY));
+                if (refusal != null)
+                {
+                    rowPane.findPaneOfTypeByID(DISTANCE_LABEL, Text.class).setText(refusal.copy().withStyle(ChatFormatting.DARK_RED));
+                }
+                else if (citizen.getHomeBuilding() == null)
                 {
                     rowPane.findPaneOfTypeByID(DISTANCE_LABEL, Text.class).setText(Component.translatableEscape("com.minecolonies.core.gui.hiring.homeless"));
                 }

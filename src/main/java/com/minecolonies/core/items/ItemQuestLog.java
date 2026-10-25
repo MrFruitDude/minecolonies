@@ -1,5 +1,6 @@
 package com.minecolonies.core.items;
 
+import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.items.component.ColonyId;
@@ -100,6 +101,11 @@ public class ItemQuestLog extends AbstractItemMinecolonies
     private static void openWindow(ItemStack stack, Level world, Player player)
     {
         final IColonyView colonyView = ColonyId.readColonyViewFromItemStack(stack);
+        if (IMinecoloniesAPI.getInstance().getColonyRulesProvider().openQuestLog(player, colonyView, stack))
+        {
+            // an add-on opened its own quest screen (Colony Command's quest book); MineColonies' window stays the fallback
+            return;
+        }
         if (colonyView != null)
         {
             new WindowQuestLog(colonyView).open();

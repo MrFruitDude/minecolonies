@@ -6,6 +6,7 @@ import com.minecolonies.api.client.render.modeltype.registry.IModelTypeRegistry;
 import com.minecolonies.api.colony.ICitizenDataManager;
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.colony.ICitizenLeisureProvider;
+import com.minecolonies.api.colony.IColonyRulesProvider;
 import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildingextensions.registry.BuildingExtensionRegistries.BuildingExtensionEntry;
 import com.minecolonies.api.colony.buildings.registry.BuildingEntry;
@@ -110,6 +111,7 @@ public class CommonMinecoloniesAPIImpl implements IMinecoloniesAPI
      */
     private volatile IColonyPaceProvider colonyPaceProvider = IColonyPaceProvider.DEFAULT;
     private volatile ICitizenLeisureProvider citizenLeisureProvider = ICitizenLeisureProvider.DEFAULT;
+    private volatile IColonyRulesProvider colonyRulesProvider = IColonyRulesProvider.DEFAULT;
 
     @Override
     @NotNull
@@ -354,6 +356,19 @@ public class CommonMinecoloniesAPIImpl implements IMinecoloniesAPI
     public void setColonyPaceProvider(final IColonyPaceProvider provider)
     {
         this.colonyPaceProvider = provider == null ? IColonyPaceProvider.DEFAULT : provider;
+    }
+
+    @Override
+    @NotNull
+    public IColonyRulesProvider getColonyRulesProvider()
+    {
+        return colonyRulesProvider;
+    }
+
+    @Override
+    public void setColonyRulesProvider(final IColonyRulesProvider provider)
+    {
+        this.colonyRulesProvider = provider == null ? IColonyRulesProvider.DEFAULT : provider;
     }
 
     @Override

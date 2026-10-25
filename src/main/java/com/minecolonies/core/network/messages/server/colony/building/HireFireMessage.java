@@ -1,6 +1,7 @@
 package com.minecolonies.core.network.messages.server.colony.building;
 
 import com.ldtteam.common.network.PlayMessageType;
+import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
@@ -9,6 +10,7 @@ import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.core.network.messages.server.AbstractBuildingServerMessage;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
@@ -83,6 +85,16 @@ public class HireFireMessage extends AbstractBuildingServerMessage<IBuilding>
         if (building.getModule(moduleId) instanceof final IAssignsJob module)
         {
             final ICitizenData citizen = colony.getCitizenManager().getCivilian(citizenID);
+            if (hire && citizen != null)
+            {
+                // an add-on may refuse the hire (e.g. a workforce tier); the player sees why instead of nothing happening
+                final Component refusal = IMinecoloniesAPI.getInstance().getColonyRulesProvider().hireRefusal(citizen, building, module.getJobEntry());
+                if (refusal != null)
+                {
+                    player.sendOverlayMessage(refusal);
+                    return;
+                }
+            }
             citizen.setPaused(false);
             if (hire)
             {

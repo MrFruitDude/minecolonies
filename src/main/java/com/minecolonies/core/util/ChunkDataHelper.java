@@ -1,5 +1,7 @@
 package com.minecolonies.core.util;
 
+import com.minecolonies.api.IMinecoloniesAPI;
+import com.minecolonies.api.colony.IColonyRulesProvider;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.colony.buildings.IBuilding;
@@ -184,6 +186,11 @@ public final class ChunkDataHelper
                     continue;
                 }
 
+                if (!force && add && beyondClaimLimit(colony, colonyCenterChunk, chunkPos))
+                {
+                    continue;
+                }
+
                 if (tryClaimBuilding(world, chunkPos, add, colony, center))
                 {
                     continue;
@@ -215,6 +222,7 @@ public final class ChunkDataHelper
         final ServerLevel world = (ServerLevel) colony.getWorld();
         final int maxColonySize = MineColonies.getConfig().getServer().maxColonySize.get();
         final BlockPos colonyCenterCompare = new BlockPos(colony.getCenter().getX(), 0, colony.getCenter().getZ());
+        final ChunkPos colonyCenterChunk = ChunkPos.containing(colonyCenterCompare);
 
         for (final ChunkPos chunk : ChunkPos.rangeClosed(ChunkPos.containing(corners.getA()), ChunkPos.containing(corners.getB())).toList())
         {
@@ -228,8 +236,27 @@ public final class ChunkDataHelper
                 continue;
             }
 
+            if (add && beyondClaimLimit(colony, colonyCenterChunk, chunk))
+            {
+                continue;
+            }
+
             tryClaimBuilding(world, chunk, add, colony, anchor);
         }
+    }
+
+    /**
+     * Whether a building may not claim a chunk because it lies past the add-on's claim radius limit ({@link IColonyRulesProvider#claimRadiusLimit}).
+     *
+     * @param colony       the colony.
+     * @param centerChunk  the chunk of the colony's centre.
+     * @param chunk        the chunk to claim.
+     * @return true when a limit is set and the chunk is farther than it (the larger of the x and z chunk distance).
+     */
+    public static boolean beyondClaimLimit(final IColony colony, final ChunkPos centerChunk, final ChunkPos chunk)
+    {
+        final int limit = IMinecoloniesAPI.getInstance().getColonyRulesProvider().claimRadiusLimit(colony);
+        return limit >= 0 && Math.max(Math.abs(chunk.x() - centerChunk.x()), Math.abs(chunk.z() - centerChunk.z())) > limit;
     }
 
     /**

@@ -2,7 +2,9 @@ package com.minecolonies.core.colony.requestsystem.reservation;
 
 import com.minecolonies.core.colony.requestsystem.RsProbe;
 
+import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.requestsystem.factory.IFactoryController;
+import com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.util.ItemStackUtils;
@@ -76,6 +78,16 @@ public final class ReservationLedger
      */
     private long revision;
 
+    /**
+     * @param colony a server colony.
+     * @return its reservation ledger, null when the colony's request manager has none (a view, or not loaded yet).
+     */
+    @Nullable
+    public static ReservationLedger of(@NotNull final IColony colony)
+    {
+        return colony.getRequestManager() instanceof IStandardRequestManager manager ? manager.getReservationLedger() : null;
+    }
+
     public void setOnFreed(@Nullable final Consumer<Reservation> onFreed)
     {
         this.onFreed = onFreed;
@@ -136,6 +148,71 @@ public final class ReservationLedger
       final long tick)
     {
         return add(ReservationKind.SPACE, destination, null, key, amount, token, requester, reason, tick);
+    }
+
+    /**
+     * Sets a token's stock claim on one item at one source to exactly {@code amount}: grows it as {@link #reserveStock} does, shrinks it (the shrunk part is
+     * reported as freed), or ends it at 0. For holders that recompute what they still need, like an add-on's make orders and builds
+     * ({@link ReservationReason#MAKE}, {@link ReservationReason#BUILD}).
+     *
+     * @param scope     the building holding the stock (the warehouse).
+     * @param key       the item.
+     * @param amount    the amount the token should hold, 0 to end the claim.
+     * @param token     the token the claim belongs to.
+     * @param requester who asks, for the insight views.
+     * @param reason    why.
+     * @param tick      the game time.
+     * @return the amount the token holds afterwards.
+     */
+    public int setStock(
+      @NotNull final BlockPos scope,
+      @NotNull final ItemStorage key,
+      final int amount,
+      @NotNull final IToken<?> token,
+      @NotNull final String requester,
+      @NotNull final ReservationReason reason,
+      final long tick)
+    {
+        final ItemStorage stored = normalized(key);
+        final int want = Math.max(0, amount);
+        final List<Reservation> mine = byToken.get(token);
+        int held = 0;
+        Reservation claim = null;
+        if (mine != null)
+        {
+            for (final Reservation reservation : mine)
+            {
+                if (reservation.kind() == ReservationKind.STOCK && reservation.scope().equals(scope) && reservation.container() == null && reservation.key().equals(stored))
+                {
+                    claim = reservation;
+                    held = reservation.amount();
+                    break;
+                }
+            }
+        }
+        if (want > held)
+        {
+            return held + add(ReservationKind.STOCK, scope, null, stored, want - held, token, requester, reason, tick);
+        }
+        if (claim != null && want < held)
+        {
+            final Reservation shrunk = claim;
+            if (want == 0)
+            {
+                end(token, ReservationKind.STOCK, tick, LedgerEvent.Op.RELEASE, true, r -> r == shrunk);
+            }
+            else
+            {
+                claim.setAmount(want);
+                record(tick, LedgerEvent.Op.RELEASE, claim, held - want);
+                revision++;
+                if (onFreed != null)
+                {
+                    onFreed.accept(claim);
+                }
+            }
+        }
+        return want;
     }
 
     private int add(
@@ -464,7 +541,7 @@ public final class ReservationLedger
         }
         for (final Reservation reservation : claims)
         {
-            if (reservation.reason() != ReservationReason.BUILD_ASSIST && reservation.reason() != ReservationReason.LABOUR)
+            if (!reservation.reason().withoutRequest())
             {
                 return false;
             }
@@ -536,6 +613,21 @@ public final class ReservationLedger
      */
     public int sweepStaleLabour(@NotNull final Predicate<IToken<?>> live, final long tick, final long minAge)
     {
+        return sweepStale(ReservationReason.LABOUR, live, tick, minAge);
+    }
+
+    /**
+     * Self-healing for claims without a request behind them ({@link ReservationReason#withoutRequest()}): drops the claims of one reason whose token its holder
+     * no longer knows. An add-on that holds {@link ReservationReason#MAKE} or {@link ReservationReason#BUILD} claims calls this with its own live tokens.
+     *
+     * @param reason the reason of the claims to look at.
+     * @param live   whether a token is still held by its owner.
+     * @param tick   the game time.
+     * @param minAge claims younger than this are left alone.
+     * @return the number of tokens whose claims were dropped.
+     */
+    public int sweepStale(@NotNull final ReservationReason reason, @NotNull final Predicate<IToken<?>> live, final long tick, final long minAge)
+    {
         int dropped = 0;
         for (final IToken<?> token : new ArrayList<>(byToken.keySet()))
         {
@@ -547,7 +639,7 @@ public final class ReservationLedger
             boolean stale = false;
             for (final Reservation reservation : mine)
             {
-                if (reservation.reason() == ReservationReason.LABOUR && tick - reservation.tick() > minAge)
+                if (reservation.reason() == reason && tick - reservation.tick() > minAge)
                 {
                     stale = true;
                     break;
@@ -555,7 +647,7 @@ public final class ReservationLedger
             }
             if (stale)
             {
-                end(token, null, tick, LedgerEvent.Op.ORPHAN, true, r -> r.reason() == ReservationReason.LABOUR && tick - r.tick() > minAge);
+                end(token, null, tick, LedgerEvent.Op.ORPHAN, true, r -> r.reason() == reason && tick - r.tick() > minAge);
                 dropped++;
             }
         }
@@ -809,6 +901,72 @@ public final class ReservationLedger
             }
         }
         return found;
+    }
+
+    /**
+     * @param reason a reason.
+     * @return the open claims made for that reason, stock and space.
+     */
+    @NotNull
+    public List<Reservation> byReason(@NotNull final ReservationReason reason)
+    {
+        final List<Reservation> found = new ArrayList<>();
+        for (final List<Reservation> list : byToken.values())
+        {
+            for (final Reservation reservation : list)
+            {
+                if (reservation.reason() == reason)
+                {
+                    found.add(reservation);
+                }
+            }
+        }
+        return found;
+    }
+
+    /**
+     * The colony's reserved stock per item over every source, for one reason or for all.
+     *
+     * @param reason the reason to count, null for every reason.
+     * @return item key (amount 1) to the stock reserved for it.
+     */
+    @NotNull
+    public Map<ItemStorage, Integer> reservedStockByItem(@Nullable final ReservationReason reason)
+    {
+        final Map<ItemStorage, Integer> out = new HashMap<>();
+        for (final List<Reservation> list : stockByScope.values())
+        {
+            for (final Reservation reservation : list)
+            {
+                if (reason == null || reservation.reason() == reason)
+                {
+                    out.merge(reservation.key(), reservation.amount(), Integer::sum);
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * @param key    the item, compared exactly.
+     * @param reason the reason to count, null for every reason.
+     * @return the stock reserved for the item over every source of the colony.
+     */
+    public int reservedStock(@NotNull final ItemStorage key, @Nullable final ReservationReason reason)
+    {
+        final ItemStorage stored = normalized(key);
+        int total = 0;
+        for (final List<Reservation> list : stockByScope.values())
+        {
+            for (final Reservation reservation : list)
+            {
+                if ((reason == null || reservation.reason() == reason) && reservation.key().equals(stored))
+                {
+                    total += reservation.amount();
+                }
+            }
+        }
+        return total;
     }
 
     /**

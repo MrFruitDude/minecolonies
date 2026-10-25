@@ -6,6 +6,7 @@ import com.minecolonies.api.client.render.modeltype.registry.IModelTypeRegistry;
 import com.minecolonies.api.colony.ICitizenDataManager;
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.colony.ICitizenLeisureProvider;
+import com.minecolonies.api.colony.IColonyRulesProvider;
 import com.minecolonies.api.colony.IColonyPaceProvider;
 import com.minecolonies.api.colony.buildingextensions.registry.BuildingExtensionRegistries.BuildingExtensionEntry;
 import com.minecolonies.api.colony.buildings.registry.BuildingEntry;
@@ -121,6 +122,20 @@ public interface IMinecoloniesAPI
      * @param provider the provider, or null for the default.
      */
     void setColonyPaceProvider(IColonyPaceProvider provider);
+
+    /**
+     * The colony rules provider in use ({@link IColonyRulesProvider#DEFAULT} unless a mod set one).
+     *
+     * @return the provider, never null.
+     */
+    IColonyRulesProvider getColonyRulesProvider();
+
+    /**
+     * Sets the colony rules provider. Null puts the default (nothing changes) back.
+     *
+     * @param provider the provider, or null for the default.
+     */
+    void setColonyRulesProvider(IColonyRulesProvider provider);
 
     /**
      * The citizen leisure provider in use ({@link ICitizenLeisureProvider#DEFAULT} unless a mod set one).

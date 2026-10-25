@@ -4,7 +4,9 @@ import com.ldtteam.structurize.util.RotationMirror;
 import com.minecolonies.api.MinecoloniesAPIProxy;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.ColonyState;
+import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.IColonyRulesProvider;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.colonyEvents.EventStatus;
 import com.minecolonies.api.colony.colonyEvents.IColonyEvent;
@@ -864,7 +866,19 @@ public class RaidManager implements IRaiderManager
         levels += colony.getResearchManager().getResearchTree().getCompletedList().size() * 3;
 
         double populationFactor = Math.min(1, (double) colony.getCitizenManager().getCurrentCitizenCount() / colony.getCitizenManager().getMaxCitizens());
-        return (int) (levels * populationFactor);
+        return (int) (levels * populationFactor * raidLevelMultiplier(colony));
+    }
+
+    /**
+     * The add-on's raid level multiplier for a colony ({@link IColonyRulesProvider#raidLevelMultiplier}); 1.0 without a provider or for an unusable answer.
+     *
+     * @param colony the colony.
+     * @return the multiplier, finite and at least zero.
+     */
+    public static double raidLevelMultiplier(final IColony colony)
+    {
+        final double multiplier = IMinecoloniesAPI.getInstance().getColonyRulesProvider().raidLevelMultiplier(colony);
+        return Double.isFinite(multiplier) && multiplier >= 0.0D ? multiplier : 1.0D;
     }
 
     /**
