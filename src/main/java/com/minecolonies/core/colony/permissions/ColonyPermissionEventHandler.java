@@ -155,8 +155,9 @@ public class ColonyPermissionEventHandler
 
     /**
      * V-7: a vanilla copper chest placed inside the corners of one of this colony's built buildings becomes one of its containers: its items are the building's
-     * stock (request system, reservation ledger, hut inventory), and copper golems are kept out of it. Runs last and only for a placement that stands; with
-     * nested buildings the smallest one that contains the chest takes it. The warehouse keeps racks only.
+     * stock (request system, reservation ledger, hut inventory), and copper golems are kept out of it. Runs last and only for a placement that stands; a half
+     * joined onto a container chest goes to that chest's building, otherwise with nested buildings the smallest one that contains the chest takes it. The
+     * warehouse keeps racks only.
      *
      * @param event the placement.
      */
@@ -169,11 +170,11 @@ public class ColonyPermissionEventHandler
             return;
         }
         final BlockPos pos = event.getPos();
-        com.minecolonies.core.colony.buildings.AbstractBuildingContainer building = copperChestOwner(level, pos);
+        // the other half of a double chest whose first half is a container belongs to the same building (the whole chest is one inventory)
+        com.minecolonies.core.colony.buildings.AbstractBuildingContainer building = joinedContainerOwner(level, pos, event.getPlacedBlock());
         if (building == null)
         {
-            // the other half of a double chest whose first half is a container: the whole chest is
-            building = joinedContainerOwner(level, pos, event.getPlacedBlock());
+            building = copperChestOwner(level, pos);
         }
         if (building != null && building.addCopperChest(pos, level))
         {
