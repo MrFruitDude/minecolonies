@@ -169,11 +169,62 @@ public class ColonyPermissionEventHandler
             return;
         }
         final BlockPos pos = event.getPos();
-        final com.minecolonies.core.colony.buildings.AbstractBuildingContainer building = copperChestOwner(level, pos);
+        com.minecolonies.core.colony.buildings.AbstractBuildingContainer building = copperChestOwner(level, pos);
+        if (building == null)
+        {
+            // the other half of a double chest whose first half is a container: the whole chest is
+            building = joinedContainerOwner(level, pos, event.getPlacedBlock());
+        }
         if (building != null && building.addCopperChest(pos, level))
         {
             building.markDirty();
         }
+    }
+
+    /**
+     * V-7: a player without permission to place blocks in this colony cannot join a copper chest onto one of its building containers (a double chest opens
+     * and feeds golems as one inventory), also from outside the colony's chunks.
+     *
+     * @param event the placement.
+     */
+    @SubscribeEvent
+    public void refuseForeignCopperChestJoin(final BlockEvent.EntityPlaceEvent event)
+    {
+        if (!event.isCanceled() && event.getEntity() instanceof final Player placer && com.minecolonies.api.util.BuildingContainers.isCopperChest(event.getPlacedBlock())
+              && event.getLevel() instanceof final ServerLevel level && level.dimension().equals(colony.getDimension())
+              && joinedContainerOwner(level, event.getPos(), event.getPlacedBlock()) != null
+              && !colony.getPermissions().hasPermission(EntityUtils.getPlayerOfFakePlayer(placer, level), Action.PLACE_BLOCKS))
+        {
+            cancelEvent(event, placer, colony, Action.PLACE_BLOCKS, event.getPos());
+        }
+    }
+
+    /**
+     * The building of this colony that holds the other half of a double copper chest as a container, or null (a single chest, or the other half is not one).
+     */
+    @org.jetbrains.annotations.Nullable
+    private com.minecolonies.core.colony.buildings.AbstractBuildingContainer joinedContainerOwner(final ServerLevel level, final BlockPos pos, final BlockState state)
+    {
+        if (!state.hasProperty(net.minecraft.world.level.block.ChestBlock.TYPE)
+              || state.getValue(net.minecraft.world.level.block.ChestBlock.TYPE) == net.minecraft.world.level.block.state.properties.ChestType.SINGLE)
+        {
+            return null;
+        }
+        final BlockPos other = pos.relative(net.minecraft.world.level.block.ChestBlock.getConnectedDirection(state));
+        if (!com.minecolonies.api.util.WorldUtil.isBlockLoaded(level, other))
+        {
+            return null;
+        }
+        for (final BlockPos buildingPos : com.minecolonies.api.util.ColonyUtils.getAllClaimingBuildings(level.getChunkAt(other))
+                                            .getOrDefault(colony.getID(), java.util.Collections.emptySet()))
+        {
+            if (colony.getServerBuildingManager().getBuilding(buildingPos) instanceof final com.minecolonies.core.colony.buildings.AbstractBuildingContainer building
+                  && building.getContainers().contains(other))
+            {
+                return building;
+            }
+        }
+        return null;
     }
 
     /**

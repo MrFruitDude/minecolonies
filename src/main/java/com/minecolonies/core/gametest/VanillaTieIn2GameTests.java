@@ -19,7 +19,9 @@ import com.minecolonies.core.colony.managers.ResearchManager;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.research.LocalResearch;
 import com.minecolonies.core.util.ChunkDataHelper;
+import com.minecolonies.api.colony.permissions.Action;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -30,6 +32,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.common.NeoForge;
@@ -176,7 +180,7 @@ public final class VanillaTieIn2GameTests
         final RsFixture f = RsFixture.found(helper, "vanilla2 copper", 0, false);
         final IBuilding hut = f.builder;
         final FakePlayer owner = FakePlayerFactory.getMinecraft(level);
-        ChunkDataHelper.claimBuildingChunks((Colony) f.colony, true, hut.getID(), 0, hut.getCorners());
+        ChunkDataHelper.claimBuildingChunks((Colony) f.colony, true, hut.getID(), 1, hut.getCorners());
 
         final List<Block> variants = Blocks.COPPER_CHEST.asList();
         helper.assertTrue(variants.size() == 8, "fixture: 4 oxidation stages, waxed and not: " + variants.size());
@@ -237,6 +241,35 @@ public final class VanillaTieIn2GameTests
         f.warehouse.registerBlockPosition(level.getBlockState(inWarehouse), inWarehouse, level);
         helper.assertTrue(!f.warehouse.getContainers().contains(inWarehouse), "the warehouse keeps racks only");
         helper.assertTrue(!BuildingContainers.copperChest(level.getBlockEntity(inWarehouse)).isLocked(), "and leaves the chest alone");
+
+        // a double chest: the half joined onto a container is one too; a player without permission cannot join one onto it (also from outside)
+        final BlockPos max = new BlockPos(Math.max(hut.getCorners().getA().getX(), hut.getCorners().getB().getX()), hut.getID().getY(),
+          Math.max(hut.getCorners().getA().getZ(), hut.getCorners().getB().getZ()));
+        final BlockPos first = max.offset(1, 0, 1);
+        final BlockPos second = first.east();
+        final Block copper = variants.get(0);
+        level.setBlockAndUpdate(first, copper.defaultBlockState().setValue(ChestBlock.FACING, Direction.NORTH));
+        NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(level.dimension(), level, first), level.getBlockState(first.below()), owner));
+        helper.assertTrue(hut.getContainers().contains(first), "fixture: the first half (inside the corners' margin) is a container");
+        BlockState joined = null;
+        for (final ChestType type : new ChestType[] {ChestType.LEFT, ChestType.RIGHT})
+        {
+            final BlockState candidate = copper.defaultBlockState().setValue(ChestBlock.FACING, Direction.NORTH).setValue(ChestBlock.TYPE, type);
+            if (ChestBlock.getConnectedDirection(candidate) == Direction.WEST)
+            {
+                joined = candidate;
+            }
+        }
+        helper.assertTrue(joined != null, "fixture: a half that joins to the west");
+        level.setBlockAndUpdate(second, joined);
+        final net.minecraft.server.level.ServerPlayer rival = MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
+        helper.assertTrue(!f.colony.getPermissions().hasPermission(rival, Action.PLACE_BLOCKS), "fixture: the rival may not place blocks here");
+        final BlockEvent.EntityPlaceEvent byRival = new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(level.dimension(), level, second), level.getBlockState(second.below()), rival);
+        ((Colony) f.colony).getEventHandler().refuseForeignCopperChestJoin(byRival);
+        helper.assertTrue(byRival.isCanceled(), "a rival cannot join a chest onto a building's copper chest");
+        NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(level.dimension(), level, second), level.getBlockState(second.below()), owner));
+        helper.assertTrue(hut.getContainers().contains(second) && BuildingContainers.copperChest(level.getBlockEntity(second)).isLocked(),
+          "the owner's joined half is a container too, golems kept out of it");
 
         // the hut's combined inventory (rebuilt on the hut's next tick) holds the chest's stock
         helper.runAfterDelay(2, () -> {
