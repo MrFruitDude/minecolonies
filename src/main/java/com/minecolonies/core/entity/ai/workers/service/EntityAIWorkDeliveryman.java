@@ -817,6 +817,12 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
         {
             handler = rack.getItemHandlerCap();
         }
+        else if (com.minecolonies.api.util.BuildingContainers.copperChest(entity) != null
+                   && com.minecolonies.api.util.BuildingContainers.count(entity, new ItemStorage(is)) >= is.getCount())
+        {
+            // V-7: a copper chest in a building.
+            handler = com.minecolonies.api.util.BuildingContainers.handler(entity);
+        }
 
         if (handler != null)
         {

@@ -5,6 +5,7 @@ import com.ldtteam.structurize.api.util.Tuple;
 import com.google.common.collect.Lists;
 import com.google.common.reflect.TypeToken;
 import com.minecolonies.api.IMinecoloniesAPI;
+import com.minecolonies.api.util.BuildingContainers;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyPaceProvider;
@@ -1361,6 +1362,15 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             if (entity instanceof final TileEntityRack rack && rack.hasItemStack(is, 1, false))
             {
                 InventoryUtils.transferItemStackIntoNextBestSlotInItemHandler(rack.getItemHandlerCap(),
+                    (stack) -> ItemStackUtils.compareItemStacksIgnoreStackSize(is, stack),
+                    getInventory());
+                return true;
+            }
+            // V-7: a copper chest in the hut.
+            if (is != null && BuildingContainers.copperChest(entity) != null
+                  && BuildingContainers.count(entity, (Predicate<ItemStack>) stack -> ItemStackUtils.compareItemStacksIgnoreStackSize(is, stack)) > 0)
+            {
+                InventoryUtils.transferItemStackIntoNextBestSlotInItemHandler(BuildingContainers.handler(entity),
                     (stack) -> ItemStackUtils.compareItemStacksIgnoreStackSize(is, stack),
                     getInventory());
                 return true;

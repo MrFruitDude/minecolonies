@@ -16,6 +16,7 @@ import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.permissions.Action;
 import com.minecolonies.api.compatibility.newstruct.BlueprintMapping;
 import com.minecolonies.api.inventory.api.CombinedItemHandler;
+import com.minecolonies.api.util.BuildingContainers;
 import com.minecolonies.api.inventory.container.ContainerBuildingInventory;
 import com.minecolonies.api.items.component.ColonyId;
 import com.minecolonies.api.tileentities.AbstractTileEntityColonyBuilding;
@@ -245,6 +246,11 @@ public class TileEntityColonyBuilding extends AbstractTileEntityColonyBuilding i
                         {
                             return pos;
                         }
+                    }
+                    else if (BuildingContainers.count(entity, notEmptyPredicate) > 0)
+                    {
+                        // V-7: a copper chest in the building.
+                        return pos;
                     }
                 }
             }
@@ -639,6 +645,11 @@ public class TileEntityColonyBuilding extends AbstractTileEntityColonyBuilding i
                                 {
                                     handlers.add(rack.getInventory());
                                     rack.setBuildingPos(this.getBlockPos());
+                                }
+                                else if (BuildingContainers.isStock(te))
+                                {
+                                    // V-7: a copper chest in the building, its own slots.
+                                    handlers.add(BuildingContainers.handler(te));
                                 }
                                 else
                                 {

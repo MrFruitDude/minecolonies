@@ -153,6 +153,97 @@ public class ColonyPermissionEventHandler
         }
     }
 
+    /**
+     * V-7: a vanilla copper chest placed inside the corners of one of this colony's built buildings becomes one of its containers: its items are the building's
+     * stock (request system, reservation ledger, hut inventory), and copper golems are kept out of it. Runs last and only for a placement that stands; with
+     * nested buildings the smallest one that contains the chest takes it. The warehouse keeps racks only.
+     *
+     * @param event the placement.
+     */
+    @SubscribeEvent(priority = net.neoforged.bus.api.EventPriority.LOWEST)
+    public void registerCopperChest(final BlockEvent.EntityPlaceEvent event)
+    {
+        if (event.isCanceled() || !com.minecolonies.api.util.BuildingContainers.isCopperChest(event.getPlacedBlock())
+              || !(event.getLevel() instanceof final ServerLevel level) || !level.dimension().equals(colony.getDimension()))
+        {
+            return;
+        }
+        final BlockPos pos = event.getPos();
+        final com.minecolonies.core.colony.buildings.AbstractBuildingContainer building = copperChestOwner(level, pos);
+        if (building != null && building.addCopperChest(pos, level))
+        {
+            building.markDirty();
+        }
+    }
+
+    /**
+     * V-7: a player broke a copper chest that is one of this colony's building containers: it leaves the building (and the golem lock is cleared before the
+     * chest drops). Runs last, only for a break that stands.
+     *
+     * @param event the break.
+     */
+    @SubscribeEvent(priority = net.neoforged.bus.api.EventPriority.LOWEST)
+    public void forgetCopperChest(final BreakBlockEvent event)
+    {
+        if (event.isCanceled() || !com.minecolonies.api.util.BuildingContainers.isCopperChest(event.getState())
+              || !(event.getLevel() instanceof final ServerLevel level) || !level.dimension().equals(colony.getDimension()))
+        {
+            return;
+        }
+        final BlockPos pos = event.getPos();
+        if (!com.minecolonies.api.util.WorldUtil.isBlockLoaded(level, pos))
+        {
+            return;
+        }
+        // A building's containers are inside its corners, so inside the chunks it claims.
+        for (final BlockPos buildingPos : com.minecolonies.api.util.ColonyUtils.getAllClaimingBuildings(level.getChunkAt(pos))
+                                            .getOrDefault(colony.getID(), java.util.Collections.emptySet()))
+        {
+            final IBuilding building = colony.getServerBuildingManager().getBuilding(buildingPos);
+            if (building != null && building.getContainers().contains(pos) && !building.getPosition().equals(pos))
+            {
+                building.removeContainerPosition(pos);
+                building.markDirty();
+            }
+        }
+    }
+
+    /**
+     * The built building of this colony whose corners contain a position, read from the claim data of its chunk (the smallest one when buildings nest).
+     */
+    @org.jetbrains.annotations.Nullable
+    private com.minecolonies.core.colony.buildings.AbstractBuildingContainer copperChestOwner(final ServerLevel level, final BlockPos pos)
+    {
+        if (!com.minecolonies.api.util.WorldUtil.isBlockLoaded(level, pos))
+        {
+            return null;
+        }
+        final net.minecraft.world.level.chunk.LevelChunk chunk = level.getChunkAt(pos);
+        if (com.minecolonies.api.util.ColonyUtils.getOwningColony(chunk) != colony.getID())
+        {
+            return null;
+        }
+        com.minecolonies.core.colony.buildings.AbstractBuildingContainer best = null;
+        long bestVolume = Long.MAX_VALUE;
+        for (final BlockPos buildingPos : com.minecolonies.api.util.ColonyUtils.getAllClaimingBuildings(chunk).getOrDefault(colony.getID(), java.util.Collections.emptySet()))
+        {
+            if (colony.getServerBuildingManager().getBuilding(buildingPos) instanceof final com.minecolonies.core.colony.buildings.AbstractBuildingContainer building
+                  && building.getBuildingLevel() >= 1 && building.acceptsCopperChests() && building.isInBuilding(pos))
+            {
+                final com.ldtteam.structurize.api.util.Tuple<BlockPos, BlockPos> corners = building.getCorners();
+                final long volume = (long) (Math.abs(corners.getB().getX() - corners.getA().getX()) + 1)
+                                      * (Math.abs(corners.getB().getY() - corners.getA().getY()) + 1)
+                                      * (Math.abs(corners.getB().getZ() - corners.getA().getZ()) + 1);
+                if (volume < bestVolume)
+                {
+                    best = building;
+                    bestVolume = volume;
+                }
+            }
+        }
+        return best;
+    }
+
     private boolean recordLabourPlacement(final ServerLevel level, final BlockPos pos, final BlockState state)
     {
         if (!com.minecolonies.core.colony.labour.LabourRules.recordsPlacement(state))

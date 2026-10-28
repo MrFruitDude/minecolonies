@@ -434,6 +434,7 @@ public abstract class AbstractBuilding extends AbstractBuildingContainer
 
         ChunkDataHelper.claimBuildingChunks((Colony) colony, false, this.getID(), getClaimRadius(getBuildingLevel()), getCorners());
         ConstructionTapeHelper.removeConstructionTape(getCorners(), world);
+        releaseCopperChests();
 
         getModulesByType(IBuildingEventsModule.class).forEach(IBuildingEventsModule::onDestroyed);
     }

@@ -334,7 +334,7 @@ public final class ReservationLedger
     }
 
     /**
-     * How many of an item are at a building: in the hut, in every rack or container registered to it, and in the inventories of its assigned workers. Handed-out
+     * How many of an item are at a building: in the hut, in every rack or container registered to it (a copper chest too), and in the inventories of its assigned workers. Handed-out
      * items are among them (they sit in the hut).
      *
      * @param building the building.
@@ -351,10 +351,12 @@ public final class ReservationLedger
         containers.add(building.getID());
         for (final BlockPos pos : containers)
         {
-            if (world != null && com.minecolonies.api.util.WorldUtil.isBlockLoaded(world, pos)
-                  && world.getBlockEntity(pos) instanceof final com.minecolonies.api.tileentities.AbstractTileEntityRack rack)
+            // a rack, the hut, or (V-7) a copper chest in the building
+            final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler handler = world != null && com.minecolonies.api.util.WorldUtil.isBlockLoaded(world, pos)
+              ? com.minecolonies.api.util.BuildingContainers.handler(world.getBlockEntity(pos)) : null;
+            if (handler != null)
             {
-                total += com.minecolonies.api.util.InventoryUtils.getItemCountInItemHandler(rack.getInventory(), matches);
+                total += com.minecolonies.api.util.InventoryUtils.getItemCountInItemHandler(handler, matches);
             }
         }
         for (final com.minecolonies.api.colony.ICitizenData worker : building.getAllAssignedCitizen())

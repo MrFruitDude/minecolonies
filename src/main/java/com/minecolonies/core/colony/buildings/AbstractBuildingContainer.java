@@ -6,7 +6,9 @@ import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.buildings.IBuildingContainer;
 import com.minecolonies.api.tileentities.AbstractTileEntityColonyBuilding;
+import com.minecolonies.api.util.BuildingContainers;
 import com.minecolonies.api.util.NBTUtils;
+import com.minecolonies.api.util.WorldUtil;
 import com.minecolonies.core.tileentities.TileEntityColonyBuilding;
 import com.minecolonies.core.tileentities.TileEntityRack;
 import com.minecolonies.core.blocks.BlockMinecoloniesRack;
@@ -134,8 +136,67 @@ public abstract class AbstractBuildingContainer extends AbstractSchematicProvide
     @Override
     public void removeContainerPosition(final BlockPos pos)
     {
-        containerList.remove(pos);
+        if (containerList.remove(pos))
+        {
+            final Level world = colony == null ? null : colony.getWorld();
+            if (world != null && !world.isClientSide() && WorldUtil.isBlockLoaded(world, pos))
+            {
+                // V-7: a copper chest that leaves the building is open to copper golems again.
+                BuildingContainers.letGolemsIn(world.getBlockEntity(pos));
+            }
+        }
         onContainersChanged();
+    }
+
+    /**
+     * Whether a vanilla copper chest inside this building's corners counts as one of its containers (V-7).
+     *
+     * @return true, except where the stock index is rack based (the warehouse).
+     */
+    public boolean acceptsCopperChests()
+    {
+        return true;
+    }
+
+    /**
+     * Registers a vanilla copper chest inside the corners as a container (V-7): its items count as the building's stock, and copper golems are kept out
+     * of it ({@link BuildingContainers#keepGolemsOut}). Does nothing for a building that keeps racks only or a position that is not a copper chest.
+     *
+     * @param pos   the chest's position (one half of a double chest).
+     * @param world the world.
+     * @return whether the chest is a container of this building now.
+     */
+    public boolean addCopperChest(@NotNull final BlockPos pos, @NotNull final Level world)
+    {
+        if (!acceptsCopperChests() || !BuildingContainers.isCopperChest(world.getBlockState(pos)))
+        {
+            return false;
+        }
+        if (!containerList.contains(pos))
+        {
+            addContainerPosition(pos);
+        }
+        BuildingContainers.keepGolemsOut(world.getBlockEntity(pos));
+        return true;
+    }
+
+    /**
+     * The building is gone: its copper chests are open to copper golems again (the positions stay with the building's data).
+     */
+    protected void releaseCopperChests()
+    {
+        final Level world = colony == null ? null : colony.getWorld();
+        if (world == null || world.isClientSide())
+        {
+            return;
+        }
+        for (final BlockPos pos : containerList)
+        {
+            if (WorldUtil.isBlockLoaded(world, pos))
+            {
+                BuildingContainers.letGolemsIn(world.getBlockEntity(pos));
+            }
+        }
     }
 
     /**
@@ -177,6 +238,10 @@ public abstract class AbstractBuildingContainer extends AbstractSchematicProvide
                     building.setParent(getID());
                 }
             }
+        }
+        else if (BuildingContainers.isCopperChest(block))
+        {
+            addCopperChest(pos, world);
         }
         else if (block instanceof BlockMinecoloniesRack)
         {

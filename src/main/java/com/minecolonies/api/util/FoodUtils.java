@@ -268,9 +268,9 @@ public class FoodUtils
             if (WorldUtil.isBlockLoaded(world, pos))
             {
                 final BlockEntity entity = world.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack rackEntity)
+                if (BuildingContainers.isStock(entity))
                 {
-                    for (final ItemStorage storage : rackEntity.getAllContent().keySet())
+                    for (final ItemStorage storage : BuildingContainers.content(entity).keySet())
                     {
                         if ((menu == null || menu.contains(storage)) && FoodUtils.canEat(storage.getItemStack(), citizenData.getHomeBuilding(), citizenData.getWorkBuilding()))
                         {
@@ -362,9 +362,9 @@ public class FoodUtils
             if (WorldUtil.isBlockLoaded(world, pos))
             {
                 final BlockEntity entity = world.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack rackEntity)
+                if (BuildingContainers.isStock(entity))
                 {
-                    for (final ItemStorage storage : rackEntity.getAllContent().keySet())
+                    for (final ItemStorage storage : BuildingContainers.content(entity).keySet())
                     {
                         if ((menu == null || menu.contains(storage)) && FoodUtils.canEat(storage.getItemStack(), citizenData.getHomeBuilding(), citizenData.getWorkBuilding()))
                         {

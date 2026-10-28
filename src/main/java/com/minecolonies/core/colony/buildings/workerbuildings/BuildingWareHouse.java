@@ -104,6 +104,13 @@ public class BuildingWareHouse extends AbstractBuilding implements IWareHouse
     }
 
     @Override
+    public boolean acceptsCopperChests()
+    {
+        // V-7: the warehouse's stock index reads racks only; a copper chest in a warehouse is not one of its containers.
+        return false;
+    }
+
+    @Override
     protected void onContainersChanged()
     {
         // Called from the super constructor chain before this class' fields exist.

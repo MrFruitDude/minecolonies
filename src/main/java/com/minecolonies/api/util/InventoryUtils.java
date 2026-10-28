@@ -768,10 +768,7 @@ public class InventoryUtils
             if (WorldUtil.isBlockLoaded(world, pos))
             {
                 final BlockEntity entity = world.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack)
-                {
-                    totalCount += ((TileEntityRack) entity).getCount(stack);
-                }
+                totalCount += BuildingContainers.count(entity, stack);
 
                 if (totalCount >= count)
                 {
@@ -800,10 +797,7 @@ public class InventoryUtils
             if (WorldUtil.isBlockLoaded(world, pos))
             {
                 final BlockEntity entity = world.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack)
-                {
-                    totalCount += ((TileEntityRack) entity).getItemCount(stack);
-                }
+                totalCount += BuildingContainers.count(entity, stack);
 
                 if (totalCount >= count)
                 {
@@ -851,10 +845,7 @@ public class InventoryUtils
             if (WorldUtil.isBlockLoaded(world, pos))
             {
                 final BlockEntity entity = world.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack)
-                {
-                    totalCount += ((TileEntityRack) entity).getCount(stack);
-                }
+                totalCount += BuildingContainers.count(entity, stack);
             }
         }
 
@@ -876,10 +867,7 @@ public class InventoryUtils
             if (WorldUtil.isBlockLoaded(world, pos))
             {
                 final BlockEntity entity = world.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack)
-                {
-                    totalCount += ((TileEntityRack) entity).getFreeSlots();
-                }
+                totalCount += Math.max(0, BuildingContainers.freeSlots(entity));
             }
         }
 
@@ -903,9 +891,10 @@ public class InventoryUtils
             if (WorldUtil.isBlockLoaded(world, pos))
             {
                 final BlockEntity entity = world.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack rack)
+                final int free = BuildingContainers.freeSlots(entity);
+                if (free >= 0)
                 {
-                    if (rack.getFreeSlots() > 0)
+                    if (free > 0)
                     {
                         return false;
                     }
@@ -934,10 +923,7 @@ public class InventoryUtils
             if (WorldUtil.isBlockLoaded(world, pos))
             {
                 final BlockEntity entity = world.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack)
-                {
-                    totalCount += ((TileEntityRack) entity).getItemCount(predicate);
-                }
+                totalCount += BuildingContainers.count(entity, predicate);
             }
         }
 
@@ -963,14 +949,11 @@ public class InventoryUtils
             if (WorldUtil.isBlockLoaded(world, pos))
             {
                 final BlockEntity entity = world.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack)
+                for (final Map.Entry<ItemStorage, Integer> entry : BuildingContainers.content(entity).entrySet())
                 {
-                    for (final Map.Entry<ItemStorage, Integer> entry : ((TileEntityRack) entity).getAllContent().entrySet())
+                    if (predicate.test(entry.getKey().getItemStack()))
                     {
-                        if (predicate.test(entry.getKey().getItemStack()))
-                        {
-                            allMatching.put(entry.getKey(), allMatching.getOrDefault(entry.getKey(), 0) + entry.getValue());
-                        }
+                        allMatching.put(entry.getKey(), allMatching.getOrDefault(entry.getKey(), 0) + entry.getValue());
                     }
                 }
             }
@@ -1831,11 +1814,11 @@ public class InventoryUtils
             if (WorldUtil.isBlockLoaded(level, pos))
             {
                 final BlockEntity entity = level.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack tileEntityRack)
+                final IItemHandler sourceHandler = BuildingContainers.handler(entity);
+                if (sourceHandler != null)
                 {
-                    if (tileEntityRack.hasItemStorage(storage, 1))
+                    if (entity instanceof TileEntityRack tileEntityRack ? tileEntityRack.hasItemStorage(storage, 1) : BuildingContainers.count(entity, storage) >= 1)
                     {
-                        final IItemHandler sourceHandler = tileEntityRack.getInventory();
                         for (int i = 0; i < sourceHandler.getSlots(); i++)
                         {
                             if (storage.equals(new ItemStorage(sourceHandler.getStackInSlot(i))))
@@ -3316,12 +3299,9 @@ public class InventoryUtils
             if (WorldUtil.isBlockLoaded(world, pos))
             {
                 final BlockEntity entity = world.getBlockEntity(pos);
-                if (entity instanceof TileEntityRack)
+                for (final ItemStorage storage : BuildingContainers.content(entity).keySet())
                 {
-                    for (final ItemStorage storage : ((TileEntityRack) entity).getAllContent().keySet())
-                    {
-                        allInInv.add(storage.getItemStack());
-                    }
+                    allInInv.add(storage.getItemStack());
                 }
             }
         }
