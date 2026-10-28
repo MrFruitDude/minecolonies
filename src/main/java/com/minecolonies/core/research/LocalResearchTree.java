@@ -383,6 +383,9 @@ public class LocalResearchTree implements ILocalResearchTree
         inProgress.clear();
         isComplete.clear();
         maxLevelResearchCompleted.clear();
+        // UD-19: the effects follow the tree. The client reads every synced snapshot into the same colony view, so an undone research's effects must not
+        // survive the next snapshot; the finished research below applies everything that is still active again.
+        effects.removeAllEffects();
         NBTUtils.streamCompound(compound.getListOrEmpty(TAG_RESEARCH_TREE))
           .map(researchCompound -> (ILocalResearch) StandardFactoryController.getInstance().deserializeTag(provider, researchCompound))
           .forEach(research -> {
