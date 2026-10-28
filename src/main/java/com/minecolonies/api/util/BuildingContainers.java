@@ -327,7 +327,7 @@ public final class BuildingContainers
     }
 
     /**
-     * A cheap fingerprint of a stock copper chest's slots (items and counts), 0 for anything else.
+     * A cheap fingerprint of a stock copper chest's slots (items, components and counts), 0 for anything else.
      *
      * @param entity a block entity, may be null.
      * @return the fingerprint.
@@ -343,7 +343,7 @@ public final class BuildingContainers
         for (int slot = 0; slot < chest.getContainerSize(); slot++)
         {
             final ItemStack stack = chest.getItem(slot);
-            print = print * 31L + (stack.isEmpty() ? 0 : 31L * stack.getItem().hashCode() + stack.getCount());
+            print = print * 31L + (stack.isEmpty() ? 0 : 31L * ItemStack.hashItemAndComponents(stack) + stack.getCount());
         }
         return print;
     }

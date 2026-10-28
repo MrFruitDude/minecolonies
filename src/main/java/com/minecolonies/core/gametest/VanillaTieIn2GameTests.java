@@ -70,6 +70,7 @@ public final class VanillaTieIn2GameTests
         TESTS.put("vanilla2_copper_chest_building_container", VanillaTieIn2GameTests::copperChestBuildingContainer);
         TESTS.put("vanilla2_copper_chest_double_chest_is_held_whole", VanillaTieIn2GameTests::copperChestDoubleChestIsHeldWhole);
         TESTS.put("vanilla2_copper_chest_removal_reload_and_release", VanillaTieIn2GameTests::copperChestRemovalReloadAndRelease);
+        TESTS.put("vanilla2_rack_position_and_copper_stock_view", VanillaTieIn2GameTests::rackPositionAndCopperStockView);
     }
 
     static void register(final RegisterGameTestsEvent event)
@@ -533,6 +534,67 @@ public final class VanillaTieIn2GameTests
         helper.assertTrue(locked(level, a), "the lock stays while another building lists the chest");
         CopperChests.reconcile((AbstractBuildingContainer) f.warehouse);
         helper.assertTrue(!f.warehouse.getContainers().contains(a) && !locked(level, a), "the warehouse's check drops it (racks only) and the lock goes");
+        helper.succeed();
+    }
+
+    /**
+     * V-7, review c2 M-1, L-2, GPT S4: a rack broken and placed back by hand at the same spot is still a container after the building's check (an empty rack
+     * position stays listed, as before); the copper chest fingerprint sees an equal-count swap with a different name; a partial view sync writes the copper
+     * stock only after a change, a full sync always.
+     */
+    public static void rackPositionAndCopperStockView(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final RsFixture f = RsFixture.found(helper, "vanilla2 rack and stock view", 0, false);
+        final AbstractBuildingContainer hut = (AbstractBuildingContainer) f.builder;
+        final FakePlayer owner = FakePlayerFactory.getMinecraft(level);
+        ChunkDataHelper.claimBuildingChunks((Colony) f.colony, true, hut.getID(), 1, hut.getCorners());
+        final ItemStorage emerald = new ItemStorage(new ItemStack(Items.EMERALD));
+
+        // a listed rack, broken: the check keeps its position; placed back by hand it is a container again and its items are stock
+        final BlockPos rack = hut.getID().north();
+        level.setBlockAndUpdate(rack, ModBlocks.blockRack.defaultBlockState());
+        hut.registerBlockPosition(ModBlocks.blockRack, rack, level);
+        helper.assertTrue(hut.listsContainer(rack), "fixture: a listed rack");
+        level.destroyBlock(rack, false);
+        helper.assertTrue(level.getBlockEntity(rack) == null, "fixture: the rack is gone");
+        CopperChests.reconcile(hut);
+        helper.assertTrue(hut.listsContainer(rack), "the check keeps the empty rack position");
+        level.setBlockAndUpdate(rack, ModBlocks.blockRack.defaultBlockState());
+        place(level, rack, owner);
+        CopperChests.reconcile(hut);
+        helper.assertTrue(hut.getContainers().contains(rack), "the rack placed back by hand is a container: " + hut.getContainers());
+        final int before = InventoryUtils.getCountFromBuilding(hut, emerald);
+        helper.assertTrue(level.getBlockEntity(rack) instanceof final com.minecolonies.core.tileentities.TileEntityRack placedBack
+          && placedBack.getInventory().insertItem(0, new ItemStack(Items.EMERALD, 2), false).isEmpty(), "fixture: the rack takes 2 emeralds");
+        helper.assertTrue(InventoryUtils.getCountFromBuilding(hut, emerald) == before + 2, "its items are the building's stock");
+
+        // the copper chest fingerprint sees components: a renamed stack of equal count resyncs the view
+        final BlockPos c = hut.getID().south();
+        level.setBlockAndUpdate(c, Blocks.COPPER_CHEST.asList().get(0).defaultBlockState().setValue(ChestBlock.FACING, Direction.NORTH));
+        helper.assertTrue(hut.addCopperChest(c, level), "fixture: a listed copper chest");
+        final ChestBlockEntity chest = BuildingContainers.copperChest(level.getBlockEntity(c));
+        final ItemStack named = new ItemStack(Items.IRON_INGOT, 3);
+        named.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("first"));
+        chest.setItem(0, named);
+        hut.checkCopperStock(false);
+        helper.assertTrue(hut.writesCopperStock(false), "a partial sync after a change writes the stock");
+        helper.assertTrue(!hut.writesCopperStock(false), "the next partial sync does not");
+        helper.assertTrue(!hut.checkCopperStock(false) && !hut.writesCopperStock(false), "no change: no stock in the partial sync");
+        helper.assertTrue(hut.writesCopperStock(true) && !hut.writesCopperStock(false), "a full sync always writes it, and leaves the partial mark alone");
+        final long print = BuildingContainers.contentPrint(chest);
+        final ItemStack renamed = new ItemStack(Items.IRON_INGOT, 3);
+        renamed.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("second"));
+        chest.setItem(0, renamed);
+        helper.assertTrue(BuildingContainers.contentPrint(chest) != print, "a renamed stack of equal count changes the fingerprint");
+        helper.assertTrue(hut.checkCopperStock(false) && hut.writesCopperStock(false), "and the next partial sync writes the stock");
+        chest.setItem(0, new ItemStack(Items.IRON_INGOT, 3));
+        helper.assertTrue(BuildingContainers.contentPrint(chest) != print && hut.checkCopperStock(false), "a plain stack of equal count too");
+
+        // a copper chest gone without a player still leaves the list at the check
+        level.setBlockAndUpdate(c, Blocks.AIR.defaultBlockState());
+        CopperChests.reconcile(hut);
+        helper.assertTrue(!hut.listsContainer(c) && hut.listsContainer(rack), "the check drops the copper chest position, the rack stays");
         helper.succeed();
     }
 }

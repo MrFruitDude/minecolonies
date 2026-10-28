@@ -250,8 +250,9 @@ public final class CopperChests
     /**
      * One building's check (its colony tick): takes up the copper chests inside its corners that it should hold (placed before it was built, or not by a
      * player), and drops every listed copper chest it may not hold, a better-ranked building holds, or whose other half another building holds. Listed
-     * chests it keeps carry the building lock, and a double chest's other half is listed too. A loaded position with no block entity left goes too; racks are left
-     * alone.
+     * chests it keeps carry the building lock, and a double chest's other half is listed too. A loaded copper chest position whose chest is gone (no block
+     * entity) goes too; other positions (racks) stay listed while empty, as before: an empty position is no stock, and a rack placed back there is a container
+     * again.
      *
      * @param building the building.
      * @return whether its container list changed.
@@ -310,16 +311,21 @@ public final class CopperChests
             final BlockEntity entity = level.getBlockEntity(pos);
             if (entity == null)
             {
-                // the container is gone without a player (explosion, command): a builder that places one again registers it again
-                building.removeContainerPosition(pos);
-                changed = true;
+                if (building.copperChestPositions.contains(pos))
+                {
+                    // the copper chest is gone without a player (explosion, command): a builder that places one again registers it again
+                    building.removeContainerPosition(pos);
+                    changed = true;
+                }
                 continue;
             }
             final ChestBlockEntity chest = BuildingContainers.copperChest(entity);
             if (chest == null)
             {
+                building.copperChestPositions.remove(pos);
                 continue;
             }
+            building.copperChestPositions.add(pos.immutable());
             final BlockPos other = otherHalf(pos, level.getBlockState(pos));
             final Fit fit = fit(building, level, pos);
             if (fit == Fit.NO || rivalHolds(colony, building, pos) || (other != null && rivalHolds(colony, building, other)))

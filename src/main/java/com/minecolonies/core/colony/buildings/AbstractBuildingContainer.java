@@ -48,6 +48,11 @@ public abstract class AbstractBuildingContainer extends AbstractSchematicProvide
     protected final Set<BlockPos> containerList = new HashSet<>();
 
     /**
+     * The listed positions last seen holding a copper chest (V-7, not saved): only these are dropped at the building's check when their chest is gone.
+     */
+    final Set<BlockPos> copperChestPositions = new HashSet<>();
+
+    /**
      * List of items the worker should keep. With the quantity and if he should keep it in the inventory as well.
      */
     protected final Map<Predicate<ItemStack>, Tuple<Integer, Boolean>> keepX = new HashMap<>();
@@ -136,6 +141,7 @@ public abstract class AbstractBuildingContainer extends AbstractSchematicProvide
     @Override
     public void removeContainerPosition(final BlockPos pos)
     {
+        copperChestPositions.remove(pos);
         if (containerList.remove(pos))
         {
             // V-7: a copper chest that leaves the building is open to copper golems again, unless another building still lists it.
@@ -182,7 +188,9 @@ public abstract class AbstractBuildingContainer extends AbstractSchematicProvide
         if (!containerList.contains(pos))
         {
             addContainerPosition(pos);
+            copperStockToView = true;
         }
+        copperChestPositions.add(pos.immutable());
         BuildingContainers.keepGolemsOut(chest);
         return true;
     }
@@ -205,13 +213,28 @@ public abstract class AbstractBuildingContainer extends AbstractSchematicProvide
      */
     private long copperStockPrint = 17L;
 
+    /**
+     * Whether a partial view sync writes the copper chests' stock: set when the stock or the list changed since the last partial sync.
+     */
+    private boolean copperStockToView = true;
+
     @Override
     public void onColonyTick(final IColony colony)
     {
         super.onColonyTick(colony);
         // V-7: keep the copper chest list true (see CopperChests), and resync the view when the chests' stock changed (the client gets no chest contents).
-        final boolean changed = CopperChests.reconcile(this);
-        final Level world = colony.getWorld();
+        checkCopperStock(CopperChests.reconcile(this));
+    }
+
+    /**
+     * Compares the copper chests' stock with the last check and marks the building dirty (and the stock for the next view sync) when it or the list changed.
+     *
+     * @param changed whether the container list changed.
+     * @return whether the view needs the stock again.
+     */
+    public boolean checkCopperStock(final boolean changed)
+    {
+        final Level world = colony == null ? null : colony.getWorld();
         long print = 17L;
         if (world != null && !world.isClientSide())
         {
@@ -230,8 +253,28 @@ public abstract class AbstractBuildingContainer extends AbstractSchematicProvide
         if (changed || print != copperStockPrint)
         {
             copperStockPrint = print;
+            copperStockToView = true;
             markDirty();
+            return true;
         }
+        return false;
+    }
+
+    /**
+     * Whether this view sync writes the copper chests' stock: a full sync always does, a partial one only after a change (it then clears the mark; a full sync
+     * may reach new subscribers only, so it leaves the mark for the others).
+     *
+     * @param fullSync whether the sync is a full one.
+     * @return whether to write the stock.
+     */
+    public boolean writesCopperStock(final boolean fullSync)
+    {
+        final boolean write = fullSync || copperStockToView;
+        if (!fullSync)
+        {
+            copperStockToView = false;
+        }
+        return write;
     }
 
     /**

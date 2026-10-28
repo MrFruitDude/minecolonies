@@ -433,16 +433,24 @@ public abstract class AbstractBuildingView implements IBuildingView
         {
             containerlist.add(buf.readBlockPos());
         }
-        copperChestStock.clear();
-        for (int i = 0, chests = buf.readVarInt(); i < chests; i++)
+        if (buf.readBoolean())
         {
-            final BlockPos chest = buf.readBlockPos();
-            final List<ItemStack> stacks = new ArrayList<>();
-            for (int j = 0, size = buf.readVarInt(); j < size; j++)
+            copperChestStock.clear();
+            for (int i = 0, chests = buf.readVarInt(); i < chests; i++)
             {
-                stacks.add(ItemStack.STREAM_CODEC.decode(buf));
+                final BlockPos chest = buf.readBlockPos();
+                final List<ItemStack> stacks = new ArrayList<>();
+                for (int j = 0, size = buf.readVarInt(); j < size; j++)
+                {
+                    stacks.add(ItemStack.STREAM_CODEC.decode(buf));
+                }
+                copperChestStock.put(chest, stacks);
             }
-            copperChestStock.put(chest, stacks);
+        }
+        else
+        {
+            // unchanged since the last sync that sent it: keep it, minus chests the building no longer lists
+            copperChestStock.keySet().retainAll(containerlist);
         }
         loadRequestSystemFromNBT(buf.registryAccess(), buf.readNbt());
         isDeconstructed = buf.readBoolean();
