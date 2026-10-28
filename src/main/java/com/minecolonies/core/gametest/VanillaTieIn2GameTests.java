@@ -358,15 +358,23 @@ public final class VanillaTieIn2GameTests
         final int minZ = Math.min(a.getZ(), b.getZ());
         final int y = hut.getID().getY();
         final BlockState single = copper.defaultBlockState().setValue(ChestBlock.FACING, Direction.NORTH);
+        // fixture hygiene: the test's chest spots are no building's containers (a blueprint rack there would be one)
+        for (final BlockPos spot : new BlockPos[] {new BlockPos(minX - 1, y, minZ), new BlockPos(minX - 2, y, minZ), new BlockPos(minX - 1, y, minZ + 2),
+          new BlockPos(minX - 2, y, minZ + 2), new BlockPos(minX - 1, y, minZ + 4)})
+        {
+            CopperChests.forget(f.colony, spot, null);
+        }
 
         // order 1: a free half just outside the corners' margin, then a half inside joined onto it (west of the hut, away from the warehouse)
         final BlockPos in1 = new BlockPos(minX - 1, y, minZ);
         final BlockPos out1 = in1.west();
         level.setBlockAndUpdate(out1, single);
-        helper.assertTrue(!hut.listsContainer(out1), "fixture: a free chest outside the corners is not a container");
+        helper.assertTrue(CopperChests.holder(f.colony, out1, null) == null, "fixture: a free chest outside the corners is not a container");
         level.setBlockAndUpdate(in1, half(helper, copper, Direction.WEST));
         helper.assertTrue(!place(level, in1, owner).isCanceled(), "the owner's join stands");
-        helper.assertTrue(hut.listsContainer(in1) && hut.listsContainer(out1), "both halves are containers: " + hut.getContainers());
+        // the smallest building whose corners contain the inside half holds the pair (the town hall stands close by)
+        final AbstractBuildingContainer holder1 = CopperChests.holder(f.colony, in1, null);
+        helper.assertTrue(holder1 != null && holder1 == CopperChests.holder(f.colony, out1, null), "one building holds both halves: " + holder1);
         helper.assertTrue(locked(level, in1) && locked(level, out1), "both halves keep golems out");
 
         // order 2: a free half inside the corners, then a half just outside joined onto it
@@ -375,16 +383,25 @@ public final class VanillaTieIn2GameTests
         level.setBlockAndUpdate(in2, single);
         level.setBlockAndUpdate(out2, half(helper, copper, Direction.EAST));
         helper.assertTrue(!place(level, out2, owner).isCanceled(), "the owner's join stands");
-        helper.assertTrue(hut.listsContainer(in2) && hut.listsContainer(out2) && locked(level, in2) && locked(level, out2),
-          "both halves are containers and locked: " + hut.getContainers());
+        final AbstractBuildingContainer holder2 = CopperChests.holder(f.colony, in2, null);
+        helper.assertTrue(holder2 != null && holder2 == CopperChests.holder(f.colony, out2, null) && locked(level, in2) && locked(level, out2),
+          "one building holds both halves, both locked: " + holder2);
 
         // a copper chest that stood inside the corners before (no placement event) is taken at the building's check; the pairs stay
         final BlockPos pre = new BlockPos(minX - 1, y, minZ + 4);
         level.setBlockAndUpdate(pre, single);
-        helper.assertTrue(!hut.listsContainer(pre), "fixture: not a container yet");
-        CopperChests.reconcile(hut);
-        helper.assertTrue(hut.listsContainer(pre) && locked(level, pre), "the building's check takes the chest that was there before");
-        helper.assertTrue(hut.listsContainer(in1) && hut.listsContainer(out1) && hut.listsContainer(in2) && hut.listsContainer(out2), "the pairs stay");
+        helper.assertTrue(CopperChests.holder(f.colony, pre, null) == null, "fixture: not a container yet");
+        for (final IBuilding building : new java.util.ArrayList<>(f.colony.getServerBuildingManager().getBuildings().values()))
+        {
+            if (building instanceof final AbstractBuildingContainer container)
+            {
+                CopperChests.reconcile(container);
+            }
+        }
+        helper.assertTrue(CopperChests.holder(f.colony, pre, null) != null && locked(level, pre), "the buildings' check takes the chest that was there before");
+        helper.assertTrue(CopperChests.holder(f.colony, in1, null) == holder1 && CopperChests.holder(f.colony, out1, null) == holder1
+                            && CopperChests.holder(f.colony, in2, null) == holder2 && CopperChests.holder(f.colony, out2, null) == holder2
+                            && locked(level, out1) && locked(level, out2), "the pairs stay with their buildings");
 
         // across a border: a chunk next to the hut's chunk owned by another colony
         final int top = Math.max(a.getY(), b.getY()) + 3;
@@ -393,15 +410,18 @@ public final class VanillaTieIn2GameTests
         final net.minecraft.world.level.chunk.LevelChunk foreignChunk = level.getChunkAt(q);
         final com.minecolonies.api.colony.claim.IChunkClaimData claim =
           com.minecolonies.api.colony.IColonyManager.getInstance().getClaimData(level.dimension(), foreignChunk.getPos());
-        helper.assertTrue(claim != null && claim.getOwningColony() == f.colony.getID(), "fixture: the chunk east of the hut's chunk is the colony's");
+        final int ownerBefore = claim == null ? 0 : claim.getOwningColony();
         level.setBlockAndUpdate(p, single);
         helper.assertTrue(hut.addCopperChest(p, level) && locked(level, p), "fixture: a container chest at the edge of the hut's chunk");
-        claim.setOwningColony(f.colony.getID() + 7777, foreignChunk);
+        if (claim != null)
+        {
+            claim.setOwningColony(f.colony.getID() + 7777, foreignChunk);
+        }
         try
         {
             level.setBlockAndUpdate(q, half(helper, copper, Direction.WEST));
             helper.assertTrue(place(level, q, owner).isCanceled(), "a half joined onto a container chest from across the border is refused, also for the owner");
-            helper.assertTrue(!hut.listsContainer(q), "and is no container");
+            helper.assertTrue(CopperChests.holder(f.colony, q, null) == null, "and is no container");
             level.setBlockAndUpdate(q, Blocks.AIR.defaultBlockState());
             hut.removeContainerPosition(p);
             helper.assertTrue(!locked(level, p), "fixture: the edge chest is free again");
@@ -411,12 +431,15 @@ public final class VanillaTieIn2GameTests
             level.setBlockAndUpdate(q, single);
             level.setBlockAndUpdate(p, half(helper, copper, Direction.EAST));
             place(level, p, owner);
-            helper.assertTrue(!hut.listsContainer(p) && !hut.listsContainer(q) && !locked(level, p) && !locked(level, q),
+            helper.assertTrue(CopperChests.holder(f.colony, p, null) == null && CopperChests.holder(f.colony, q, null) == null && !locked(level, p) && !locked(level, q),
               "a double chest reaching across the border stays two plain halves");
         }
         finally
         {
-            claim.setOwningColony(f.colony.getID(), foreignChunk);
+            if (claim != null)
+            {
+                claim.setOwningColony(ownerBefore, foreignChunk);
+            }
         }
         helper.succeed();
     }

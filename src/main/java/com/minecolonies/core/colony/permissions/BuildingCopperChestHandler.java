@@ -115,8 +115,9 @@ public class BuildingCopperChestHandler
         }
         final BlockPos other = CopperChests.otherHalf(event.getPos(), event.getPlacedBlock());
         final AbstractBuildingContainer holder = other == null || !WorldUtil.isBlockLoaded(level, other) ? null : CopperChests.holder(colony, other, null);
-        if (holder == null)
+        if (holder == null || !holder.acceptsCopperChests())
         {
+            // no building holds the other half (a warehouse's listing is stale: it keeps racks only)
             return;
         }
         final Player placer = event.getEntity() instanceof final Player player ? player : null;
