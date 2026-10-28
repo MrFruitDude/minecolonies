@@ -133,18 +133,45 @@ public class WindowHutAllInventory extends AbstractWindowSkeleton
                 int count = ((TileEntityRack) rack).getCount(storage.getItemStack(), storage.ignoreDamageValue(), false);
                 if (count > 0)
                 {
-                    // Varies the color between red(1 pc) over yellow(32 pcs) to green(64+ pcs)
-                    // mixing equation: alpha | red part | green part 
-                    final int color = 0x80000000 | (Mth.clamp((int) (0xff * (2.0f - count / 32.0f)), 0, 255) << 16)
-                        | (Mth.clamp((int) (0xff * count / 32.0f), 0, 255) << 8);
-                    HighlightManager.addHighlight("inventoryHighlight", blockPos.toString(),
-                      new TimedBoxRenderData(blockPos)
-                        .setDuration(Duration.ofSeconds(60))
-                        .addText("" + count)
-                        .setColor(color));
+                    highlight(blockPos, count);
                 }
             }
         }
+        // V-7: the building's copper chests, from the stock the server sent
+        for (final Map.Entry<BlockPos, List<ItemStack>> chest : building.getCopperChestStock().entrySet())
+        {
+            int count = 0;
+            for (final ItemStack stack : chest.getValue())
+            {
+                if (storage.equals(new ItemStorage(stack)))
+                {
+                    count += stack.getCount();
+                }
+            }
+            if (count > 0)
+            {
+                highlight(chest.getKey(), count);
+            }
+        }
+    }
+
+    /**
+     * Highlights a container holding a located item.
+     *
+     * @param blockPos the container.
+     * @param count    how many it holds.
+     */
+    private static void highlight(final BlockPos blockPos, final int count)
+    {
+        // Varies the color between red(1 pc) over yellow(32 pcs) to green(64+ pcs)
+        // mixing equation: alpha | red part | green part
+        final int color = 0x80000000 | (Mth.clamp((int) (0xff * (2.0f - count / 32.0f)), 0, 255) << 16)
+                            | (Mth.clamp((int) (0xff * count / 32.0f), 0, 255) << 8);
+        HighlightManager.addHighlight("inventoryHighlight", blockPos.toString(),
+          new TimedBoxRenderData(blockPos)
+            .setDuration(Duration.ofSeconds(60))
+            .addText("" + count)
+            .setColor(color));
     }
 
     /**
@@ -228,6 +255,15 @@ public class WindowHutAllInventory extends AbstractWindowSkeleton
                         storedItems.put(entry.getKey(), entry.getValue());
                     }
                 }
+            }
+        }
+
+        // V-7: the building's copper chests, from the stock the server sent
+        for (final List<ItemStack> chest : building.getCopperChestStock().values())
+        {
+            for (final ItemStack stack : chest)
+            {
+                storedItems.merge(new ItemStorage(stack.copy()), stack.getCount(), Integer::sum);
             }
         }
 

@@ -96,12 +96,27 @@ public final class BuildingContainers
     }
 
     /**
+     * The copper chest at a registered container position when it holds building stock: one a building registered (it carries {@link #BUILDING_LOCK}). A
+     * copper chest standing on a stale position (placed there later, unregistered, perhaps another colony's) is not stock and is dropped from the list at the
+     * building's next check. When the lock cannot be reached every copper chest counts.
+     *
+     * @param entity a block entity, may be null.
+     * @return the stock chest, or null.
+     */
+    @Nullable
+    public static ChestBlockEntity stockChest(@Nullable final BlockEntity entity)
+    {
+        final ChestBlockEntity chest = copperChest(entity);
+        return chest != null && (LOCK_FIELD == null || keepsGolemsOut(chest)) ? chest : null;
+    }
+
+    /**
      * @param entity the block entity at a registered container position, may be null.
-     * @return whether it holds building stock (a rack, the hut, or a copper chest).
+     * @return whether it holds building stock (a rack, the hut, or a registered copper chest).
      */
     public static boolean isStock(@Nullable final BlockEntity entity)
     {
-        return entity instanceof AbstractTileEntityRack || copperChest(entity) != null;
+        return entity instanceof AbstractTileEntityRack || stockChest(entity) != null;
     }
 
     /**
@@ -115,7 +130,7 @@ public final class BuildingContainers
         {
             return rack.getInventory();
         }
-        final ChestBlockEntity chest = copperChest(entity);
+        final ChestBlockEntity chest = stockChest(entity);
         return chest == null ? null : new InvWrapper(chest);
     }
 
@@ -132,7 +147,7 @@ public final class BuildingContainers
         {
             return rack.getCount(storage);
         }
-        final ChestBlockEntity chest = copperChest(entity);
+        final ChestBlockEntity chest = stockChest(entity);
         if (chest == null)
         {
             return 0;
@@ -162,7 +177,7 @@ public final class BuildingContainers
         {
             return rack.getItemCount(predicate);
         }
-        final ChestBlockEntity chest = copperChest(entity);
+        final ChestBlockEntity chest = stockChest(entity);
         if (chest == null)
         {
             return 0;
@@ -189,7 +204,7 @@ public final class BuildingContainers
         {
             return rack.getFreeSlots();
         }
-        final ChestBlockEntity chest = copperChest(entity);
+        final ChestBlockEntity chest = stockChest(entity);
         if (chest == null)
         {
             return -1;
@@ -207,7 +222,7 @@ public final class BuildingContainers
 
     /**
      * @param entity the block entity at a registered container position, may be null.
-     * @return its content by item (a rack's own map, read only; a copper chest's built fresh), empty for no stock container.
+     * @return its content by item (a rack's own map, read only; a copper chest's built fresh, keyed by copies), empty for no stock container.
      */
     public static Map<ItemStorage, Integer> content(@Nullable final BlockEntity entity)
     {
@@ -216,7 +231,7 @@ public final class BuildingContainers
             return rack.getAllContent();
         }
         final Map<ItemStorage, Integer> content = new HashMap<>();
-        final ChestBlockEntity chest = copperChest(entity);
+        final ChestBlockEntity chest = stockChest(entity);
         if (chest != null)
         {
             for (int slot = 0; slot < chest.getContainerSize(); slot++)
@@ -224,7 +239,8 @@ public final class BuildingContainers
                 final ItemStack stack = chest.getItem(slot);
                 if (!stack.isEmpty())
                 {
-                    content.merge(new ItemStorage(stack), stack.getCount(), Integer::sum);
+                    // keyed by a copy, as racks key theirs: callers keep the key after the slot changed
+                    content.merge(new ItemStorage(stack.copy()), stack.getCount(), Integer::sum);
                 }
             }
         }
@@ -257,6 +273,61 @@ public final class BuildingContainers
         {
             setLock(chest, LockCode.NO_LOCK);
         }
+    }
+
+    /**
+     * Clears the building lock without {@link BlockEntity#setChanged()} (which looks the chunk up in the level): for a chunk that is still loading. The
+     * caller marks the chunk unsaved.
+     *
+     * @param chest the chest.
+     * @return whether a building lock was cleared.
+     */
+    public static boolean letGolemsInQuietly(final BaseContainerBlockEntity chest)
+    {
+        if (!keepsGolemsOut(chest))
+        {
+            return false;
+        }
+        try
+        {
+            LOCK_FIELD.set(chest, LockCode.NO_LOCK);
+            return true;
+        }
+        catch (final IllegalAccessException e)
+        {
+            return false;
+        }
+    }
+
+    /**
+     * @param chest a container.
+     * @return whether it has a lock of its own (not the building lock): a building does not take such a chest.
+     */
+    public static boolean hasOwnLock(final BaseContainerBlockEntity chest)
+    {
+        return chest.isLocked() && !keepsGolemsOut(chest);
+    }
+
+    /**
+     * A cheap fingerprint of a stock copper chest's slots (items and counts), 0 for anything else.
+     *
+     * @param entity a block entity, may be null.
+     * @return the fingerprint.
+     */
+    public static long contentPrint(@Nullable final BlockEntity entity)
+    {
+        final ChestBlockEntity chest = stockChest(entity);
+        if (chest == null)
+        {
+            return 0L;
+        }
+        long print = 7L;
+        for (int slot = 0; slot < chest.getContainerSize(); slot++)
+        {
+            final ItemStack stack = chest.getItem(slot);
+            print = print * 31L + (stack.isEmpty() ? 0 : 31L * stack.getItem().hashCode() + stack.getCount());
+        }
+        return print;
     }
 
     /**

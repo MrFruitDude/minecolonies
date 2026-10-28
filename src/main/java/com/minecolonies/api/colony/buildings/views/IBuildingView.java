@@ -14,9 +14,11 @@ import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.crafting.ItemStorage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -233,5 +235,15 @@ public interface IBuildingView extends IRequester, IModuleContainerView, ICommon
     default String getHoverWarningForLevel()
     {
         return "";
+    }
+
+    /**
+     * V-7: the stock of the building's registered copper chests, by chest position, as the server sent it (the client gets no vanilla chest contents).
+     *
+     * @return the stacks of each chest (read only), empty when there are none.
+     */
+    default Map<BlockPos, List<ItemStack>> getCopperChestStock()
+    {
+        return Map.of();
     }
 }

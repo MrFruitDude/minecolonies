@@ -138,14 +138,19 @@ public abstract class AbstractBuildingContainer extends AbstractSchematicProvide
     {
         if (containerList.remove(pos))
         {
-            final Level world = colony == null ? null : colony.getWorld();
-            if (world != null && !world.isClientSide() && WorldUtil.isBlockLoaded(world, pos))
-            {
-                // V-7: a copper chest that leaves the building is open to copper golems again.
-                BuildingContainers.letGolemsIn(world.getBlockEntity(pos));
-            }
+            // V-7: a copper chest that leaves the building is open to copper golems again, unless another building still lists it.
+            CopperChests.releaseIfUnheld(colony == null ? null : colony.getWorld(), pos, null);
         }
         onContainersChanged();
+    }
+
+    /**
+     * @param pos a position.
+     * @return whether this building lists it as a container (the hut itself is not in the list).
+     */
+    public boolean listsContainer(final BlockPos pos)
+    {
+        return containerList.contains(pos);
     }
 
     /**
@@ -168,35 +173,101 @@ public abstract class AbstractBuildingContainer extends AbstractSchematicProvide
      */
     public boolean addCopperChest(@NotNull final BlockPos pos, @NotNull final Level world)
     {
-        if (!acceptsCopperChests() || !BuildingContainers.isCopperChest(world.getBlockState(pos)))
+        final net.minecraft.world.level.block.entity.ChestBlockEntity chest = BuildingContainers.copperChest(world.getBlockEntity(pos));
+        if (!acceptsCopperChests() || chest == null || BuildingContainers.hasOwnLock(chest))
         {
+            // a chest with a lock of its own stays its owner's
             return false;
         }
         if (!containerList.contains(pos))
         {
             addContainerPosition(pos);
         }
-        BuildingContainers.keepGolemsOut(world.getBlockEntity(pos));
+        BuildingContainers.keepGolemsOut(chest);
         return true;
     }
 
     /**
-     * The building is gone: its copper chests are open to copper golems again (the positions stay with the building's data).
+     * The building is gone: its copper chests are open to copper golems again, except where another building still lists them (the positions stay with the
+     * building's data). Chests in unloaded chunks are released when their chunk loads ({@link CopperChests#onChunkLoad}).
      */
     protected void releaseCopperChests()
     {
         final Level world = colony == null ? null : colony.getWorld();
+        for (final BlockPos pos : new ArrayList<>(containerList))
+        {
+            CopperChests.releaseIfUnheld(world, pos, this);
+        }
+    }
+
+    /**
+     * The fingerprint of the copper chests' stock at the last view sync check.
+     */
+    private long copperStockPrint = 17L;
+
+    @Override
+    public void onColonyTick(final IColony colony)
+    {
+        super.onColonyTick(colony);
+        // V-7: keep the copper chest list true (see CopperChests), and resync the view when the chests' stock changed (the client gets no chest contents).
+        final boolean changed = CopperChests.reconcile(this);
+        final Level world = colony.getWorld();
+        long print = 17L;
+        if (world != null && !world.isClientSide())
+        {
+            for (final BlockPos pos : containerList)
+            {
+                if (WorldUtil.isBlockLoaded(world, pos))
+                {
+                    final long chest = BuildingContainers.contentPrint(world.getBlockEntity(pos));
+                    if (chest != 0L)
+                    {
+                        print = print * 31L + pos.asLong() * 7L + chest;
+                    }
+                }
+            }
+        }
+        if (changed || print != copperStockPrint)
+        {
+            copperStockPrint = print;
+            markDirty();
+        }
+    }
+
+    /**
+     * The stock of this building's registered copper chests, slot by slot (copies), by chest position: for the building view (V-7).
+     *
+     * @return the stock, empty when there is none.
+     */
+    public Map<BlockPos, List<ItemStack>> copperChestStock()
+    {
+        final Map<BlockPos, List<ItemStack>> stock = new HashMap<>();
+        final Level world = colony == null ? null : colony.getWorld();
         if (world == null || world.isClientSide())
         {
-            return;
+            return stock;
         }
         for (final BlockPos pos : containerList)
         {
-            if (WorldUtil.isBlockLoaded(world, pos))
+            final net.minecraft.world.level.block.entity.ChestBlockEntity chest =
+              WorldUtil.isBlockLoaded(world, pos) ? BuildingContainers.stockChest(world.getBlockEntity(pos)) : null;
+            if (chest != null)
             {
-                BuildingContainers.letGolemsIn(world.getBlockEntity(pos));
+                final List<ItemStack> stacks = new ArrayList<>();
+                for (int slot = 0; slot < chest.getContainerSize(); slot++)
+                {
+                    if (!chest.getItem(slot).isEmpty())
+                    {
+                        stacks.add(chest.getItem(slot).copy());
+                    }
+                }
+                if (!stacks.isEmpty())
+                {
+                    stock.put(pos.immutable(), stacks);
+                }
             }
         }
+        return stock;
     }
 
     /**

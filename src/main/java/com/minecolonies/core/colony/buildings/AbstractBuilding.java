@@ -726,6 +726,18 @@ public abstract class AbstractBuilding extends AbstractBuildingContainer
         {
             buf.writeBlockPos(blockPos);
         }
+        // V-7: the registered copper chests' stock (vanilla chests do not send their contents to the client), for the hut inventory window
+        final Map<BlockPos, List<ItemStack>> copperStock = copperChestStock();
+        buf.writeVarInt(copperStock.size());
+        for (final Map.Entry<BlockPos, List<ItemStack>> chest : copperStock.entrySet())
+        {
+            buf.writeBlockPos(chest.getKey());
+            buf.writeVarInt(chest.getValue().size());
+            for (final ItemStack stack : chest.getValue())
+            {
+                ItemStack.STREAM_CODEC.encode(buf, stack);
+            }
+        }
         buf.writeNbt(requestSystemCompound);
 
         buf.writeBoolean(isDeconstructed());

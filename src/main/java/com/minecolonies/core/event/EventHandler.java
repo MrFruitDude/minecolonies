@@ -173,6 +173,8 @@ public class EventHandler
         if (event.getLevel() instanceof ServerLevel)
         {
             ChunkDataHelper.loadChunk((LevelChunk) event.getChunk(), (ServerLevel) event.getLevel());
+            // V-7: a building lock no building holds any more (its hut destroyed, its colony deleted while the chunk was unloaded) is cleared
+            com.minecolonies.core.colony.buildings.CopperChests.onChunkLoad((LevelChunk) event.getChunk(), (ServerLevel) event.getLevel());
         }
     }
 

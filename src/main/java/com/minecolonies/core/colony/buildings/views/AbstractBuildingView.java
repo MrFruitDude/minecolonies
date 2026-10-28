@@ -33,6 +33,8 @@ import net.minecraft.network.chat.MutableComponent;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.world.item.ItemStack;
+
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -130,6 +132,11 @@ public abstract class AbstractBuildingView implements IBuildingView
      */
 
     private List<BlockPos> containerlist = new ArrayList<>();
+
+    /**
+     * V-7: the stock of the building's registered copper chests by chest position, as the server sent it.
+     */
+    private final Map<BlockPos, List<ItemStack>> copperChestStock = new HashMap<>();
 
     /**
      * If building is deconstructed.
@@ -337,6 +344,12 @@ public abstract class AbstractBuildingView implements IBuildingView
         return new ArrayList<>(containerlist);
     }
 
+    @Override
+    public Map<BlockPos, List<ItemStack>> getCopperChestStock()
+    {
+        return Collections.unmodifiableMap(copperChestStock);
+    }
+
     /**
      * Open the associated blockui window for this building. If the player is sneaking open the inventory else open the GUI directly.
      *
@@ -419,6 +432,17 @@ public abstract class AbstractBuildingView implements IBuildingView
         for (int i = 0; i < racks; i++)
         {
             containerlist.add(buf.readBlockPos());
+        }
+        copperChestStock.clear();
+        for (int i = 0, chests = buf.readVarInt(); i < chests; i++)
+        {
+            final BlockPos chest = buf.readBlockPos();
+            final List<ItemStack> stacks = new ArrayList<>();
+            for (int j = 0, size = buf.readVarInt(); j < size; j++)
+            {
+                stacks.add(ItemStack.STREAM_CODEC.decode(buf));
+            }
+            copperChestStock.put(chest, stacks);
         }
         loadRequestSystemFromNBT(buf.registryAccess(), buf.readNbt());
         isDeconstructed = buf.readBoolean();

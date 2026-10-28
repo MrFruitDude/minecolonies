@@ -154,7 +154,7 @@ public class CitizenSnack
     }
 
     /**
-     * A cheap fingerprint of the racks of a building: their positions and how often their content changed.
+     * A cheap fingerprint of the racks of a building: their positions and how often their content changed (a copper chest: its slots).
      */
     static long rackPrint(final IBuilding building)
     {
@@ -163,9 +163,18 @@ public class CitizenSnack
         for (final BlockPos pos : building.getContainers())
         {
             print = print * 31L + pos.asLong();
-            if (level != null && WorldUtil.isBlockLoaded(level, pos) && level.getBlockEntity(pos) instanceof AbstractTileEntityRack rack)
+            if (level != null && WorldUtil.isBlockLoaded(level, pos))
             {
-                print = print * 31L + rack.getContentVersion();
+                final net.minecraft.world.level.block.entity.BlockEntity entity = level.getBlockEntity(pos);
+                if (entity instanceof AbstractTileEntityRack rack)
+                {
+                    print = print * 31L + rack.getContentVersion();
+                }
+                else
+                {
+                    // V-7: a copper chest of the building, by its slots
+                    print = print * 31L + com.minecolonies.api.util.BuildingContainers.contentPrint(entity);
+                }
             }
         }
         return print;

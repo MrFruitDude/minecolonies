@@ -15,6 +15,7 @@ import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.buildings.AbstractBuildingContainer;
+import com.minecolonies.core.colony.buildings.CopperChests;
 import com.minecolonies.core.colony.managers.ResearchManager;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.research.LocalResearch;
@@ -67,6 +68,8 @@ public final class VanillaTieIn2GameTests
     {
         TESTS.put("vanilla2_research_snapshot_drops_undone_effects", VanillaTieIn2GameTests::researchSnapshotDropsUndoneEffects);
         TESTS.put("vanilla2_copper_chest_building_container", VanillaTieIn2GameTests::copperChestBuildingContainer);
+        TESTS.put("vanilla2_copper_chest_double_chest_is_held_whole", VanillaTieIn2GameTests::copperChestDoubleChestIsHeldWhole);
+        TESTS.put("vanilla2_copper_chest_removal_reload_and_release", VanillaTieIn2GameTests::copperChestRemovalReloadAndRelease);
     }
 
     static void register(final RegisterGameTestsEvent event)
@@ -284,5 +287,218 @@ public final class VanillaTieIn2GameTests
             helper.assertTrue(!BuildingContainers.copperChest(level.getBlockEntity(scanned)).isLocked(), "removing a container lets golems in again");
             helper.succeed();
         });
+    }
+
+    /**
+     * A copper chest state of the given block, facing north, that joins its other half in the given direction.
+     */
+    private static BlockState half(final GameTestHelper helper, final Block copper, final Direction toward)
+    {
+        for (final ChestType type : new ChestType[] {ChestType.LEFT, ChestType.RIGHT})
+        {
+            final BlockState candidate = copper.defaultBlockState().setValue(ChestBlock.FACING, Direction.NORTH).setValue(ChestBlock.TYPE, type);
+            if (ChestBlock.getConnectedDirection(candidate) == toward)
+            {
+                return candidate;
+            }
+        }
+        helper.fail("fixture: no half that joins to the " + toward);
+        return null;
+    }
+
+    private static BlockEvent.EntityPlaceEvent place(final ServerLevel level, final BlockPos pos, final net.minecraft.world.entity.Entity placer)
+    {
+        final BlockEvent.EntityPlaceEvent event = new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(level.dimension(), level, pos), level.getBlockState(pos.below()), placer);
+        NeoForge.EVENT_BUS.post(event);
+        return event;
+    }
+
+    private static boolean locked(final ServerLevel level, final BlockPos pos)
+    {
+        final ChestBlockEntity chest = BuildingContainers.copperChest(level.getBlockEntity(pos));
+        return chest != null && BuildingContainers.keepsGolemsOut(chest);
+    }
+
+    /**
+     * How many of an item lie on the ground around a position (and removes them).
+     */
+    private static int pickUp(final ServerLevel level, final BlockPos pos, final net.minecraft.world.item.Item item)
+    {
+        int count = 0;
+        for (final net.minecraft.world.entity.item.ItemEntity entity : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+          new net.minecraft.world.phys.AABB(pos).inflate(8)))
+        {
+            if (entity.getItem().is(item))
+            {
+                count += entity.getItem().getCount();
+                entity.discard();
+            }
+        }
+        return count;
+    }
+
+    /**
+     * V-7, review M-1/S1 and L-3: a double copper chest is held whole or not at all. A half placed inside the corners onto a free half just outside them, and
+     * a half placed just outside onto a free half inside, both take both halves (both locked, so no golem reaches the stock through an open half); a chest
+     * placed before the building took it (no placement event) is taken at the building's check; a half joined onto a container chest from a chunk the colony
+     * does not own is refused, and a half placed onto a free chest across the border leaves both halves plain chests.
+     */
+    public static void copperChestDoubleChestIsHeldWhole(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final RsFixture f = RsFixture.found(helper, "vanilla2 copper double", 0, false);
+        final AbstractBuildingContainer hut = (AbstractBuildingContainer) f.builder;
+        final FakePlayer owner = FakePlayerFactory.getMinecraft(level);
+        ChunkDataHelper.claimBuildingChunks((Colony) f.colony, true, hut.getID(), 1, hut.getCorners());
+        final Block copper = Blocks.COPPER_CHEST.asList().get(0);
+        final BlockPos a = hut.getCorners().getA();
+        final BlockPos b = hut.getCorners().getB();
+        final int minX = Math.min(a.getX(), b.getX());
+        final int maxX = Math.max(a.getX(), b.getX());
+        final int minZ = Math.min(a.getZ(), b.getZ());
+        final int y = hut.getID().getY();
+        final BlockState single = copper.defaultBlockState().setValue(ChestBlock.FACING, Direction.NORTH);
+
+        // order 1: a free half just outside the corners' margin, then a half inside joined onto it
+        final BlockPos in1 = new BlockPos(maxX + 1, y, minZ);
+        final BlockPos out1 = in1.east();
+        level.setBlockAndUpdate(out1, single);
+        helper.assertTrue(!hut.listsContainer(out1), "fixture: a free chest outside the corners is not a container");
+        level.setBlockAndUpdate(in1, half(helper, copper, Direction.EAST));
+        helper.assertTrue(!place(level, in1, owner).isCanceled(), "the owner's join stands");
+        helper.assertTrue(hut.listsContainer(in1) && hut.listsContainer(out1), "both halves are containers: " + hut.getContainers());
+        helper.assertTrue(locked(level, in1) && locked(level, out1), "both halves keep golems out");
+
+        // order 2: a free half inside the corners, then a half just outside joined onto it
+        final BlockPos in2 = new BlockPos(maxX + 1, y, minZ + 2);
+        final BlockPos out2 = in2.east();
+        level.setBlockAndUpdate(in2, single);
+        level.setBlockAndUpdate(out2, half(helper, copper, Direction.WEST));
+        helper.assertTrue(!place(level, out2, owner).isCanceled(), "the owner's join stands");
+        helper.assertTrue(hut.listsContainer(in2) && hut.listsContainer(out2) && locked(level, in2) && locked(level, out2),
+          "both halves are containers and locked: " + hut.getContainers());
+
+        // a copper chest that stood inside the corners before (no placement event) is taken at the building's check; the pairs stay
+        final BlockPos pre = new BlockPos(minX - 1, y, minZ);
+        level.setBlockAndUpdate(pre, single);
+        helper.assertTrue(!hut.listsContainer(pre), "fixture: not a container yet");
+        CopperChests.reconcile(hut);
+        helper.assertTrue(hut.listsContainer(pre) && locked(level, pre), "the building's check takes the chest that was there before");
+        helper.assertTrue(hut.listsContainer(in1) && hut.listsContainer(out1) && hut.listsContainer(in2) && hut.listsContainer(out2), "the pairs stay");
+
+        // across a border: a chunk next to the hut's chunk owned by another colony
+        final int top = Math.max(a.getY(), b.getY()) + 3;
+        final BlockPos p = new BlockPos(((hut.getID().getX() >> 4) << 4) + 15, top, hut.getID().getZ());
+        final BlockPos q = p.east();
+        final net.minecraft.world.level.chunk.LevelChunk foreignChunk = level.getChunkAt(q);
+        final com.minecolonies.api.colony.claim.IChunkClaimData claim =
+          com.minecolonies.api.colony.IColonyManager.getInstance().getClaimData(level.dimension(), foreignChunk.getPos());
+        helper.assertTrue(claim != null && claim.getOwningColony() == f.colony.getID(), "fixture: the chunk east of the hut's chunk is the colony's");
+        level.setBlockAndUpdate(p, single);
+        helper.assertTrue(hut.addCopperChest(p, level) && locked(level, p), "fixture: a container chest at the edge of the hut's chunk");
+        claim.setOwningColony(f.colony.getID() + 7777, foreignChunk);
+        try
+        {
+            level.setBlockAndUpdate(q, half(helper, copper, Direction.WEST));
+            helper.assertTrue(place(level, q, owner).isCanceled(), "a half joined onto a container chest from across the border is refused, also for the owner");
+            helper.assertTrue(!hut.listsContainer(q), "and is no container");
+            level.setBlockAndUpdate(q, Blocks.AIR.defaultBlockState());
+            hut.removeContainerPosition(p);
+            helper.assertTrue(!locked(level, p), "fixture: the edge chest is free again");
+
+            // a free chest across the border, the owner's half joined onto it from the colony's side: neither half is the colony's
+            level.setBlockAndUpdate(p, Blocks.AIR.defaultBlockState());
+            level.setBlockAndUpdate(q, single);
+            level.setBlockAndUpdate(p, half(helper, copper, Direction.EAST));
+            place(level, p, owner);
+            helper.assertTrue(!hut.listsContainer(p) && !hut.listsContainer(q) && !locked(level, p) && !locked(level, q),
+              "a double chest reaching across the border stays two plain halves");
+        }
+        finally
+        {
+            claim.setOwningColony(f.colony.getID(), foreignChunk);
+        }
+        helper.succeed();
+    }
+
+    /**
+     * V-7, review M-2, L-1, L-2, L-5, L-7, S2: the building lock survives a save and load of the chest; a chest removed without a player (block destroyed, an
+     * explosion) leaves its items on the ground once (none lost, none doubled) and leaves the list at the building's check; an unregistered copper chest on a
+     * stale position is no stock; a building lock no building holds is cleared when the chunk loads (a hut destroyed while the chunk was unloaded); a lock
+     * stays while another building still lists the chest; content keys are copies.
+     */
+    public static void copperChestRemovalReloadAndRelease(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final RsFixture f = RsFixture.found(helper, "vanilla2 copper removal", 0, false);
+        final AbstractBuildingContainer hut = (AbstractBuildingContainer) f.builder;
+        final FakePlayer owner = FakePlayerFactory.getMinecraft(level);
+        ChunkDataHelper.claimBuildingChunks((Colony) f.colony, true, hut.getID(), 1, hut.getCorners());
+        final BlockState single = Blocks.COPPER_CHEST.asList().get(0).defaultBlockState().setValue(ChestBlock.FACING, Direction.NORTH);
+        final ItemStorage iron = new ItemStorage(new ItemStack(Items.IRON_INGOT));
+
+        final int top = Math.max(hut.getCorners().getA().getY(), hut.getCorners().getB().getY()) + 4;
+        // an explosion high above the hut (first, away from the other chests) takes a listed chest (and its 4 ingots, once); the check drops the empty position
+        final BlockPos e = new BlockPos(hut.getID().getX(), top + 8, hut.getID().getZ());
+        level.setBlockAndUpdate(e, single);
+        helper.assertTrue(hut.addCopperChest(e, level), "fixture: a listed chest above the hut");
+        BuildingContainers.copperChest(level.getBlockEntity(e)).setItem(0, new ItemStack(Items.IRON_INGOT, 4));
+        final float power = 0.6F * (single.getBlock().getExplosionResistance() + 0.3F) + 0.6F;
+        level.explode(null, e.getX() + 0.5D, e.getY() + 0.5D, e.getZ() + 0.5D, power, net.minecraft.world.level.Level.ExplosionInteraction.BLOCK);
+        helper.assertTrue(!BuildingContainers.isCopperChest(level.getBlockState(e)), "fixture: the explosion took the chest (power " + power + ")");
+        helper.assertTrue(pickUp(level, e, Items.IRON_INGOT) == 4, "its 4 ingots are on the ground, once");
+        CopperChests.reconcile(hut);
+        helper.assertTrue(!hut.listsContainer(e), "the check drops the position of the exploded chest");
+
+        // reload: the lock is saved and read back as the building lock
+        final BlockPos a = hut.getID().east();
+        level.setBlockAndUpdate(a, single);
+        place(level, a, owner);
+        helper.assertTrue(hut.listsContainer(a) && locked(level, a), "fixture: a container chest");
+        final ChestBlockEntity chest = BuildingContainers.copperChest(level.getBlockEntity(a));
+        chest.setItem(0, new ItemStack(Items.IRON_INGOT, 5));
+        final CompoundTag saved = chest.saveWithFullMetadata(level.registryAccess());
+        final net.minecraft.world.level.block.entity.BlockEntity loaded =
+          net.minecraft.world.level.block.entity.BlockEntity.loadStatic(a, level.getBlockState(a), saved, level.registryAccess());
+        helper.assertTrue(loaded instanceof final ChestBlockEntity again && BuildingContainers.keepsGolemsOut(again) && BuildingContainers.count(again, iron) == 5,
+          "after a save and load the chest keeps golems out and holds its stock: " + saved);
+
+        // content keys are copies: emptying the slot leaves the key whole
+        final ItemStorage key = BuildingContainers.content(chest).keySet().iterator().next();
+        chest.setItem(0, ItemStack.EMPTY);
+        helper.assertTrue(key.getItemStack().is(Items.IRON_INGOT) && !key.getItemStack().isEmpty(), "the content key is a copy");
+        chest.setItem(0, new ItemStack(Items.IRON_INGOT, 5));
+
+        // removed without a player: the items drop once, the stale position is no stock, the building's check drops it
+        level.destroyBlock(a, true);
+        helper.assertTrue(InventoryUtils.getCountFromBuilding(hut, iron) == 0, "a destroyed chest's items are no stock");
+        helper.assertTrue(pickUp(level, a, Items.IRON_INGOT) == 5, "its 5 ingots are on the ground, once");
+        level.setBlockAndUpdate(a, single);
+        BuildingContainers.copperChest(level.getBlockEntity(a)).setItem(0, new ItemStack(Items.GOLD_INGOT, 3));
+        final ItemStorage gold = new ItemStorage(new ItemStack(Items.GOLD_INGOT));
+        helper.assertTrue(InventoryUtils.getCountFromBuilding(hut, gold) == 0 && ReservationLedger.atBuilding(hut, gold) == 0,
+          "an unregistered copper chest on a stale position is no stock");
+        CopperChests.reconcile(hut);
+        helper.assertTrue(hut.listsContainer(a) && locked(level, a) && InventoryUtils.getCountFromBuilding(hut, gold) == 3,
+          "inside the corners the check takes it as the building's chest");
+
+        // a hut destroyed while the chunk was unloaded leaves a lock no building holds: cleared when the chunk loads; a listed chest keeps its lock
+        final BlockPos r = new BlockPos(hut.getID().getX(), top + 2, hut.getID().getZ() + 2);
+        level.setBlockAndUpdate(r, single);
+        BuildingContainers.keepGolemsOut(level.getBlockEntity(r));
+        helper.assertTrue(locked(level, r), "fixture: a lock left behind");
+        CopperChests.onChunkLoad(level.getChunkAt(r), level);
+        CopperChests.onChunkLoad(level.getChunkAt(a), level);
+        helper.assertTrue(!locked(level, r), "the chunk load clears the lock no building holds");
+        helper.assertTrue(locked(level, a), "and keeps the lock of a listed chest");
+        level.setBlockAndUpdate(r, Blocks.AIR.defaultBlockState());
+
+        // two buildings list one chest: the lock stays until the last one lets go
+        f.warehouse.addContainerPosition(a);
+        hut.removeContainerPosition(a);
+        helper.assertTrue(locked(level, a), "the lock stays while another building lists the chest");
+        CopperChests.reconcile((AbstractBuildingContainer) f.warehouse);
+        helper.assertTrue(!f.warehouse.getContainers().contains(a) && !locked(level, a), "the warehouse's check drops it (racks only) and the lock goes");
+        helper.succeed();
     }
 }
