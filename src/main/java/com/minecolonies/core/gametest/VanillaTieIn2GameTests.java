@@ -359,27 +359,27 @@ public final class VanillaTieIn2GameTests
         final int y = hut.getID().getY();
         final BlockState single = copper.defaultBlockState().setValue(ChestBlock.FACING, Direction.NORTH);
 
-        // order 1: a free half just outside the corners' margin, then a half inside joined onto it
-        final BlockPos in1 = new BlockPos(maxX + 1, y, minZ);
-        final BlockPos out1 = in1.east();
+        // order 1: a free half just outside the corners' margin, then a half inside joined onto it (west of the hut, away from the warehouse)
+        final BlockPos in1 = new BlockPos(minX - 1, y, minZ);
+        final BlockPos out1 = in1.west();
         level.setBlockAndUpdate(out1, single);
         helper.assertTrue(!hut.listsContainer(out1), "fixture: a free chest outside the corners is not a container");
-        level.setBlockAndUpdate(in1, half(helper, copper, Direction.EAST));
+        level.setBlockAndUpdate(in1, half(helper, copper, Direction.WEST));
         helper.assertTrue(!place(level, in1, owner).isCanceled(), "the owner's join stands");
         helper.assertTrue(hut.listsContainer(in1) && hut.listsContainer(out1), "both halves are containers: " + hut.getContainers());
         helper.assertTrue(locked(level, in1) && locked(level, out1), "both halves keep golems out");
 
         // order 2: a free half inside the corners, then a half just outside joined onto it
-        final BlockPos in2 = new BlockPos(maxX + 1, y, minZ + 2);
-        final BlockPos out2 = in2.east();
+        final BlockPos in2 = new BlockPos(minX - 1, y, minZ + 2);
+        final BlockPos out2 = in2.west();
         level.setBlockAndUpdate(in2, single);
-        level.setBlockAndUpdate(out2, half(helper, copper, Direction.WEST));
+        level.setBlockAndUpdate(out2, half(helper, copper, Direction.EAST));
         helper.assertTrue(!place(level, out2, owner).isCanceled(), "the owner's join stands");
         helper.assertTrue(hut.listsContainer(in2) && hut.listsContainer(out2) && locked(level, in2) && locked(level, out2),
           "both halves are containers and locked: " + hut.getContainers());
 
         // a copper chest that stood inside the corners before (no placement event) is taken at the building's check; the pairs stay
-        final BlockPos pre = new BlockPos(minX - 1, y, minZ);
+        final BlockPos pre = new BlockPos(minX - 1, y, minZ + 4);
         level.setBlockAndUpdate(pre, single);
         helper.assertTrue(!hut.listsContainer(pre), "fixture: not a container yet");
         CopperChests.reconcile(hut);
@@ -444,7 +444,18 @@ public final class VanillaTieIn2GameTests
         helper.assertTrue(hut.addCopperChest(e, level), "fixture: a listed chest above the hut");
         BuildingContainers.copperChest(level.getBlockEntity(e)).setItem(0, new ItemStack(Items.IRON_INGOT, 4));
         final float power = 0.6F * (single.getBlock().getExplosionResistance() + 0.3F) + 0.6F;
-        level.explode(null, e.getX() + 0.5D, e.getY() + 0.5D, e.getZ() + 0.5D, power, net.minecraft.world.level.Level.ExplosionInteraction.BLOCK);
+        // colonies keep blocks safe from explosions by default: let this one break blocks
+        final var explosions = com.minecolonies.core.MineColonies.getConfig().getServer().turnOffExplosionsInColonies;
+        final var explosionsBefore = explosions.get();
+        explosions.set(com.minecolonies.api.colony.permissions.Explosions.DAMAGE_EVERYTHING);
+        try
+        {
+            level.explode(null, e.getX() + 0.5D, e.getY() + 0.5D, e.getZ() + 0.5D, power, net.minecraft.world.level.Level.ExplosionInteraction.BLOCK);
+        }
+        finally
+        {
+            explosions.set(explosionsBefore);
+        }
         helper.assertTrue(!BuildingContainers.isCopperChest(level.getBlockState(e)), "fixture: the explosion took the chest (power " + power + ")");
         helper.assertTrue(pickUp(level, e, Items.IRON_INGOT) == 4, "its 4 ingots are on the ground, once");
         CopperChests.reconcile(hut);

@@ -62,6 +62,11 @@ public class BuildingCopperChestHandler
         }
         final BlockPos other = CopperChests.otherHalf(pos, level.getBlockState(pos));
         AbstractBuildingContainer building = other == null ? null : CopperChests.holder(colony, other, null);
+        if (building != null && CopperChests.fit(building, level, pos) != CopperChests.Fit.YES)
+        {
+            // a building that lists the other half but cannot hold the pair (a stale listing): the pair goes to the building that fits it, if any
+            building = null;
+        }
         if (building == null)
         {
             building = CopperChests.bestFit(colony, level, pos);

@@ -42,6 +42,12 @@ public final class BuildingContainers
     public static final LockCode BUILDING_LOCK = new LockCode(ItemPredicate.Builder.item().withCount(MinMaxBounds.Ints.atLeast(0)).build());
 
     /**
+     * {@link #BUILDING_LOCK} as a saved chest reads it back (through the lock codec), so a reloaded chest still counts as held even if decoding does not
+     * rebuild the very same record.
+     */
+    private static final LockCode BUILDING_LOCK_READ_BACK = readBack(BUILDING_LOCK);
+
+    /**
      * The private lock field of a vanilla container, null when it cannot be reached (then golems are not kept out; logged once).
      */
     @Nullable
@@ -49,6 +55,18 @@ public final class BuildingContainers
 
     private BuildingContainers()
     {
+    }
+
+    private static LockCode readBack(final LockCode lock)
+    {
+        try
+        {
+            return LockCode.CODEC.parse(net.minecraft.nbt.NbtOps.INSTANCE, LockCode.CODEC.encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, lock).getOrThrow()).getOrThrow();
+        }
+        catch (final RuntimeException e)
+        {
+            return lock;
+        }
     }
 
     @Nullable
@@ -269,7 +287,7 @@ public final class BuildingContainers
     public static void letGolemsIn(@Nullable final BlockEntity entity)
     {
         final ChestBlockEntity chest = copperChest(entity);
-        if (chest != null && LOCK_FIELD != null && BUILDING_LOCK.equals(lock(chest)))
+        if (chest != null && keepsGolemsOut(chest))
         {
             setLock(chest, LockCode.NO_LOCK);
         }
@@ -336,7 +354,12 @@ public final class BuildingContainers
      */
     public static boolean keepsGolemsOut(final BaseContainerBlockEntity chest)
     {
-        return LOCK_FIELD != null && BUILDING_LOCK.equals(lock(chest));
+        if (LOCK_FIELD == null)
+        {
+            return false;
+        }
+        final LockCode lock = lock(chest);
+        return BUILDING_LOCK.equals(lock) || BUILDING_LOCK_READ_BACK.equals(lock);
     }
 
     @Nullable
