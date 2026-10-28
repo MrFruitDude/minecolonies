@@ -265,7 +265,7 @@ public final class VanillaTieIn2GameTests
         final net.minecraft.server.level.ServerPlayer rival = MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
         helper.assertTrue(!f.colony.getPermissions().hasPermission(rival, Action.PLACE_BLOCKS), "fixture: the rival may not place blocks here");
         final BlockEvent.EntityPlaceEvent byRival = new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(level.dimension(), level, second), level.getBlockState(second.below()), rival);
-        ((Colony) f.colony).getEventHandler().refuseForeignCopperChestJoin(byRival);
+        ((Colony) f.colony).getCopperChestHandler().refuseForeignCopperChestJoin(byRival);
         helper.assertTrue(byRival.isCanceled(), "a rival cannot join a chest onto a building's copper chest");
         NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(level.dimension(), level, second), level.getBlockState(second.below()), owner));
         helper.assertTrue(hut.getContainers().contains(second) && BuildingContainers.copperChest(level.getBlockEntity(second)).isLocked(),

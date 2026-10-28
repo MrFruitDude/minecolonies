@@ -262,6 +262,11 @@ public class Colony implements IColony
     private ColonyPermissionEventHandler eventHandler;
 
     /**
+     * V-7: the copper chests of this colony's buildings (registered and unregistered with the permission event handler).
+     */
+    private com.minecolonies.core.colony.permissions.BuildingCopperChestHandler copperChestHandler;
+
+    /**
      * Whether this colony may be auto-deleted.
      */
     private boolean canColonyBeAutoDeleted = true;
@@ -1019,6 +1024,14 @@ public class Colony implements IColony
     }
 
     /**
+     * @return the handler of the copper chests of this colony's buildings (V-7), null until the colony's world loaded.
+     */
+    public com.minecolonies.core.colony.permissions.BuildingCopperChestHandler getCopperChestHandler()
+    {
+        return copperChestHandler;
+    }
+
+    /**
      * Write colony to save data.
      *
      * @param compound compound to write to.
@@ -1178,6 +1191,8 @@ public class Colony implements IColony
                 eventHandler = new ColonyPermissionEventHandler(this);
                 questManager.onWorldLoad();
                 NeoForge.EVENT_BUS.register(eventHandler);
+                copperChestHandler = new com.minecolonies.core.colony.permissions.BuildingCopperChestHandler(this);
+                NeoForge.EVENT_BUS.register(copperChestHandler);
 
                 // Recovery for missing static colony claims
                 final IChunkClaimData data = claimData.get(ChunkPos.pack(getCenter()));
@@ -1210,6 +1225,10 @@ public class Colony implements IColony
         if (eventHandler != null)
         {
             NeoForge.EVENT_BUS.unregister(eventHandler);
+        }
+        if (copperChestHandler != null)
+        {
+            NeoForge.EVENT_BUS.unregister(copperChestHandler);
         }
         world = null;
     }
