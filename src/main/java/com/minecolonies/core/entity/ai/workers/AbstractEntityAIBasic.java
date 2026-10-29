@@ -1241,7 +1241,14 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             case TELEPORT:
             case DEFER:
                 final BlockPos spot = StandSpots.nearest(world, target.getPosition(), 6, 6, 4, null);
-                if (spot != null)
+                if (spot != null && com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(world, worker.position(), spot))
+                {
+                    // a player watches: no jump, a new path, and the ladder starts again (he is put there once no one looks)
+                    worker.getNavigation().stop();
+                    walkStuck.progress();
+                    walkStuckTick = -1L;
+                }
+                else if (spot != null)
                 {
                     worker.getNavigation().stop();
                     worker.snapTo(spot.getX() + 0.5D, spot.getY(), spot.getZ() + 0.5D);

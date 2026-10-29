@@ -42,6 +42,7 @@ import com.minecolonies.core.entity.ai.workers.util.WorkStuckTracker;
 import com.minecolonies.core.entity.ai.workers.util.WorkTiming;
 import com.minecolonies.core.entity.ai.workers.util.BuildingProgressStage;
 import com.minecolonies.core.entity.ai.workers.util.BuildingStructureHandler;
+import com.minecolonies.core.entity.pathfinding.PlayerWatch;
 import com.minecolonies.core.tileentities.TileEntityDecorationController;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
@@ -624,7 +625,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             final BlockPos target = blockToMine != null ? blockToMine : worldPos;
             if (reachTarget != null && cannotReachAtAll(target))
             {
-                if (retryBlocks.contains(target) && reachTeleported.add(target.immutable()) && teleportToReach(target))
+                if (retryBlocks.contains(target) && !PlayerWatch.watched(world, worker.position(), target) && reachTeleported.add(target.immutable()) && teleportToReach(target))
                 {
                     // the second round (the first one gave the block up for later): no tower came, and the block is out of reach from everywhere he can walk to - but
                     // there is a spot that reaches it (the inside of a box that he built the walls of from outside, with no door), and the unstuck ladder puts him
@@ -1124,7 +1125,9 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         stuckLastPos = position;
 
         WorkStuckTracker.Step step = stuck.blocked(dt, moved);
-        if (step == WorkStuckTracker.Step.NONE && stuck.stationaryTicks() >= WorkStuckTracker.REPATH_AT + 20 && (fellBelowWorkArea() || isStrandedInHole()))
+        // a pit with no way up is the one case a worker is put out in front of a player (he cannot walk out, there is nothing else to do)
+        boolean shutIn = false;
+        if (step == WorkStuckTracker.Step.NONE && stuck.stationaryTicks() >= WorkStuckTracker.REPATH_AT + 20 && ((shutIn = isStrandedInHole()) || fellBelowWorkArea()))
         {
             // fallen into a hole and no way up: a tower of scaffolding up and out if there is one, else no need to try the gentler steps first
             if (tryEscapeTower())
@@ -1158,7 +1161,16 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             case TELEPORT:
                 if (!WorkerSettings.teleportOffForTests(worker.getId()))
                 {
-                    teleportOut(target);
+                    if (!shutIn && PlayerWatch.watched(world, worker.position(), (Vec3) null))
+                    {
+                        // a player watches: no jump. He walks on (a new path), and the ladder goes on to DEFER: the block waits, the worker moves on
+                        Log.getLogger().debug("{} would be put out for {}, but a player watches: walks on", worker.getName().getString(), target);
+                        resetWalkTarget();
+                    }
+                    else
+                    {
+                        teleportOut(target);
+                    }
                 }
                 break;
             default:
@@ -1514,7 +1526,20 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     }
 
     private long trapCheckAt = 0L;
-    private int  trapStrikes  = 0;
+    @Nullable
+    private Vec3 trapLastPos  = null;
+    private final com.minecolonies.core.entity.ai.workers.util.ShutInGate trapGate = new com.minecolonies.core.entity.ai.workers.util.ShutInGate();
+
+    /**
+     * Why the worker is blocked: shut in a second time soon after a rescue (he is left where he is and says so), or null.
+     */
+    @Nullable
+    private String trapBlockedReason = null;
+
+    /**
+     * How often this worker was put out of his structure (for the tests).
+     */
+    private int trapRescueCount = 0;
 
     /**
      * Counts of the times a worker was found shut in and put out (for the tests).
@@ -1522,9 +1547,43 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     public static volatile int trappedRescues = 0;
 
     /**
+     * Counts of the times a worker was found shut in again within the cooldown of the rescue and was marked blocked instead (for the tests).
+     */
+    public static volatile int trappedBlocked = 0;
+
+    /**
+     * @return why the worker is blocked at the moment (shut in again, no second rescue), or null.
+     */
+    @Nullable
+    public final String trapBlockedReason()
+    {
+        return trapBlockedReason;
+    }
+
+    /**
+     * @return how often this worker was put out of his structure.
+     */
+    public final int trapRescueCount()
+    {
+        return trapRescueCount;
+    }
+
+    /**
+     * The box the worker can be shut in by: the structure he works on. Null for a worker without a structure (no rescue then).
+     */
+    @Nullable
+    protected BlockPos[] trapArea()
+    {
+        return workArea();
+    }
+
+    /**
      * A worker who works with the physical reach may find the walls of the structure risen around him (he stood inside to reach the blocks of the
      * wall on the other side): no path leads out. He walks in circles at best (the unstuck ladder only counts a worker who stands still), so he is
-     * put out at the entrance of his hut once it is clear that he is shut in.
+     * put out at the entrance of his hut once it is clear that he is shut in: he stands in the box of his structure, on the level of his hut,
+     * the search finds no way from him to the spot by his hut (doors, gates, trapdoors and ladders are ways), and he did not get on for three
+     * checks (a worker who walks a path is never put out). Once per structure in {@link com.minecolonies.core.entity.ai.workers.util.ShutInGate#COOLDOWN}:
+     * shut in again soon after, he is marked blocked with the reason and stays (see ShutInGate).
      */
     protected final void checkTrapped()
     {
@@ -1538,39 +1597,53 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return;
         }
         trapCheckAt = now + 40L;
+        final Vec3 position = worker.position();
+        final double moved = trapLastPos == null ? 0.0D : position.distanceTo(trapLastPos);
+        trapLastPos = position;
         // shut in by the walls of his structure: he stands inside its box (anywhere else the unstuck ladder helps a worker who cannot move; a worker
         // who walks to the site from his hut is not shut in, even if the search below misses the way: preview 20261029-3, a builder put back into
-        // his hut every few seconds on his walk to the town hall)
-        final BlockPos[] area = workArea();
-        if (area != null && (worker.getBlockX() < area[0].getX() - 1 || worker.getBlockX() > area[1].getX() + 1 || worker.getBlockZ() < area[0].getZ() - 1
-                               || worker.getBlockZ() > area[1].getZ() + 1))
+        // his hut every few seconds on his walk to the town hall). A worker without a structure (a helper between batches) is never shut in.
+        final BlockPos[] area = trapArea();
+        final boolean inBox = area != null && worker.getBlockX() >= area[0].getX() - 1 && worker.getBlockX() <= area[1].getX() + 1
+                                && worker.getBlockZ() >= area[0].getZ() - 1 && worker.getBlockZ() <= area[1].getZ() + 1;
+        final BlockPos[] home = {null};
+        final com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision decision = trapGate.check(inBox, moved, () -> {
+            home[0] = StandSpots.nearest(world, building.getPosition(), 8, 4, 4, null);
+            // (only on the level of his hut: on a wall or in a pit he is not "shut in", that is for the unstuck ladder)
+            return home[0] != null && Math.abs(worker.getBlockY() - home[0].getY()) <= 1 && Math.abs(home[0].getX() - worker.getBlockX()) < WALKABLE_RADIUS - 2
+                     && Math.abs(home[0].getZ() - worker.getBlockZ()) < WALKABLE_RADIUS - 2 && !canWalkTo(home[0]);
+        }, area == null ? BlockPos.ZERO : area[0], now);
+        if (!trapGate.isBlocked())
         {
-            trapStrikes = 0;
+            trapBlockedReason = null;
+        }
+        if (decision == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.BLOCKED)
+        {
+            trapBlockedReason = "shut in at " + worker.blockPosition().toShortString() + " again soon after he was put out";
+            trappedBlocked++;
+            Log.getLogger().info("{} is {}: no second rescue, blocked", worker.getName().getString(), trapBlockedReason);
+            worker.getCitizenData().triggerInteraction(
+              new com.minecolonies.core.colony.interactionhandling.SimpleNotificationInteraction(Component.translatableEscape("com.minecolonies.coremod.gui.chat.builder.shutin"),
+                com.minecolonies.api.colony.interactionhandling.ChatPriority.IMPORTANT));
             return;
         }
-        final BlockPos home = StandSpots.nearest(world, building.getPosition(), 8, 4, 4, null);
-        // (only on the level of his hut: on a wall or in a pit he is not "shut in", that is for the unstuck ladder)
-        if (home == null || Math.abs(worker.getBlockY() - home.getY()) > 1 || Math.abs(home.getX() - worker.getBlockX()) >= WALKABLE_RADIUS - 2
-              || Math.abs(home.getZ() - worker.getBlockZ()) >= WALKABLE_RADIUS - 2 || canWalkTo(home))
-        {
-            trapStrikes = 0;
-            return;
-        }
-        if (++trapStrikes < 3)
+        if (decision != com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.RESCUE)
         {
             return;
         }
-        trapStrikes = 0;
-        Log.getLogger().debug("{} is shut in at {}: put out at {}", worker.getName().getString(), worker.blockPosition(), home);
+        final BlockPos spot = home[0];
+        Log.getLogger().info("{} is shut in at {}: put out at {}", worker.getName().getString(), worker.blockPosition(), spot);
         if (this instanceof com.minecolonies.core.entity.ai.workers.builder.EntityAIStructureBuilder && com.minecolonies.core.entity.ai.workers.util.ReachAudit.isEnabled())
         {
-            Log.getLogger().info("SCAFFOLD {} is shut in at {}: put out at {}", worker.getName().getString(), worker.blockPosition(), home);
+            Log.getLogger().info("SCAFFOLD {} is shut in at {}: put out at {}", worker.getName().getString(), worker.blockPosition(), spot);
         }
         trappedRescues++;
+        trapRescueCount++;
         puffAt(worker.position());
         worker.getNavigation().stop();
-        worker.snapTo(home.getX() + 0.5D, home.getY(), home.getZ() + 0.5D);
+        worker.snapTo(spot.getX() + 0.5D, spot.getY(), spot.getZ() + 0.5D);
         puffAt(worker.position());
+        trapLastPos = worker.position();
         resetWalkTarget();
         forgetWalkable();
     }
@@ -1959,7 +2032,14 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
         {
             return null;
         }
-        final BuildingStructureHandler<J, B> handler = structurePlacer.getB();
+        return boxOf(structurePlacer.getB());
+    }
+
+    /**
+     * The corners of a structure handler's blueprint in the world (low, high).
+     */
+    protected static BlockPos[] boxOf(final IStructureHandler handler)
+    {
         final BlockPos a = handler.getProgressPosInWorld(BlockPos.ZERO);
         final BlockPos b = handler.getProgressPosInWorld(new BlockPos(handler.getBluePrint().getSizeX() - 1, handler.getBluePrint().getSizeY() - 1, handler.getBluePrint().getSizeZ() - 1));
         return new BlockPos[] {new BlockPos(Math.min(a.getX(), b.getX()), Math.min(a.getY(), b.getY()), Math.min(a.getZ(), b.getZ())),

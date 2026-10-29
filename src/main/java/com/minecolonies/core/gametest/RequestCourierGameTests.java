@@ -74,6 +74,10 @@ final class RequestCourierGameTests
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_courier_long_task_hands_back"),
           info -> new MinecoloniesGameTestInstance(info, RequestCourierGameTests::longTaskHandsBack),
           MinecoloniesGameTestRegistrar.isolatedColonyData(event, "rs_courier_long_task_hands_back"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_courier_short_load"),
+          info -> new MinecoloniesGameTestInstance(info, RequestCourierGameTests::shortLoad),
+          MinecoloniesGameTestRegistrar.isolatedColonyData(event, "rs_courier_short_load"));
         for (final boolean immediate : new boolean[] {true, false})
         {
             final String name = "rs_courier_next_task_" + (immediate ? "immediate" : "delayed");
@@ -82,6 +86,77 @@ final class RequestCourierGameTests
               info -> new MinecoloniesGameTestInstance(info, helper -> nextTask(helper, immediate)),
               MinecoloniesGameTestRegistrar.isolatedColonyData(event, name));
         }
+    }
+
+    /**
+     * Sol r0 F4: a short load is no full delivery. The courier picks up 16 logs for the builder; on the way 8 are taken out of his bag (a co-manager
+     * in CC). He puts the 8 he has into the hut, and the request for 16 stays open: no "delivered in full" for the 8 that never came. The rest comes
+     * on a later trip.
+     */
+    static void shortLoad(final GameTestHelper helper)
+    {
+        final RsFixture f = RsFixture.found(helper, "rs-courier-short", 4);
+        final IBuilding deliveryman = f.place(ModBlocks.blockHutDeliveryman, new BlockPos(32, 1, 2), "craftsmanship/storage/deliveryman1.blueprint");
+        f.stock(0, new ItemStack(Items.OAK_LOG, 60));
+        helper.runAfterDelay(200, () -> {
+            final ICitizenData courier = f.spawn(new BlockPos(34, 1, 8), false);
+            helper.assertTrue(deliveryman.getModule(BuildingModules.COURIER_WORK).assignCitizen(courier), "courier not assigned to the courier hut");
+            helper.assertTrue(f.warehouse.getModule(BuildingModules.WAREHOUSE_COURIERS).assignCitizen(courier), "courier not assigned to the warehouse");
+            courier.getEntity().ifPresent(e -> e.setPos(f.warehouse.getID().getX() + 0.5D, f.warehouse.getID().getY(), f.warehouse.getID().getZ() + 0.5D));
+            final JobDeliveryman job = courier.getJob(JobDeliveryman.class);
+            final com.minecolonies.api.colony.requestsystem.token.IToken<?> request = f.builder.createRequest(new Stack(new ItemStack(Items.OAK_LOG, 16), 16, 16), false);
+            final long short0 = com.minecolonies.core.colony.requestsystem.RsStats.deliveriesShort;
+            final long start = f.level.getGameTime();
+            final boolean[] taken = {false};
+            final int[] firstArrival = {-1};
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                final long now = f.level.getGameTime();
+                final int carried = InventoryUtils.getItemCountInItemHandler(courier.getInventory(), s -> s.is(Items.OAK_LOG));
+                final int inHut = InventoryUtils.getItemCountInItemHandler(f.builder.getItemHandlerCap(), s -> s.is(Items.OAK_LOG));
+                final String state = job.getWorkerAI() == null ? "-" : String.valueOf(job.getWorkerAI().getState());
+                if (!taken[0] && carried >= 16 && state.equals("DELIVERY"))
+                {
+                    // 8 of the 16 leave the bag on the way
+                    int left = 8;
+                    for (int i = 0; i < courier.getInventory().getSlots() && left > 0; i++)
+                    {
+                        if (courier.getInventory().getStackInSlot(i).is(Items.OAK_LOG))
+                        {
+                            left -= courier.getInventory().extractItem(i, left, false).getCount();
+                        }
+                    }
+                    taken[0] = true;
+                }
+                if (taken[0] && firstArrival[0] < 0 && inHut > 0)
+                {
+                    firstArrival[0] = inHut;
+                    final com.minecolonies.api.colony.requestsystem.request.IRequest<?> open = f.colony.getRequestManager().getRequestForToken(request);
+                    final String where = "first arrival " + inHut + " logs at " + (now - start) + ", request " + (open == null ? "gone" : String.valueOf(open.getState()))
+                                           + ", short deliveries " + (com.minecolonies.core.colony.requestsystem.RsStats.deliveriesShort - short0);
+                    Log.getLogger().info("RS_METRIC courier_short_load {}", where);
+                    helper.assertTrue(inHut == 8, "the courier put " + inHut + " logs in, not the 8 he carried: " + where);
+                    helper.assertTrue(open != null && open.getState() != com.minecolonies.api.colony.requestsystem.request.RequestState.COMPLETED
+                                        && open.getState() != com.minecolonies.api.colony.requestsystem.request.RequestState.RESOLVED
+                                        && open.getState() != com.minecolonies.api.colony.requestsystem.request.RequestState.RECEIVED,
+                      "the request for 16 logs was done with 8 delivered: " + where);
+                    helper.assertTrue(com.minecolonies.core.colony.requestsystem.RsStats.deliveriesShort > short0, "the short delivery was not counted as short: " + where);
+                }
+                if (firstArrival[0] >= 0 && inHut >= 16)
+                {
+                    Log.getLogger().info("RS_METRIC courier_short_load rest arrived at {} ({} logs)", now - start, inHut);
+                    helper.succeed();
+                    return;
+                }
+                if (now - start > 9000)
+                {
+                    helper.fail("timeout: taken=" + taken[0] + " firstArrival=" + firstArrival[0] + " inHut=" + inHut + " carried=" + carried + " state=" + state + " queue=" + job.getTaskQueue().size());
+                    return;
+                }
+                helper.runAfterDelay(1, () -> poll[0].run());
+            };
+            helper.runAfterDelay(1, () -> poll[0].run());
+        });
     }
 
     /**

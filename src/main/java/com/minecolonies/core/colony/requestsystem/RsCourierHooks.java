@@ -88,4 +88,25 @@ public final class RsCourierHooks
         ledger.reserveStock(destination.getID(), null, new ItemStorage(delivery.getRequest().getStack()), delivery.getRequest().getStack().getCount(), parent.getId(), name,
           ReservationReason.BUILDING_HANDOUT, now);
     }
+
+    /**
+     * Part of a delivery went into the destination (a short load): the items are there and count as moved, but the delivery is not done. It fails
+     * and goes back to the request system, which asks again for what is missing; no space is committed and nothing is held for the requester.
+     *
+     * @param manager  the request manager.
+     * @param delivery the delivery request.
+     * @param count    how many of its items went in.
+     */
+    public static void arrivedPartly(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends Delivery> delivery, final int count)
+    {
+        if (StorageNetwork.on(manager) && manager.getColony() instanceof final Colony colony)
+        {
+            final ColonyStorage storage = ColonyStorage.of(colony);
+            final BlockPos source = storage.owningWarehouse(delivery.getRequest().getStart().getInDimensionLocation());
+            storage.recordFlow(source == null ? delivery.getRequest().getStart().getInDimensionLocation() : source,
+              delivery.getRequest().getTarget().getInDimensionLocation(), delivery.getRequest().getStack().copyWithCount(count));
+        }
+        RsStats.itemsDelivered += count;
+        RsStats.deliveriesShort++;
+    }
 }
