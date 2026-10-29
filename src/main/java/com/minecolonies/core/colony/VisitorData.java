@@ -9,6 +9,7 @@ import com.minecolonies.api.util.WorldUtil;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.BlockPos;
@@ -30,6 +31,7 @@ public class VisitorData extends CitizenData implements IVisitorData
      */
     private static final String TAG_RECRUIT_COST = "rcost";
     private static final String TAG_RECRUIT_COST_QTY = "rcostqty";
+    private static final String TAG_TIER_BOOTS = "tierboots";
 
     /**
      * The position the citizen is sitting at
@@ -40,6 +42,11 @@ public class VisitorData extends CitizenData implements IVisitorData
      * The recruitment level, used for stats/equipment and costs
      */
     private ItemStack recruitCost = ItemStack.EMPTY;
+
+    /**
+     * The boots of the recruit tier, put on every entity spawned for this visitor (also one spawned later, when the colony loads).
+     */
+    private ItemStack tierBoots = ItemStack.EMPTY;
 
     /**
      * Create a CitizenData given an ID. Used as a super-constructor or during loading.
@@ -62,6 +69,10 @@ public class VisitorData extends CitizenData implements IVisitorData
         compoundNBT.put(TAG_RECRUIT_COST, ItemStackUtils.serializeOptional(recruitCopy, provider));
         compoundNBT.putInt(TAG_RECRUIT_COST_QTY, recruitCost.getCount());
         BlockPosUtil.write(compoundNBT, TAG_SITTING, sittingPosition);
+        if (!tierBoots.isEmpty())
+        {
+            compoundNBT.put(TAG_TIER_BOOTS, ItemStackUtils.serializeOptional(tierBoots, provider));
+        }
         return compoundNBT;
     }
 
@@ -72,6 +83,44 @@ public class VisitorData extends CitizenData implements IVisitorData
         sittingPosition = BlockPosUtil.read(nbtTagCompound, TAG_SITTING);
         recruitCost = ItemStackUtils.parseOptional(provider, nbtTagCompound.getCompoundOrEmpty(TAG_RECRUIT_COST));
         recruitCost.setCount(nbtTagCompound.getIntOr(TAG_RECRUIT_COST_QTY, 0));
+        tierBoots = ItemStackUtils.parseOptional(provider, nbtTagCompound.getCompoundOrEmpty(TAG_TIER_BOOTS));
+    }
+
+    @Override
+    public void initEntityValues()
+    {
+        super.initEntityValues();
+        applyTierBoots();
+    }
+
+    /**
+     * Sets the boots of the visitor's recruit tier and puts them on its entity, now or when it spawns.
+     *
+     * @param boots the tier's boots.
+     */
+    public void setTierBoots(@NotNull final ItemStack boots)
+    {
+        this.tierBoots = boots.copy();
+        applyTierBoots();
+    }
+
+    /**
+     * @return the boots of the visitor's recruit tier, empty if none were set.
+     */
+    public ItemStack getTierBoots()
+    {
+        return tierBoots;
+    }
+
+    /**
+     * Puts the tier's boots on the entity if it has none.
+     */
+    private void applyTierBoots()
+    {
+        if (!tierBoots.isEmpty() && getEntity().isPresent() && getEntity().get().getItemBySlot(EquipmentSlot.FEET).isEmpty())
+        {
+            getEntity().get().setItemSlot(EquipmentSlot.FEET, tierBoots.copy());
+        }
     }
 
     @Override

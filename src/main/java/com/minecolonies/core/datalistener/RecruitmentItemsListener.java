@@ -87,7 +87,7 @@ public class RecruitmentItemsListener extends SimpleJsonResourceReloadListener<J
     /**
      * Get a random recruit cost using the input random source.
      *
-     * @return a random recruit cost.
+     * @return a random recruit cost, or null if none is loaded for the rolled tier.
      */
     @Nullable
     public static RecruitCost getRandomRecruitCost(final int buildingLevel)
@@ -104,6 +104,10 @@ public class RecruitmentItemsListener extends SimpleJsonResourceReloadListener<J
             rarity = limit - 1;
         }
         final List<RecruitCost> recruitCostsAtTier = RECRUIT_COSTS.get(rarity);
+        if (recruitCostsAtTier == null || recruitCostsAtTier.isEmpty())
+        {
+            return null;
+        }
         return recruitCostsAtTier.get(ColonyConstants.rand.nextInt(recruitCostsAtTier.size()));
     }
 

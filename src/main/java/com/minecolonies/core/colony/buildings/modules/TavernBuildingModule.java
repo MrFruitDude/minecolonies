@@ -3,6 +3,7 @@ package com.minecolonies.core.colony.buildings.modules;
 import com.ldtteam.blockui.views.BOWindow;
 import com.ldtteam.structurize.blockentities.interfaces.IBlueprintDataProviderBE;
 import com.minecolonies.api.colony.ICitizenData;
+import com.minecolonies.api.colony.ICivilianData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.IVisitorData;
@@ -16,6 +17,7 @@ import com.minecolonies.api.sounds.TavernSounds;
 import com.minecolonies.api.util.MathUtils;
 import com.minecolonies.api.util.StatsUtil;
 import com.minecolonies.core.client.gui.huts.WindowHutLiving;
+import com.minecolonies.core.colony.VisitorData;
 import com.minecolonies.core.colony.buildings.views.LivingBuildingView;
 import com.minecolonies.core.colony.interactionhandling.RecruitmentInteraction;
 import com.minecolonies.core.datalistener.CustomVisitorListener;
@@ -24,7 +26,6 @@ import com.minecolonies.core.network.messages.client.colony.PlayMusicAtPosMessag
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -181,7 +182,19 @@ public class TavernBuildingModule extends AbstractBuildingModule
     @Override
     public boolean hasVisitorRoom()
     {
-        return building.getBuildingLevel() > 0 && externalCitizens.size() < 3 * building.getBuildingLevel();
+        if (building.getBuildingLevel() <= 0)
+        {
+            return false;
+        }
+        int present = 0;
+        for (final Integer id : externalCitizens)
+        {
+            if (building.getColony().getVisitorManager().getVisitor(id) != null)
+            {
+                present++;
+            }
+        }
+        return present < 3 * building.getBuildingLevel();
     }
 
     @Override
@@ -233,20 +246,27 @@ public class TavernBuildingModule extends AbstractBuildingModule
         newCitizen.setBedPos(building.getPosition());
         newCitizen.setHomeBuilding(building);
         newCitizen.getCitizenSkillHandler().init(cost.recruitLevel());
-        if (seed.name() != null && !seed.name().isBlank())
+        final String name = sanitizeVisitorName(seed.name());
+        if (!name.isEmpty() && !isNameTaken(building.getColony(), name, newCitizen.getId()))
         {
-            final String name = seed.name().strip();
-            newCitizen.setName(name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name);
+            newCitizen.setName(name);
         }
         if (seed.skills() != null)
         {
+            // The tier's top roll: CitizenSkillHandler.init(cap) rolls 1..cap-1.
+            final int skillCap = Math.max(1, Math.min(MAX_CITIZEN_LEVEL, cost.recruitLevel() - 1));
             for (final Map.Entry<Skill, Integer> skill : seed.skills().entrySet())
             {
                 if (skill.getKey() != null && skill.getValue() != null && newCitizen.getCitizenSkillHandler().getSkills().containsKey(skill.getKey()))
                 {
-                    newCitizen.getCitizenSkillHandler().getSkills().get(skill.getKey()).setLevel(Math.max(1, Math.min(MAX_CITIZEN_LEVEL, skill.getValue())));
+                    newCitizen.getCitizenSkillHandler().getSkills().get(skill.getKey()).setLevel(Math.max(1, Math.min(skillCap, skill.getValue())));
                 }
             }
+        }
+        if (newCitizen instanceof VisitorData visitor)
+        {
+            // Kept on the data, so an entity spawned later (colony not loaded now) wears them too.
+            visitor.setTierBoots(cost.boots());
         }
 
         final ItemStack recruitCostItem = cost.recruitItem().copy();
@@ -274,15 +294,86 @@ public class TavernBuildingModule extends AbstractBuildingModule
 
         spawnPositions.add(building.getPosition());
         building.getColony().getVisitorManager().spawnOrCreateCivilian(newCitizen, building.getColony().getWorld(), spawnPositions, true);
-        if (newCitizen.getEntity().isPresent())
-        {
-            newCitizen.getEntity().get().setItemSlot(EquipmentSlot.FEET, cost.boots());
-        }
 
         StatsUtil.trackStat(building, NEW_VISITORS, 1);
 
         externalCitizens.add(newCitizen.getId());
         return newCitizen;
+    }
+
+    /**
+     * A seeded visitor name made safe to show: formatting codes ({@code §x}) and control characters dropped, runs of whitespace made one space,
+     * trimmed, and cut to {@link ITavernVisitorModule#MAX_NAME_LENGTH} code points.
+     *
+     * @param raw the requested name, may be null.
+     * @return the clean name, empty if nothing is left.
+     */
+    @NotNull
+    public static String sanitizeVisitorName(@Nullable final String raw)
+    {
+        if (raw == null)
+        {
+            return "";
+        }
+        final StringBuilder clean = new StringBuilder();
+        boolean space = false;
+        for (int i = 0; i < raw.length(); )
+        {
+            final int cp = raw.codePointAt(i);
+            i += Character.charCount(cp);
+            if (cp == '\u00a7')
+            {
+                // A formatting code: drop it and the code character after it.
+                if (i < raw.length())
+                {
+                    i += Character.charCount(raw.codePointAt(i));
+                }
+                continue;
+            }
+            if (Character.isWhitespace(cp) || Character.isSpaceChar(cp))
+            {
+                space = clean.length() > 0;
+                continue;
+            }
+            if (Character.isISOControl(cp) || Character.getType(cp) == Character.FORMAT)
+            {
+                continue;
+            }
+            if (space)
+            {
+                clean.append(' ');
+                space = false;
+            }
+            clean.appendCodePoint(cp);
+        }
+        String name = clean.toString();
+        if (name.codePointCount(0, name.length()) > MAX_NAME_LENGTH)
+        {
+            name = name.substring(0, name.offsetByCodePoints(0, MAX_NAME_LENGTH)).strip();
+        }
+        return name;
+    }
+
+    /**
+     * Whether a citizen or another visitor of the colony already has this name (MineColonies keeps names unique, as it tracks parents by name).
+     */
+    private static boolean isNameTaken(@NotNull final IColony colony, @NotNull final String name, final int selfId)
+    {
+        for (final ICitizenData citizen : colony.getCitizenManager().getCitizens())
+        {
+            if (citizen != null && name.equals(citizen.getName()))
+            {
+                return true;
+            }
+        }
+        for (final ICivilianData visitor : colony.getVisitorManager().getCivilianDataMap().values())
+        {
+            if (visitor != null && visitor.getId() != selfId && name.equals(visitor.getName()))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
