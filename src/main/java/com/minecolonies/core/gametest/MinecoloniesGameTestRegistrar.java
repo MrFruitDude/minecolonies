@@ -188,6 +188,16 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 // vanilla tie-in wave 2: client research snapshot (UD-19), copper chests as building containers (V-7)
                 VanillaTieIn2GameTests.register(event);
             }
+            // forestry (round 3): exact group names, as "forestry_treechop" contains "forestry"
+            final java.util.List<String> groups = java.util.Arrays.stream(only.split(",")).map(String::trim).toList();
+            if (groups.contains("forestry"))
+            {
+                ForestryGameTests.register(event);
+            }
+            if (groups.contains("forestry_treechop"))
+            {
+                ForestryGameTests.registerTreeChop(event);
+            }
             if (only.contains("logistics"))
             {
                 // round 13: the request system, courier and logistics tests (no long headline runs)
