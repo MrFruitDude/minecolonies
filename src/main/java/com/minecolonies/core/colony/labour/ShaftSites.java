@@ -923,11 +923,12 @@ public final class ShaftSites
         {
             return new Marked(null, LabourShafts.Refusal.OUTSIDE);
         }
-        final BlockPos at = new BlockPos(column.getX(), level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column.getX(), column.getZ()) - 1, column.getZ());
-        if (!LabourSites.loadedNow(level, at))
+        if (!LabourSites.loadedNow(level, column))
         {
+            // (the height is read only where the chunk is loaded: a look never loads one)
             return new Marked(null, LabourShafts.Refusal.OUTSIDE);
         }
+        final BlockPos at = new BlockPos(column.getX(), level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column.getX(), column.getZ()) - 1, column.getZ());
         final Marked marked = tryOpen(level, at, true, openedBy);
         if (marked.shaft() != null)
         {

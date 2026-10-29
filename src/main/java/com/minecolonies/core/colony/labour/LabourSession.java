@@ -989,7 +989,8 @@ public final class LabourSession implements IIdleTaskSession
     {
         final ShaftSites sites = board.shafts();
         final ShaftSites.Assignment at = shaftAt;
-        if (sites.hostileNear(dig.pos()) || sites.hostileNear(worker.blockPosition()))
+        // (looked for before each block, not on every tick of the work)
+        if (workUntil == 0L && (sites.hostileNear(dig.pos()) || sites.hostileNear(worker.blockPosition())))
         {
             LabourStats.log("citizen {} leaves shaft {}: a hostile is near", citizen.getId(), at.shaft().id);
             sites.release(citizen.getId());
