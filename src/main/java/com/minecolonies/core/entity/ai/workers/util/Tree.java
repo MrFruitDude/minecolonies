@@ -128,6 +128,30 @@ public class Tree
     private boolean netherTree = false;
 
     /**
+     * Forestry: the footprint of the tree when it was chosen (null for Dynamic Trees, slime trees and trees read from NBT).
+     */
+    @Nullable
+    private TreeFootprint.Footprint footprint;
+
+    /**
+     * Forestry: blocks that hang on the tree and go with it (bee nest, cocoa), mined before the logs.
+     */
+    private LinkedList<BlockPos> decorations = new LinkedList<>();
+
+    /**
+     * Forestry: every log of the tree as first seen (the leaf sweep starts next to them). Not saved: after a reload the sweep uses the box.
+     */
+    private final List<BlockPos> allLogs = new ArrayList<>();
+
+    /**
+     * Forestry: the box of the tree's logs, saved for the leaf sweep and the drop capture.
+     */
+    @Nullable
+    private BlockPos boxMin;
+    @Nullable
+    private BlockPos boxMax;
+
+    /**
      * Private constructor of the tree. Used by the equals and createFromNBt method.
      */
     private Tree()
@@ -145,7 +169,11 @@ public class Tree
     public Tree(@NotNull final Level world, @NotNull final BlockPos log, @Nullable final IColony colony)
     {
         final BlockState block = BlockPosUtil.getBlockState(world, log);
-        if (block.is(ModTags.tree) || Compatibility.isSlimeBlock(block.getBlock()) || Compatibility.isDynamicBlock(block.getBlock()))
+        if (!Compatibility.isSlimeBlock(block.getBlock()) && !Compatibility.isDynamicBlock(block.getBlock()) && TreeFootprint.isTreeBlock(block))
+        {
+            initFromFootprint(world, log, colony);
+        }
+        else if (Compatibility.isSlimeBlock(block.getBlock()) || Compatibility.isDynamicBlock(block.getBlock()))
         {
             isTree = true;
             woodBlocks = new LinkedList<>();
@@ -175,6 +203,125 @@ public class Tree
         {
             isTree = false;
         }
+    }
+
+    /**
+     * Forestry: the whole natural tree from one scan (logs, base, stumps, decorations, the sapling from the leaves next to its own logs).
+     */
+    private void initFromFootprint(@NotNull final Level world, @NotNull final BlockPos log, @Nullable final IColony colony)
+    {
+        footprint = TreeFootprint.scan(world, log, colony, MineColonies.getConfig().getServer().maxTreeSize.get());
+        if (footprint == null || footprint.logs.isEmpty())
+        {
+            isTree = false;
+            return;
+        }
+        location = footprint.base;
+        topLog = footprint.base;
+        for (final BlockPos pos : footprint.logs)
+        {
+            if (pos.getY() > topLog.getY())
+            {
+                topLog = pos;
+            }
+        }
+        // A tree the scan skips (next to a build, too big) still counts as a tree, so the Forester records the skip instead of picking it again
+        isTree = footprint.skip != TreeFootprint.Skip.NONE || footprint.leaves >= NUMBER_OF_LEAVES;
+        woodBlocks = new LinkedList<>(footprint.logs);
+        woodBlocks.sort((c1, c2) -> (int) (c1.distSqr(location) - c2.distSqr(location)));
+        allLogs.addAll(footprint.logs);
+        decorations = new LinkedList<>(footprint.decorations);
+        final net.minecraft.world.phys.AABB box = footprint.box();
+        boxMin = BlockPos.containing(box.minX, box.minY, box.minZ);
+        boxMax = BlockPos.containing(box.maxX - 1, box.maxY - 1, box.maxZ - 1);
+        leaves = collectOwnLeaves(world);
+
+        final BlockPos nearLeaf = footprint.mostCommonNearLeaf();
+        final ItemStack fromNear = nearLeaf == null ? null : calcSaplingForPos(world, nearLeaf, false);
+        sapling = fromNear != null ? fromNear : calcSapling(world);
+        netherTree = sapling.is(Tags.Items.MUSHROOMS) || sapling.is(fungi);
+        stumpLocations = new ArrayList<>();
+        if (sapling.is(Items.MANGROVE_PROPAGULE))
+        {
+            stumpLocations.add(mangroveStump(world));
+        }
+        else
+        {
+            fillTreeStumps(location.getY());
+        }
+        variant = BlockStateUtils.getPropertyByNameFromState(world.getBlockState(location), "variant");
+    }
+
+    /**
+     * Forestry: a propagule goes on the ground under the lowest trunk log, not into the average of the root tips (often inside a muddy root, where it
+     * cannot stand).
+     */
+    private BlockPos mangroveStump(@NotNull final Level world)
+    {
+        BlockPos trunk = null;
+        for (final BlockPos pos : allLogs)
+        {
+            if (!world.getBlockState(pos).is(ModTags.treeRoots) && (trunk == null || pos.getY() < trunk.getY()))
+            {
+                trunk = pos;
+            }
+        }
+        if (trunk == null)
+        {
+            return location;
+        }
+        BlockPos pos = trunk;
+        for (int i = 0; i < 16 && pos.getY() > world.getMinY(); i++)
+        {
+            final BlockState below = world.getBlockState(pos.below());
+            if (!below.isAir() && below.getFluidState().isEmpty() && !TreeFootprint.isTreeBlock(below))
+            {
+                return pos;
+            }
+            pos = pos.below();
+        }
+        return trunk;
+    }
+
+    /**
+     * Forestry: the leaves this tree holds, for breaking them first ({@code defoliate}, nether trees): leaves whose {@code DISTANCE} equals their step
+     * count from this tree's logs, and the caps (mushroom, wart, shroomlight) connected to them.
+     */
+    private LinkedList<BlockPos> collectOwnLeaves(@NotNull final Level world)
+    {
+        final LinkedList<BlockPos> own = new LinkedList<>();
+        final java.util.Set<BlockPos> seen = new java.util.HashSet<>(allLogs);
+        java.util.List<BlockPos> layer = new ArrayList<>(allLogs);
+        for (int depth = 1; depth < LeavesBlock.DECAY_DISTANCE && !layer.isEmpty() && own.size() < TreeFootprint.LEAF_BUDGET; depth++)
+        {
+            final java.util.List<BlockPos> next = new ArrayList<>();
+            for (final BlockPos pos : layer)
+            {
+                for (final net.minecraft.core.Direction dir : net.minecraft.core.Direction.values())
+                {
+                    final BlockPos near = pos.relative(dir);
+                    if (!seen.add(near))
+                    {
+                        continue;
+                    }
+                    final BlockState state = world.getBlockState(near);
+                    if (TreeFootprint.isDecayingLeaves(state) && !state.getValue(LeavesBlock.PERSISTENT) && state.getValue(LeavesBlock.DISTANCE) == depth)
+                    {
+                        own.add(near);
+                        next.add(near);
+                    }
+                    else if (TreeFootprint.isCap(state))
+                    {
+                        own.add(near);
+                        next.add(near);
+                    }
+                }
+            }
+            layer = next;
+        }
+        // farthest first: pollLast takes from the end
+        own.sort((c1, c2) -> (int) (c1.distSqr(location) - c2.distSqr(location)));
+        return own;
     }
 
     /**
@@ -351,9 +498,37 @@ public class Tree
      */
     public static boolean checkTree(@NotNull final LevelReader world, final BlockPos pos, final List<ItemStorage> treesToNotCut, final int dyntreesize)
     {
+        return checkTree(world, pos, treesToNotCut, dyntreesize, null, 0, 0);
+    }
+
+    /**
+     * For use in PathJobFindTree, with the tree claims: a tree another Forester works on, or one blocked as next to a build, is no tree for this one.
+     *
+     * @param world         the world.
+     * @param pos           The coordinates.
+     * @param treesToNotCut the trees the lumberjack is not supposed to cut.
+     * @param dyntreesize   the radius a dynamic tree must have in order to get cut down.
+     * @param claimLevel    the level of the claims, or null to ignore claims.
+     * @param colonyId      the Forester's colony.
+     * @param citizenId     the Forester's citizen id.
+     * @return true if the log is part of a tree.
+     */
+    public static boolean checkTree(
+      @NotNull final LevelReader world,
+      final BlockPos pos,
+      final List<ItemStorage> treesToNotCut,
+      final int dyntreesize,
+      @Nullable final Level claimLevel,
+      final int colonyId,
+      final int citizenId)
+    {
         //Is the first block a log?
         final BlockState state = world.getBlockState(pos);
         final Block block = state.getBlock();
+        if (!Compatibility.isSlimeBlock(block) && !Compatibility.isDynamicBlock(block))
+        {
+            return TreeFootprint.check(world, pos, claimLevel, colonyId, citizenId, leafPos -> supposedToCut(world, treesToNotCut, leafPos));
+        }
         if (!state.is(ModTags.tree) && !Compatibility.isSlimeBlock(block) && !Compatibility.isDynamicBlock(block))
         {
             return false;
@@ -579,6 +754,17 @@ public class Tree
             }
         }
 
+        final ListTag decorationsBin = compound.getListOrEmpty(TAG_DECORATIONS);
+        for (int i = 0; i < decorationsBin.size(); i++)
+        {
+            tree.decorations.add(BlockPosUtil.readFromListNBT(decorationsBin, i));
+        }
+        if (compound.contains(TAG_BOX_MIN) && compound.contains(TAG_BOX_MAX))
+        {
+            tree.boxMin = BlockPosUtil.read(compound, TAG_BOX_MIN);
+            tree.boxMax = BlockPosUtil.read(compound, TAG_BOX_MAX);
+        }
+
         return tree;
     }
 
@@ -629,6 +815,11 @@ public class Tree
      */
     public void findLogs(@NotNull final Level world, @Nullable final IColony colony)
     {
+        if (footprint != null)
+        {
+            // The scan of the constructor found the logs and stumps already.
+            return;
+        }
         addAndSearch(world, location, colony);
         woodBlocks.sort((c1, c2) -> (int) (c1.distSqr(location) - c2.distSqr(location)));
         if (getStumpLocations().isEmpty())
@@ -654,6 +845,11 @@ public class Tree
 
         // todo: for the sake of generic-ness this could check for adjacency rather than just special-casing,
         //       though that's harder if someone decides to make a tree bigger than 2x2.
+        if (footprint != null && sapling.is(Items.MANGROVE_PROPAGULE))
+        {
+            // Set by the scan (initFromFootprint): the ground under the trunk.
+            return;
+        }
         if (stumpLocations.size() > 1 && sapling.is(Items.MANGROVE_PROPAGULE))
         {
             BlockPos.MutableBlockPos acc = BlockPos.ZERO.mutable();
@@ -817,6 +1013,103 @@ public class Tree
                 }
             }
         }
+    }
+
+    /**
+     * Forestry: NBT keys of the decorations and the box.
+     */
+    private static final String TAG_DECORATIONS = "forestryDecorations";
+    private static final String TAG_BOX_MIN     = "forestryBoxMin";
+    private static final String TAG_BOX_MAX     = "forestryBoxMax";
+
+    /**
+     * @return true if a block hangs on the tree that goes with it (bee nest, cocoa).
+     */
+    public boolean hasDecorations()
+    {
+        return !decorations.isEmpty();
+    }
+
+    /**
+     * @return the next decoration to take.
+     */
+    public BlockPos peekNextDecoration()
+    {
+        return decorations.peekLast();
+    }
+
+    /**
+     * @return the next decoration, removed from the list.
+     */
+    public BlockPos pollNextDecoration()
+    {
+        return decorations.pollLast();
+    }
+
+    /**
+     * @return why the tree must not be cut ({@link TreeFootprint.Skip#NONE} for a tree read from NBT or from Dynamic Trees).
+     */
+    @NotNull
+    public TreeFootprint.Skip getSkip()
+    {
+        return footprint == null ? TreeFootprint.Skip.NONE : footprint.skip;
+    }
+
+    /**
+     * @return what made the scan skip the tree, for logs and tests.
+     */
+    @NotNull
+    public String getSkipDetail()
+    {
+        return footprint == null ? "" : footprint.skipDetail;
+    }
+
+    /**
+     * @return every log of the tree as first seen (empty after a reload).
+     */
+    @NotNull
+    public List<BlockPos> getAllLogs()
+    {
+        return allLogs;
+    }
+
+    /**
+     * @return the box of the tree's logs, or null for a tree from before forestry.
+     */
+    @Nullable
+    public net.minecraft.world.phys.AABB getBox()
+    {
+        return boxMin == null || boxMax == null ? null : net.minecraft.world.phys.AABB.encapsulatingFullBlocks(boxMin, boxMax);
+    }
+
+    /**
+     * @return the logs not yet cut.
+     */
+    public int getLogsLeft()
+    {
+        return woodBlocks.size();
+    }
+
+    /**
+     * Forestry: after a TreeChop felling, the logs TreeChop does not know (roots, a creaking heart, a log beyond its tree) are left to the normal path.
+     *
+     * @param world the world.
+     */
+    public void keepOnlyStandingLogs(@NotNull final Level world)
+    {
+        final String fam = footprint == null ? null : footprint.family;
+        woodBlocks.removeIf(pos -> {
+            final BlockState state = world.getBlockState(pos);
+            return !TreeFootprint.isTreeBlock(state) || (fam != null && !TreeFootprint.sameFamily(fam, TreeFootprint.family(world, pos, state, true)));
+        });
+    }
+
+    /**
+     * @return true if the tree was scanned with the footprint (not Dynamic Trees, not a slime tree).
+     */
+    public boolean isFootprintTree()
+    {
+        return footprint != null || boxMin != null;
     }
 
     /**
@@ -1019,6 +1312,18 @@ public class Tree
             BlockPosUtil.writeToListNBT(leavesBin, pos);
         }
         compound.put(TAG_LEAVES, leavesBin);
+
+        @NotNull final ListTag decorationsBin = new ListTag();
+        for (@NotNull final BlockPos pos : decorations)
+        {
+            BlockPosUtil.writeToListNBT(decorationsBin, pos);
+        }
+        compound.put(TAG_DECORATIONS, decorationsBin);
+        if (boxMin != null && boxMax != null)
+        {
+            BlockPosUtil.write(compound, TAG_BOX_MIN, boxMin);
+            BlockPosUtil.write(compound, TAG_BOX_MAX, boxMax);
+        }
     }
 
     /**

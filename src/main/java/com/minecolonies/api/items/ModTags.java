@@ -42,6 +42,26 @@ public class ModTags
     public static final TagKey<Block> tier6blocks     = BlockTags.create(TagConstants.TIER6_BLOCKS);
     public static final TagKey<Block> mangroveTree    = BlockTags.create(TagConstants.MANGROVE_TREE_BLOCKS);
     public static final TagKey<Block> extraTree       = BlockTags.create(TagConstants.EXTRA_TREE_BLOCKS);
+
+    /**
+     * Forestry: blocks a Forester never takes for a tree log (Expanded Ecosphere tags bamboo as a jungle log).
+     */
+    public static final TagKey<Block> treeExcluded = BlockTags.create(Identifier.fromNamespaceAndPath(MOD_ID, "tree_excluded"));
+
+    /**
+     * Forestry: tree blocks that may grow below the lowest trunk log (mangrove roots).
+     */
+    public static final TagKey<Block> treeRoots = BlockTags.create(Identifier.fromNamespaceAndPath(MOD_ID, "tree_roots"));
+
+    /**
+     * Forestry: the tag path prefix of the wood family tags, {@code minecolonies:tree_family/<name>}. Every block in one such tag is one tree family.
+     */
+    public static final String TREE_FAMILY_PREFIX = "tree_family/";
+
+    /**
+     * Forestry: saplings whose tree only grows from four saplings in a square (dark oak, pale oak).
+     */
+    public static final TagKey<Item> fourSaplingTrees = ItemTags.create(Identifier.fromNamespaceAndPath(MOD_ID, "four_sapling_trees"));
     public static final TagKey<Block> tree            = BlockTags.create(TagConstants.TREE_BLOCKS);
     public static final TagKey<Block> vanillaSaplings = TagKey.create(Registries.BLOCK, Identifier.withDefaultNamespace("saplings"));
 

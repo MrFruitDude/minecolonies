@@ -1649,13 +1649,14 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         @NotNull BlockPos start = PathfindingUtils.prepareStart(ourEntity);
         final BlockPos buildingPos = ((AbstractEntityCitizen) mob).getCitizenColonyHandler().getWorkBuilding().getPosition();
 
-        if (BlockPosUtil.getDistance2D(buildingPos, mob.blockPosition()) > range * 4)
+        // Forestry: the search is around the hut (trees within range of it); a Forester far from it searches from the hut.
+        if (BlockPosUtil.getDistance2D(buildingPos, mob.blockPosition()) > range)
         {
             start = buildingPos;
         }
 
         return (TreePathResult) setPathJob(
-            new PathJobFindTree(CompatibilityUtils.getWorldFromEntity(mob), start, buildingPos, range, excludedTrees, dyntreesize, colony, ourEntity), null, speed, true);
+            new PathJobFindTree(CompatibilityUtils.getWorldFromEntity(mob), start, buildingPos, range, excludedTrees, dyntreesize, colony, ourEntity, true), null, speed, true);
     }
 
     @Nullable

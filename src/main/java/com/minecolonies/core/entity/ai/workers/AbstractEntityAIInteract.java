@@ -199,16 +199,14 @@ public abstract class AbstractEntityAIInteract<J extends AbstractJob<?, J>, B ex
 
             localItems = increaseBlockDrops(localItems);
 
-            //add the drops to the citizen
+            //add the drops to the citizen; what does not fit drops at his feet for the normal gathering, never deleted (forestry 4.7)
             for (final ItemStack item : localItems)
             {
-                if (item.getItem() instanceof IDoItem)
+                final ItemStack rest = InventoryUtils.transferItemStackIntoNextBestSlotInItemHandlerWithResult(
+                  item.getItem() instanceof IDoItem ? getCorrectDOItem(item, curBlockState, false) : item, worker.getInventoryCitizen());
+                if (!rest.isEmpty())
                 {
-                    InventoryUtils.transferItemStackIntoNextBestSlotInItemHandler(getCorrectDOItem(item, curBlockState, false), worker.getInventoryCitizen());
-                }
-                else
-                {
-                    InventoryUtils.transferItemStackIntoNextBestSlotInItemHandler(item, worker.getInventoryCitizen());
+                    InventoryUtils.spawnItemStack(world, worker.getX(), worker.getY(), worker.getZ(), rest);
                 }
             }
             onBlockDropReception(localItems);

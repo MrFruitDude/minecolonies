@@ -3,6 +3,7 @@ package com.minecolonies.core.entity.pathfinding.pathjobs;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.compatibility.Compatibility;
 import com.minecolonies.api.crafting.ItemStorage;
+import com.minecolonies.api.entity.citizen.AbstractCivilianEntity;
 import com.minecolonies.api.items.ModTags;
 import com.minecolonies.api.util.BlockPosUtil;
 import com.minecolonies.core.entity.ai.workers.util.Tree;
@@ -48,6 +49,18 @@ public class PathJobFindTree extends AbstractPathJob implements ISearchPathJob
     private AABB restrictionBox = null;
 
     /**
+     * Forestry: trees farther than this from the hut (horizontally) are ignored; 0 for no limit.
+     */
+    private int homeRadius = 0;
+
+    /**
+     * Forestry: the level of the tree claims and the asking Forester, so trees of another Forester (or blocked next to a build) are skipped.
+     */
+    private final Level claimLevel;
+    private final int   colonyId;
+    private final int   citizenId;
+
+    /**
      * AbstractPathJob constructor.
      *
      * @param world       the world within which to path.
@@ -74,6 +87,36 @@ public class PathJobFindTree extends AbstractPathJob implements ISearchPathJob
         this.colony = colony;
         this.searchTowards = home;
         this.dyntreesize = dyntreesize;
+        this.claimLevel = world;
+        this.colonyId = colony == null ? 0 : colony.getID();
+        this.citizenId = entity instanceof AbstractCivilianEntity civilian ? civilian.getCivilianID() : 0;
+    }
+
+    /**
+     * Forestry: a search around the hut. Trees farther than the radius from the hut are not trees for this search.
+     *
+     * @param world       the world within which to path.
+     * @param start       the start position from which to path from.
+     * @param home        the position of the worker hut.
+     * @param homeRadius  the search radius around the hut.
+     * @param treesToCut  the trees the lj is not supposed to cut.
+     * @param dyntreesize the radius a dynamic tree must have
+     * @param colony      the colony.
+     * @param entity      the entity.
+     */
+    public PathJobFindTree(
+      final Level world,
+      @NotNull final BlockPos start,
+      final BlockPos home,
+      final int homeRadius,
+      final List<ItemStorage> treesToCut,
+      final int dyntreesize,
+      final IColony colony,
+      final Mob entity,
+      final boolean aroundHome)
+    {
+        this(world, start, home, homeRadius * 2, treesToCut, dyntreesize, colony, entity);
+        this.homeRadius = aroundHome ? homeRadius : 0;
     }
 
     /**
@@ -118,6 +161,9 @@ public class PathJobFindTree extends AbstractPathJob implements ISearchPathJob
         this.excludedTrees = excludedTrees;
         this.colony = colony;
         this.dyntreesize = dyntreesize;
+        this.claimLevel = world;
+        this.colonyId = colony == null ? 0 : colony.getID();
+        this.citizenId = entity instanceof AbstractCivilianEntity civilian ? civilian.getCivilianID() : 0;
 
         this.searchTowards = BlockPos.containing(restrictionBox.getCenter());
     }
@@ -170,7 +216,11 @@ public class PathJobFindTree extends AbstractPathJob implements ISearchPathJob
 
     private boolean isTree(final BlockPos pos)
     {
-        if (Tree.checkTree(world, pos, excludedTrees, dyntreesize) && Tree.checkIfInColony(pos, colony, world, restrictionBox != null))
+        if (homeRadius > 0 && searchTowards != null && BlockPosUtil.getDistance2D(searchTowards, pos) > homeRadius)
+        {
+            return false;
+        }
+        if (Tree.checkTree(world, pos, excludedTrees, dyntreesize, claimLevel, colonyId, citizenId) && Tree.checkIfInColony(pos, colony, world, restrictionBox != null))
         {
             getResult().treeLocation = pos.immutable();
             return true;

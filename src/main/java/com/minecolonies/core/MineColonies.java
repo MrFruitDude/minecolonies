@@ -151,6 +151,8 @@ public class MineColonies
             ModTags.tagsEpoch++;
         };
         NeoForge.EVENT_BUS.addListener(onTagsLoaded);
+        // Forestry: a felling's drops go to the Forester (scoped, server thread only)
+        NeoForge.EVENT_BUS.addListener(EventPriority.HIGHEST, false, net.neoforged.neoforge.event.entity.EntityJoinLevelEvent.class, com.minecolonies.api.util.DropCapture::onEntityJoin);
         forgeBus.addListener(DefaultDataComponentsBoundEvent.class, event -> {
             if (event.shouldUpdateStaticData())
             {
