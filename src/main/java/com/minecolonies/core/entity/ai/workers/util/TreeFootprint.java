@@ -45,11 +45,12 @@ import java.util.function.Predicate;
  * (bamboo) is never a log. A TreeChop chopped log takes the family of the log it was made from.</li>
  * <li>Log flood: from the trunk base over the same family, up and sideways only (roots may go a little down), within a radius of the trunk that grows with
  * the trunk (8 for 1x1, 10 for 2x2, 16 for wider), up to the tree size budget. A tree over the budget is not started: a whole tree left beats half a
- * tree. A log of the tree past the radius makes it too big as well: a cut at the radius would leave that branch standing.</li>
+ * tree. A log of the tree past the radius makes it too big as well: a cut at the radius would leave that branch standing. Touching trees of one wood are
+ * split by trunk: a log on the ground away from the trunk is the trunk of a neighbour, and each log goes to the trunk nearest to it along the wood.</li>
  * <li>Build guard: a log next to planks, stairs, slabs, fences, walls, doors, glass, torches, lanterns, beds, placed leaves, stripped logs on a natural
- * trunk (or natural logs on a stripped one), a log of another wood (a post or a beam: two natural trees of two woods seldom touch, and are then left
- * whole), or a block entity other than a bee nest; a log inside a colony hut box; a log in a chunk another colony claims. Such a tree is not cut at
- * all.</li>
+ * trunk (or natural logs on a stripped one), a log of another wood that is no tree of its own (a post or a beam; a natural tree of another wood, on
+ * the ground with leaves of its wood, is a neighbour), or a block entity other than a bee nest; a log inside a colony hut box; a log in a chunk another
+ * colony claims. Such a tree is not cut at all.</li>
  * <li>Leaf sweep: after the logs are gone, only leaves vanilla would decay anyway (not persistent, {@code DISTANCE} 7) are broken, found by a flood from the
  * leaves that touched the removed logs. Leaves held by a neighbour tree and placed leaves stay by construction. Mushroom caps, wart blocks and
  * shroomlight (no {@code DISTANCE}) go when their connected cap touches no remaining stem.</li>
@@ -72,6 +73,22 @@ public final class TreeFootprint
      * Roots may reach this far below the lowest trunk block.
      */
     private static final int ROOT_DEPTH = 8;
+
+    /**
+     * The cluster of touching logs of one wood is read this far past the tree's radius, and at most this many logs, to find the neighbours' trunks.
+     */
+    private static final int SPLIT_MARGIN = 12;
+    private static final int MAX_CLUSTER  = 8192;
+
+    /**
+     * A log on the ground this far from the trunk is still part of it (a trunk on a slope); further out it is the trunk of another tree.
+     */
+    private static final int TRUNK_GAP = 2;
+
+    /**
+     * Logs read at most to tell a natural tree of another wood from a post or a beam.
+     */
+    private static final int NATURAL_BUDGET = 512;
 
     /**
      * Logs the off-thread tree check floods at most.
@@ -479,9 +496,51 @@ public final class TreeFootprint
         result.strippedBase = strippedBase;
         result.baseLayer.addAll(baseLayer);
 
+        // Every log of the family that touches this tree (neighbour trees of the same wood included), within a window around the trunk.
+        final Set<BlockPos> cluster = new HashSet<>(baseLayer);
+        final ArrayDeque<BlockPos> flood = new ArrayDeque<>(baseLayer);
+        final int window = radius + SPLIT_MARGIN;
+        final int clusterBudget = Math.min(Math.max(1, budget) * 4, MAX_CLUSTER);
+        while (!flood.isEmpty())
+        {
+            final BlockPos log = flood.poll();
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    for (int dz = -1; dz <= 1; dz++)
+                    {
+                        final BlockPos next = log.offset(dx, dy, dz);
+                        if (cluster.contains(next) || next.getY() < bottom.getY() - ROOT_DEPTH
+                              || Math.max(Math.abs(next.getX() - cx), Math.abs(next.getZ() - cz)) > window + 0.5D)
+                        {
+                            continue;
+                        }
+                        if (!isFamilyLog(level, next, level.getBlockState(next), fam, strippedBase))
+                        {
+                            continue;
+                        }
+                        if (cluster.size() >= clusterBudget)
+                        {
+                            result.skip = Skip.TOO_BIG;
+                            result.skipDetail = "more than " + clusterBudget + " logs of the wood around the trunk";
+                            return result;
+                        }
+                        cluster.add(next);
+                        flood.add(next);
+                    }
+                }
+            }
+        }
+
+        // The trunks of the neighbour trees in it: a log on the ground away from this trunk (never a root, mangroves stand on many). Each log goes to the
+        // trunk it is nearest to along the wood, so touching trees of one wood are cut one by one; ties go to the neighbour.
+        final Set<BlockPos> own = ownLogs(level, cluster, baseLayer, cx, cz);
+
         final Set<BlockPos> seen = new HashSet<>(baseLayer);
         final Set<BlockPos> decorations = new HashSet<>();
         final Map<Long, Integer> claimOwners = new HashMap<>();
+        final Map<BlockPos, Boolean> naturalNeighbours = new HashMap<>();
         queue.clear();
         queue.addAll(baseLayer);
         final int ownId = colony == null ? 0 : colony.getID();
@@ -533,7 +592,12 @@ public final class TreeFootprint
                     {
                         continue;
                     }
-                    // A stripped log on a natural trunk, or a log of another wood (a post, a beam): a player's work touches the tree
+                    if (!sameFamily(fam, family(level, near, state, true)) && isNaturalNeighbourTree(level, near, state, naturalNeighbours))
+                    {
+                        // A natural tree of another wood touches this one: each is cut on its own
+                        continue;
+                    }
+                    // A stripped log on a natural trunk, or a log of another wood that is no tree (a post, a beam): a player's work touches the tree
                     result.skip = Skip.BUILD;
                     result.skipDetail = state.getBlock() + " at " + near.toShortString() + " next to log " + log.toShortString();
                     return result;
@@ -570,7 +634,7 @@ public final class TreeFootprint
                 result.leaves += leavesAbove(level, log);
             }
 
-            // Flood to the next logs of the family.
+            // Flood to the next logs of this tree.
             for (int dx = -1; dx <= 1; dx++)
             {
                 for (int dy = -1; dy <= 1; dy++)
@@ -578,29 +642,11 @@ public final class TreeFootprint
                     for (int dz = -1; dz <= 1; dz++)
                     {
                         final BlockPos next = log.offset(dx, dy, dz);
-                        if (!seen.add(next))
+                        if (!own.contains(next) || !seen.add(next))
                         {
                             continue;
                         }
-                        final BlockState state = level.getBlockState(next);
-                        if (!isTreeBlock(state) || !sameFamily(fam, family(level, next, state, true)))
-                        {
-                            seen.remove(next);
-                            continue;
-                        }
-                        if (next.getY() < bottom.getY() && !(state.is(ModTags.treeRoots) && next.getY() >= bottom.getY() - ROOT_DEPTH))
-                        {
-                            seen.remove(next);
-                            continue;
-                        }
-                        if (!barkMatches(level, next, state, strippedBase, true))
-                        {
-                            // A stripped log on a natural tree (a natural log on a stripped one) is a player's work; the 6-neighbour guard decides when
-                            // it touches a log.
-                            seen.remove(next);
-                            continue;
-                        }
-                        if (state.is(Blocks.CREAKING_HEART) && !(isTreeBlock(level.getBlockState(next.above())) && isTreeBlock(level.getBlockState(next.below()))))
+                        if (next.getY() < bottom.getY() && !(level.getBlockState(next).is(ModTags.treeRoots) && next.getY() >= bottom.getY() - ROOT_DEPTH))
                         {
                             seen.remove(next);
                             continue;
@@ -618,6 +664,218 @@ public final class TreeFootprint
             }
         }
         return result;
+    }
+
+    /**
+     * Whether the flood goes on to a block: a tree block of the family with the bark of the trunk, a creaking heart only inside a trunk.
+     */
+    private static boolean isFamilyLog(
+      @NotNull final Level level,
+      @NotNull final BlockPos pos,
+      @NotNull final BlockState state,
+      @NotNull final String fam,
+      final boolean strippedBase)
+    {
+        if (!isTreeBlock(state) || !sameFamily(fam, family(level, pos, state, true)))
+        {
+            return false;
+        }
+        if (!barkMatches(level, pos, state, strippedBase, true))
+        {
+            // A stripped log on a natural tree (a natural log on a stripped one) is a player's work; the 6-neighbour guard decides when it touches a log.
+            return false;
+        }
+        return !state.is(Blocks.CREAKING_HEART) || (isTreeBlock(level.getBlockState(pos.above())) && isTreeBlock(level.getBlockState(pos.below())));
+    }
+
+    /**
+     * @param state the block under a log.
+     * @return true for natural ground a trunk stands on (no tree block, no leaf, no player block).
+     */
+    private static boolean isGround(@NotNull final BlockState state)
+    {
+        return !state.isAir() && !isTreeBlock(state) && !state.is(BlockTags.LEAVES) && !isCap(state) && BlockUtils.isAnySolid(state)
+                 && state.getBlock() != Blocks.COBBLESTONE && !isBuildSignal(state, false);
+    }
+
+    /**
+     * Splits a cluster of touching logs of one wood by trunk: each log goes to the trunk it is nearest to along the wood (ties to the neighbour).
+     *
+     * @param level     the level.
+     * @param cluster   the logs of the wood that touch the tree.
+     * @param baseLayer this tree's trunk at its bottom.
+     * @param cx        the trunk's centre x.
+     * @param cz        the trunk's centre z.
+     * @return the logs of this tree.
+     */
+    private static Set<BlockPos> ownLogs(
+      @NotNull final Level level,
+      @NotNull final Set<BlockPos> cluster,
+      @NotNull final List<BlockPos> baseLayer,
+      final double cx,
+      final double cz)
+    {
+        double baseReach = 0;
+        for (final BlockPos pos : baseLayer)
+        {
+            baseReach = Math.max(baseReach, Math.max(Math.abs(pos.getX() - cx), Math.abs(pos.getZ() - cz)));
+        }
+        final Set<BlockPos> ownBase = new HashSet<>(baseLayer);
+        final List<BlockPos> otherBases = new ArrayList<>();
+        for (final BlockPos pos : cluster)
+        {
+            if (ownBase.contains(pos) || Math.max(Math.abs(pos.getX() - cx), Math.abs(pos.getZ() - cz)) <= baseReach + TRUNK_GAP + 0.5D)
+            {
+                continue;
+            }
+            final BlockState state = level.getBlockState(pos);
+            if (!state.is(ModTags.treeRoots) && !cluster.contains(pos.below()) && isGround(level.getBlockState(pos.below())))
+            {
+                otherBases.add(pos);
+            }
+        }
+        if (otherBases.isEmpty())
+        {
+            return cluster;
+        }
+        // Many-source flood: the neighbours' trunks first, so a log as near to both goes to the neighbour
+        final Map<BlockPos, Boolean> mine = new HashMap<>();
+        final ArrayDeque<BlockPos> wave = new ArrayDeque<>();
+        for (final BlockPos pos : otherBases)
+        {
+            mine.put(pos, false);
+            wave.add(pos);
+        }
+        for (final BlockPos pos : baseLayer)
+        {
+            mine.put(pos, true);
+            wave.add(pos);
+        }
+        while (!wave.isEmpty())
+        {
+            final BlockPos pos = wave.poll();
+            final boolean owner = mine.get(pos);
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    for (int dz = -1; dz <= 1; dz++)
+                    {
+                        final BlockPos next = pos.offset(dx, dy, dz);
+                        if (cluster.contains(next) && !mine.containsKey(next))
+                        {
+                            mine.put(next, owner);
+                            wave.add(next);
+                        }
+                    }
+                }
+            }
+        }
+        final Set<BlockPos> own = new HashSet<>();
+        for (final Map.Entry<BlockPos, Boolean> entry : mine.entrySet())
+        {
+            if (entry.getValue())
+            {
+                own.add(entry.getKey());
+            }
+        }
+        return own;
+    }
+
+    /**
+     * Whether a log of another wood next to a tree belongs to a natural tree of its own (cut on its own merits) rather than to a player's post or beam:
+     * not stripped, standing on natural ground, and holding leaves of its own wood (or caps).
+     *
+     * @param level the level.
+     * @param start the log of the other wood.
+     * @param state its state.
+     * @param cache answers so far for this tree, by log (may be null).
+     * @return true for a natural tree.
+     */
+    public static boolean isNaturalNeighbourTree(
+      @NotNull final LevelReader level,
+      @NotNull final BlockPos start,
+      @NotNull final BlockState state,
+      @Nullable final Map<BlockPos, Boolean> cache)
+    {
+        if (cache != null && cache.containsKey(start))
+        {
+            return cache.get(start);
+        }
+        final String fam = family(level, start, state, true);
+        final Set<BlockPos> logs = new HashSet<>();
+        boolean natural = false;
+        if (!ANY_FAMILY.equals(fam) && !isStripped(state) && !Compatibility.treeChop.isChoppedLog(state))
+        {
+            final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
+            queue.add(start);
+            logs.add(start);
+            boolean base = false;
+            int leaves = 0;
+            while (!queue.isEmpty() && logs.size() <= NATURAL_BUDGET && !(base && leaves >= MIN_LEAVES))
+            {
+                final BlockPos log = queue.poll();
+                final BlockState below = level.getBlockState(log.below());
+                if (level.getBlockState(log).is(ModTags.treeRoots) || (!isTreeBlock(below) && isGround(below)))
+                {
+                    base = true;
+                }
+                for (final Direction dir : Direction.values())
+                {
+                    final BlockState near = level.getBlockState(log.relative(dir));
+                    if (isCap(near) || (isDecayingLeaves(near) && !near.getValue(LeavesBlock.PERSISTENT) && leafOfFamily(fam, near)))
+                    {
+                        leaves++;
+                    }
+                }
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        for (int dz = -1; dz <= 1; dz++)
+                        {
+                            final BlockPos next = log.offset(dx, dy, dz);
+                            if (logs.contains(next))
+                            {
+                                continue;
+                            }
+                            final BlockState nextState = level.getBlockState(next);
+                            if (isTreeBlock(nextState) && !isStripped(nextState) && sameFamily(fam, family(level, next, nextState, true)))
+                            {
+                                logs.add(next);
+                                queue.add(next);
+                            }
+                        }
+                    }
+                }
+            }
+            natural = base && leaves >= MIN_LEAVES;
+        }
+        if (cache != null)
+        {
+            for (final BlockPos log : logs)
+            {
+                cache.put(log, natural);
+            }
+            cache.put(start, natural);
+        }
+        return natural;
+    }
+
+    /**
+     * @param fam   a wood family.
+     * @param state a leaf.
+     * @return true if the leaf grows on that wood ({@code birch_leaves} on birch; azalea leaves on oak; any leaf for a family of a tag).
+     */
+    private static boolean leafOfFamily(@NotNull final String fam, @NotNull final BlockState state)
+    {
+        if (fam.startsWith("tag:"))
+        {
+            return true;
+        }
+        final String wood = fam.substring(fam.indexOf(':') + 1);
+        final String leaf = BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
+        return leaf.startsWith(wood) || (wood.equals("oak") && leaf.contains("azalea"));
     }
 
     /**
@@ -648,7 +906,7 @@ public final class TreeFootprint
          */
         CHANGED,
         /**
-         * A log now touches a player build.
+         * A log now touches a player build (a leaf or cap: a player's block other than a leaf).
          */
         BUILD,
         /**
@@ -698,9 +956,23 @@ public final class TreeFootprint
             return Recheck.CHANGED;
         }
         final Recheck guard = guardPosition(level, pos, colony);
-        if (guard != Recheck.OK || part != Part.LOG)
+        if (guard != Recheck.OK || part == Part.DECORATION)
         {
             return guard;
+        }
+        if (part == Part.LEAF)
+        {
+            // A leaf or cap touching a player's block (a torch, a fence, a lantern) stays; a placed leaf next to it does not count, a hedge under a
+            // canopy is no reason to leave its doomed leaves
+            for (final Direction dir : Direction.values())
+            {
+                final BlockState near = level.getBlockState(pos.relative(dir));
+                if (!near.is(BlockTags.LEAVES) && !isDecoration(near) && isBuildSignal(near, strippedBase))
+                {
+                    return Recheck.BUILD;
+                }
+            }
+            return Recheck.OK;
         }
         for (final Direction dir : Direction.values())
         {
@@ -708,6 +980,10 @@ public final class TreeFootprint
             if (isTreeBlock(near))
             {
                 if (sameFamily(family, family(level, pos.relative(dir), near, true)) && barkMatches(level, pos.relative(dir), near, strippedBase, true))
+                {
+                    continue;
+                }
+                if (!sameFamily(family, family(level, pos.relative(dir), near, true)) && isNaturalNeighbourTree(level, pos.relative(dir), near, null))
                 {
                     continue;
                 }

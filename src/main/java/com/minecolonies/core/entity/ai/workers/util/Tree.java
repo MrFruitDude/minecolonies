@@ -159,6 +159,11 @@ public class Tree
     private boolean strippedBase = false;
 
     /**
+     * Forestry: a block of the tree was broken already (kept over a reload), so a change found now drops that block, not the whole tree.
+     */
+    private boolean started = false;
+
+    /**
      * Private constructor of the tree. Used by the equals and createFromNBt method.
      */
     private Tree()
@@ -775,6 +780,12 @@ public class Tree
         }
         tree.family = compound.getStringOr(TAG_FAMILY, TreeFootprint.ANY_FAMILY);
         tree.strippedBase = compound.getBooleanOr(TAG_STRIPPED_BASE, false);
+        tree.started = compound.getBooleanOr(TAG_STARTED, false);
+        final ListTag allLogsBin = compound.getListOrEmpty(TAG_ALL_LOGS);
+        for (int i = 0; i < allLogsBin.size(); i++)
+        {
+            tree.allLogs.add(BlockPosUtil.readFromListNBT(allLogsBin, i));
+        }
 
         return tree;
     }
@@ -1034,6 +1045,24 @@ public class Tree
     private static final String TAG_BOX_MAX     = "forestryBoxMax";
     private static final String TAG_FAMILY        = "forestryFamily";
     private static final String TAG_STRIPPED_BASE = "forestryStrippedBase";
+    private static final String TAG_STARTED       = "forestryStarted";
+    private static final String TAG_ALL_LOGS      = "forestryAllLogs";
+
+    /**
+     * @return true once a block of the tree was broken.
+     */
+    public boolean isStarted()
+    {
+        return started;
+    }
+
+    /**
+     * Forestry: a block of the tree was broken.
+     */
+    public void markStarted()
+    {
+        started = true;
+    }
 
     /**
      * @return the wood family of the tree ({@link TreeFootprint#ANY_FAMILY} for a tree saved before it was kept).
@@ -1130,7 +1159,7 @@ public class Tree
     }
 
     /**
-     * @return every log of the tree as first seen (empty after a reload).
+     * @return every log of the tree as first seen (empty for a tree saved before forestry kept them).
      */
     @NotNull
     public List<BlockPos> getAllLogs()
@@ -1391,6 +1420,13 @@ public class Tree
         }
         compound.putString(TAG_FAMILY, family);
         compound.putBoolean(TAG_STRIPPED_BASE, strippedBase);
+        compound.putBoolean(TAG_STARTED, started);
+        @NotNull final ListTag allLogsBin = new ListTag();
+        for (@NotNull final BlockPos pos : allLogs)
+        {
+            BlockPosUtil.writeToListNBT(allLogsBin, pos);
+        }
+        compound.put(TAG_ALL_LOGS, allLogsBin);
     }
 
     /**
