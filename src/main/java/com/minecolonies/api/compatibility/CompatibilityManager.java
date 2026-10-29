@@ -844,6 +844,10 @@ public class CompatibilityManager implements ICompatibilityManager
         {
             Compatibility.dynamicTreesCompat = new DynamicTreeCompat();
         }
+        if (ModList.get().isLoaded("treechop"))
+        {
+            Compatibility.treeChop = new com.minecolonies.api.compatibility.treechop.TreeChopCompat();
+        }
     }
 
     @Override

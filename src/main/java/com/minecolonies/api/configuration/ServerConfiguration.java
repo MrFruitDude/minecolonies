@@ -67,6 +67,7 @@ public class ServerConfiguration extends AbstractConfiguration
     public final IntValue     loadtime;
     public final IntValue     colonyLoadStrictness;
     public final IntValue     maxTreeSize;
+    public final BooleanValue lumberjacksUseTreeChop;
     public final BooleanValue noSupplyPlacementRestrictions;
     public final BooleanValue skyRaiders;
 
@@ -307,7 +308,7 @@ public class ServerConfiguration extends AbstractConfiguration
         forceLoadColony = defineBoolean("forceloadcolony", true);
         loadtime = defineInteger("loadtime", 20, 1, 1440);
         colonyLoadStrictness = defineInteger("colonyloadstrictness", 3, 1, 15);
-        maxTreeSize = defineInteger("maxtreesize", 400, 1, 1000);
+        maxTreeSize = defineInteger("maxtreesize", 1024, 1, 4096);
         noSupplyPlacementRestrictions = defineBoolean("nosupplyplacementrestrictions", false);
         skyRaiders = defineBoolean("skyraiders", false);
 
@@ -374,6 +375,7 @@ public class ServerConfiguration extends AbstractConfiguration
         pathNodeLimitMultiplier = defineDouble("pathNodeLimitMultiplier", 1, 1, 4);
         pathfindingWorkerThreads = defineInteger("pathfindingworkerthreads", 2, 1, 4);
         minimumRailsToPath = defineInteger("minimumrailstopath", 8, 5, 100);
+        lumberjacksUseTreeChop = defineBoolean("lumberjacksUseTreeChop", true);
 
         swapToCategory("requestSystem");
 

@@ -126,6 +126,10 @@ public final class Compatibility
     public static SlimeTreeProxy   tinkersSlimeCompat = new SlimeTreeProxy();
     public static TinkersToolProxy tinkersCompat      = new TinkersToolProxy();
     public static DynamicTreeProxy dynamicTreesCompat = new DynamicTreeProxy();
+    /**
+     * TreeChop: the Forester chops through it when the mod is loaded (replaced by {@code TreeChopCompat} in {@code CompatibilityManager}).
+     */
+    public static com.minecolonies.api.compatibility.treechop.TreeChopProxy treeChop = new com.minecolonies.api.compatibility.treechop.TreeChopProxy();
 
     /**
      * This method checks to see if STACK is able to mine anything. It goes through all compatibility checks.
