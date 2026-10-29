@@ -653,12 +653,13 @@ final class BuilderScaffoldGameTests
     /**
      * A helper builder (collaboration on) whose own hut is walled in with a pair of trapdoors as the way in: a helper has no structure of his own, so
      * before r1 the box guard of the shut-in rescue did not hold for him and he was snapped home whenever he stood still near his hut (at the lead's
-     * hut for his materials, at the site). He helps, and neither builder is put back into a hut.
+     * hut for his materials, at the site). He helps, and neither builder is put back into a hut. The order is the size of scaffold_two_builders_big: a
+     * 7 by 7 one is too small for the helper gate (the second builder never joins it, scaffold_two_builders places nothing by the helper either).
      */
     public static void hutDoorHelper(final GameTestHelper helper)
     {
         final String name = "hutwalk_helper";
-        twoBuilders(helper, name, () -> shape(name, 7, 11, 7, (x, y, z) -> x == 0 || z == 0 || x == 6 || z == 6), 40_000, true, SITE,
+        twoBuilders(helper, name, () -> shape(name, 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10), 40_000, true, SITE,
           live -> wallHutIn(helper, new BlockPos(16, 1, 2), HutEntry.TRAPDOORS),
           (live, blocksByHelper) -> {
               final com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure<?, ?> lead = structureAi(live.citizen);
