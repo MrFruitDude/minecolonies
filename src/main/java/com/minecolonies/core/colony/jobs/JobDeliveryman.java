@@ -931,6 +931,33 @@ public class JobDeliveryman extends AbstractJob<EntityAIWorkDeliveryman, JobDeli
     }
 
     /**
+     * Puts the first task of the queue at its end (its destination refused a delivery a short while ago: the other tasks go first).
+     *
+     * @param token the task, which must be the first.
+     * @return true if it moved (there is another task to do first).
+     */
+    public boolean sendToBack(@NotNull final IToken<?> token)
+    {
+        final LinkedList<IToken<?>> queue = getTaskQueueFromDataStore();
+        if (queue.size() < 2 || !token.equals(queue.peekFirst()))
+        {
+            return false;
+        }
+        queue.removeFirst();
+        queue.addLast(token);
+        getCitizen().getWorkBuilding().markDirty();
+        return true;
+    }
+
+    /**
+     * @return whether a delivery is under way (items of it were picked up).
+     */
+    public boolean hasOngoingDeliveries()
+    {
+        return !getDataStore().getOngoingDeliveries().isEmpty();
+    }
+
+    /**
      * Method to get the task queue of this job.
      *
      * @return The task queue.

@@ -25,6 +25,7 @@ import com.minecolonies.core.colony.buildings.workerbuildings.BuildingDeliveryma
 import com.minecolonies.core.colony.interactionhandling.PosBasedInteraction;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.JobDeliveryman;
+import com.minecolonies.core.colony.requestsystem.RefusedTargets;
 import com.minecolonies.core.colony.requestsystem.RsCourierHooks;
 import com.minecolonies.core.colony.storage.ColonyStorage;
 import com.minecolonies.core.colony.storage.StorageNetwork;
@@ -678,6 +679,17 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
         // still lacks). Short is what did not go in: refused by the target (it stays with the courier and is dumped into the warehouse) or never carried
         // (fewer items picked up than asked, or taken out of the courier's bag on the way). What did go in is counted as delivered.
         final Map<ItemStorage, Integer> notDelivered = shortfall(deliveries, inserted);
+        final int colonyId = worker.getCitizenColonyHandler().getColonyOrRegister().getID();
+        if (!success)
+        {
+            // the destination refused (full): couriers leave it be for a while instead of coming straight back with the same load
+            final long until = RefusedTargets.refused(colonyId, targetBuilding.getPosition(), world.getGameTime());
+            Log.getLogger().info("{}: {} refused the delivery (full), couriers come back after tick {}", worker.getName().getString(), targetBuilding.getPosition().toShortString(), until);
+        }
+        else if (!inserted.isEmpty())
+        {
+            RefusedTargets.accepted(colonyId, targetBuilding.getPosition());
+        }
         final Set<IToken<?>> undelivered = undeliveredRequests(deliveries, notDelivered);
         final Map<ItemStorage, Integer> left = new HashMap<>(inserted);
         for (final IRequest<? extends Delivery> arrived : deliveries)
@@ -762,6 +774,18 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
         {
             // The current task has changed since the Decision-state.
             // Restart.
+            return START_WORKING;
+        }
+
+        final BlockPos refusedAt = ((Delivery) currentTask.getRequest()).getTarget().getInDimensionLocation();
+        final int colonyId = worker.getCitizenColonyHandler().getColonyOrRegister().getID();
+        if (!job.hasOngoingDeliveries() && RefusedTargets.paused(colonyId, refusedAt, world.getGameTime()))
+        {
+            // its destination refused a delivery a short while ago (full): no new trip yet with the same load. The other tasks first, or a wait
+            if (!job.sendToBack(currentTask.getId()))
+            {
+                setDelay(TICKS_SECOND * 5);
+            }
             return START_WORKING;
         }
 
