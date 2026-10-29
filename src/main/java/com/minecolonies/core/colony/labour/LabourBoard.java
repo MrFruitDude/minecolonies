@@ -17,6 +17,7 @@ import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.colony.requestsystem.RsAccess;
 import com.minecolonies.core.colony.requestsystem.RsFlags;
 import com.minecolonies.core.colony.requestsystem.priority.RequestImportance;
+import com.minecolonies.core.colony.requestsystem.reservation.ReservationKind;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationLedger;
 import com.minecolonies.core.colony.requestsystem.reservation.ReservationReason;
 import com.minecolonies.core.colony.requestsystem.resolvers.StandardPlayerRequestResolver;
@@ -1583,8 +1584,18 @@ public final class LabourBoard
      */
     public void handedIn(final LabourClaim claim, final int n)
     {
+        if (n <= 0)
+        {
+            return;
+        }
+        // the goods are in the hut: the room the claim held there is used now (the claim lives on while he takes his leftovers to a warehouse)
+        final ReservationLedger ledger = RsAccess.ledger(colony.getRequestManager());
+        if (ledger != null)
+        {
+            ledger.commit(claim.token(), ReservationKind.SPACE, now());
+        }
         final IToken<?> request = claim.request();
-        if (request == null || n <= 0)
+        if (request == null)
         {
             return;
         }
