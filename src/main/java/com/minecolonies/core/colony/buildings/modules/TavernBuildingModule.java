@@ -11,6 +11,7 @@ import com.minecolonies.api.colony.buildings.ModBuildings;
 import com.minecolonies.api.colony.buildings.modules.*;
 import com.minecolonies.api.colony.buildings.modules.stat.IStat;
 import com.minecolonies.api.colony.interactionhandling.ChatPriority;
+import com.minecolonies.api.entity.citizen.Skill;
 import com.minecolonies.api.sounds.TavernSounds;
 import com.minecolonies.api.util.MathUtils;
 import com.minecolonies.api.util.StatsUtil;
@@ -37,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 
 import static com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.TickRateConstants.MAX_TICKRATE;
+import static com.minecolonies.api.util.constant.CitizenConstants.MAX_CITIZEN_LEVEL;
 import static com.minecolonies.api.util.constant.Constants.MAX_STORY;
 import static com.minecolonies.api.util.constant.Constants.TAG_COMPOUND;
 import static com.minecolonies.api.util.constant.NbtTagConstants.TAG_VISITORS;
@@ -46,7 +48,8 @@ import static com.minecolonies.api.util.constant.StatisticsConstants.NEW_VISITOR
 /**
  * Tavern building for the colony. Houses 4 citizens Plays a tavern theme on entering Spawns/allows citizen recruitment Spawns trader/quest npcs
  */
-public class TavernBuildingModule extends AbstractBuildingModule implements IDefinesCoreBuildingStatsModule, IBuildingEventsModule, IPersistentModule, ITickingModule
+public class TavernBuildingModule extends AbstractBuildingModule
+  implements IDefinesCoreBuildingStatsModule, IBuildingEventsModule, IPersistentModule, ITickingModule, ITavernVisitorModule
 {
     /**
      * Schematic name
@@ -144,7 +147,7 @@ public class TavernBuildingModule extends AbstractBuildingModule implements IDef
             noVisitorTime -= 500;
         }
 
-        if (building.getBuildingLevel() > 0 && externalCitizens.size() < 3 * building.getBuildingLevel() && noVisitorTime <= 0)
+        if (noVisitorTime <= 0 && hasVisitorRoom())
         {
             spawnVisitorInternal();
             noVisitorTime = colony.getWorld().getRandom().nextInt(3000)
@@ -175,13 +178,52 @@ public class TavernBuildingModule extends AbstractBuildingModule implements IDef
         }
     }
 
+    @Override
+    public boolean hasVisitorRoom()
+    {
+        return building.getBuildingLevel() > 0 && externalCitizens.size() < 3 * building.getBuildingLevel();
+    }
+
+    @Override
+    @Nullable
+    public IVisitorData spawnVisitorIfRoom(@NotNull final Seed seed)
+    {
+        externalCitizens.removeIf(id -> building.getColony().getVisitorManager().getVisitor(id) == null);
+        if (!hasVisitorRoom())
+        {
+            return null;
+        }
+
+        final IVisitorData visitorData = spawnVisitor(seed);
+        if (visitorData != null)
+        {
+            final Component story = seed.story() != null ? seed.story() : Component.translatable(
+              "com.minecolonies.coremod.gui.chat.recruitstory" + (building.getColony().getWorld().getRandom().nextInt(MAX_STORY) + 1), visitorData.getName().split(" ")[0]);
+            visitorData.triggerInteraction(new RecruitmentInteraction(story, ChatPriority.IMPORTANT));
+        }
+        return visitorData;
+    }
+
     /**
-     * Spawns a visitor citizen that can be recruited.
+     * Spawns a visitor citizen that can be recruited. Does not check the tavern's visitor cap (see {@link #spawnVisitorIfRoom(Seed)}).
      */
     @Nullable
     public IVisitorData spawnVisitor()
     {
-        final RecruitmentItemsListener.RecruitCost cost = RecruitmentItemsListener.getRandomRecruitCost(building.getBuildingLevel());
+        return spawnVisitor(Seed.DEFAULT);
+    }
+
+    /**
+     * Spawns a seeded visitor citizen that can be recruited, without checking the cap.
+     *
+     * @param seed name, skills and recruit tier.
+     */
+    @Nullable
+    private IVisitorData spawnVisitor(@NotNull final Seed seed)
+    {
+        final RecruitmentItemsListener.RecruitCost cost = seed.recruitTier() > 0
+          ? RecruitmentItemsListener.getRandomRecruitCostAtTier(seed.recruitTier())
+          : RecruitmentItemsListener.getRandomRecruitCost(building.getBuildingLevel());
         if (cost == null)
         {
             return null;
@@ -191,6 +233,21 @@ public class TavernBuildingModule extends AbstractBuildingModule implements IDef
         newCitizen.setBedPos(building.getPosition());
         newCitizen.setHomeBuilding(building);
         newCitizen.getCitizenSkillHandler().init(cost.recruitLevel());
+        if (seed.name() != null && !seed.name().isBlank())
+        {
+            final String name = seed.name().strip();
+            newCitizen.setName(name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name);
+        }
+        if (seed.skills() != null)
+        {
+            for (final Map.Entry<Skill, Integer> skill : seed.skills().entrySet())
+            {
+                if (skill.getKey() != null && skill.getValue() != null && newCitizen.getCitizenSkillHandler().getSkills().containsKey(skill.getKey()))
+                {
+                    newCitizen.getCitizenSkillHandler().getSkills().get(skill.getKey()).setLevel(Math.max(1, Math.min(MAX_CITIZEN_LEVEL, skill.getValue())));
+                }
+            }
+        }
 
         final ItemStack recruitCostItem = cost.recruitItem().copy();
         recruitCostItem.setCount(Math.min(cost.recruitItem().getMaxStackSize(), recruitCostItem.getCount() + MathUtils.RANDOM.nextInt(3)));

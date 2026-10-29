@@ -107,6 +107,23 @@ public class RecruitmentItemsListener extends SimpleJsonResourceReloadListener<J
         return recruitCostsAtTier.get(ColonyConstants.rand.nextInt(recruitCostsAtTier.size()));
     }
 
+    /**
+     * Get a random recruit cost of one rarity tier.
+     *
+     * @param rarity the tier, held to 1..{@link #MAX_RARITY}.
+     * @return a random recruit cost of that tier, or null if none is loaded.
+     */
+    @Nullable
+    public static RecruitCost getRandomRecruitCostAtTier(final int rarity)
+    {
+        final List<RecruitCost> recruitCostsAtTier = RECRUIT_COSTS.get(Math.max(1, Math.min(MAX_RARITY, rarity)));
+        if (recruitCostsAtTier == null || recruitCostsAtTier.isEmpty())
+        {
+            return null;
+        }
+        return recruitCostsAtTier.get(ColonyConstants.rand.nextInt(recruitCostsAtTier.size()));
+    }
+
     @Override
     protected void apply(
         final @NotNull Map<Identifier, JsonElement> jsonElementMap,

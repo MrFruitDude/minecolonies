@@ -178,6 +178,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 // cohesion wave 2026-10-25: the fork side of Colony Command's findings (add-on rules, ledger reasons, stock goals, roads, resolver dry run)
                 CohesionGameTests.register(event);
             }
+            if (only.contains("freetowns"))
+            {
+                // free towns phase 2: the tavern's visitor room and the seeded visitor spawn (villager invites)
+                FreeTownsGameTests.register(event);
+            }
             if (only.contains("vanilla2"))
             {
                 // vanilla tie-in wave 2: client research snapshot (UD-19), copper chests as building containers (V-7)
@@ -652,6 +657,8 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         CohesionGameTests.register(event);
         // Vanilla tie-in wave 2 (one glob: minecolonies:vanilla2_*).
         VanillaTieIn2GameTests.register(event);
+        // Free towns phase 2 (one glob: minecolonies:freetowns_*).
+        FreeTownsGameTests.register(event);
         // MULTIPLAYER (MP-A): two messages that let one player write to another's colony (one glob: minecolonies:mpsec_*).
         for (final String name : new String[] {"mpsec_trigger_connection_needs_both_colonies", "mpsec_create_colony_changes_the_hut_only_after_the_checks",
           "mpsec_create_colony_too_close_names_nobody", "mpsec_decoders_refuse_junk"})
