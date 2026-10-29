@@ -959,6 +959,8 @@
   "com.minecolonies.coremod.gui.locate": "Locate",
   "com.minecolonies.coremod.gui.lumberjack.gettool": "Restriction Tool",
   "com.minecolonies.coremod.gui.lumberjack.skippedtrees": "Left standing: %d trees next to builds. The Forester never cuts a tree that touches planks, glass, fences, torches or other placed blocks.",
+  "com.minecolonies.coremod.gui.lumberjack.skippedtrees.toobig": "Left standing: %d trees too big to cut whole. The Forester never cuts part of a tree.",
+  "com.minecolonies.coremod.gui.lumberjack.skippedtrees.unreachable": "Given up: %d trees the Forester could not get to. He tries them again later.",
   "com.minecolonies.coremod.gui.maintab": "Main",
   "com.minecolonies.coremod.gui.miner.guardassign": "Guards",
   "com.minecolonies.coremod.gui.miner.levels": "Levels",

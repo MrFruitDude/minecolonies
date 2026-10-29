@@ -27,10 +27,25 @@ public class ToolModuleWindow extends AbstractModuleWindow<ToolModuleView>
 
         final net.minecraft.network.chat.MutableComponent desc =
           Component.translatableEscape("com.minecolonies.coremod.gui.tooldesc." + BuiltInRegistries.ITEM.getKey(moduleView.getTool()).getPath());
-        if (buildingView instanceof com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack.View forester && forester.getSkippedTrees() > 0)
+        if (buildingView instanceof com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack.View forester)
         {
-            // Forestry: trees the Forester leaves standing because they touch a player build
-            desc.append("\n\n").append(Component.translatableEscape("com.minecolonies.coremod.gui.lumberjack.skippedtrees", forester.getSkippedTrees()));
+            // Forestry: trees the Forester leaves standing, by reason
+            if (forester.getSkippedTrees() > 0)
+            {
+                desc.append("\n\n").append(Component.translatableEscape("com.minecolonies.coremod.gui.lumberjack.skippedtrees", forester.getSkippedTrees()));
+            }
+            if (forester.getSkippedTooBig() > 0)
+            {
+                desc.append("\n\n").append(Component.translatableEscape("com.minecolonies.coremod.gui.lumberjack.skippedtrees.toobig", forester.getSkippedTooBig()));
+            }
+            if (forester.getSkippedUnreachable() > 0)
+            {
+                desc.append("\n\n").append(Component.translatableEscape("com.minecolonies.coremod.gui.lumberjack.skippedtrees.unreachable", forester.getSkippedUnreachable()));
+            }
+            if (!forester.getLastSkipNote().isEmpty())
+            {
+                desc.append("\n").append(Component.literal(forester.getLastSkipNote()));
+            }
         }
         findPaneOfTypeByID("desc", Text.class).setText(desc);
         registerButton(BUTTON_GIVE_TOOL, this::givePlayerScepter);

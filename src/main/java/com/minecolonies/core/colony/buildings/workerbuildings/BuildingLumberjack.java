@@ -40,6 +40,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.BonemealableBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 import java.util.function.Predicate;
@@ -96,9 +97,40 @@ public class BuildingLumberjack extends AbstractBuilding
     private static final String LUMBERJACK         = "lumberjack";
 
     /**
-     * Forestry: trees left standing because they touch a player build, by base position, with the game time they were seen. Shown in the hut window.
+     * Forestry: why the Forester left a tree standing.
      */
-    private final Map<BlockPos, Long> skippedNearBuilds = new HashMap<>();
+    public enum SkipReason
+    {
+        /**
+         * It touches a player build (or something was built into it).
+         */
+        BUILD,
+        /**
+         * It is bigger than a tree he may cut whole.
+         */
+        TOO_BIG,
+        /**
+         * He could not get to it, or nothing of it came off for too long.
+         */
+        UNREACHABLE
+    }
+
+    /**
+     * Forestry: one tree left standing, when it was seen and why.
+     */
+    private record SkippedTree(long seen, SkipReason reason, String note)
+    {
+    }
+
+    /**
+     * Forestry: trees left standing, by base position, with the game time they were seen and the reason. Shown in the hut window.
+     */
+    private final Map<BlockPos, SkippedTree> skippedNearBuilds = new HashMap<>();
+
+    /**
+     * Forestry: what the Forester said about the last tree he left standing (empty if none).
+     */
+    private String lastSkipNote = "";
 
     /**
      * Forestry: a skipped tree counts for one game day.
@@ -247,7 +279,24 @@ public class BuildingLumberjack extends AbstractBuilding
      */
     public void addSkippedTree(@NotNull final BlockPos base)
     {
-        if (skippedNearBuilds.put(base.immutable(), colony.getWorld().getGameTime()) == null)
+        addSkippedTree(base, SkipReason.BUILD, "");
+    }
+
+    /**
+     * Forestry: a tree was left standing.
+     *
+     * @param base   the tree's base.
+     * @param reason why.
+     * @param note   a short note for the player (may be empty).
+     */
+    public void addSkippedTree(@NotNull final BlockPos base, @NotNull final SkipReason reason, @NotNull final String note)
+    {
+        final SkippedTree before = skippedNearBuilds.put(base.immutable(), new SkippedTree(colony.getWorld().getGameTime(), reason, note));
+        if (!note.isEmpty())
+        {
+            lastSkipNote = note;
+        }
+        if (before == null || before.reason() != reason || !note.isEmpty())
         {
             markDirty();
         }
@@ -271,7 +320,35 @@ public class BuildingLumberjack extends AbstractBuilding
      */
     public int getSkippedTreeCount()
     {
-        return skippedNearBuilds.size();
+        return getSkippedTreeCount(SkipReason.BUILD);
+    }
+
+    /**
+     * @param reason a reason.
+     * @return how many trees the Forester left standing for it (seen within the last game day).
+     */
+    public int getSkippedTreeCount(@NotNull final SkipReason reason)
+    {
+        return (int) skippedNearBuilds.values().stream().filter(tree -> tree.reason() == reason).count();
+    }
+
+    /**
+     * @return the reason of the tree left standing at this base, or null if it is not left standing.
+     */
+    @Nullable
+    public SkipReason getSkipReason(@NotNull final BlockPos base)
+    {
+        final SkippedTree tree = skippedNearBuilds.get(base);
+        return tree == null ? null : tree.reason();
+    }
+
+    /**
+     * @return what the Forester said about the last tree he left standing (empty if none).
+     */
+    @NotNull
+    public String getLastSkipNote()
+    {
+        return lastSkipNote;
     }
 
     /**
@@ -410,7 +487,7 @@ public class BuildingLumberjack extends AbstractBuilding
         super.onColonyTick(colony);
         bonemealFungi();
         final long now = colony.getWorld().getGameTime();
-        if (skippedNearBuilds.values().removeIf(seen -> now - seen > SKIPPED_TREE_TICKS))
+        if (skippedNearBuilds.values().removeIf(tree -> now - tree.seen() > SKIPPED_TREE_TICKS))
         {
             markDirty();
         }
@@ -432,7 +509,10 @@ public class BuildingLumberjack extends AbstractBuilding
             buf.writeBlockPos(BlockPos.ZERO);
             buf.writeBlockPos(BlockPos.ZERO);
         }
-        buf.writeVarInt(skippedNearBuilds.size());
+        buf.writeVarInt(getSkippedTreeCount(SkipReason.BUILD));
+        buf.writeVarInt(getSkippedTreeCount(SkipReason.TOO_BIG));
+        buf.writeVarInt(getSkippedTreeCount(SkipReason.UNREACHABLE));
+        buf.writeUtf(lastSkipNote);
     }
 
     /**
@@ -444,6 +524,9 @@ public class BuildingLumberjack extends AbstractBuilding
         private BlockPos startRestriction;
         private BlockPos endRestriction;
         private int      skippedTrees;
+        private int      skippedTooBig;
+        private int      skippedUnreachable;
+        private String   lastSkipNote = "";
 
         /**
          * Instantiates the view of the building.
@@ -465,6 +548,9 @@ public class BuildingLumberjack extends AbstractBuilding
             this.startRestriction = buf.readBlockPos();
             this.endRestriction = buf.readBlockPos();
             this.skippedTrees = buf.readVarInt();
+            this.skippedTooBig = buf.readVarInt();
+            this.skippedUnreachable = buf.readVarInt();
+            this.lastSkipNote = buf.readUtf();
         }
 
         /**
@@ -473,6 +559,30 @@ public class BuildingLumberjack extends AbstractBuilding
         public int getSkippedTrees()
         {
             return skippedTrees;
+        }
+
+        /**
+         * @return how many trees the Forester left standing as too big to cut whole.
+         */
+        public int getSkippedTooBig()
+        {
+            return skippedTooBig;
+        }
+
+        /**
+         * @return how many trees the Forester gave up because he could not get to them.
+         */
+        public int getSkippedUnreachable()
+        {
+            return skippedUnreachable;
+        }
+
+        /**
+         * @return what the Forester said about the last tree he left standing (empty if none).
+         */
+        public String getLastSkipNote()
+        {
+            return lastSkipNote;
         }
 
         public boolean shouldRestrict()
