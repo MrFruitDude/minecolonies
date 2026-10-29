@@ -48,6 +48,7 @@ import net.minecraft.world.level.block.grower.TreeGrower;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
 import java.util.ArrayList;
@@ -109,7 +110,8 @@ public final class ForestryGameTests
 
     static void registerTreeChop(final RegisterGameTestsEvent event)
     {
-        if (!Compatibility.treeChop.isPresent())
+        // The mod list, not Compatibility.treeChop: the compat is swapped in when the server discovers its data, after the tests are registered
+        if (!ModList.get().isLoaded("treechop"))
         {
             // The lane is misconfigured: say so instead of passing with no test.
             final Map<String, Consumer<GameTestHelper>> missing = new LinkedHashMap<>();
@@ -364,8 +366,9 @@ public final class ForestryGameTests
 
     private static void wholeDarkPale(final GameTestHelper helper)
     {
+        // The town hall blueprint faces the other way, so its box (with the one-block margin of isInBuilding) reaches x 18: trees stay at x 21 or more
         wholeTrees(helper, "forestry_whole_dark_pale", List.of(
-          new TreeSpec("dark oak", new BlockPos(18, 1, 8), true, Blocks.DARK_OAK_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.DARK_OAK, s -> s.is(Blocks.DARK_OAK_SAPLING)),
+          new TreeSpec("dark oak", new BlockPos(24, 1, 10), true, Blocks.DARK_OAK_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.DARK_OAK, s -> s.is(Blocks.DARK_OAK_SAPLING)),
           new TreeSpec("pale oak", new BlockPos(34, 1, 24), true, Blocks.PALE_OAK_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.PALE_OAK, s -> s.is(Blocks.PALE_OAK_SAPLING))),
           List.of(new ItemStack(Items.DARK_OAK_SAPLING, 4), new ItemStack(Items.PALE_OAK_SAPLING, 4)),
           grown -> {
@@ -887,7 +890,9 @@ public final class ForestryGameTests
                     }
                 }
                 final EntityAIWorkLumberjack ai = ai(worker);
-                last[0] = "saplings planted " + saplings.size() + " at " + saplings + ", ai count " + (ai == null ? -1 : ai.getPlantedTotal());
+                last[0] = "saplings planted " + saplings.size() + " at " + saplings + ", ai count " + (ai == null ? -1 : ai.getPlantedTotal())
+                            + ", planting " + (ai == null ? "?" : ai.getPlantNote()) + ", hut saplings "
+                            + InventoryUtils.getCountFromBuilding(building, stack -> stack.is(Items.OAK_SAPLING));
                 return saplings.size() >= 3;
             }, () -> last[0] + ", " + describe(worker), null, "forestry_idle_planting_ring");
         });
@@ -895,8 +900,9 @@ public final class ForestryGameTests
 
     // ---------------------------------------------------------------- TreeChop lane
 
-    private static void resetTreeChop()
+    private static void resetTreeChop(final GameTestHelper helper)
     {
+        helper.assertTrue(Compatibility.treeChop.isPresent(), "TreeChop is loaded but the Forester's TreeChop compat is not active");
         Compatibility.treeChop.setEnabled(true);
         MineColonies.getConfig().getServer().lumberjacksUseTreeChop.set(true);
     }
@@ -927,7 +933,7 @@ public final class ForestryGameTests
      */
     private static void treeChopFell(final GameTestHelper helper)
     {
-        resetTreeChop();
+        resetTreeChop(helper);
         treeChopRun(helper, "forestry_treechop_fell", false, true);
     }
 
@@ -936,7 +942,7 @@ public final class ForestryGameTests
      */
     private static void treeChopHalfChopped(final GameTestHelper helper)
     {
-        resetTreeChop();
+        resetTreeChop(helper);
         treeChopRun(helper, "forestry_treechop_half_chopped", true, true);
     }
 
@@ -945,7 +951,7 @@ public final class ForestryGameTests
      */
     private static void treeChopDisabledFallback(final GameTestHelper helper)
     {
-        resetTreeChop();
+        resetTreeChop(helper);
         Compatibility.treeChop.setEnabled(false);
         treeChopRun(helper, "forestry_treechop_disabled_fallback", false, false);
     }
@@ -956,7 +962,7 @@ public final class ForestryGameTests
      */
     private static void treeChopSettingOff(final GameTestHelper helper)
     {
-        resetTreeChop();
+        resetTreeChop(helper);
         MineColonies.getConfig().getServer().lumberjacksUseTreeChop.set(false);
         treeChopRun(helper, "forestry_treechop_setting_off", true, false);
     }

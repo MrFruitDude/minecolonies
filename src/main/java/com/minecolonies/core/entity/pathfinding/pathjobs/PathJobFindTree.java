@@ -216,9 +216,15 @@ public class PathJobFindTree extends AbstractPathJob implements ISearchPathJob
 
     private boolean isTree(final BlockPos pos)
     {
-        if (homeRadius > 0 && searchTowards != null && BlockPosUtil.getDistance2D(searchTowards, pos) > homeRadius)
+        if (homeRadius > 0 && searchTowards != null)
         {
-            return false;
+            // A real radius: getDistance2D is the x plus z distance, a diamond that misses trees towards the hut's corners
+            final long dx = pos.getX() - searchTowards.getX();
+            final long dz = pos.getZ() - searchTowards.getZ();
+            if (dx * dx + dz * dz > (long) homeRadius * homeRadius)
+            {
+                return false;
+            }
         }
         if (Tree.checkTree(world, pos, excludedTrees, dyntreesize, claimLevel, colonyId, citizenId) && Tree.checkIfInColony(pos, colony, world, restrictionBox != null))
         {

@@ -684,6 +684,18 @@ public final class TreeFootprint
         private static final int MAX_ROUNDS     = 10;
         private static final int ROUND_INTERVAL = 10;
 
+        /**
+         * Caps this far from a removed stem seed the sweep of a mushroom or fungus of at most {@link #CAP_SEED_LOGS} stems.
+         */
+        private static final int CAP_REACH     = 2;
+        private static final int CAP_SEED_LOGS = 128;
+
+        /**
+         * Doomed leaves this far around the tree's box are swept too, when the area is at most {@link #SCAN_VOLUME} blocks.
+         */
+        private static final int LEAF_REACH  = LeavesBlock.DECAY_DISTANCE - 1;
+        private static final int SCAN_VOLUME = 65536;
+
         private final Level               level;
         private final Set<BlockPos>       removedLogs;
         private final ArrayDeque<BlockPos> toBreak = new ArrayDeque<>();
@@ -698,9 +710,11 @@ public final class TreeFootprint
         /**
          * @param level       the level.
          * @param removedLogs the logs of the felled tree.
-         * @param box         where to look for doomed leaves when the removed logs are unknown (after a reload).
+         * @param box         the box of the tree's logs: doomed leaves around it are swept, and all its leaves when the removed logs are unknown (after a
+         *                    reload).
+         * @param capTree     true for a huge mushroom or fungus, whose cap may hang away from the stem.
          */
-        public LeafSweep(@NotNull final Level level, @NotNull final Collection<BlockPos> removedLogs, @Nullable final AABB box)
+        public LeafSweep(@NotNull final Level level, @NotNull final Collection<BlockPos> removedLogs, @Nullable final AABB box, final boolean capTree)
         {
             this.level = level;
             this.removedLogs = new HashSet<>(removedLogs);
@@ -714,6 +728,37 @@ public final class TreeFootprint
                     if (isDecayingLeaves(state) || isCap(state))
                     {
                         seeds.add(near);
+                    }
+                }
+            }
+            if (capTree && this.removedLogs.size() <= CAP_SEED_LOGS)
+            {
+                // The side of a huge red mushroom's cap hangs two blocks out from the stem and meets its top only at the edges
+                for (final BlockPos log : this.removedLogs)
+                {
+                    for (final BlockPos near : BlockPos.betweenClosed(log.offset(-CAP_REACH, -CAP_REACH, -CAP_REACH), log.offset(CAP_REACH, CAP_REACH, CAP_REACH)))
+                    {
+                        if (isCap(level.getBlockState(near)))
+                        {
+                            seeds.add(near.immutable());
+                        }
+                    }
+                }
+            }
+            if (!this.removedLogs.isEmpty() && box != null)
+            {
+                // Leaves vanilla dooms from the start (a stray leaf of a random canopy touching no other leaf) are not reached by the flood: take the
+                // doomed ones around the tree too, they would decay anyway
+                final AABB around = box.inflate(LEAF_REACH, LEAF_REACH, LEAF_REACH);
+                if (around.getXsize() * around.getYsize() * around.getZsize() <= SCAN_VOLUME)
+                {
+                    for (final BlockPos pos : BlockPos.betweenClosed(BlockPos.containing(around.minX, around.minY, around.minZ),
+                      BlockPos.containing(around.maxX - 1, around.maxY - 1, around.maxZ - 1)))
+                    {
+                        if (isDoomed(level.getBlockState(pos)))
+                        {
+                            seeds.add(pos.immutable());
+                        }
                     }
                 }
             }
@@ -863,22 +908,29 @@ public final class TreeFootprint
                 {
                     return 0;
                 }
-                for (final Direction dir : Direction.values())
+                // Through faces, edges and corners: a cap's side and top touch only at the edges
+                for (int dx = -1; dx <= 1; dx++)
                 {
-                    final BlockPos near = pos.relative(dir);
-                    if (capsSeen.contains(near))
+                    for (int dy = -1; dy <= 1; dy++)
                     {
-                        continue;
-                    }
-                    final BlockState state = level.getBlockState(near);
-                    if (isCap(state))
-                    {
-                        capsSeen.add(near);
-                        queue.add(near);
-                    }
-                    else if (!removedLogs.contains(near) && isTreeBlock(state))
-                    {
-                        held = true;
+                        for (int dz = -1; dz <= 1; dz++)
+                        {
+                            final BlockPos near = pos.offset(dx, dy, dz);
+                            if ((dx == 0 && dy == 0 && dz == 0) || capsSeen.contains(near))
+                            {
+                                continue;
+                            }
+                            final BlockState state = level.getBlockState(near);
+                            if (isCap(state))
+                            {
+                                capsSeen.add(near);
+                                queue.add(near);
+                            }
+                            else if (!removedLogs.contains(near) && isTreeBlock(state))
+                            {
+                                held = true;
+                            }
+                        }
                     }
                 }
             }

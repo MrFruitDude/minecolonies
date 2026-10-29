@@ -258,6 +258,8 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private int            planted = 0;
     private boolean        plantingDone = false;
     private int            plantedTotal = 0;
+    @NotNull
+    private String         plantNote = "not tried";
 
     /**
      * @return chops through TreeChop by this Forester.
@@ -863,7 +865,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
         if (sweep == null)
         {
-            sweep = new TreeFootprint.LeafSweep(world, tree.getAllLogs(), tree.getBox());
+            sweep = new TreeFootprint.LeafSweep(world, tree.getAllLogs(), tree.getBox(), tree.isNetherTree());
         }
         final List<BlockPos> batch = sweep.next(LEAF_BATCH);
         if (!batch.isEmpty())
@@ -972,6 +974,20 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         return curBlockState.is(Blocks.BEE_NEST) || super.shouldSilkTouchBlock(curBlockState);
     }
 
+    @Override
+    protected int getMostEfficientTool(@NotNull final BlockState target, final BlockPos pos)
+    {
+        final int slot = super.getMostEfficientTool(target, pos);
+        if (slot < 0 && slot != NO_TOOL && !target.requiresCorrectToolForDrops() && (TreeFootprint.isTreeBlock(target) || TreeFootprint.isDecoration(target)))
+        {
+            // Forestry: a part of the tree that drops without the right tool (muddy mangrove roots want a shovel) is taken with the axe or by hand,
+            // he does not stop the felling to ask for a shovel
+            final int axe = InventoryUtils.findFirstSlotInItemHandlerWith(getInventory(), stack -> ModEquipmentTypes.axe.get().getMiningLevel(stack) > -1);
+            return axe >= 0 ? axe : NO_TOOL;
+        }
+        return slot;
+    }
+
     /**
      * @return how many saplings for the current tree he carries.
      */
@@ -999,8 +1015,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
         if (plantSpots.isEmpty() || planted >= PLANT_PER_IDLE)
         {
-            plantingDone = true;
-            return false;
+            return stopPlanting(planted > 0 ? "planted " + planted : plantNote);
         }
         int slot = findPlantableSaplingSlot();
         if (slot == -1)
@@ -1008,19 +1023,23 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             final ItemStack wanted = plantableSaplingInHut();
             if (wanted.isEmpty())
             {
-                plantingDone = true;
-                return false;
+                return stopPlanting("no sapling to plant in the hut, " + plantSpots.size() + " spots");
             }
             if (!walkToBuilding())
             {
+                plantNote = "walking to the hut for " + wanted.getItem() + ", " + plantSpots.size() + " spots";
                 return true;
             }
-            checkAndTransferFromHut(wanted);
+            if (!checkAndTransferFromHut(wanted) || findPlantableSaplingSlot() == -1)
+            {
+                // The rack's own count can lag behind its inventory: take them straight from the hut's item handlers
+                InventoryUtils.transferXOfFirstSlotInProviderWithIntoNextFreeSlotInItemHandler(building, stack -> ItemStack.isSameItem(stack, wanted), PLANT_PER_IDLE,
+                  getInventory());
+            }
             slot = findPlantableSaplingSlot();
             if (slot == -1)
             {
-                plantingDone = true;
-                return false;
+                return stopPlanting("could not take " + wanted.getItem() + " from the hut");
             }
         }
         final ItemStack stack = getInventory().getStackInSlot(slot);
@@ -1038,6 +1057,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         CitizenItemUtils.setHeldItem(worker, InteractionHand.MAIN_HAND, slot);
         if (world.setBlockAndUpdate(spot, saplingBlock.defaultBlockState()))
         {
+            plantNote = "planted at " + spot.toShortString();
             getInventory().extractItem(slot, 1, false);
             worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
             final SoundType soundType = saplingBlock.getSoundType(world.getBlockState(spot), world, spot, worker);
@@ -1048,6 +1068,28 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         plantSpots.remove(0);
         setDelay(TIMEOUT_DELAY);
         return true;
+    }
+
+    /**
+     * Forestry: planting is over for this idle round.
+     *
+     * @param note why, for the status and tests.
+     * @return false.
+     */
+    private boolean stopPlanting(@NotNull final String note)
+    {
+        plantingDone = true;
+        plantNote = note;
+        return false;
+    }
+
+    /**
+     * @return what the last idle planting round did or why it stopped (tests).
+     */
+    @NotNull
+    public String getPlantNote()
+    {
+        return plantNote;
     }
 
     /**
@@ -1141,6 +1183,9 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         final List<BlockPos> spots = new ArrayList<>();
         final BlockState probe = Blocks.OAK_SAPLING.defaultBlockState();
         int examined = 0;
+        int unloaded = 0;
+        int height = 0;
+        final java.util.Map<String, Integer> problems = new java.util.TreeMap<>();
         for (final BlockPos column : grid)
         {
             if (spots.size() >= PLANT_PER_IDLE * 4 || examined++ >= PLANT_MAX_SPOTS)
@@ -1149,14 +1194,29 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             }
             if (!WorldUtil.isBlockLoaded(world, column))
             {
+                unloaded++;
                 continue;
             }
             final BlockPos spot = new BlockPos(column.getX(), world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column.getX(), column.getZ()), column.getZ());
-            if (spot.getY() >= minY && spot.getY() <= maxY && isPlantSpot(spot, probe))
+            if (spot.getY() < minY || spot.getY() > maxY)
             {
-                spots.add(spot);
+                height++;
+            }
+            else
+            {
+                final String problem = plantSpotProblem(spot, probe);
+                if (problem == null)
+                {
+                    spots.add(spot);
+                }
+                else
+                {
+                    problems.merge(problem, 1, Integer::sum);
+                }
             }
         }
+        plantNote = "no free spot: " + examined + " of " + grid.size() + " grid spots checked, " + unloaded + " not loaded, " + height + " at another height, "
+                      + problems;
         return spots;
     }
 
@@ -1167,26 +1227,38 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      */
     private boolean isPlantSpot(@NotNull final BlockPos spot, @NotNull final BlockState sapling)
     {
+        return plantSpotProblem(spot, sapling) == null;
+    }
+
+    /**
+     * @param spot    where a sapling would go.
+     * @param sapling the sapling block.
+     * @return why no sapling may be planted there, or null if one may.
+     */
+    @Nullable
+    private String plantSpotProblem(@NotNull final BlockPos spot, @NotNull final BlockState sapling)
+    {
         final BlockState at = world.getBlockState(spot);
         if (!(at.isAir() || (at.is(BlockTags.REPLACEABLE_BY_TREES) && !at.is(BlockTags.FLOWERS) && at.getFluidState().isEmpty())))
         {
-            return false;
+            return "taken";
         }
         final BlockState ground = world.getBlockState(spot.below());
-        if (!ground.is(BlockTags.DIRT) || ground.is(Blocks.DIRT_PATH) || ground.is(Blocks.FARMLAND) || ground.is(ModTags.pathingBlocks))
+        // In 26.3 minecraft:dirt is only dirt, coarse and rooted dirt: grass, podzol, mud and moss are in the overworld substrate tag
+        if (!ground.is(BlockTags.SUBSTRATE_OVERWORLD) || ground.is(Blocks.DIRT_PATH) || ground.is(Blocks.FARMLAND) || ground.is(ModTags.pathingBlocks))
         {
-            return false;
+            return "ground";
         }
         for (int i = 1; i <= 4; i++)
         {
             if (!world.getBlockState(spot.above(i)).isAir())
             {
-                return false;
+                return "no room above";
             }
         }
         if (!sapling.canSurvive(world, spot))
         {
-            return false;
+            return "sapling cannot stay";
         }
         for (final IBuilding hutBuilding : building.getColony().getServerBuildingManager().getBuildings().values())
         {
@@ -1194,13 +1266,13 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             if (corners != null && corners.getA() != null && corners.getB() != null
                   && AABB.encapsulatingFullBlocks(corners.getA(), corners.getB()).inflate(2).contains(Vec3.atCenterOf(spot)))
             {
-                return false;
+                return "hut box";
             }
         }
         final IColony owner = IColonyManager.getInstance().getColonyByPosFromWorld(world, spot);
         if (owner != null && owner.getID() != building.getColony().getID())
         {
-            return false;
+            return "other colony";
         }
         for (final BlockPos near : BlockPos.betweenClosed(spot.offset(-2, -1, -2), spot.offset(2, 2, 2)))
         {
@@ -1208,10 +1280,10 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             if (state.is(Blocks.DIRT_PATH) || state.is(Blocks.FARMLAND) || state.is(ModTags.pathingBlocks) || state.is(BlockTags.SAPLINGS)
                   || TreeFootprint.isTreeBlock(state) || TreeFootprint.isBuildSignal(state, false))
             {
-                return false;
+                return "next to " + state.getBlock().getDescriptionId().replaceFirst("^block\\.minecraft\\.", "");
             }
         }
-        return true;
+        return null;
     }
 
     @Override
