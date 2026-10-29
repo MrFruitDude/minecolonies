@@ -204,6 +204,39 @@ final class ShaftGameTests
         return InventoryUtils.getItemCountInItemHandler(hut.getItemHandlerCap(), s -> s.is(item));
     }
 
+    /**
+     * The hut's builder uses what was brought: the item leaves the hut. (Goods handed in stay in a hut with no builder, and once the request they came for is done the
+     * hut's own resolver serves every other open request for the same item from them, so the next requests would never reach labour.)
+     */
+    private static void useUp(final IBuilding hut, final Item item)
+    {
+        final var handler = hut.getItemHandlerCap();
+        for (int slot = 0; slot < handler.getSlots(); slot++)
+        {
+            final ItemStack stack = handler.getStackInSlot(slot);
+            if (stack.is(item))
+            {
+                handler.extractItem(slot, stack.getCount(), false);
+            }
+        }
+    }
+
+    /**
+     * Takes away the item lying loose outside this test's plot (a hut of a finished test spills its goods when its plot is cleared): a labourer would walk there to
+     * pick it up and could not come back.
+     */
+    private static void clearStrayLoose(final GameTestHelper helper, final Item item)
+    {
+        final BlockPos min = helper.absolutePos(new BlockPos(-8, 0, -8));
+        final BlockPos max = helper.absolutePos(new BlockPos(HX1 + 4, 48, HZ1 + 4));
+        final net.minecraft.world.phys.AABB own = new net.minecraft.world.phys.AABB(min.getX(), min.getY(), min.getZ(), max.getX() + 1, max.getY() + 1, max.getZ() + 1);
+        for (final net.minecraft.world.entity.item.ItemEntity entity : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+          own.inflate(LabourSettings.gatherRadius() + 16, 64, LabourSettings.gatherRadius() + 16), e -> e.getItem().is(item) && !own.contains(e.position())))
+        {
+            entity.discard();
+        }
+    }
+
     private static ICitizenData labourer(final RsFixture f, final BlockPos rel, final ItemStack... items)
     {
         final ICitizenData citizen = f.spawn(rel, false);
@@ -585,12 +618,20 @@ final class ShaftGameTests
             {
                 workers.add(labourer(f, new BlockPos(14, 1, 14 + 2 * i), new ItemStack(Items.WOODEN_PICKAXE), new ItemStack(Items.TORCH, 8)));
             }
-            // (one request per worker: a claim takes up to a whole request)
+            // (one request per worker: a claim takes up to a whole request. The hut keeps what is handed in, and its own resolver serves any other open request for
+            // cobblestone from it once the first is done; so the next two are asked after the first is served and used up, and the last asks more than one
+            // claim of the other brings)
             final IToken<?> cobble = ask(f.builder, new ItemStack(Items.COBBLESTONE, 12));
-            ask(f.builder, new ItemStack(Items.COBBLESTONE, 12));
-            ask(f.builder, new ItemStack(Items.COBBLESTONE, 12));
+            final boolean[] asked = {false};
             final int[] most = {0};
             poll(helper, List.of(colony), 12000, () -> {
+                if (!asked[0] && f.request(cobble) == null)
+                {
+                    useUp(f.builder, Items.COBBLESTONE);
+                    ask(f.builder, new ItemStack(Items.COBBLESTONE, 12));
+                    ask(f.builder, new ItemStack(Items.COBBLESTONE, 20));
+                    asked[0] = true;
+                }
                 final List<Integer> on = colony.getLabourBoard().shafts().workersOn(shaft.id);
                 helper.assertTrue(on.size() <= 2, "more than two in the shaft: " + on);
                 final java.util.Collection<Integer> holders = colony.getLabourBoard().shafts().takenForTests().values();
@@ -835,6 +876,8 @@ final class ShaftGameTests
                     second[0] = mark(helper, colony, S4);
                     f.level.setBlock(second[0].plan().cell(5), Blocks.IRON_ORE.defaultBlockState(), 2);
                     shown.add(labourer(f, new BlockPos(14, 1, 18), new ItemStack(Items.STONE_PICKAXE)));
+                    // (the 24 handed in would serve the next request from the hut itself)
+                    useUp(f.builder, Items.COBBLESTONE);
                     ask(f.builder, new ItemStack(Items.COBBLESTONE, 6));
                     phase[0] = 1;
                     return false;
@@ -870,7 +913,11 @@ final class ShaftGameTests
             f.stock(1, worn);
             final ICitizenData idle = labourer(f, new BlockPos(14, 1, 16), new ItemStack(Items.OAK_LOG, 4));
             final IToken<?> cobble = ask(f.builder, new ItemStack(Items.COBBLESTONE, 8));
-            poll(helper, List.of(colony), 12000, () -> inHut(f.builder, Items.COBBLESTONE) >= 8, () -> {
+            poll(helper, List.of(colony), 12000, () -> {
+                // (cobblestone a cleared plot spilt is no part of this test: the worker makes a new pickaxe, he does not go looking for it)
+                clearStrayLoose(helper, Items.COBBLESTONE);
+                return inHut(f.builder, Items.COBBLESTONE) >= 8;
+            }, () -> {
                 helper.assertTrue(f.physical(s -> s.is(Items.IRON_PICKAXE)) == 1, "the iron pickaxe left the warehouse");
                 helper.assertTrue(f.physical(s -> s.is(Items.WOODEN_PICKAXE)) == 0, "the wooden pickaxe was not taken");
                 helper.assertTrue(InventoryUtils.getItemCountInItemHandler(idle.getInventory(), s -> s.is(Items.IRON_PICKAXE)) == 0, "the worker carries the iron pickaxe");

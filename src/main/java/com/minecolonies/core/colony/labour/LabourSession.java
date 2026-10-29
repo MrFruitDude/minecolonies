@@ -266,6 +266,11 @@ public final class LabourSession implements IIdleTaskSession
         {
             return true;
         }
+        if (phase == Phase.UNLOAD)
+        {
+            // his own hand-in served the request: what he still carries of the basic goods and the shaft's finds goes to a warehouse first (the unload ends the session)
+            return true;
+        }
         // the request was served elsewhere: what he gathered for it goes to a warehouse first, if he carries such goods and the colony has one
         if (claim.source() != LabourClaim.Source.SELF && toolKind == null && phase != Phase.UNLOAD && phase != Phase.END && !surplus().isEmpty()
               && !board.sites().warehouses().isEmpty())
