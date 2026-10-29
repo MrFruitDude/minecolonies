@@ -368,7 +368,8 @@ public final class ForestryGameTests
           new TreeSpec("spruce", new BlockPos(20, 1, 6), false, Blocks.SPRUCE_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.SPRUCE, s -> s.is(Blocks.SPRUCE_SAPLING)),
           new TreeSpec("mega spruce", new BlockPos(36, 1, 6), true, Blocks.SPRUCE_SAPLING, Blocks.PODZOL, TreeGrower.SPRUCE, s -> s.is(Blocks.SPRUCE_SAPLING)),
           new TreeSpec("mega jungle", new BlockPos(26, 1, 26), true, Blocks.JUNGLE_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.JUNGLE, s -> s.is(Blocks.JUNGLE_SAPLING))),
-          List.of(new ItemStack(Items.SPRUCE_SAPLING, 8), new ItemStack(Items.JUNGLE_SAPLING, 4)),
+          // (177 logs: one stone axe lasts 131, so he carries a second; he takes it when the first breaks)
+          List.of(new ItemStack(Items.SPRUCE_SAPLING, 8), new ItemStack(Items.JUNGLE_SAPLING, 4), new ItemStack(Items.STONE_AXE)),
           null, true);
     }
 
@@ -1303,9 +1304,14 @@ public final class ForestryGameTests
     }
 
     /**
-     * TreeChop fells only the Forester's own tree: an oak with a player's stripped oak log beam on a stripped log post touching its trunk, and a spruce
-     * log post touching it on the other side. TreeChop takes every connected log for its tree; when its tree reaches past his footprint he cuts the oak the
-     * normal way. The beam, its post and the spruce post all stand afterwards, the oak is gone and replanted.
+     * TreeChop fells only the Forester's own tree, and the build guard keeps a player's logs out of every felling.
+     * <ul>
+     * <li>Oak A has a player's stripped oak log and a spruce log set at two corners of its trunk base. They touch the trunk only at an edge, so they are no
+     * part of his tree and no build signal, but TreeChop takes logs through edges as well: when its tree reaches past his footprint he cuts the oak the
+     * normal way. The oak is gone and replanted, both corner logs stand.</li>
+     * <li>Oak B has a stripped oak log beam on a stripped post touching its trunk, and a spruce log post touching it on the other side (a player's work
+     * built into the tree). Nothing of it is felled: not the oak, not the beam rooted on its stripped post, not the spruce post as a tree of its own.</li>
+     * </ul>
      */
     private static void treeChopStaysInFootprint(final GameTestHelper helper)
     {
@@ -1315,37 +1321,47 @@ public final class ForestryGameTests
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, name);
         final BuildingLumberjack building = hut(helper, colony, HUT, false);
         final Grown oak = grow(helper, new TreeSpec("oak", new BlockPos(22, 1, 18), false, Blocks.OAK_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.OAK, s -> s.is(Blocks.OAK_SAPLING)), 71L);
+        final Grown built = grow(helper, new TreeSpec("built oak", new BlockPos(34, 1, 28), false, Blocks.OAK_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.OAK, null), 72L);
         final BlockPos trunk = oak.stumps().get(0);
+        final Map<BlockPos, BlockState> corners = new LinkedHashMap<>();
+        corners.put(trunk.offset(1, 0, 1), Blocks.STRIPPED_OAK_LOG.defaultBlockState());
+        corners.put(trunk.offset(-1, 0, -1), Blocks.SPRUCE_LOG.defaultBlockState());
+        final BlockPos builtTrunk = built.stumps().get(0);
         final Map<BlockPos, BlockState> build = new LinkedHashMap<>();
         for (int i = 1; i <= 4; i++)
         {
-            build.put(trunk.offset(i, 1, 0), Blocks.STRIPPED_OAK_LOG.defaultBlockState().setValue(RotatedPillarBlock.AXIS, Direction.Axis.X));
+            build.put(builtTrunk.offset(i, 1, 0), Blocks.STRIPPED_OAK_LOG.defaultBlockState().setValue(RotatedPillarBlock.AXIS, Direction.Axis.X));
         }
-        build.put(trunk.offset(4, 0, 0), Blocks.STRIPPED_OAK_LOG.defaultBlockState());
+        build.put(builtTrunk.offset(4, 0, 0), Blocks.STRIPPED_OAK_LOG.defaultBlockState());
         for (int y = 0; y <= 2; y++)
         {
-            build.put(trunk.offset(-1, y, 0), Blocks.SPRUCE_LOG.defaultBlockState());
+            build.put(builtTrunk.offset(-1, y, 0), Blocks.SPRUCE_LOG.defaultBlockState());
         }
-        for (final Map.Entry<BlockPos, BlockState> entry : build.entrySet())
+        final Map<BlockPos, BlockState> all = new LinkedHashMap<>(corners);
+        all.putAll(build);
+        for (final Map.Entry<BlockPos, BlockState> entry : all.entrySet())
         {
             level.setBlockAndUpdate(entry.getKey(), entry.getValue());
         }
         final Set<BlockPos> treeChopLogs = Compatibility.treeChop.getTreeLogs(level, trunk);
-        final boolean reachesPast = treeChopLogs == null || build.keySet().stream().anyMatch(treeChopLogs::contains);
-        Log.getLogger().info("[{}] TreeChop's tree: {} logs, reaches the build: {}", name, treeChopLogs == null ? "unknown" : treeChopLogs.size(), reachesPast);
+        final boolean reachesPast = treeChopLogs == null || corners.keySet().stream().anyMatch(treeChopLogs::contains);
+        Log.getLogger().info("[{}] TreeChop's tree: {} logs, reaches the corner logs: {}", name, treeChopLogs == null ? "unknown" : treeChopLogs.size(), reachesPast);
 
         helper.runAfterDelay(20, () -> {
             final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10), new ItemStack(Items.OAK_SAPLING, 4));
             final String[] last = {""};
             pump(helper, List.of(worker), FELL_CAP, () -> {
                 final EntityAIWorkLumberjack ai = ai(worker);
-                final long buildLost = build.entrySet().stream().filter(e -> !level.getBlockState(e.getKey()).is(e.getValue().getBlock())).count();
+                final long lost = all.entrySet().stream().filter(e -> !level.getBlockState(e.getKey()).is(e.getValue().getBlock())).count();
                 final int logs = count(level, oak.box(), s -> s.is(Blocks.OAK_LOG));
+                final int builtLogs = count(level, built.box(), s -> s.is(Blocks.OAK_LOG));
                 final boolean replanted = level.getBlockState(trunk).is(Blocks.OAK_SAPLING);
                 final int refused = ai == null ? 0 : ai.getTreeChopRefusedCount();
-                last[0] = "build blocks lost " + buildLost + "/" + build.size() + ", oak logs " + logs + "/" + oak.logs() + ", replanted " + replanted + ", TreeChop chops "
-                            + (ai == null ? 0 : ai.getTreeChopChopCount()) + ", refused " + refused + ", TreeChop's tree reaches the build " + reachesPast;
-                helper.assertTrue(buildLost == 0, "the build next to the tree was felled: " + last[0]);
+                last[0] = "player logs lost " + lost + "/" + all.size() + ", oak logs " + logs + "/" + oak.logs() + ", built oak logs " + builtLogs + "/" + built.logs()
+                            + ", replanted " + replanted + ", TreeChop chops " + (ai == null ? 0 : ai.getTreeChopChopCount()) + ", refused " + refused
+                            + ", TreeChop's tree reaches the corner logs " + reachesPast;
+                helper.assertTrue(lost == 0, "a player's log was felled: " + last[0]);
+                helper.assertTrue(builtLogs == built.logs(), "the oak with a build in it was cut: " + last[0]);
                 return logs == 0 && replanted && tree(worker) == null && (!reachesPast || refused >= 1);
             }, () -> last[0] + ", " + describe(worker), null, name);
         });

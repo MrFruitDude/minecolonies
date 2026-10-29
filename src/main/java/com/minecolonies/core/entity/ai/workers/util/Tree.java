@@ -1062,6 +1062,32 @@ public class Tree
     }
 
     /**
+     * @param pos a cap (mushroom cap, wart block, shroomlight).
+     * @return true if it is a cap of this mushroom or fungus: one he saw, or one within {@link TreeFootprint#CAP_REACH} of its stems (the side of a huge red
+     * mushroom's cap meets its top only at the edges, so it is not among the caps he saw).
+     */
+    public boolean ownsCap(@NotNull final BlockPos pos)
+    {
+        if (ownsBlock(pos))
+        {
+            return true;
+        }
+        if (!netherTree)
+        {
+            return false;
+        }
+        for (final BlockPos log : allLogs)
+        {
+            if (Math.abs(log.getX() - pos.getX()) <= TreeFootprint.CAP_REACH && Math.abs(log.getY() - pos.getY()) <= TreeFootprint.CAP_REACH
+                  && Math.abs(log.getZ() - pos.getZ()) <= TreeFootprint.CAP_REACH)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * @return true if a block hangs on the tree that goes with it (bee nest, cocoa).
      */
     public boolean hasDecorations()

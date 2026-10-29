@@ -1628,8 +1628,9 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     }
 
     /**
-     * Forestry: what he may break to get through: natural leaves (vanilla would let them decay) or a cap of his own tree, never placed leaves (a
-     * hedge), never in a hut box or another colony's claim, never touching a player build.
+     * Forestry: what he may break to get through: natural leaves (vanilla would let them decay) or a cap of his own mushroom or fungus (the side of a red
+     * mushroom's cap stands between him and the stem), never placed leaves (a hedge), never in a hut box or another colony's claim, never touching a
+     * player build.
      *
      * @param pos the block in his way.
      * @return true if he may break it.
@@ -1639,7 +1640,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         final BlockState state = world.getBlockState(pos);
         final boolean natural = TreeFootprint.isDecayingLeaves(state)
                                   ? !state.getValue(LeavesBlock.PERSISTENT)
-                                  : TreeFootprint.isCap(state) && job.getTree() != null && job.getTree().ownsBlock(pos);
+                                  : TreeFootprint.isCap(state) && job.getTree() != null && job.getTree().ownsCap(pos);
         if (!natural || TreeFootprint.guardPosition(world, pos, building.getColony()) != TreeFootprint.Recheck.OK)
         {
             return false;

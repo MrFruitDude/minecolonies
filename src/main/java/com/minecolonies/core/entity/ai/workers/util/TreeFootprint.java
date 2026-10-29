@@ -47,7 +47,8 @@ import java.util.function.Predicate;
  * the trunk (8 for 1x1, 10 for 2x2, 16 for wider), up to the tree size budget. A tree over the budget is not started: a whole tree left beats half a
  * tree. A log of the tree past the radius makes it too big as well: a cut at the radius would leave that branch standing.</li>
  * <li>Build guard: a log next to planks, stairs, slabs, fences, walls, doors, glass, torches, lanterns, beds, placed leaves, stripped logs on a natural
- * trunk, or a block entity other than a bee nest; a log inside a colony hut box; a log in a chunk another colony claims. Such a tree is not cut at
+ * trunk (or natural logs on a stripped one), a log of another wood (a post or a beam: two natural trees of two woods seldom touch, and are then left
+ * whole), or a block entity other than a bee nest; a log inside a colony hut box; a log in a chunk another colony claims. Such a tree is not cut at
  * all.</li>
  * <li>Leaf sweep: after the logs are gone, only leaves vanilla would decay anyway (not persistent, {@code DISTANCE} 7) are broken, found by a flood from the
  * leaves that touched the removed logs. Leaves held by a neighbour tree and placed leaves stay by construction. Mushroom caps, wart blocks and
@@ -86,6 +87,12 @@ public final class TreeFootprint
      * Leaves, caps and decay checks one sweep round reads at most.
      */
     public static final int LEAF_BUDGET = 1024;
+
+    /**
+     * A cap this far from a stem belongs to its mushroom or fungus: the side of a huge red mushroom's cap hangs two blocks out from the stem and meets its
+     * top only at the edges.
+     */
+    public static final int CAP_REACH = 2;
 
     private static final Map<Block, String> FAMILIES     = new ConcurrentHashMap<>();
     private static final Map<Block, String> TAG_FAMILIES = new ConcurrentHashMap<>();
@@ -281,6 +288,32 @@ public final class TreeFootprint
     private static boolean isStripped(@NotNull final BlockState state)
     {
         return BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().startsWith("stripped_");
+    }
+
+    /**
+     * Whether a log of the tree's family has the bark of the tree: natural trees are stripped all through or not at all, so a stripped log on a natural
+     * trunk (or a natural log on a stripped one) is a player's work. A TreeChop chopped log counts by the log it was made from (as it is when unknown).
+     *
+     * @param level        the level.
+     * @param pos          the log.
+     * @param state        its state.
+     * @param strippedBase true if the trunk itself is stripped.
+     * @param serverThread true to read a chopped log's original log (block entity).
+     * @return true if it matches the trunk.
+     */
+    private static boolean barkMatches(
+      @NotNull final LevelReader level,
+      @NotNull final BlockPos pos,
+      @NotNull final BlockState state,
+      final boolean strippedBase,
+      final boolean serverThread)
+    {
+        if (Compatibility.treeChop.isChoppedLog(state))
+        {
+            final BlockState original = serverThread ? Compatibility.treeChop.getOriginalLogState(level, pos) : null;
+            return original == null || Compatibility.treeChop.isChoppedLog(original) || isStripped(original) == strippedBase;
+        }
+        return isStripped(state) == strippedBase;
     }
 
     /**
@@ -494,9 +527,16 @@ public final class TreeFootprint
                     continue;
                 }
                 final BlockState state = level.getBlockState(near);
-                if (isTreeBlock(state) && sameFamily(fam, family(level, near, state, true)))
+                if (isTreeBlock(state))
                 {
-                    continue;
+                    if (sameFamily(fam, family(level, near, state, true)) && barkMatches(level, near, state, strippedBase, true))
+                    {
+                        continue;
+                    }
+                    // A stripped log on a natural trunk, or a log of another wood (a post, a beam): a player's work touches the tree
+                    result.skip = Skip.BUILD;
+                    result.skipDetail = state.getBlock() + " at " + near.toShortString() + " next to log " + log.toShortString();
+                    return result;
                 }
                 if (isDecoration(state))
                 {
@@ -553,9 +593,10 @@ public final class TreeFootprint
                             seen.remove(next);
                             continue;
                         }
-                        if (!strippedBase && isStripped(state))
+                        if (!barkMatches(level, next, state, strippedBase, true))
                         {
-                            // A stripped log on a natural tree is a player's work; the 6-neighbour guard decides when it touches a log.
+                            // A stripped log on a natural tree (a natural log on a stripped one) is a player's work; the 6-neighbour guard decides when
+                            // it touches a log.
                             seen.remove(next);
                             continue;
                         }
@@ -664,9 +705,13 @@ public final class TreeFootprint
         for (final Direction dir : Direction.values())
         {
             final BlockState near = level.getBlockState(pos.relative(dir));
-            if (isTreeBlock(near) && sameFamily(family, family(level, pos.relative(dir), near, true)))
+            if (isTreeBlock(near))
             {
-                continue;
+                if (sameFamily(family, family(level, pos.relative(dir), near, true)) && barkMatches(level, pos.relative(dir), near, strippedBase, true))
+                {
+                    continue;
+                }
+                return Recheck.BUILD;
             }
             if (!isDecoration(near) && isBuildSignal(near, strippedBase))
             {
@@ -837,9 +882,8 @@ public final class TreeFootprint
         private static final int ROUND_INTERVAL = 10;
 
         /**
-         * Caps this far from a removed stem seed the sweep of a mushroom or fungus of at most {@link #CAP_SEED_LOGS} stems.
+         * Caps {@link TreeFootprint#CAP_REACH} from a removed stem seed the sweep of a mushroom or fungus of at most {@link #CAP_SEED_LOGS} stems.
          */
-        private static final int CAP_REACH     = 2;
         private static final int CAP_SEED_LOGS = 128;
 
         /**
