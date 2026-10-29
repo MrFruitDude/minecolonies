@@ -9,6 +9,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -97,6 +98,19 @@ public class TreeChopProxy
     public boolean isChoppable(@NotNull final BlockGetter level, @NotNull final BlockPos pos)
     {
         return false;
+    }
+
+    /**
+     * The logs TreeChop takes for one tree with the log at a position: a felling there removes all of them.
+     *
+     * @param level the level.
+     * @param pos   the log to chop.
+     * @return the positions, or null if TreeChop is absent or does not say.
+     */
+    @Nullable
+    public Set<BlockPos> getTreeLogs(@NotNull final ServerLevel level, @NotNull final BlockPos pos)
+    {
+        return null;
     }
 
     /**

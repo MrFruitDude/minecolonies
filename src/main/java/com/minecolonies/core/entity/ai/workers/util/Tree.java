@@ -152,6 +152,13 @@ public class Tree
     private BlockPos boxMax;
 
     /**
+     * Forestry: the wood family of the tree and whether its trunk is stripped, saved so each block is checked again right before it is broken.
+     */
+    @NotNull
+    private String  family       = TreeFootprint.ANY_FAMILY;
+    private boolean strippedBase = false;
+
+    /**
      * Private constructor of the tree. Used by the equals and createFromNBt method.
      */
     private Tree()
@@ -230,6 +237,8 @@ public class Tree
         woodBlocks = new LinkedList<>(footprint.logs);
         woodBlocks.sort((c1, c2) -> (int) (c1.distSqr(location) - c2.distSqr(location)));
         allLogs.addAll(footprint.logs);
+        family = footprint.family;
+        strippedBase = footprint.strippedBase;
         decorations = new LinkedList<>(footprint.decorations);
         final net.minecraft.world.phys.AABB box = footprint.box();
         boxMin = BlockPos.containing(box.minX, box.minY, box.minZ);
@@ -764,6 +773,8 @@ public class Tree
             tree.boxMin = BlockPosUtil.read(compound, TAG_BOX_MIN);
             tree.boxMax = BlockPosUtil.read(compound, TAG_BOX_MAX);
         }
+        tree.family = compound.getStringOr(TAG_FAMILY, TreeFootprint.ANY_FAMILY);
+        tree.strippedBase = compound.getBooleanOr(TAG_STRIPPED_BASE, false);
 
         return tree;
     }
@@ -1021,6 +1032,34 @@ public class Tree
     private static final String TAG_DECORATIONS = "forestryDecorations";
     private static final String TAG_BOX_MIN     = "forestryBoxMin";
     private static final String TAG_BOX_MAX     = "forestryBoxMax";
+    private static final String TAG_FAMILY        = "forestryFamily";
+    private static final String TAG_STRIPPED_BASE = "forestryStrippedBase";
+
+    /**
+     * @return the wood family of the tree ({@link TreeFootprint#ANY_FAMILY} for a tree saved before it was kept).
+     */
+    @NotNull
+    public String getFamily()
+    {
+        return family;
+    }
+
+    /**
+     * @return true if the trunk itself is stripped.
+     */
+    public boolean isStrippedBase()
+    {
+        return strippedBase;
+    }
+
+    /**
+     * @param pos a position.
+     * @return true if the block there is one of this tree's logs, leaves or decorations as he saw them.
+     */
+    public boolean ownsBlock(@NotNull final BlockPos pos)
+    {
+        return allLogs.contains(pos) || woodBlocks.contains(pos) || leaves.contains(pos) || decorations.contains(pos);
+    }
 
     /**
      * @return true if a block hangs on the tree that goes with it (bee nest, cocoa).
@@ -1324,6 +1363,8 @@ public class Tree
             BlockPosUtil.write(compound, TAG_BOX_MIN, boxMin);
             BlockPosUtil.write(compound, TAG_BOX_MAX, boxMax);
         }
+        compound.putString(TAG_FAMILY, family);
+        compound.putBoolean(TAG_STRIPPED_BASE, strippedBase);
     }
 
     /**

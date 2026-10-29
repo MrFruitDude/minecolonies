@@ -20,7 +20,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -99,6 +101,22 @@ public final class TreeChopCompat extends TreeChopProxy
         catch (final RuntimeException e)
         {
             return false;
+        }
+    }
+
+    @Nullable
+    @Override
+    public Set<BlockPos> getTreeLogs(@NotNull final ServerLevel level, @NotNull final BlockPos pos)
+    {
+        try
+        {
+            final Set<BlockPos> logs = new HashSet<>();
+            ChopUtil.getTree(level, pos).getLogBlocksOrEmpty().forEach(log -> logs.add(log.immutable()));
+            return logs.isEmpty() ? null : logs;
+        }
+        catch (final RuntimeException e)
+        {
+            return null;
         }
     }
 

@@ -45,7 +45,7 @@ import java.util.function.Predicate;
  * (bamboo) is never a log. A TreeChop chopped log takes the family of the log it was made from.</li>
  * <li>Log flood: from the trunk base over the same family, up and sideways only (roots may go a little down), within a radius of the trunk that grows with
  * the trunk (8 for 1x1, 10 for 2x2, 16 for wider), up to the tree size budget. A tree over the budget is not started: a whole tree left beats half a
- * tree.</li>
+ * tree. A log of the tree past the radius makes it too big as well: a cut at the radius would leave that branch standing.</li>
  * <li>Build guard: a log next to planks, stairs, slabs, fences, walls, doors, glass, torches, lanterns, beds, placed leaves, stripped logs on a natural
  * trunk, or a block entity other than a bee nest; a log inside a colony hut box; a log in a chunk another colony claims. Such a tree is not cut at
  * all.</li>
@@ -134,6 +134,10 @@ public final class TreeFootprint
         public final Map<Block, Integer>  nearLeafCount = new LinkedHashMap<>();
         public final Map<Block, BlockPos> nearLeafPos   = new HashMap<>();
         public int                        leaves;
+        /**
+         * True if the trunk itself is stripped (some nether features): stripped logs next to it are no player work.
+         */
+        public boolean                    strippedBase;
         public Skip                       skip = Skip.NONE;
         public String                     skipDetail = "";
         public final String               family;
@@ -439,6 +443,7 @@ public final class TreeFootprint
         final boolean strippedBase = bottomLog != null && isStripped(bottomLog);
 
         final Footprint result = new Footprint(bottom, fam);
+        result.strippedBase = strippedBase;
         result.baseLayer.addAll(baseLayer);
 
         final Set<BlockPos> seen = new HashSet<>(baseLayer);
@@ -537,10 +542,6 @@ public final class TreeFootprint
                         {
                             continue;
                         }
-                        if (Math.max(Math.abs(next.getX() - cx), Math.abs(next.getZ() - cz)) > radius + 0.5D)
-                        {
-                            continue;
-                        }
                         final BlockState state = level.getBlockState(next);
                         if (!isTreeBlock(state) || !sameFamily(fam, family(level, next, state, true)))
                         {
@@ -563,12 +564,145 @@ public final class TreeFootprint
                             seen.remove(next);
                             continue;
                         }
+                        if (Math.max(Math.abs(next.getX() - cx), Math.abs(next.getZ() - cz)) > radius + 0.5D)
+                        {
+                            // A branch of the tree goes on past the radius: cutting up to the radius would leave it standing, so the whole tree stays
+                            result.skip = Skip.TOO_BIG;
+                            result.skipDetail = "log " + next.toShortString() + " past the radius " + radius + " of the trunk";
+                            return result;
+                        }
                         queue.add(next);
                     }
                 }
             }
         }
         return result;
+    }
+
+    /**
+     * Which part of a chosen tree a block is, for {@link #recheck}.
+     */
+    public enum Part
+    {
+        LOG,
+        LEAF,
+        DECORATION
+    }
+
+    /**
+     * What {@link #recheck} found.
+     */
+    public enum Recheck
+    {
+        /**
+         * Still the tree's own block, outside the build guard: it may go.
+         */
+        OK,
+        /**
+         * Gone already (air, or a block anything may replace): nothing to break.
+         */
+        GONE,
+        /**
+         * Something else stands there now (planks in place of a log, a placed leaf, another wood).
+         */
+        CHANGED,
+        /**
+         * A log now touches a player build.
+         */
+        BUILD,
+        /**
+         * The block is in a colony hut box.
+         */
+        HUT,
+        /**
+         * The block is in a chunk another colony claims.
+         */
+        CLAIM
+    }
+
+    /**
+     * The scan's rules for one block of a chosen tree, read again right before a Forester breaks it: blocks change after the tree was chosen (a player
+     * puts planks in place of a log or builds next to the tree, a colony claims the chunk). Server thread.
+     *
+     * @param level        the level.
+     * @param pos          the block.
+     * @param part         which part of the tree it was when the tree was chosen.
+     * @param family       the tree's wood family ({@link #ANY_FAMILY} if unknown).
+     * @param strippedBase true if the trunk itself is stripped.
+     * @param colony       the Forester's colony, or null.
+     * @return what was found.
+     */
+    @NotNull
+    public static Recheck recheck(
+      @NotNull final Level level,
+      @NotNull final BlockPos pos,
+      @NotNull final Part part,
+      @NotNull final String family,
+      final boolean strippedBase,
+      @Nullable final IColony colony)
+    {
+        final BlockState state = level.getBlockState(pos);
+        if (state.isAir() || (state.canBeReplaced() && !state.is(BlockTags.LEAVES)))
+        {
+            return Recheck.GONE;
+        }
+        final boolean own = switch (part)
+        {
+            case LOG -> isTreeBlock(state) && sameFamily(family, family(level, pos, state, true)) && (strippedBase || !isStripped(state));
+            case LEAF -> isDecayingLeaves(state) ? !state.getValue(LeavesBlock.PERSISTENT) : isCap(state);
+            case DECORATION -> isDecoration(state);
+        };
+        if (!own)
+        {
+            return Recheck.CHANGED;
+        }
+        final Recheck guard = guardPosition(level, pos, colony);
+        if (guard != Recheck.OK || part != Part.LOG)
+        {
+            return guard;
+        }
+        for (final Direction dir : Direction.values())
+        {
+            final BlockState near = level.getBlockState(pos.relative(dir));
+            if (isTreeBlock(near) && sameFamily(family, family(level, pos.relative(dir), near, true)))
+            {
+                continue;
+            }
+            if (!isDecoration(near) && isBuildSignal(near, strippedBase))
+            {
+                return Recheck.BUILD;
+            }
+        }
+        return Recheck.OK;
+    }
+
+    /**
+     * The hut and claim part of the build guard for one position. Server thread.
+     *
+     * @param level  the level.
+     * @param pos    the position.
+     * @param colony the Forester's colony, or null.
+     * @return {@link Recheck#HUT}, {@link Recheck#CLAIM} or {@link Recheck#OK}.
+     */
+    @NotNull
+    public static Recheck guardPosition(@NotNull final Level level, @NotNull final BlockPos pos, @Nullable final IColony colony)
+    {
+        if (colony != null)
+        {
+            for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
+            {
+                if (building.isInBuilding(pos))
+                {
+                    return Recheck.HUT;
+                }
+            }
+        }
+        final IColony owner = IColonyManager.getInstance().getColonyByPosFromWorld(level, pos);
+        if (owner != null && (colony == null || owner.getID() != colony.getID()))
+        {
+            return Recheck.CLAIM;
+        }
+        return Recheck.OK;
     }
 
     /**

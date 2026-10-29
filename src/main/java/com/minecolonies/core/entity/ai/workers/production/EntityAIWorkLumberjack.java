@@ -59,8 +59,10 @@ import org.jetbrains.annotations.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import static com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState.*;
@@ -248,6 +250,22 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private int treeChopFellCount = 0;
 
     /**
+     * Forestry: chops TreeChop did not get because its tree reached past his (tests).
+     */
+    private int treeChopRefusedCount = 0;
+
+    /**
+     * Forestry: a block of the current tree was broken already, so a change found now drops that block instead of giving up the whole tree.
+     */
+    private boolean treeStarted = false;
+
+    /**
+     * Forestry: blocks of chosen trees left alone because they changed since the choice, and trees given up for that before the first cut (tests).
+     */
+    private int changedBlocksLeft = 0;
+    private int changedTreesLeft  = 0;
+
+    /**
      * Forestry: items that did not fit and dropped at his feet (tests).
      */
     private int overflowDropped = 0;
@@ -277,6 +295,30 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     public int getTreeChopFellCount()
     {
         return treeChopFellCount;
+    }
+
+    /**
+     * @return chops TreeChop did not get because its tree reached past the Forester's tree.
+     */
+    public int getTreeChopRefusedCount()
+    {
+        return treeChopRefusedCount;
+    }
+
+    /**
+     * @return blocks of chosen trees he left alone because they changed after the choice.
+     */
+    public int getChangedBlocksLeft()
+    {
+        return changedBlocksLeft;
+    }
+
+    /**
+     * @return chosen trees he gave up before the first cut because they changed.
+     */
+    public int getChangedTreesLeft()
+    {
+        return changedTreesLeft;
     }
 
     /**
@@ -641,12 +683,77 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 target = pos;
             }
         }
-        if (target != null)
+        if (target != null && treeChopFits(tree, target))
         {
             useTreeChop = true;
             treeChopTarget = target;
             treeChopChops = Compatibility.treeChop.chopsPerAction((ServerLevel) world, target, tree.getAllLogs().size());
         }
+    }
+
+    /**
+     * Forestry: TreeChop fells every log it takes for one tree, of any wood and with no colony or build check. It may chop only when its tree is part of
+     * his: no log in another colony's claim, of another Forester's tree or of a player's log build beyond his footprint.
+     *
+     * @param tree   his tree.
+     * @param target the log TreeChop would chop.
+     * @return true if every log of TreeChop's tree is a log of his tree.
+     */
+    private boolean treeChopFits(@NotNull final Tree tree, @NotNull final BlockPos target)
+    {
+        final Set<BlockPos> logs = Compatibility.treeChop.getTreeLogs((ServerLevel) world, target);
+        if (logs != null && !tree.getAllLogs().isEmpty() && new HashSet<>(tree.getAllLogs()).containsAll(logs))
+        {
+            return true;
+        }
+        treeChopRefusedCount++;
+        Log.getLogger().debug("Forester {} cuts the tree at {} the normal way: TreeChop's tree reaches past it ({} logs)", worker.getCitizenData().getId(),
+          tree.getLocation(), logs == null ? "unknown" : logs.size());
+        return false;
+    }
+
+    /**
+     * Forestry: the next block of the tree, checked again right before he breaks it (it may have changed since he chose the tree: planks in place of a
+     * log, a build next to it, a new claim). A changed block is left alone; a change before his first cut makes him leave the whole tree standing.
+     *
+     * @param tree the tree.
+     * @param pos  the block.
+     * @param part which part of the tree it is.
+     * @return true if he may break it; false if he must leave it (the caller drops it, unless the tree was given up).
+     */
+    private boolean mayBreak(@NotNull final Tree tree, @NotNull final BlockPos pos, @NotNull final TreeFootprint.Part part)
+    {
+        if (!tree.isFootprintTree() || tree.isDynamicTree())
+        {
+            return true;
+        }
+        final TreeFootprint.Recheck recheck = TreeFootprint.recheck(world, pos, part, tree.getFamily(), tree.isStrippedBase(), building.getColony());
+        if (recheck == TreeFootprint.Recheck.OK)
+        {
+            return true;
+        }
+        if (recheck == TreeFootprint.Recheck.GONE)
+        {
+            return false;
+        }
+        changedBlocksLeft++;
+        if (!treeStarted && !tree.getAllLogs().isEmpty())
+        {
+            // Nothing cut yet: the whole tree stays, and no Forester picks it again for a while
+            changedTreesLeft++;
+            Log.getLogger().debug("Forester {} leaves the tree at {} standing: {} at {}", worker.getCitizenData().getId(), tree.getLocation(), recheck, pos.toShortString());
+            final List<BlockPos> logs = new ArrayList<>(tree.getAllLogs());
+            final BlockPos location = tree.getLocation();
+            finishTree();
+            TreeClaims.block(world, logs, building.getColony().getID());
+            if (recheck != TreeFootprint.Recheck.CLAIM)
+            {
+                building.addSkippedTree(location);
+            }
+            return false;
+        }
+        Log.getLogger().debug("Forester {} leaves {} of the tree at {}: {}", worker.getCitizenData().getId(), pos.toShortString(), tree.getLocation(), recheck);
+        return false;
     }
 
     /**
@@ -663,6 +770,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         sweptTree = null;
         useTreeChop = false;
         treeChopTarget = null;
+        treeStarted = false;
     }
 
     /**
@@ -786,31 +894,56 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         if (job.getTree().hasDecorations())
         {
             // Forestry: a bee nest (taken whole, bees inside) or cocoa goes before the log it hangs on
-            final BlockPos decoration = job.getTree().peekNextDecoration();
-            if (!world.getBlockState(decoration).is(Blocks.BEE_NEST) && !world.getBlockState(decoration).is(Blocks.COCOA))
+            final Tree tree = job.getTree();
+            final BlockPos decoration = tree.peekNextDecoration();
+            if ((!world.getBlockState(decoration).is(Blocks.BEE_NEST) && !world.getBlockState(decoration).is(Blocks.COCOA))
+                  || !mayBreak(tree, decoration, TreeFootprint.Part.DECORATION))
             {
-                job.getTree().pollNextDecoration();
+                if (job.getTree() == tree)
+                {
+                    tree.pollNextDecoration();
+                }
                 return getState();
             }
             if (!mineBlock(decoration, workFrom))
             {
                 return getState();
             }
-            job.getTree().pollNextDecoration();
+            treeStarted = true;
+            tree.pollNextDecoration();
         }
         else if (job.getTree().hasLeaves() && shouldBreakLeaves)
         {
-            final BlockPos leaf = job.getTree().peekNextLeaf();
+            final Tree tree = job.getTree();
+            final BlockPos leaf = tree.peekNextLeaf();
+            if (!mayBreak(tree, leaf, TreeFootprint.Part.LEAF))
+            {
+                if (job.getTree() == tree)
+                {
+                    tree.pollNextLeaf();
+                }
+                return getState();
+            }
             if (!mineBlock(leaf, workFrom))
             {
                 return getState();
             }
-            job.getTree().pollNextLeaf();
+            treeStarted = true;
+            tree.pollNextLeaf();
         }
         else if (job.getTree().hasLogs())
         {
             //take first log from queue
-            final BlockPos log = job.getTree().peekNextLog();
+            final Tree tree = job.getTree();
+            final BlockPos log = tree.peekNextLog();
+            if (!tree.isDynamicTree() && !(useTreeChop && tree.isFootprintTree()) && !mayBreak(tree, log, TreeFootprint.Part.LOG))
+            {
+                if (job.getTree() == tree)
+                {
+                    tree.pollNextLog();
+                }
+                return getState();
+            }
 
             if (job.getTree().isDynamicTree())
             {
@@ -847,6 +980,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 }
                 deliverCaught(caught);
             }
+            treeStarted = true;
             job.getTree().pollNextLog();
             worker.decreaseSaturationForContinuousAction();
         }
@@ -935,6 +1069,12 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             useTreeChop = false;
             return getState();
         }
+        // The tree may have changed since he chose it: the chop must still take nothing but his tree
+        if (!mayBreak(tree, target, TreeFootprint.Part.LOG) || !treeChopFits(tree, target))
+        {
+            useTreeChop = false;
+            return getState();
+        }
         final AABB box = captureBox(tree);
         final TreeChopProxy.ChopOutcome[] outcome = {TreeChopProxy.ChopOutcome.IGNORED};
         final List<ItemStack> caught = new ArrayList<>();
@@ -952,6 +1092,10 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             return getState();
         }
         deliverCaught(caught);
+        if (outcome[0] == TreeChopProxy.ChopOutcome.CHOPPED || outcome[0] == TreeChopProxy.ChopOutcome.FELLED)
+        {
+            treeStarted = true;
+        }
         switch (outcome[0])
         {
             case CHOPPED -> treeChopChopCount++;
@@ -1373,14 +1517,14 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     }
 
     /**
-     * Checks whether the given blockstate is passable
+     * Checks whether the given blockstate is passable: natural leaves he may clear on the way, never placed leaves (a hedge he must walk around).
      *
      * @param blockState to check
      * @return true if passable
      */
     private Boolean isPassable(final BlockState blockState)
     {
-        return blockState.is(BlockTags.LEAVES) || blockState.is(ModTags.hugeMushroomBlocks);
+        return (blockState.is(BlockTags.LEAVES) && !blockState.getOptionalValue(LeavesBlock.PERSISTENT).orElse(false)) || blockState.is(ModTags.hugeMushroomBlocks);
     }
 
     /**
@@ -1474,13 +1618,40 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     {
         for (BlockPos currentPos : blockPositions)
         {
-            if (world.getBlockState(currentPos).is(tag))
+            if (world.getBlockState(currentPos).is(tag) && isClearableObstruction(currentPos))
             {
                 mineBlock(currentPos);
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Forestry: what he may break to get through: natural leaves (vanilla would let them decay) or a cap of his own tree, never placed leaves (a
+     * hedge), never in a hut box or another colony's claim, never touching a player build.
+     *
+     * @param pos the block in his way.
+     * @return true if he may break it.
+     */
+    private boolean isClearableObstruction(@NotNull final BlockPos pos)
+    {
+        final BlockState state = world.getBlockState(pos);
+        final boolean natural = TreeFootprint.isDecayingLeaves(state)
+                                  ? !state.getValue(LeavesBlock.PERSISTENT)
+                                  : TreeFootprint.isCap(state) && job.getTree() != null && job.getTree().ownsBlock(pos);
+        if (!natural || TreeFootprint.guardPosition(world, pos, building.getColony()) != TreeFootprint.Recheck.OK)
+        {
+            return false;
+        }
+        for (final Direction dir : Direction.values())
+        {
+            if (TreeFootprint.isBuildSignal(world.getBlockState(pos.relative(dir)), false))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -1570,7 +1741,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             else
             {
                 final Block block = ((BlockItem) stack.getItem()).getBlock();
-                placeSaplings(saplingSlot, stack, block);
+                placeSaplings(block);
 
                 final SoundType soundType = block.getSoundType(world.getBlockState(location), world, location, worker);
                 world.playSound(null,
@@ -1632,17 +1803,38 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     }
 
     /**
-     * Place saplings to the stump locations
-     *
-     * @param saplingSlot sapling item slot
-     * @param stack
-     * @param block       sapling block
+     * @param block a sapling block.
+     * @return a slot that holds at least one sapling of the current tree placing that block, or -1.
      */
-    private void placeSaplings(final int saplingSlot, @NotNull final ItemStack stack, @NotNull final Block block)
+    private int findSaplingSlot(@NotNull final Block block)
+    {
+        for (int slot = 0; slot < getInventory().getSlots(); slot++)
+        {
+            final ItemStack stack = getInventory().getStackInSlot(slot);
+            if (isCorrectSapling(stack) && stack.getItem() instanceof BlockItem item && item.getBlock() == block)
+            {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Place saplings to the stump locations, each paid with one sapling from his inventory. The slot is picked again for every stump, so saplings split
+     * over several slots are all used and none is ever placed without one taken.
+     *
+     * @param block sapling block
+     */
+    private void placeSaplings(@NotNull final Block block)
     {
         while (!job.getTree().getStumpLocations().isEmpty())
         {
             final BlockPos pos = job.getTree().getStumpLocations().get(0);
+            final int saplingSlot = findSaplingSlot(block);
+            if (saplingSlot == -1)
+            {
+                return;
+            }
             final ItemStack sapling = getInventory().getStackInSlot(saplingSlot);
             if (sapling.is(Tags.Items.MUSHROOMS))
             {
@@ -1658,21 +1850,25 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 }
             }
 
-            if (!block.defaultBlockState().canSurvive(world, pos) || Objects.equals(world.getBlockState(pos), block.defaultBlockState()))
+            final BlockState at = world.getBlockState(pos);
+            if (!block.defaultBlockState().canSurvive(world, pos) || Objects.equals(at, block.defaultBlockState()) || !(at.isAir() || at.canBeReplaced()))
             {
+                // A stump he cannot plant (a player's block stands there now) is left as it is
                 job.getTree().removeStump(pos);
                 continue;
             }
-            
-            if (world.setBlockAndUpdate(pos, block.defaultBlockState()) && !ItemStackUtils.isEmpty(getInventory().getStackInSlot(saplingSlot)))
-            {
-                getInventory().extractItem(saplingSlot, 1, false);
-                job.getTree().removeStump(pos);
-            }
-            else
+
+            if (getInventory().extractItem(saplingSlot, 1, true).isEmpty())
             {
                 return;
             }
+            CitizenItemUtils.setHeldItem(worker, InteractionHand.MAIN_HAND, saplingSlot);
+            if (!world.setBlockAndUpdate(pos, block.defaultBlockState()))
+            {
+                return;
+            }
+            getInventory().extractItem(saplingSlot, 1, false);
+            job.getTree().removeStump(pos);
         }
     }
 
