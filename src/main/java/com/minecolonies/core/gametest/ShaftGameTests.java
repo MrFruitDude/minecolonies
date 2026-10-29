@@ -64,6 +64,10 @@ final class ShaftGameTests
     private static final int HZ0 = 12;
     private static final int HZ1 = 46;
     private static final int TOP = 20;
+    /** The stair up the hill's west side: its first step (one block high) and its z bounds, away from the huts, racks and the citizens' spawn spots. */
+    private static final int SX0 = HX0 - TOP + 1;
+    private static final int SZ0 = 24;
+    private static final int SZ1 = 26;
 
     /** Four spots on the hill, far enough apart that their galleries (4 long in the tests) never meet. */
     private static final BlockPos S1 = new BlockPos(34, 0, 22);
@@ -135,20 +139,27 @@ final class ShaftGameTests
     }
 
     /**
-     * Natural stone from y 1 to {@link #TOP} over the hill's rectangle, open sky above it (the plot's barrier roof taken away there), no trees, tables or furnaces.
+     * Natural stone from y 1 to {@link #TOP} over the hill's rectangle, open sky above it (the plot's barrier roof taken away there), no trees, tables or furnaces. A
+     * stone stair, one block per step, climbs its west side from the plot's floor ({@link #SX0} to {@link #HX0}, {@link #SZ0} to {@link #SZ1}), so the citizens walk up
+     * to the shafts and down to the huts as they would on a real slope (a sheer cliff only lets them up by the stuck teleport, and never down).
      */
     private static void hill(final GameTestHelper helper)
     {
         final ServerLevel level = helper.getLevel();
-        for (int x = HX0; x <= HX1; x++)
+        for (int x = SX0; x <= HX1; x++)
         {
             for (int z = HZ0; z <= HZ1; z++)
             {
-                for (int y = 1; y <= TOP; y++)
+                if (x < HX0 && (z < SZ0 || z > SZ1))
+                {
+                    continue;
+                }
+                final int top = x < HX0 ? TOP - (HX0 - x) : TOP;
+                for (int y = 1; y <= top; y++)
                 {
                     level.setBlock(helper.absolutePos(new BlockPos(x, y, z)), Blocks.STONE.defaultBlockState(), 2);
                 }
-                for (int y = TOP + 1; y <= 48; y++)
+                for (int y = top + 1; y <= 48; y++)
                 {
                     final BlockPos pos = helper.absolutePos(new BlockPos(x, y, z));
                     if (!level.getBlockState(pos).isAir())

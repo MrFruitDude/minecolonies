@@ -60,6 +60,12 @@ public final class LabourSession implements IIdleTaskSession
      */
     private static final int MAX_THINKS = 60;
 
+    /**
+     * r4: ticks he waits for room in a shaft others dig before he lets the claim go (without counting it against the request), and how often he looks again.
+     */
+    private static final int SHAFT_WAIT = 1800;
+    private static final int SHAFT_LOOK = 40;
+
     private final String      taskId;
     private final Colony      colony;
     private final ICitizenData citizen;
@@ -101,6 +107,10 @@ public final class LabourSession implements IIdleTaskSession
     /** r4: his place in a stone shaft while he digs there, or null. */
     @Nullable
     private ShaftSites.Assignment shaftAt;
+    /** r4: since when he waits for room in a shaft others dig (0 while he does not wait). */
+    private long                 shaftWaitSince;
+    /** r4: he let the claim go because the shafts had no room for him: no failure of the request. */
+    private boolean              roomless;
     private long                 workUntil;
     private long                 lastSwing;
 
@@ -307,8 +317,8 @@ public final class LabourSession implements IIdleTaskSession
         stopped = true;
         LabourStats.log("session of citizen {} stops: {} (phase {}, ended {}, ok {})", citizen.getId(), reason, phase, ended, ok);
         cleanup();
-        // (a stash after the request was served elsewhere is no failure of the request)
-        board.release(claim, ok && !stashing, !ok && !stashing && reason == IdleStopReason.TASK_INVALID);
+        // (a stash after the request was served elsewhere is no failure of the request, nor is a shaft with no room for him)
+        board.release(claim, ok && !stashing, !ok && !stashing && !roomless && reason == IdleStopReason.TASK_INVALID);
         final AbstractEntityCitizen worker = citizen.getEntity().orElse(null);
         if (worker != null && reason != IdleStopReason.CITIZEN_GONE)
         {
@@ -525,6 +535,10 @@ public final class LabourSession implements IIdleTaskSession
         }
         if (result instanceof LabourPlanner.Blocked<Item> blocked)
         {
+            if (blocked.why() == LabourPlanner.Why.NO_SITE && waitForShaft(now))
+            {
+                return;
+            }
             LabourStats.log("citizen {} is blocked: {} {}", citizen.getId(), blocked.why(), blocked.item());
             failed(blocked.why());
             end(false);
@@ -954,10 +968,15 @@ public final class LabourSession implements IIdleTaskSession
                 workUntil = 0L;
                 if (shaftAt == null)
                 {
+                    if (waitForShaft(now))
+                    {
+                        return;
+                    }
                     failed(LabourPlanner.Why.NO_SITE);
                     end(false);
                     return;
                 }
+                shaftWaitSince = 0L;
             }
             final ShaftSites.Step step = sites.next(shaftAt);
             if (step instanceof ShaftSites.Done || step instanceof ShaftSites.Ended)
@@ -1041,7 +1060,43 @@ public final class LabourSession implements IIdleTaskSession
             }
             sites.dugOne(at.shaft(), at.segment(), dig.index());
             board.heartbeat(claim);
+            // (a block dug is progress: the gather of a whole claim may take longer than one action's time)
+            actionStart = now;
         }
+    }
+
+    /**
+     * r4: no shaft has a segment free for him, but somebody else digs one that still has blocks left: he waits for room (the gallery of the next landing, or the segment
+     * the other one leaves) and looks again now and then, his claim kept alive. If nothing comes free in {@link #SHAFT_WAIT} he lets the claim go; that is no failure of
+     * the request.
+     *
+     * @return true when he waits (or let the claim go); false when nobody else digs (the caller fails as before).
+     */
+    private boolean waitForShaft(final long now)
+    {
+        if (claim.target() != net.minecraft.world.item.Items.COBBLESTONE || !board.shafts().othersDigging(citizen.getId()))
+        {
+            shaftWaitSince = 0L;
+            return false;
+        }
+        if (shaftWaitSince == 0L)
+        {
+            shaftWaitSince = now;
+            LabourStats.log("citizen {} waits for room in a shaft", citizen.getId());
+        }
+        if (now - shaftWaitSince > SHAFT_WAIT)
+        {
+            LabourStats.log("citizen {}: no room in the shafts, the claim goes back", citizen.getId());
+            roomless = true;
+            end(false);
+            return true;
+        }
+        // (the waiting looks are no thinks without progress, and the claim is held)
+        thinks = Math.max(0, thinks - 1);
+        nextStep = now + SHAFT_LOOK;
+        actionStart = now;
+        board.heartbeat(claim);
+        return true;
     }
 
     /**
@@ -1131,6 +1186,7 @@ public final class LabourSession implements IIdleTaskSession
         {
             take(net.minecraft.world.item.Items.TORCH, 1);
             board.heartbeat(claim);
+            actionStart = now;
         }
     }
 

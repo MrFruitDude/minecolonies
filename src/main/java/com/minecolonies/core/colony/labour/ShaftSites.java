@@ -285,6 +285,65 @@ public final class ShaftSites
 
     /**
      * @param citizenId the worker asking, or -1.
+     * @return whether somebody else digs in an open shaft of the colony that still has blocks left (no torch wanting): a segment may come free there for him, so he
+     *   waits for room instead of calling the request blocked.
+     */
+    public boolean othersDigging(final int citizenId)
+    {
+        if (!LabourSettings.shaftsEnabled())
+        {
+            return false;
+        }
+        for (final LabourShafts.Shaft shaft : record().shafts())
+        {
+            if (shaft.state() != LabourShafts.State.OPEN || wantsTorches(shaft.id) || !undug(shaft))
+            {
+                continue;
+            }
+            for (final Integer worker : workersOn(shaft.id))
+            {
+                if (worker != citizenId)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return whether an open shaft of the colony that wants no torches still has a segment that is not done (reachable now or later).
+     */
+    public boolean undugWork()
+    {
+        if (!LabourSettings.shaftsEnabled())
+        {
+            return false;
+        }
+        for (final LabourShafts.Shaft shaft : record().shafts())
+        {
+            if (shaft.state() == LabourShafts.State.OPEN && !wantsTorches(shaft.id) && undug(shaft))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean undug(final LabourShafts.Shaft shaft)
+    {
+        for (int s = 0; s < shaft.plan().segments(); s++)
+        {
+            if (!shaft.segmentDone(s))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param citizenId the worker asking, or -1.
      * @return the first segment of the shaft he may take now, or -1: the shaft is open, has room for another worker, the segment is not done, its gallery's landing is
      *   dug, nobody else digs it, and a look ahead finds a block to dig in it.
      */
@@ -718,13 +777,15 @@ public final class ShaftSites
     // ------------------------------------------------------------------ choosing a spot
 
     /**
-     * The quick look at a spot before its survey: the colony has room, the opening's 5x5 lies in loaded, ticking chunks of this colony, away from other shafts, miners,
-     * buildings and fluid, its tops are level within a block and natural, and nothing grows over it.
+     * The quick look at a spot before its survey: the colony has room, the opening's 5x5 lies in loaded chunks of this colony (ticking ones for the colony's own search;
+     * a manager marks from the map, often far from anyone, by the marking rule of the dig zones), away from other shafts, miners, buildings and fluid, its tops are level
+     * within a block and natural, and nothing grows over it.
      *
      * @param pillar the pillar's column (any y).
+     * @param marked whether a manager marks it.
      * @return the pillar at the top block's y, or why not ({@link Marked#refusal}).
      */
-    private Object spot(final ServerLevel level, final BlockPos pillar)
+    private Object spot(final ServerLevel level, final BlockPos pillar, final boolean marked)
     {
         final LabourSites sites = board.sites();
         final int x = pillar.getX();
@@ -742,7 +803,8 @@ public final class ShaftSites
         {
             for (int dz = -2; dz <= 2; dz += 2)
             {
-                if (!sites.workable(new BlockPos(x + dx, pillar.getY(), z + dz)))
+                final BlockPos at = new BlockPos(x + dx, pillar.getY(), z + dz);
+                if (marked ? !sites.ownedBy(at) : !sites.workable(at))
                 {
                     return LabourShafts.Refusal.OUTSIDE;
                 }
@@ -861,7 +923,7 @@ public final class ShaftSites
         {
             return new Marked(null, LabourShafts.Refusal.TOO_MANY);
         }
-        final Object spot = spot(level, pillar);
+        final Object spot = spot(level, pillar, marked);
         if (spot instanceof LabourShafts.Refusal refusal)
         {
             return new Marked(null, refusal);
@@ -1074,7 +1136,7 @@ public final class ShaftSites
                 continue;
             }
             final BlockPos pillar = new BlockPos((int) column[0], colony.getCenter().getY(), (int) column[1]);
-            final Object spot = spot(level, pillar);
+            final Object spot = spot(level, pillar, false);
             if (spot instanceof LabourShafts.Refusal refusal)
             {
                 if (refusal != LabourShafts.Refusal.OUTSIDE && refusal != LabourShafts.Refusal.TOO_MANY)

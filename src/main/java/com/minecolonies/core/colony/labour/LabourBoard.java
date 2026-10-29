@@ -988,6 +988,32 @@ public final class LabourBoard
     }
 
     /**
+     * r4: the citizen cannot plan cobblestone now (no room in the shafts, no pickaxe and no table or wood to make one), but the colony's shafts still have blocks left
+     * that somebody else digs, or that another jobless adult with a shaft pickaxe could dig: one who has no pickaxe must not keep the one who has one off the request.
+     */
+    private boolean shaftWorkForOthers(final ICitizenData citizen, final Candidate candidate)
+    {
+        if (!candidate.exact().isEmpty() || !candidate.targets().contains(net.minecraft.world.item.Items.COBBLESTONE)
+              || coverage.covered(net.minecraft.world.item.Items.COBBLESTONE) || !shafts.undugWork())
+        {
+            return false;
+        }
+        if (shafts.othersDigging(citizen.getId()))
+        {
+            return true;
+        }
+        for (final ICitizenData other : colony.getCitizenManager().getCitizens())
+        {
+            if (other.getId() != citizen.getId() && DirectedOrders.eligible(other) && directed.orderOf(other.getId()) == null
+                  && DirectedOrders.carries(other, LabourRules.SHAFT_TOOL))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * The builder's episode for his order ended (his session stopped): when he may go again.
      */
     public void selfSupplyEnded(final int orderId, final LabourSelfSupply.Outcome outcome)
@@ -1057,6 +1083,11 @@ public final class LabourBoard
         }
         if (chosen == null)
         {
+            if (shaftWorkForOthers(citizen, candidate))
+            {
+                // (what he lacks is his own, not the request's: no back-off, the next labourer is asked)
+                return null;
+            }
             blocked(candidate.token(), why);
             return null;
         }
