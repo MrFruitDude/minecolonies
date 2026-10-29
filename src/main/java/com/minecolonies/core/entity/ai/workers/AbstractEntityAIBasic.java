@@ -1202,6 +1202,16 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     }
 
     /**
+     * One step of the walk to the own hut, with its unstuck ladder (for the tests, which drive a worker without AI).
+     *
+     * @return true on arrival.
+     */
+    public final boolean walkToBuildingForTests()
+    {
+        return walkToBuilding();
+    }
+
+    /**
      * Round 13: whether a walk to the own hut is under way (counted once per walk in {@link AiCounters}).
      */
     private boolean walkingToHut = false;
@@ -1213,11 +1223,22 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
      */
     private boolean checkedWalkToBuilding(final IBuilding target)
     {
-        final boolean arrived = EntityNavigationUtils.walkToBuilding(worker, target);
+        // a player watched him stand (no jump): he walks to another spot by the building first, then on to the building
+        if (walkAlt != null && EntityNavigationUtils.walkToPos(worker, walkAlt, 2, true))
+        {
+            walkAlt = null;
+        }
+        final boolean arrived = walkAlt == null && EntityNavigationUtils.walkToBuilding(worker, target);
         if (arrived)
         {
             walkStuck.progress();
             walkStuckTick = -1L;
+            if (walkWatchedSkips > 0)
+            {
+                walkWatchedSkips = 0;
+                walkAlt = null;
+                clearStuckReason();
+            }
             return true;
         }
         if (AbstractWalking.isRelocating(worker))
@@ -1241,26 +1262,154 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             case TELEPORT:
             case DEFER:
                 final BlockPos spot = StandSpots.nearest(world, target.getPosition(), 6, 6, 4, null);
-                if (spot != null && com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(world, worker.position(), spot))
+                if (spot != null && walkWatchedSkips < WATCHED_SKIPS && com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(world, worker.position(), spot))
                 {
-                    // a player watches: no jump, a new path, and the ladder starts again (he is put there once no one looks)
+                    // a player watches: no jump. He says why he stands, and tries another way: a new path to another spot by the building. After
+                    // WATCHED_SKIPS rounds of that (about a minute standing still) he is put there all the same: any player near counts as watching, also
+                    // one of another colony who stays at the border, and a worker must not stand in a hole for as long as somebody is near (r1 Opus R1-F3)
+                    walkWatchedSkips++;
                     worker.getNavigation().stop();
+                    walkAlt = StandSpots.nearest(world, target.getPosition(), 8, 6, 4, p -> !p.equals(spot) && p.distSqr(spot) > 4);
                     walkStuck.progress();
                     walkStuckTick = -1L;
+                    setStuckReason("cannot get to " + target.getPosition().toShortString() + " from " + worker.blockPosition().toShortString()
+                                     + " (a player is near: no jump, tries another way)");
                 }
                 else if (spot != null)
                 {
                     worker.getNavigation().stop();
                     worker.snapTo(spot.getX() + 0.5D, spot.getY(), spot.getZ() + 0.5D);
+                    notePutBack();
                     walkStuck.progress();
                     walkStuckTick = -1L;
+                    walkWatchedSkips = 0;
+                    walkAlt = null;
+                    clearStuckReason();
                     Log.getLogger().debug("{} could not get to {} and was put at {}", worker.getName().getString(), target.getPosition(), spot);
+                }
+                else
+                {
+                    // no spot to put him at: he says so instead of standing silently
+                    walkStuck.progress();
+                    walkStuckTick = -1L;
+                    setStuckReason("cannot get to " + target.getPosition().toShortString() + " from " + worker.blockPosition().toShortString() + " (no free spot by it)");
                 }
                 break;
             default:
                 break;
         }
         return false;
+    }
+
+    /**
+     * How often this worker was put back at his hut by a jump (any unstuck step that puts him at his building), for the tests.
+     */
+    private int putBackCount = 0;
+
+    /**
+     * @return how often this worker was put back at his hut by a jump.
+     */
+    public final int putBackCount()
+    {
+        return putBackCount;
+    }
+
+    /**
+     * The worker was put back at his hut by a jump.
+     */
+    protected final void notePutBack()
+    {
+        putBackCount++;
+    }
+
+    /**
+     * Rounds of the walk ladder in which a watched worker is not put at the building (no jump in sight) before he is put there all the same.
+     */
+    public static final int WATCHED_SKIPS = 3;
+
+    private int walkWatchedSkips = 0;
+    @Nullable
+    private BlockPos walkAlt = null;
+
+    /**
+     * Why the worker is stuck (he cannot get on with his work and says so), or null. See {@link #stuckReason()}.
+     */
+    @Nullable
+    private String stuckReason   = null;
+    private long   stuckReasonAt = 0L;
+    private boolean stuckStatusSet = false;
+
+    /**
+     * How long a stuck reason holds when it is not set again (a worker who gets on in a way that does not clear it, a reload).
+     */
+    public static final long STUCK_REASON_TICKS = 1200L;
+
+    /**
+     * The notice of a stuck worker. It holds while he has a stuck reason: once he gets on, it goes away by itself (and so does the alert of the HUD).
+     */
+    public static final String STUCK_NOTICE = "com.minecolonies.coremod.gui.chat.stuck";
+
+    /**
+     * @return why the worker is stuck at the moment (he cannot get on and says so, the status of his job is STUCK), or null.
+     */
+    @Nullable
+    public final String stuckReason()
+    {
+        if (stuckReason != null && world.getGameTime() - stuckReasonAt > STUCK_REASON_TICKS)
+        {
+            clearStuckReason();
+        }
+        return stuckReason;
+    }
+
+    /**
+     * The worker is stuck, and says why: the status of his job is STUCK, and he says so once (a notice that goes away when he gets on).
+     *
+     * @param reason why (for the logs, the tests and Colony Command).
+     */
+    protected final void setStuckReason(final String reason)
+    {
+        setStuckReason(reason, true);
+    }
+
+    /**
+     * @param notice whether he says so with the stuck notice (false when a notice of its own says it, the shut-in one).
+     */
+    protected final void setStuckReason(final String reason, final boolean notice)
+    {
+        final boolean fresh = stuckReason == null;
+        stuckReason = reason;
+        stuckReasonAt = world.getGameTime();
+        if (worker.getCitizenData() == null)
+        {
+            return;
+        }
+        worker.getCitizenData().setJobStatus(JobStatus.STUCK);
+        stuckStatusSet = true;
+        if (fresh)
+        {
+            Log.getLogger().info("{} is stuck: {}", worker.getName().getString(), reason);
+        }
+        if (fresh && notice)
+        {
+            worker.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(STUCK_NOTICE), ChatPriority.PENDING));
+        }
+    }
+
+    /**
+     * The worker got on: no stuck reason, the notice goes away.
+     */
+    protected final void clearStuckReason()
+    {
+        stuckReason = null;
+        if (stuckStatusSet && worker.getCitizenData() != null)
+        {
+            stuckStatusSet = false;
+            if (worker.getCitizenData().getJobStatus() == JobStatus.STUCK)
+            {
+                worker.getCitizenData().setJobStatus(JobStatus.WORKING);
+            }
+        }
     }
 
     private final WorkStuckTracker walkStuck = new WorkStuckTracker();

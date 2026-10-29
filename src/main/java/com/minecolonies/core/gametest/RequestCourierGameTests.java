@@ -78,6 +78,14 @@ final class RequestCourierGameTests
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_courier_short_load"),
           info -> new MinecoloniesGameTestInstance(info, RequestCourierGameTests::shortLoad),
           MinecoloniesGameTestRegistrar.isolatedColonyData(event, "rs_courier_short_load"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_courier_refused_backoff"),
+          info -> new MinecoloniesGameTestInstance(info, RequestCourierGameTests::refusedBackoff),
+          MinecoloniesGameTestRegistrar.isolatedColonyData(event, "rs_courier_refused_backoff"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_courier_watched_stuck"),
+          info -> new MinecoloniesGameTestInstance(info, RequestCourierGameTests::watchedStuck),
+          MinecoloniesGameTestRegistrar.isolatedColonyData(event, "rs_courier_watched_stuck"));
         for (final boolean immediate : new boolean[] {true, false})
         {
             final String name = "rs_courier_next_task_" + (immediate ? "immediate" : "delayed");
@@ -91,7 +99,7 @@ final class RequestCourierGameTests
     /**
      * Sol r0 F4: a short load is no full delivery. The courier picks up 16 logs for the builder; on the way 8 are taken out of his bag (a co-manager
      * in CC). He puts the 8 he has into the hut, and the request for 16 stays open: no "delivered in full" for the 8 that never came. The rest comes
-     * on a later trip.
+     * on a later trip, and it is the missing 8, not 16 again (r2: exactly 16 in the hut, 36 left in the warehouse).
      */
     static void shortLoad(final GameTestHelper helper)
     {
@@ -109,6 +117,7 @@ final class RequestCourierGameTests
             final long start = f.level.getGameTime();
             final boolean[] taken = {false};
             final int[] firstArrival = {-1};
+            final long[] restAt = {-1L};
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
                 final long now = f.level.getGameTime();
@@ -142,15 +151,122 @@ final class RequestCourierGameTests
                       "the request for 16 logs was done with 8 delivered: " + where);
                     helper.assertTrue(com.minecolonies.core.colony.requestsystem.RsStats.deliveriesShort > short0, "the short delivery was not counted as short: " + where);
                 }
-                if (firstArrival[0] >= 0 && inHut >= 16)
+                if (firstArrival[0] >= 0 && inHut >= 16 && restAt[0] < 0)
                 {
+                    restAt[0] = now;
                     Log.getLogger().info("RS_METRIC courier_short_load rest arrived at {} ({} logs)", now - start, inHut);
+                }
+                if (restAt[0] >= 0 && now - restAt[0] >= 600)
+                {
+                    // r2 (Fable F17, Sol M1): the rest is only what was missing. Run 014 brought 24 for 16 (the full 16 again after the 8). Exact totals: 16 in the
+                    // hut, 60 - 16 - 8 = 36 left in the warehouse (8 left the bag on the way), none left with the courier
+                    final int inWarehouse = InventoryUtils.getItemCountInItemHandler(f.warehouse.getItemHandlerCap(), s -> s.is(Items.OAK_LOG));
+                    Log.getLogger().info("RS_METRIC courier_short_load totals hut={} warehouse={} courier={}", inHut, inWarehouse, carried);
+                    helper.assertTrue(inHut == 16, "the hut got " + inHut + " logs for a request of 16 (the rest was more than the missing 8)");
+                    helper.assertTrue(inWarehouse == 36, "the warehouse has " + inWarehouse + " logs, not 36 (60, less the 16 fetched, less the 8 that left the bag)");
+                    helper.assertTrue(carried == 0, "the courier still carries " + carried + " logs");
                     helper.succeed();
                     return;
                 }
                 if (now - start > 9000)
                 {
                     helper.fail("timeout: taken=" + taken[0] + " firstArrival=" + firstArrival[0] + " inHut=" + inHut + " carried=" + carried + " state=" + state + " queue=" + job.getTaskQueue().size());
+                    return;
+                }
+                helper.runAfterDelay(1, () -> poll[0].run());
+            };
+            helper.runAfterDelay(1, () -> poll[0].run());
+        });
+    }
+
+    /**
+     * r2 (Fable F17): a destination that refuses a delivery (full) is left be for a while instead of the loop "dump, fail, hand out again, come back". The
+     * rules (RefusedTargets, no world): paused for a minute after a refusal, the pause doubles with each refusal in a row up to 5 minutes, it is per
+     * colony and position, and the first delivery that goes in ends it.
+     */
+    static void refusedBackoff(final GameTestHelper helper)
+    {
+        final BlockPos hut = helper.absolutePos(new BlockPos(3, 1, 3));
+        final BlockPos other = hut.east(5);
+        final int colony = 987_654;
+        long now = 1_000L;
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony, hut, now), "paused before any refusal");
+        long until = com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(colony, hut, now);
+        helper.assertTrue(until - now == com.minecolonies.core.colony.requestsystem.RefusedTargets.FIRST, "first pause " + (until - now));
+        helper.assertTrue(com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony, hut, now + 10), "not paused right after a refusal");
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony, other, now + 10), "another destination is paused");
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony + 1, hut, now + 10), "the same place of another colony is paused");
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony, hut, until), "still paused after the pause");
+        now = until;
+        until = com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(colony, hut, now);
+        helper.assertTrue(until - now == 2 * com.minecolonies.core.colony.requestsystem.RefusedTargets.FIRST, "second pause " + (until - now) + ": no doubling");
+        for (int i = 0; i < 10; i++)
+        {
+            now = until;
+            until = com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(colony, hut, now);
+        }
+        helper.assertTrue(until - now == com.minecolonies.core.colony.requestsystem.RefusedTargets.MAX, "pause after many refusals " + (until - now) + ": no cap");
+        com.minecolonies.core.colony.requestsystem.RefusedTargets.accepted(colony, hut);
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony, hut, now + 10)
+                            && com.minecolonies.core.colony.requestsystem.RefusedTargets.refusals(colony, hut) == 0, "a delivery that went in did not end the pause");
+        helper.succeed();
+    }
+
+    /**
+     * r2 (Opus R1-F3, Fable F16): a worker who cannot get to his hut while a player watches is never put there in sight at once, and never left stuck
+     * silently. A courier without AI (he cannot move: stuck) is driven through the walk to his hut tick by tick, 20 blocks from it, with a player 3 blocks
+     * from him in clear view. He says why he stands (a stuck reason, job status STUCK, the stuck notice valid), tries another way instead of a jump, and
+     * after WATCHED_SKIPS rounds (about a minute) he is put at his hut all the same (bounded: a player who stays near cannot hold him stuck for ever);
+     * then the reason and the notice are gone.
+     */
+    static void watchedStuck(final GameTestHelper helper)
+    {
+        final RsFixture f = RsFixture.found(helper, "rs-courier-watched", 1, false);
+        final IBuilding deliveryman = f.place(ModBlocks.blockHutDeliveryman, new BlockPos(32, 1, 2), "craftsmanship/storage/deliveryman1.blueprint");
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData courier = f.spawn(new BlockPos(32, 1, 24), true);
+            helper.assertTrue(deliveryman.getModule(BuildingModules.COURIER_WORK).assignCitizen(courier), "courier not assigned to the courier hut");
+            final EntityCitizen entity = (EntityCitizen) courier.getEntity().orElseThrow();
+            final com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic<?, ?> ai = courier.getJob() == null ? null
+              : courier.getJob().getWorkerAI() instanceof com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic<?, ?> basic ? basic : null;
+            helper.assertTrue(ai != null, "no worker AI");
+            final net.minecraft.server.level.ServerPlayer watcher = MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
+            com.minecolonies.core.entity.pathfinding.PlayerWatch.watchForTests(watcher.getUUID());
+            watcher.teleportTo(entity.getX() + 3.0D, entity.getY(), entity.getZ());
+            final java.util.function.Predicate<com.minecolonies.api.colony.ICitizenData> notice = com.minecolonies.api.colony.interactionhandling.InteractionValidatorRegistry
+              .getStandardInteractionValidatorPredicate(net.minecraft.network.chat.Component.translatableEscape(com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic.STUCK_NOTICE));
+            helper.assertTrue(notice != null, "no validator for the stuck notice");
+            final long start = f.level.getGameTime();
+            final long[] reasonAt = {-1L};
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                final long now = f.level.getGameTime();
+                ai.walkToBuildingForTests();
+                final int putBacks = ai.putBackCount();
+                if (reasonAt[0] < 0 && ai.stuckReason() != null)
+                {
+                    reasonAt[0] = now;
+                    Log.getLogger().info("RS_METRIC courier_watched_stuck reason at {}: {}", now - start, ai.stuckReason());
+                    helper.assertTrue(putBacks == 0, "put at his hut in sight before he said why he stands");
+                    helper.assertTrue(courier.getJobStatus() == com.minecolonies.api.entity.ai.JobStatus.STUCK, "job status " + courier.getJobStatus() + " while stuck");
+                    helper.assertTrue(notice.test(courier), "the stuck notice is not valid while he is stuck");
+                }
+                if (putBacks > 0)
+                {
+                    final long waited = now - start;
+                    Log.getLogger().info("RS_METRIC courier_watched_stuck put back at {} (reason since {})", waited, reasonAt[0] < 0 ? -1 : reasonAt[0] - start);
+                    helper.assertTrue(reasonAt[0] >= 0, "put at his hut without a word");
+                    helper.assertTrue(waited >= (long) com.minecolonies.core.entity.ai.workers.util.WorkStuckTracker.TELEPORT_AT * (com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic.WATCHED_SKIPS),
+                      "put at his hut in sight after " + waited + " ticks, before " + com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic.WATCHED_SKIPS + " rounds of trying");
+                    helper.assertTrue(ai.stuckReason() == null && !notice.test(courier), "the stuck reason or notice outlived the stuck: " + ai.stuckReason());
+                    watcher.discard();
+                    helper.succeed();
+                    return;
+                }
+                if (now - start > 4000)
+                {
+                    watcher.discard();
+                    helper.fail("never put at his hut while watched: reason=" + ai.stuckReason() + " putBacks=" + putBacks + " at " + entity.blockPosition());
                     return;
                 }
                 helper.runAfterDelay(1, () -> poll[0].run());
