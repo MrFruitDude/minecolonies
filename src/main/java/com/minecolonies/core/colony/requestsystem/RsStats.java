@@ -27,7 +27,7 @@ public final class RsStats
     public static long playerFallbacks;
 
     /**
-     * Items couriers put into a destination (deliveries that arrived in full).
+     * Items couriers put into a destination (deliveries that arrived in full, and the part of a short one that went in).
      */
     public static long itemsDelivered;
 
@@ -35,6 +35,11 @@ public final class RsStats
      * Deliveries that arrived in full.
      */
     public static long deliveriesArrived;
+
+    /**
+     * Deliveries that arrived short (fewer items than asked went in): they fail and the rest is asked for again.
+     */
+    public static long deliveriesShort;
 
     private static final java.util.Set<com.minecolonies.api.colony.requestsystem.token.IToken<?>> FELL_BACK = new java.util.LinkedHashSet<>();
 
@@ -67,6 +72,7 @@ public final class RsStats
     {
         itemsDelivered = 0;
         deliveriesArrived = 0;
+        deliveriesShort = 0;
         requestsCreated = 0;
         deliveriesCreated = 0;
         courierTasksFinished = 0;
