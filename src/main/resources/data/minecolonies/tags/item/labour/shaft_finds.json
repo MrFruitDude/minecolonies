@@ -1,0 +1,32 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:cobblestone",
+    "minecraft:coal",
+    "minecraft:raw_iron",
+    "minecraft:raw_copper",
+    "minecraft:raw_gold",
+    "minecraft:redstone",
+    "minecraft:lapis_lazuli",
+    "minecraft:diamond",
+    "minecraft:emerald",
+    "minecraft:andesite",
+    "minecraft:diorite",
+    "minecraft:granite",
+    "minecraft:tuff",
+    "minecraft:calcite",
+    "minecraft:dirt",
+    "minecraft:gravel",
+    "minecraft:flint",
+    "minecraft:sand",
+    "minecraft:clay_ball",
+    "minecraft:coal_ore",
+    "minecraft:iron_ore",
+    "minecraft:copper_ore",
+    "minecraft:gold_ore",
+    "minecraft:redstone_ore",
+    "minecraft:lapis_ore",
+    "minecraft:diamond_ore",
+    "minecraft:emerald_ore"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:stone",
+    "minecraft:andesite",
+    "minecraft:diorite",
+    "minecraft:granite",
+    "minecraft:tuff",
+    "minecraft:calcite",
+    "minecraft:dirt",
+    "minecraft:coarse_dirt",
+    "minecraft:rooted_dirt",
+    "minecraft:grass_block",
+    "minecraft:podzol",
+    "minecraft:gravel",
+    "minecraft:sand",
+    "minecraft:red_sand",
+    "minecraft:sandstone",
+    "minecraft:clay",
+    "#minecolonies:labour/shaft_ores"
+  ]
+}

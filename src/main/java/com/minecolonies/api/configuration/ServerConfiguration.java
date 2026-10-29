@@ -226,6 +226,17 @@ public class ServerConfiguration extends AbstractConfiguration
     public final IntValue     labourersSupplyGraceTicks;
     public final IntValue     labourersSupplyMaxTicks;
     public final IntValue     labourersQuarryDepth;
+    // Stone shafts (r4): labourers dig small mines for cobblestone
+    public final BooleanValue labourersShafts;
+    public final IntValue     labourersShaftsMax;
+    public final IntValue     labourersShaftCooldownTicks;
+    public final IntValue     labourersShaftDepth;
+    public final IntValue     labourersShaftGalleryLength;
+    public final IntValue     labourersShaftWorkers;
+    public final IntValue     labourersShaftRadius;
+    public final IntValue     labourersShaftSpacing;
+    public final IntValue     labourersShaftMinerClearance;
+    public final IntValue     labourersShaftMinY;
     public final IntValue     labourersEarlyBuildings;
     public final IntValue     labourersEarlyGraceTicks;
     public final BooleanValue labourersEarlyAllUnemployed;
@@ -441,6 +452,19 @@ public class ServerConfiguration extends AbstractConfiguration
         labourersSupplyMaxTicks = defineInteger("supplyMaxTicks", 6000, 200, 72000);
         // Quarry zones: a manager marks an area where labour may dig the ground even with digUnprovenGround off; never deeper than this below the zone's surface.
         labourersQuarryDepth = defineInteger("quarryDepth", 8, 1, 32);
+        // Stone shafts: when cobblestone is wanted and no miner or quarry makes it, labourers open a small shaft (a spiral stair well with side tunnels) in natural stone
+        // near the warehouse and dig it for cobblestone; a manager may also mark the spot. Only ground the survey proves natural is dug: no cave, water, placed block or claim.
+        labourersShafts = defineBoolean("shafts", true);
+        labourersShaftsMax = defineInteger("shaftsMax", 6, 1, 16);
+        labourersShaftCooldownTicks = defineInteger("shaftCooldownTicks", 24000, 0, 240000);
+        // Depth of the well in blocks, a multiple of 8 (one turn of the stair); side tunnels leave at every turn.
+        labourersShaftDepth = defineInteger("shaftDepth", 32, 8, 48);
+        labourersShaftGalleryLength = defineInteger("shaftGalleryLength", 24, 0, 32);
+        labourersShaftWorkers = defineInteger("shaftWorkers", 2, 1, 4);
+        labourersShaftRadius = defineInteger("shaftRadius", 48, 16, 96);
+        labourersShaftSpacing = defineInteger("shaftSpacing", 16, 6, 64);
+        labourersShaftMinerClearance = defineInteger("shaftMinerClearance", 48, 0, 128);
+        labourersShaftMinY = defineInteger("shaftMinY", 8, -64, 256);
         // Early pace: while the colony has fewer built buildings than this, every unemployed citizen may labour and builder requests wait only earlyGraceTicks;
         // from this count on the pace eases to the normal one, one step per built building, and is normal from twice this count less one.
         labourersEarlyBuildings = defineInteger("earlyBuildings", 10, 0, 100);

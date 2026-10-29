@@ -52,6 +52,8 @@ public class WindowSettings extends AbstractWindowTownHall
           .setupHandler(BuildingTownHall.LABOUR_STOCKPILE, window.findPaneByID("labourstockpile"), moduleView, buildingView, WindowSettings.this);
         moduleView.getSetting(BuildingTownHall.LABOUR_SELF_SUPPLY)
           .setupHandler(BuildingTownHall.LABOUR_SELF_SUPPLY, window.findPaneByID("labourselfsupply"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_SHAFTS)
+          .setupHandler(BuildingTownHall.LABOUR_SHAFTS, window.findPaneByID("labourshafts"), moduleView, buildingView, WindowSettings.this);
     }
 
     /**
@@ -92,6 +94,8 @@ public class WindowSettings extends AbstractWindowTownHall
           .render(BuildingTownHall.LABOUR_STOCKPILE, window.findPaneByID("labourstockpile"), moduleView, buildingView, WindowSettings.this);
         moduleView.getSetting(BuildingTownHall.LABOUR_SELF_SUPPLY)
           .render(BuildingTownHall.LABOUR_SELF_SUPPLY, window.findPaneByID("labourselfsupply"), moduleView, buildingView, WindowSettings.this);
+        moduleView.getSetting(BuildingTownHall.LABOUR_SHAFTS)
+          .render(BuildingTownHall.LABOUR_SHAFTS, window.findPaneByID("labourshafts"), moduleView, buildingView, WindowSettings.this);
     }
 
     @Override
