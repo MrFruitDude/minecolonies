@@ -138,6 +138,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerWaveB(event);
             }
+            if (only.contains("shafts"))
+            {
+                // r4: stone shafts, labourers and stalled builders dig cobblestone in shafts they share
+                registerShafts(event);
+            }
             if (only.contains("emptybp"))
             {
                 EmptyBlueprintGameTests.register(event);
@@ -1314,6 +1319,25 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 continue;
             }
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = WaveBLabourGameTests.test(name);
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              longIsolatedColonyData(event, name, 20_000));
+        }
+    }
+
+    /**
+     * Stone shafts (r4): labourers open small shafts in natural stone for cobblestone and share them. Run on their own with {@code MINECOLONIES_GAMETEST_ONLY=shafts}.
+     */
+    private void registerShafts(final RegisterGameTestsEvent event)
+    {
+        for (final String name : ShaftGameTests.NAMES)
+        {
+            if (skipped(name))
+            {
+                continue;
+            }
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = ShaftGameTests.test(name);
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),
