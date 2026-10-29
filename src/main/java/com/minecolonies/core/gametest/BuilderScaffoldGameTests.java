@@ -659,24 +659,31 @@ final class BuilderScaffoldGameTests
     public static void hutDoorHelper(final GameTestHelper helper)
     {
         final String name = "hutwalk_helper";
+        final int escapes0 = com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.trapEscapes;
         twoBuilders(helper, name, () -> shape(name, 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10), 40_000, true, SITE,
           live -> wallHutIn(helper, new BlockPos(16, 1, 2), HutEntry.TRAPDOORS),
           (live, blocksByHelper) -> {
               final com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure<?, ?> lead = structureAi(live.citizen);
               final com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure<?, ?> second = structureAi(live.otherCitizen);
               helper.assertTrue(lead != null && second != null, "no structure AI");
-              Log.getLogger().info("WSCAF {} helperBlocks={} rescues lead={} helper={} reasons {} / {}", name, blocksByHelper, lead.trapRescueCount(), second.trapRescueCount(),
-                lead.trapBlockedReason(), second.trapBlockedReason());
+              Log.getLogger().info("WSCAF {} helperBlocks={} rescues lead={} helper={} putBacks lead={} helper={} escapes={} reasons {} / {}", name, blocksByHelper,
+                lead.trapRescueCount(), second.trapRescueCount(), lead.putBackCount(), second.putBackCount(),
+                com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.trapEscapes - escapes0, lead.trapBlockedReason(), second.trapBlockedReason());
               helper.assertTrue(blocksByHelper > 0, "the second builder did not help (no block placed): the helper path was not tested");
-              helper.assertTrue(second.trapRescueCount() == 0, "the helper was put back into his hut " + second.trapRescueCount() + " times");
-              helper.assertTrue(lead.trapRescueCount() == 0, "the lead was put back into his hut " + lead.trapRescueCount() + " times");
+              // any jump back to the hut counts (shut-in rescue, the edge teleport's hut fallback, the walk ladder), not only the shut-in rescue
+              helper.assertTrue(second.trapRescueCount() == 0 && second.putBackCount() == 0,
+                "the helper was put back into his hut " + Math.max(second.trapRescueCount(), second.putBackCount()) + " times");
+              helper.assertTrue(lead.trapRescueCount() == 0 && lead.putBackCount() == 0,
+                "the lead was put back into his hut " + Math.max(lead.trapRescueCount(), lead.putBackCount()) + " times");
+              helper.assertTrue(second.trapBlockedReason() == null && lead.trapBlockedReason() == null, "a builder is still marked shut in at the end");
           });
     }
 
     /**
      * The rules of the shut-in rescue (ShutInGate, no world): a worker who gets on (moves a block or more between checks) is never put out, however long
      * the search finds him cut off; a worker outside the box of his structure is never put out (the search is not even asked); one who stands still and is
-     * cut off is put out at the third check; shut in again within 5 minutes he is marked blocked once instead of a second rescue; after the cooldown he is
+     * cut off is put out at the third check (r2: one who places blocks from where he stands is never; a climb out with scaffolding is no rescue, only
+     * {@code rescued} counts); shut in again within 5 minutes he is marked blocked once instead of a second rescue; after the cooldown he is
      * put out again.
      */
     public static void hutDoorProgress(final GameTestHelper helper)
@@ -689,6 +696,7 @@ final class BuilderScaffoldGameTests
             helper.assertTrue(gate.check(true, 1.5D, () -> true, box, now) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE,
               "a worker walking a path was put out at check " + i);
         }
+        com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision d0 = com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE;
         final boolean[] asked = {false};
         for (int i = 0; i < 10; i++, now += 40L)
         {
@@ -705,6 +713,24 @@ final class BuilderScaffoldGameTests
           "put out after a step on reset the count");
         helper.assertTrue(gate.check(true, 0.0D, () -> true, box, now += 40L) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.RESCUE,
           "a worker standing still and cut off for three checks was not put out");
+        // r2: he climbed out with scaffolding instead (no rescue recorded): the next shut-in is a rescue again, not "blocked"
+        for (int i = 0; i < 3; i++)
+        {
+            d0 = gate.check(true, 0.0D, () -> true, box, now += 40L);
+        }
+        helper.assertTrue(d0 == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.RESCUE && !gate.isBlocked(), "a climb out counted as a rescue: " + d0);
+        // r2: one who places block after block from one spot (cut off, not moving) gets on: never put out (run 015, the helper raising the ring around him)
+        for (int i = 0; i < 20; i++)
+        {
+            helper.assertTrue(gate.check(true, 0.0D, true, () -> true, box, now += 40L) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE,
+              "a worker placing blocks from where he stands was put out at check " + i);
+        }
+        for (int i = 0; i < 3; i++)
+        {
+            d0 = gate.check(true, 0.0D, () -> true, box, now += 40L);
+        }
+        helper.assertTrue(d0 == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.RESCUE, "no work, cut off and still: not put out " + d0);
+        gate.rescued(box, now);
         final long rescuedAt = now;
         // walks back in at once and stands: blocked once, then nothing
         com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision d = com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE;
@@ -724,6 +750,7 @@ final class BuilderScaffoldGameTests
             d = gate.check(true, 0.0D, () -> true, box, now += 40L);
         }
         helper.assertTrue(d == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.RESCUE, "not put out after the cooldown: " + d);
+        gate.rescued(box, now);
         // a way out appears: the block note is gone
         gate.check(true, 0.0D, () -> false, box, now += 40L);
         helper.assertTrue(!gate.isBlocked(), "still blocked with a way out");

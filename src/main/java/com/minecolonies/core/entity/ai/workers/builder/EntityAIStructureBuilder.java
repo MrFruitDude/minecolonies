@@ -1512,7 +1512,14 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     @Override
     protected boolean tryEscapeTower()
     {
-        return usesPhysicalReach() && scaffold.startEscape();
+        return usesPhysicalReach() && scaffold.startEscape(false);
+    }
+
+    @Override
+    protected boolean tryShutInEscape()
+    {
+        // shut in, he cannot fetch scaffolding from his hut: only what he carries
+        return usesPhysicalReach() && scaffold.startEscape(true);
     }
 
     @Override
@@ -2940,6 +2947,8 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     {
         final WorkOrderCollab collab = assistOrder.getCollab();
         collab.completeLease(planned.world());
+        // work done: a helper who places block after block from where he stands is getting on (the shut-in rescue leaves him be)
+        noteWorkDone();
         if (counted)
         {
             collab.blockProcessed();

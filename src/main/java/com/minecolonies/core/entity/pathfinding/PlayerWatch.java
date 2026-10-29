@@ -35,6 +35,14 @@ public final class PlayerWatch
         IGNORED_FOR_TESTS.add(player);
     }
 
+    /**
+     * @param player a GameTest mock player that watches after all (a test of the watch itself).
+     */
+    public static void watchForTests(final java.util.UUID player)
+    {
+        IGNORED_FOR_TESTS.remove(player);
+    }
+
     private PlayerWatch()
     {
     }

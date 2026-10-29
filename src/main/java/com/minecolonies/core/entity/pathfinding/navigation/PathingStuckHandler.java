@@ -367,6 +367,13 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
     }
 
     /**
+     * Rounds of a complete stuck that wait because a player watches, before the goal teleport happens in sight all the same.
+     */
+    public static final int WATCHED_FULL_STUCKS = 2;
+
+    private int watchedFullStucks = 0;
+
+    /**
      * Final action when completly stuck before resetting stuck handler and path
      */
     private void completeStuckAction(final NAV navigator)
@@ -388,8 +395,16 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
                 (posworld, pos) -> SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos.below()), pos.below()) == SurfaceType.WALKABLE
                     && SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos), pos) == SurfaceType.DROPABLE
                     && SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos.above()), pos.above()) == SurfaceType.DROPABLE);
-            if (tpPos != null)
+            if (tpPos != null && watchedFullStucks < WATCHED_FULL_STUCKS
+                  && com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(world, entity.position(), tpPos))
             {
+                // a player watches the citizen or the spot: no jump in sight (r1 Fable F9, Sol M3). The ladder starts again (new paths, ladders, breaking);
+                // after WATCHED_FULL_STUCKS such rounds he is put there all the same, so a player who stays near cannot hold him stuck for ever
+                watchedFullStucks++;
+            }
+            else if (tpPos != null)
+            {
+                watchedFullStucks = 0;
                 entity.teleportTo(tpPos.getX() + 0.5, tpPos.getY(), tpPos.getZ() + 0.5);
             }
         }

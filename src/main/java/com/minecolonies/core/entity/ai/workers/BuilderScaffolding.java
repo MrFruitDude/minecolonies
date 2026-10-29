@@ -571,9 +571,10 @@ public final class BuilderScaffolding
      * The builder is in a hole he cannot walk out of: puts up a column at the wall of the hole that reaches the level of the rim, next to a
      * spot on the rim, and climbs it. Nothing is done (and the unstuck ladder goes on to the teleport) without items or a place for the column.
      *
+     * @param fromInventoryOnly only with the scaffolding he carries (a builder shut in by the walls of his structure cannot fetch any from his hut).
      * @return true if a tower is on its way.
      */
-    public boolean startEscape()
+    public boolean startEscape(final boolean fromInventoryOnly)
     {
         if (!enabled())
         {
@@ -628,12 +629,13 @@ public final class BuilderScaffolding
         {
             phase = Phase.BUILD;
         }
-        else if (inInventory() + inHut() >= plan.cells().size())
+        else if (!fromInventoryOnly && inInventory() + inHut() >= plan.cells().size())
         {
             phase = Phase.GATHER;
         }
         else
         {
+            log("no scaffolding to get out of " + here + ": needs " + plan.cells().size() + ", carries " + inInventory());
             escapeDeniedUntil = now + 1000;
             plan = null;
             return false;
