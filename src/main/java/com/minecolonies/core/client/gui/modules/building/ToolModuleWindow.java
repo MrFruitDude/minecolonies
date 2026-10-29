@@ -25,7 +25,14 @@ public class ToolModuleWindow extends AbstractModuleWindow<ToolModuleView>
     {
         super(moduleView,  Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gui/layouthuts/layouttool.xml"));
 
-        findPaneOfTypeByID("desc", Text.class).setText(Component.translatableEscape("com.minecolonies.coremod.gui.tooldesc." + BuiltInRegistries.ITEM.getKey(moduleView.getTool()).getPath()));
+        final net.minecraft.network.chat.MutableComponent desc =
+          Component.translatableEscape("com.minecolonies.coremod.gui.tooldesc." + BuiltInRegistries.ITEM.getKey(moduleView.getTool()).getPath());
+        if (buildingView instanceof com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack.View forester && forester.getSkippedTrees() > 0)
+        {
+            // Forestry: trees the Forester leaves standing because they touch a player build
+            desc.append("\n\n").append(Component.translatableEscape("com.minecolonies.coremod.gui.lumberjack.skippedtrees", forester.getSkippedTrees()));
+        }
+        findPaneOfTypeByID("desc", Text.class).setText(desc);
         registerButton(BUTTON_GIVE_TOOL, this::givePlayerScepter);
     }
 

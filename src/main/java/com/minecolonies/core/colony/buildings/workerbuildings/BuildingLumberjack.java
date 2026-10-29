@@ -59,6 +59,10 @@ public class BuildingLumberjack extends AbstractBuilding
     public static final ISettingKey<BoolSetting> REPLANT = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(com.minecolonies.api.util.constant.Constants.MOD_ID, "replant"));
     public static final ISettingKey<BoolSetting> RESTRICT = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(com.minecolonies.api.util.constant.Constants.MOD_ID, "restrict"));
     public static final ISettingKey<BoolSetting> DEFOLIATE = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(com.minecolonies.api.util.constant.Constants.MOD_ID, "defoliate"));
+    /**
+     * Forestry: with no tree to cut, plant saplings from the hut (inside the zone, or in a ring around the hut when no zone is set).
+     */
+    public static final ISettingKey<BoolSetting> PLANT_FOREST = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(com.minecolonies.api.util.constant.Constants.MOD_ID, "plantforest"));
     public static final ISettingKey<DynamicTreesSetting> DYNAMIC_TREES_SIZE = new SettingKey<>(DynamicTreesSetting.class, Identifier.fromNamespaceAndPath(com.minecolonies.api.util.constant.Constants.MOD_ID, "dynamictreeharvestsize"));
 
     /**
@@ -90,6 +94,16 @@ public class BuildingLumberjack extends AbstractBuilding
      * The job description.
      */
     private static final String LUMBERJACK         = "lumberjack";
+
+    /**
+     * Forestry: trees left standing because they touch a player build, by base position, with the game time they were seen. Shown in the hut window.
+     */
+    private final Map<BlockPos, Long> skippedNearBuilds = new HashMap<>();
+
+    /**
+     * Forestry: a skipped tree counts for one game day.
+     */
+    private static final long SKIPPED_TREE_TICKS = 24000L;
 
     /**
      * A list of all planted nether trees
@@ -216,6 +230,48 @@ public class BuildingLumberjack extends AbstractBuilding
     public boolean shouldReplant()
     {
         return getSetting(REPLANT).getValue();
+    }
+
+    /**
+     * @return true if the Forester plants saplings when he finds no tree.
+     */
+    public boolean shouldPlantForest()
+    {
+        return getSetting(PLANT_FOREST).getValue();
+    }
+
+    /**
+     * Forestry: a tree was left standing because it touches a player build.
+     *
+     * @param base the tree's base.
+     */
+    public void addSkippedTree(@NotNull final BlockPos base)
+    {
+        if (skippedNearBuilds.put(base.immutable(), colony.getWorld().getGameTime()) == null)
+        {
+            markDirty();
+        }
+    }
+
+    /**
+     * Forestry: a tree that was skipped before was cut after all (the build is gone).
+     *
+     * @param base the tree's base.
+     */
+    public void removeSkippedTree(@NotNull final BlockPos base)
+    {
+        if (skippedNearBuilds.remove(base) != null)
+        {
+            markDirty();
+        }
+    }
+
+    /**
+     * @return how many trees the Forester left standing next to builds (seen within the last game day).
+     */
+    public int getSkippedTreeCount()
+    {
+        return skippedNearBuilds.size();
     }
 
     /**
@@ -353,6 +409,11 @@ public class BuildingLumberjack extends AbstractBuilding
     {
         super.onColonyTick(colony);
         bonemealFungi();
+        final long now = colony.getWorld().getGameTime();
+        if (skippedNearBuilds.values().removeIf(seen -> now - seen > SKIPPED_TREE_TICKS))
+        {
+            markDirty();
+        }
     }
 
     @Override
@@ -371,6 +432,7 @@ public class BuildingLumberjack extends AbstractBuilding
             buf.writeBlockPos(BlockPos.ZERO);
             buf.writeBlockPos(BlockPos.ZERO);
         }
+        buf.writeVarInt(skippedNearBuilds.size());
     }
 
     /**
@@ -381,6 +443,7 @@ public class BuildingLumberjack extends AbstractBuilding
         private boolean restrict;
         private BlockPos startRestriction;
         private BlockPos endRestriction;
+        private int      skippedTrees;
 
         /**
          * Instantiates the view of the building.
@@ -401,6 +464,15 @@ public class BuildingLumberjack extends AbstractBuilding
             this.restrict = buf.readBoolean();
             this.startRestriction = buf.readBlockPos();
             this.endRestriction = buf.readBlockPos();
+            this.skippedTrees = buf.readVarInt();
+        }
+
+        /**
+         * @return how many trees the Forester left standing next to builds.
+         */
+        public int getSkippedTrees()
+        {
+            return skippedTrees;
         }
 
         public boolean shouldRestrict()

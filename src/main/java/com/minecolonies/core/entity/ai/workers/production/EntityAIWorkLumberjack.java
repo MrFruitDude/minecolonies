@@ -18,6 +18,17 @@ import com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack
 import com.minecolonies.core.colony.jobs.JobLumberjack;
 import com.minecolonies.core.entity.ai.workers.crafting.AbstractEntityAICrafting;
 import com.minecolonies.core.entity.ai.workers.util.Tree;
+import com.minecolonies.core.entity.ai.workers.util.TreeClaims;
+import com.minecolonies.core.entity.ai.workers.util.TreeFootprint;
+import com.minecolonies.api.compatibility.treechop.TreeChopProxy;
+import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.buildings.IBuilding;
+import com.minecolonies.api.crafting.ItemStorage;
+import com.minecolonies.core.MineColonies;
+import com.ldtteam.structurize.api.util.Tuple;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.Vec3;
 import com.minecolonies.core.entity.pathfinding.PathfindingUtils;
 import com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate;
 import com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveToWithPassable;
@@ -46,6 +57,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
@@ -72,13 +84,30 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     public static final int SEARCH_RANGE = 50;
 
     /**
-     * If no trees are found, increment the range.
+     * Forestry: the search radius around the hut is this plus {@link #SEARCH_PER_LEVEL} per hut level.
      */
-    private static final int SEARCH_INCREMENT = 5;
+    private static final int SEARCH_BASE      = 32;
+    private static final int SEARCH_PER_LEVEL = 8;
+
     /**
-     * If this limit is reached, no trees are found.
+     * Forestry: leaves broken per AI call by the leaf sweep, and how many of them show particles.
      */
-    private static final int SEARCH_LIMIT     = 150;
+    private static final int LEAF_BATCH   = 64;
+    private static final int LEAF_EFFECTS = 4;
+
+    /**
+     * Forestry: drops are caught this far around the tree's logs (TreeChop breaks leaves up to 7 blocks out).
+     */
+    private static final int CAPTURE_MARGIN = 9;
+
+    /**
+     * Forestry: saplings planted per idle round, the grid of the planted forest, and the ring around the hut when no zone is set.
+     */
+    private static final int PLANT_PER_IDLE  = 4;
+    private static final int PLANT_GRID      = 4;
+    private static final int RING_GAP        = 3;
+    private static final int RING_WIDTH      = 12;
+    private static final int PLANT_MAX_SPOTS = 512;
 
     /**
      * List of saplings.
@@ -116,11 +145,6 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      * Time in ticks to wait before rechecking if there are trees in the range of the lumberjack.
      */
     private static final int WAIT_BEFORE_SEARCH = 400;
-
-    /**
-     * Time in ticks before incrementing the search radius.
-     */
-    private static final int WAIT_BEFORE_INCREMENT = 20;
 
     /**
      * Return to chest after half a stack.
@@ -194,9 +218,78 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private TreePathResult pathResult;
 
     /**
-     * A counter by how much the tree search radius has been increased by now.
+     * Forestry: this Forester's claim on his current tree.
      */
-    private int searchIncrement = 0;
+    @Nullable
+    private TreeClaims.Claim claim;
+
+    /**
+     * Forestry: the leaf sweep of the felled tree, and the tree it is done for.
+     */
+    @Nullable
+    private TreeFootprint.LeafSweep sweep;
+    @Nullable
+    private Tree sweptTree;
+
+    /**
+     * Forestry: the current tree is chopped through TreeChop, at this log, with this many chops per action.
+     */
+    private boolean  useTreeChop = false;
+    @Nullable
+    private BlockPos treeChopTarget;
+    private int      treeChopChops = 1;
+
+    /**
+     * Forestry: chops and fellings through TreeChop by this Forester (tests).
+     */
+    private int treeChopChopCount = 0;
+    private int treeChopFellCount = 0;
+
+    /**
+     * Forestry: items that did not fit and dropped at his feet (tests).
+     */
+    private int overflowDropped = 0;
+
+    /**
+     * Forestry: idle planting of this round.
+     */
+    @Nullable
+    private List<BlockPos> plantSpots;
+    private int            planted = 0;
+    private boolean        plantingDone = false;
+    private int            plantedTotal = 0;
+
+    /**
+     * @return chops through TreeChop by this Forester.
+     */
+    public int getTreeChopChopCount()
+    {
+        return treeChopChopCount;
+    }
+
+    /**
+     * @return trees felled through TreeChop by this Forester.
+     */
+    public int getTreeChopFellCount()
+    {
+        return treeChopFellCount;
+    }
+
+    /**
+     * @return items dropped at his feet because his inventory was full.
+     */
+    public int getOverflowDropped()
+    {
+        return overflowDropped;
+    }
+
+    /**
+     * @return saplings planted when idle by this Forester.
+     */
+    public int getPlantedTotal()
+    {
+        return plantedTotal;
+    }
 
     /**
      * The current path to the tree
@@ -338,10 +431,18 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     {
         pathResult = null;
 
+        // Forestry: nothing to cut, so plant a few saplings from the hut first
+        if (building.shouldPlantForest() && plantForest())
+        {
+            return getState();
+        }
+
         if (hasNotDelayed(WAIT_BEFORE_SEARCH))
         {
             return getState();
         }
+        plantSpots = null;
+        plantingDone = false;
 
         // Check again for saplings
         resetGatheringItems();
@@ -446,7 +547,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             else
             {
                 pathResult = worker.getNavigation()
-                    .walkToTree(SEARCH_RANGE + searchIncrement,
+                    .walkToTree(getSearchRadius(),
                                  1.0D,
                                  building.getModuleMatching(ItemListModule.class, m -> m.getId().equals(SAPLINGS_LIST)).getList(),
                                  building.getSetting(BuildingLumberjack.DYNAMIC_TREES_SIZE).getValue(),
@@ -463,38 +564,101 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         return LUMBERJACK_NO_TREES_FOUND;
     }
 
+    /**
+     * @return the tree search radius around the hut, growing with the hut level.
+     */
+    public int getSearchRadius()
+    {
+        return SEARCH_BASE + SEARCH_PER_LEVEL * Math.max(1, building.getBuildingLevel());
+    }
+
     private IAIState setNewTree(final BuildingLumberjack building)
     {
         if (pathResult.treeLocation == null)
         {
-            if (!building.shouldRestrict() && searchIncrement + SEARCH_RANGE <= SEARCH_LIMIT)
-            {
-                searchIncrement += SEARCH_INCREMENT;
-                setDelay(WAIT_BEFORE_INCREMENT);
-            }
-            else
-            {
-                return LUMBERJACK_NO_TREES_FOUND;
-            }
+            pathResult = null;
+            return LUMBERJACK_NO_TREES_FOUND;
         }
         else
         {
-            job.setTree(new Tree(world, pathResult.treeLocation, building.shouldRestrict() ? null : building.getColony()));
+            // The colony's hut boxes are kept out in both modes (forestry: the restricted zone used to skip this check).
+            final Tree tree = new Tree(world, pathResult.treeLocation, building.getColony());
+            final int colonyId = building.getColony().getID();
+            final int citizenId = worker.getCitizenData().getId();
 
-            // Check if tree creation was successful
-            if (job.getTree().isTree())
+            if (tree.isTree() && tree.getSkip() != TreeFootprint.Skip.NONE)
             {
-                job.getTree().findLogs(world, building.shouldRestrict() ? null : building.getColony());
+                // Forestry: never cut part of a tree; a tree next to a build stays whole and no Forester tries it again for a while
+                TreeClaims.block(world, tree.getAllLogs().isEmpty() ? List.of(tree.getLocation()) : tree.getAllLogs(), colonyId);
+                if (tree.getSkip() == TreeFootprint.Skip.BUILD || tree.getSkip() == TreeFootprint.Skip.HUT)
+                {
+                    building.addSkippedTree(tree.getLocation());
+                }
+                Log.getLogger().debug("Forester {} leaves the tree at {} standing: {} ({})", citizenId, tree.getLocation(), tree.getSkip(), tree.getSkipDetail());
+            }
+            else if (tree.isTree() && tree.getAllLogs().stream().noneMatch(pos -> TreeClaims.isTakenByOther(world, pos, colonyId, citizenId)))
+            {
+                job.setTree(tree);
+                tree.findLogs(world, building.getColony());
+                claim = TreeClaims.claim(world, tree.getAllLogs().isEmpty() ? List.of(tree.getLocation()) : tree.getAllLogs(), colonyId, citizenId);
+                building.removeSkippedTree(tree.getLocation());
+                chooseChopPath(tree);
+                pathResult = null;
                 return LUMBERJACK_CHOP_TREE;
             }
-            else
+            else if (!tree.isTree() && !tree.getAllLogs().isEmpty())
             {
-                job.setTree(null);
+                // The search took it for a tree, the full scan does not (too few leaves): leave it alone for a while instead of picking it again
+                TreeClaims.block(world, tree.getAllLogs(), colonyId);
             }
         }
         pathResult = null;
 
         return getState();
+    }
+
+    /**
+     * Forestry: chop through TreeChop when it is loaded and on, the server setting allows it, and TreeChop can chop the lowest log of the tree.
+     */
+    private void chooseChopPath(@NotNull final Tree tree)
+    {
+        useTreeChop = false;
+        treeChopTarget = null;
+        if (!MineColonies.getConfig().getServer().lumberjacksUseTreeChop.get() || !Compatibility.treeChop.isEnabled() || tree.isDynamicTree() || !tree.isFootprintTree())
+        {
+            return;
+        }
+        BlockPos target = null;
+        for (final BlockPos pos : tree.getAllLogs())
+        {
+            if ((target == null || pos.getY() < target.getY() || (pos.getY() == target.getY() && pos.distSqr(tree.getLocation()) < target.distSqr(tree.getLocation())))
+                  && Compatibility.treeChop.isChoppable(world, pos))
+            {
+                target = pos;
+            }
+        }
+        if (target != null)
+        {
+            useTreeChop = true;
+            treeChopTarget = target;
+            treeChopChops = Compatibility.treeChop.chopsPerAction((ServerLevel) world, target, tree.getAllLogs().size());
+        }
+    }
+
+    /**
+     * Forestry: let go of the current tree (done or given up).
+     */
+    private void finishTree()
+    {
+        job.setTree(null);
+        pathResult = null;
+        checkedInHut = false;
+        TreeClaims.release(claim);
+        claim = null;
+        sweep = null;
+        sweptTree = null;
+        useTreeChop = false;
+        treeChopTarget = null;
     }
 
     /**
@@ -528,17 +692,25 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
 
         if (building.shouldRestrict() && !BlockPosUtil.isInArea(building.getStartRestriction(), building.getEndRestriction(), job.getTree().getLocation()))
         {
-            job.setTree(null);
-            pathResult = null;
+            finishTree();
             return START_WORKING;
         }
+
+        // Forestry: hold the claim on this tree while working on it (after a reload the claim is made again)
+        if (claim == null)
+        {
+            final List<BlockPos> logs = new ArrayList<>(job.getTree().getAllLogs());
+            logs.add(job.getTree().getLocation());
+            claim = TreeClaims.claim(world, logs, building.getColony().getID(), worker.getCitizenData().getId());
+        }
+        claim.refresh();
 
         // W11: no sapling for this tree with him, but his hut has one and he is still near it: take it now, before the felling, instead of
         // waiting at the stump for one to drop and walking back for it
         if (building.shouldReplant() && saplingCheckedFor != job.getTree())
         {
             saplingCheckedFor = job.getTree();
-            fetchSaplingFirst = findSaplingSlot() == -1 && !ItemStackUtils.isEmpty(job.getTree().getSapling())
+            fetchSaplingFirst = countCorrectSaplings() < Math.max(1, job.getTree().getStumpLocations().size()) && !ItemStackUtils.isEmpty(job.getTree().getSapling())
                                   && worker.blockPosition().distSqr(building.getPosition()) <= SAPLING_FETCH_RANGE * SAPLING_FETCH_RANGE
                                   && InventoryUtils.hasItemInProvider(building, this::isCorrectSapling);
         }
@@ -555,7 +727,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             }
         }
 
-        if (job.getTree().hasLogs() || (shouldBreakLeaves && job.getTree().hasLeaves()) || checkedInHut)
+        if (job.getTree().hasLogs() || job.getTree().hasDecorations() || (shouldBreakLeaves && job.getTree().hasLeaves()) || checkedInHut)
         {
             if (!walkToTree(job.getTree().getStumpLocations().isEmpty() ? job.getTree().getLocation() : job.getTree().getStumpLocations().get(0)))
             {
@@ -567,9 +739,16 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             }
         }
 
-        if (!job.getTree().hasLogs() && (!shouldBreakLeaves || !job.getTree().hasLeaves()))
+        if (!job.getTree().hasLogs() && !job.getTree().hasDecorations() && (!shouldBreakLeaves || !job.getTree().hasLeaves()))
         {
-            if (hasNotDelayed(WAIT_BEFORE_SAPLING))
+            // Forestry: the leaves the tree held go now, with their drops into his inventory, before he replants
+            if (sweepLeaves(job.getTree()))
+            {
+                return getState();
+            }
+
+            // Drops of a forestry tree are caught, nothing falls to wait for
+            if (!job.getTree().isFootprintTree() && hasNotDelayed(WAIT_BEFORE_SAPLING))
             {
                 return getState();
             }
@@ -580,9 +759,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             }
             else
             {
-                job.setTree(null);
-                pathResult = null;
-                checkedInHut = false;
+                finishTree();
             }
 
             building.getColony().getStatisticsManager().increment(TREE_CUT, building.getColony().getDay());
@@ -602,7 +779,22 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             }
         }
 
-        if (job.getTree().hasLeaves() && shouldBreakLeaves)
+        if (job.getTree().hasDecorations())
+        {
+            // Forestry: a bee nest (taken whole, bees inside) or cocoa goes before the log it hangs on
+            final BlockPos decoration = job.getTree().peekNextDecoration();
+            if (!world.getBlockState(decoration).is(Blocks.BEE_NEST) && !world.getBlockState(decoration).is(Blocks.COCOA))
+            {
+                job.getTree().pollNextDecoration();
+                return getState();
+            }
+            if (!mineBlock(decoration, workFrom))
+            {
+                return getState();
+            }
+            job.getTree().pollNextDecoration();
+        }
+        else if (job.getTree().hasLeaves() && shouldBreakLeaves)
         {
             final BlockPos leaf = job.getTree().peekNextLeaf();
             if (!mineBlock(leaf, workFrom))
@@ -635,17 +827,391 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 // Wait 5 sec for falling trees(dyn tree feature)/drops
                 setDelay(100);
             }
+            else if (useTreeChop && job.getTree().isFootprintTree())
+            {
+                // Forestry: chop through TreeChop, chop by chop at the base, the whole tree falls at once
+                return chopWithTreeChop(job.getTree());
+            }
             else
             {
-                if (!mineBlock(log, workFrom))
+                // Forestry: what pops off with the log (cocoa, propagules) goes to him as well
+                final AABB box = captureBox(job.getTree());
+                final List<ItemStack> caught = new ArrayList<>();
+                if (!mineBlock(log, workFrom, true, true, () -> caught.addAll(DropCapture.capture(world, box, () -> CitizenItemUtils.breakBlockWithToolInHand(worker, log)))))
                 {
                     return getState();
                 }
+                deliverCaught(caught);
             }
             job.getTree().pollNextLog();
             worker.decreaseSaturationForContinuousAction();
         }
         return getState();
+    }
+
+    /**
+     * Forestry: the leaf sweep after the last log, in batches. Breaks only leaves vanilla would decay anyway; their drops go to him.
+     *
+     * @param tree the felled tree.
+     * @return true while sweeping.
+     */
+    private boolean sweepLeaves(@NotNull final Tree tree)
+    {
+        if (!tree.isFootprintTree() || sweptTree == tree)
+        {
+            return false;
+        }
+        if (sweep == null)
+        {
+            sweep = new TreeFootprint.LeafSweep(world, tree.getAllLogs(), tree.getBox());
+        }
+        final List<BlockPos> batch = sweep.next(LEAF_BATCH);
+        if (!batch.isEmpty())
+        {
+            final AABB box = captureBox(tree);
+            final ItemStack tool = worker.getMainHandItem();
+            final List<ItemStack> drops = new ArrayList<>();
+            int effects = 0;
+            for (final BlockPos pos : batch)
+            {
+                final BlockState state = world.getBlockState(pos);
+                drops.addAll(Block.getDrops(state, (ServerLevel) world, pos, world.getBlockEntity(pos), worker, tool));
+                if (effects++ < LEAF_EFFECTS)
+                {
+                    world.levelEvent(2001, pos, Block.getId(state));
+                }
+                drops.addAll(DropCapture.capture(world, box, () -> WorldUtil.removeBlock(world, pos, false)));
+                sweep.markBroken();
+            }
+            deliverCaught(drops);
+        }
+        if (sweep.isDone())
+        {
+            sweptTree = tree;
+            sweep = null;
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * @return the box in which the drops of this tree are caught.
+     */
+    private AABB captureBox(@NotNull final Tree tree)
+    {
+        final AABB box = tree.getBox();
+        return (box == null ? new AABB(tree.getLocation()) : box).inflate(CAPTURE_MARGIN);
+    }
+
+    /**
+     * Forestry: caught drops go into his inventory; what does not fit drops at his feet (never deleted).
+     */
+    private void deliverCaught(@NotNull final List<ItemStack> stacks)
+    {
+        if (stacks.isEmpty())
+        {
+            return;
+        }
+        onBlockDropReception(stacks);
+        overflowDropped += DropCapture.deliver(world, worker.getInventoryCitizen(), stacks, worker.position());
+    }
+
+    /**
+     * Forestry: one chop through TreeChop at the tree's base, with the mining delay of the log. TreeChop turns the log into a chopped log, or fells the
+     * whole tree when it has enough chops; every drop goes to him. When TreeChop does not take the tree, the normal path cuts it.
+     *
+     * @param tree the tree.
+     * @return the next state.
+     */
+    private IAIState chopWithTreeChop(@NotNull final Tree tree)
+    {
+        final BlockPos target = treeChopTarget;
+        if (target == null || !Compatibility.treeChop.isChoppable(world, target))
+        {
+            useTreeChop = false;
+            return getState();
+        }
+        final AABB box = captureBox(tree);
+        final TreeChopProxy.ChopOutcome[] outcome = {TreeChopProxy.ChopOutcome.IGNORED};
+        final List<ItemStack> caught = new ArrayList<>();
+        if (!mineBlock(target, workFrom, false, false, () -> {
+            final BlockState state = world.getBlockState(target);
+            final ItemStack copy = worker.getMainHandItem().copy();
+            caught.addAll(DropCapture.capture(world, box, () -> outcome[0] = Compatibility.treeChop.chop((ServerLevel) world, target, worker.position(), copy, treeChopChops)));
+            if (outcome[0] == TreeChopProxy.ChopOutcome.CHOPPED || outcome[0] == TreeChopProxy.ChopOutcome.FELLED)
+            {
+                // TreeChop wore the copy; the real axe wears by MineColonies' rule, once per chop
+                CitizenItemUtils.damageItemInHandForMinedBlock(worker, InteractionHand.MAIN_HAND, state, target);
+            }
+        }))
+        {
+            return getState();
+        }
+        deliverCaught(caught);
+        switch (outcome[0])
+        {
+            case CHOPPED -> treeChopChopCount++;
+            case FELLED ->
+            {
+                treeChopChopCount++;
+                treeChopFellCount++;
+                // What TreeChop does not know (roots, a creaking heart) is cut the normal way
+                tree.keepOnlyStandingLogs(world);
+                useTreeChop = false;
+            }
+            default -> useTreeChop = false;
+        }
+        worker.decreaseSaturationForContinuousAction();
+        return getState();
+    }
+
+    @Override
+    public boolean shouldSilkTouchBlock(final BlockState curBlockState)
+    {
+        // Forestry: a natural bee nest comes to the hut whole, with its bees inside
+        return curBlockState.is(Blocks.BEE_NEST) || super.shouldSilkTouchBlock(curBlockState);
+    }
+
+    /**
+     * @return how many saplings for the current tree he carries.
+     */
+    private int countCorrectSaplings()
+    {
+        return job.getTree() == null ? 0 : InventoryUtils.getItemCountInItemHandler(getInventory(), this::isCorrectSapling);
+    }
+
+    /**
+     * Forestry 4.5: with no tree to cut, plant up to {@link #PLANT_PER_IDLE} saplings from the hut on a grid, inside the zone or, without a zone, in a
+     * ring around the hut. Never in hut boxes, on paths or farmland, next to builds or other trees, or in another colony's claim.
+     *
+     * @return true while planting.
+     */
+    private boolean plantForest()
+    {
+        if (plantingDone)
+        {
+            return false;
+        }
+        if (plantSpots == null)
+        {
+            plantSpots = findPlantSpots();
+            planted = 0;
+        }
+        if (plantSpots.isEmpty() || planted >= PLANT_PER_IDLE)
+        {
+            plantingDone = true;
+            return false;
+        }
+        int slot = findPlantableSaplingSlot();
+        if (slot == -1)
+        {
+            final ItemStack wanted = plantableSaplingInHut();
+            if (wanted.isEmpty())
+            {
+                plantingDone = true;
+                return false;
+            }
+            if (!walkToBuilding())
+            {
+                return true;
+            }
+            checkAndTransferFromHut(wanted);
+            slot = findPlantableSaplingSlot();
+            if (slot == -1)
+            {
+                plantingDone = true;
+                return false;
+            }
+        }
+        final ItemStack stack = getInventory().getStackInSlot(slot);
+        final Block saplingBlock = ((BlockItem) stack.getItem()).getBlock();
+        final BlockPos spot = plantSpots.get(0);
+        if (!isPlantSpot(spot, saplingBlock.defaultBlockState()))
+        {
+            plantSpots.remove(0);
+            return true;
+        }
+        if (walkWithProxy(spot, MIN_WORKING_RANGE))
+        {
+            return true;
+        }
+        CitizenItemUtils.setHeldItem(worker, InteractionHand.MAIN_HAND, slot);
+        if (world.setBlockAndUpdate(spot, saplingBlock.defaultBlockState()))
+        {
+            getInventory().extractItem(slot, 1, false);
+            worker.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
+            final SoundType soundType = saplingBlock.getSoundType(world.getBlockState(spot), world, spot, worker);
+            world.playSound(null, spot, soundType.getPlaceSound(), SoundSource.BLOCKS, soundType.getVolume(), soundType.getPitch());
+            planted++;
+            plantedTotal++;
+        }
+        plantSpots.remove(0);
+        setDelay(TIMEOUT_DELAY);
+        return true;
+    }
+
+    /**
+     * @param stack a stack.
+     * @return true for a sapling he plants a forest with (one sapling grows a tree on dirt, not on the do-not-cut list).
+     */
+    private boolean isPlantableSapling(final ItemStack stack)
+    {
+        return ItemStackUtils.isStackSapling(stack) && stack.is(ItemTags.SAPLINGS) && stack.getItem() instanceof BlockItem
+                 && !stack.is(ModTags.fourSaplingTrees) && !stack.is(Items.MANGROVE_PROPAGULE)
+                 && !building.getModuleMatching(ItemListModule.class, m -> m.getId().equals(SAPLINGS_LIST)).isItemInList(new ItemStorage(stack));
+    }
+
+    private int findPlantableSaplingSlot()
+    {
+        for (int slot = 0; slot < getInventory().getSlots(); slot++)
+        {
+            if (isPlantableSapling(getInventory().getStackInSlot(slot)))
+            {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private ItemStack plantableSaplingInHut()
+    {
+        for (final ItemStorage storage : IColonyManager.getInstance().getCompatibilityManager().getCopyOfSaplings())
+        {
+            final ItemStack sapling = storage.getItemStack();
+            if (isPlantableSapling(sapling) && InventoryUtils.hasItemInProvider(building, stack -> ItemStack.isSameItem(stack, sapling)))
+            {
+                return sapling;
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    /**
+     * The planting spots: the zone, or a ring around the hut (from {@link #RING_GAP} outside the hut box, {@link #RING_WIDTH} wide), on a
+     * {@link #PLANT_GRID} grid so the trees have room to grow, nearest first.
+     */
+    private List<BlockPos> findPlantSpots()
+    {
+        final BlockPos hut = building.getPosition();
+        final int minX, maxX, minZ, maxZ, minY, maxY, inner;
+        if (building.shouldRestrict())
+        {
+            final BlockPos a = building.getStartRestriction();
+            final BlockPos b = building.getEndRestriction();
+            minX = Math.min(a.getX(), b.getX());
+            maxX = Math.max(a.getX(), b.getX());
+            minZ = Math.min(a.getZ(), b.getZ());
+            maxZ = Math.max(a.getZ(), b.getZ());
+            minY = Math.min(a.getY(), b.getY());
+            maxY = Math.max(a.getY(), b.getY());
+            inner = -1;
+        }
+        else
+        {
+            final Tuple<BlockPos, BlockPos> corners = building.getCorners();
+            int half = 4;
+            if (corners != null && corners.getA() != null && corners.getB() != null)
+            {
+                for (final BlockPos corner : List.of(corners.getA(), corners.getB()))
+                {
+                    half = Math.max(half, Math.max(Math.abs(corner.getX() - hut.getX()), Math.abs(corner.getZ() - hut.getZ())));
+                }
+            }
+            inner = half + RING_GAP;
+            minX = hut.getX() - inner - RING_WIDTH;
+            maxX = hut.getX() + inner + RING_WIDTH;
+            minZ = hut.getZ() - inner - RING_WIDTH;
+            maxZ = hut.getZ() + inner + RING_WIDTH;
+            minY = hut.getY() - 8;
+            maxY = hut.getY() + 8;
+        }
+        final List<BlockPos> grid = new ArrayList<>();
+        for (int x = Math.floorDiv(minX + PLANT_GRID - 1, PLANT_GRID) * PLANT_GRID; x <= maxX; x += PLANT_GRID)
+        {
+            for (int z = Math.floorDiv(minZ + PLANT_GRID - 1, PLANT_GRID) * PLANT_GRID; z <= maxZ; z += PLANT_GRID)
+            {
+                if (inner >= 0 && Math.max(Math.abs(x - hut.getX()), Math.abs(z - hut.getZ())) < inner)
+                {
+                    continue;
+                }
+                grid.add(new BlockPos(x, hut.getY(), z));
+            }
+        }
+        grid.sort(Comparator.comparingDouble(pos -> pos.distSqr(hut)));
+        final List<BlockPos> spots = new ArrayList<>();
+        final BlockState probe = Blocks.OAK_SAPLING.defaultBlockState();
+        int examined = 0;
+        for (final BlockPos column : grid)
+        {
+            if (spots.size() >= PLANT_PER_IDLE * 4 || examined++ >= PLANT_MAX_SPOTS)
+            {
+                break;
+            }
+            if (!WorldUtil.isBlockLoaded(world, column))
+            {
+                continue;
+            }
+            final BlockPos spot = new BlockPos(column.getX(), world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column.getX(), column.getZ()), column.getZ());
+            if (spot.getY() >= minY && spot.getY() <= maxY && isPlantSpot(spot, probe))
+            {
+                spots.add(spot);
+            }
+        }
+        return spots;
+    }
+
+    /**
+     * @param spot    where a sapling would go.
+     * @param sapling the sapling block.
+     * @return true if a sapling may be planted there.
+     */
+    private boolean isPlantSpot(@NotNull final BlockPos spot, @NotNull final BlockState sapling)
+    {
+        final BlockState at = world.getBlockState(spot);
+        if (!(at.isAir() || (at.is(BlockTags.REPLACEABLE_BY_TREES) && !at.is(BlockTags.FLOWERS) && at.getFluidState().isEmpty())))
+        {
+            return false;
+        }
+        final BlockState ground = world.getBlockState(spot.below());
+        if (!ground.is(BlockTags.DIRT) || ground.is(Blocks.DIRT_PATH) || ground.is(Blocks.FARMLAND) || ground.is(ModTags.pathingBlocks))
+        {
+            return false;
+        }
+        for (int i = 1; i <= 4; i++)
+        {
+            if (!world.getBlockState(spot.above(i)).isAir())
+            {
+                return false;
+            }
+        }
+        if (!sapling.canSurvive(world, spot))
+        {
+            return false;
+        }
+        for (final IBuilding hutBuilding : building.getColony().getServerBuildingManager().getBuildings().values())
+        {
+            final Tuple<BlockPos, BlockPos> corners = hutBuilding.getCorners();
+            if (corners != null && corners.getA() != null && corners.getB() != null
+                  && AABB.encapsulatingFullBlocks(corners.getA(), corners.getB()).inflate(2).contains(Vec3.atCenterOf(spot)))
+            {
+                return false;
+            }
+        }
+        final IColony owner = IColonyManager.getInstance().getColonyByPosFromWorld(world, spot);
+        if (owner != null && owner.getID() != building.getColony().getID())
+        {
+            return false;
+        }
+        for (final BlockPos near : BlockPos.betweenClosed(spot.offset(-2, -1, -2), spot.offset(2, 2, 2)))
+        {
+            final BlockState state = world.getBlockState(near);
+            if (state.is(Blocks.DIRT_PATH) || state.is(Blocks.FARMLAND) || state.is(ModTags.pathingBlocks) || state.is(BlockTags.SAPLINGS)
+                  || TreeFootprint.isTreeBlock(state) || TreeFootprint.isBuildSignal(state, false))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
@@ -841,9 +1407,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     {
         if (plantSapling(job.getTree().getLocation()))
         {
-            job.setTree(null);
-            pathResult = null;
-            checkedInHut = false;
+            finishTree();
         }
     }
 
@@ -877,6 +1441,30 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         if (!(worldBlock instanceof AirBlock) && !isSapling(worldState) && !worldState.canBeReplaced())
         {
             return true;
+        }
+
+        // Forestry 4.3: a tree of several stumps is replanted whole; with too few saplings even after the hut, spruce and jungle get one (they also
+        // grow from one), dark and pale oak none (one sapling of them never grows)
+        final List<BlockPos> stumps = job.getTree().getStumpLocations();
+        if (stumps.size() > 1 && countCorrectSaplings() < stumps.size() && !job.getTree().isDynamicTree())
+        {
+            if (!checkedInHut)
+            {
+                if (!walkToBuilding())
+                {
+                    return false;
+                }
+                checkAndTransferFromHut(job.getTree().getSapling());
+                checkedInHut = true;
+            }
+            if (countCorrectSaplings() < stumps.size())
+            {
+                final boolean needsAll = job.getTree().getSapling().is(ModTags.fourSaplingTrees);
+                for (int i = needsAll ? 0 : 1; i < stumps.size(); i++)
+                {
+                    job.getTree().removeStump(stumps.get(i));
+                }
+            }
         }
 
         final int saplingSlot = findSaplingSlot();
