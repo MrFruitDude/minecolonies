@@ -24,6 +24,11 @@ public final class LabourEnv implements LabourPlanner.Env<Item>
     private final ServerLevel  level;
     private final List<Item>   fuels = LabourRules.fuels();
     private final boolean      withdraw;
+    /** The hut whose request is planned, or null: a good only that hut itself covers is not covered for it (a new miner's own cobblestone). */
+    @org.jetbrains.annotations.Nullable
+    private final net.minecraft.core.BlockPos requester;
+    /** The citizen whose plan this is (his own place in a shaft counts as free for him), or -1. */
+    private int citizenId = -1;
     private Set<Item> surfaceDrops;
     private Set<Item> stoneDrops;
 
@@ -33,10 +38,42 @@ public final class LabourEnv implements LabourPlanner.Env<Item>
      */
     public LabourEnv(final Colony colony, final LabourBoard board, final boolean withdraw)
     {
+        this(colony, board, withdraw, null);
+    }
+
+    /**
+     * @param requester the hut whose request is planned (its own coverage does not count for it), or null.
+     */
+    public LabourEnv(final Colony colony, final LabourBoard board, final boolean withdraw, @org.jetbrains.annotations.Nullable final net.minecraft.core.BlockPos requester)
+    {
+        this.requester = requester;
         this.withdraw = withdraw;
         this.colony = colony;
         this.board = board;
         this.level = (ServerLevel) colony.getWorld();
+    }
+
+    /**
+     * @return this colony view for a request of the hut ({@link #requester}).
+     */
+    public LabourEnv forRequester(@org.jetbrains.annotations.Nullable final net.minecraft.core.BlockPos hut)
+    {
+        if (java.util.Objects.equals(hut, requester))
+        {
+            return this;
+        }
+        final LabourEnv env = new LabourEnv(colony, board, withdraw, hut);
+        env.citizenId = citizenId;
+        return env;
+    }
+
+    /**
+     * @return this colony view for the plan of the citizen (a shaft segment he digs counts as free for him).
+     */
+    public LabourEnv forCitizen(final int citizen)
+    {
+        this.citizenId = citizen;
+        return this;
     }
 
     private static boolean stoneTool(final Item item)
@@ -110,6 +147,11 @@ public final class LabourEnv implements LabourPlanner.Env<Item>
         {
             defs.add(new LabourPlanner.GatherDef<>(LabourPlanner.GatherKind.STONE, item, "pickaxe"));
         }
+        if (item == net.minecraft.world.item.Items.COBBLESTONE)
+        {
+            // r4: the colony's stone shafts, dug with a wood or stone pickaxe only (after a dig zone, which needs no walk underground)
+            defs.add(new LabourPlanner.GatherDef<>(LabourPlanner.GatherKind.SHAFT, item, LabourRules.SHAFT_TOOL));
+        }
         return defs;
     }
 
@@ -123,6 +165,8 @@ public final class LabourEnv implements LabourPlanner.Env<Item>
             case STRIP -> sites.hasStripTree(gather.item());
             case SURFACE, STONE -> sites.hasSurface(gather.item());
             case LOOSE -> sites.nearestLoose(gather.item(), sites.anchor(), board.takenEntities()) != null;
+            // (once a miner or quarry covers cobblestone no shaft is dug, not even for a request it does not cover: the shafts stay as they are)
+            case SHAFT -> !board.coverage().covered(net.minecraft.world.item.Items.COBBLESTONE) && board.shafts().hasWork(citizenId);
         };
     }
 
@@ -141,7 +185,7 @@ public final class LabourEnv implements LabourPlanner.Env<Item>
     @Override
     public boolean covered(final Item item)
     {
-        return board.coverage().covered(item);
+        return board.coverage().coveredFor(item, requester);
     }
 
     @Override

@@ -482,6 +482,54 @@ final class BuilderScaffoldGameTests
         }, 0);
     }
 
+    /**
+     * Preview 20261029-3: a builder walking from his hut to his site was put back into the hut every few seconds. The shut-in rescue asks the stand-spot
+     * search whether the spot by his hut block (inside the hut) can be walked to, and the search did not go through doors: from outside, the inside of
+     * every hut was cut off. A closed room with an oak door is reached through it (the door itself is no stand spot); with an iron door, which a citizen
+     * does not open, it stays cut off; an oak fence gate in a fence is a way through as well.
+     */
+    public static void hutDoorIsAWayThrough(final GameTestHelper helper)
+    {
+        final net.minecraft.world.level.Level level = helper.getLevel();
+        final BlockPos o = helper.absolutePos(new BlockPos(4, 1, 4));
+        for (int x = -3; x <= 5; x++)
+        {
+            for (int z = -1; z <= 5; z++)
+            {
+                level.setBlock(o.offset(x, 0, z), Blocks.STONE.defaultBlockState(), 3);
+                for (int y = 1; y <= 5; y++)
+                {
+                    final boolean wall = x >= 0 && x <= 4 && z >= 0 && z <= 4 && (x == 0 || x == 4 || z == 0 || z == 4 || y == 5);
+                    level.setBlock(o.offset(x, y, z), wall ? Blocks.COBBLESTONE.defaultBlockState() : Blocks.AIR.defaultBlockState(), 3);
+                }
+            }
+        }
+        final BlockPos door = o.offset(0, 1, 2);
+        final BlockPos start = o.offset(-2, 1, 2);
+        final BlockPos inside = o.offset(2, 1, 2);
+        helper.assertTrue(!com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, start, 28, 30000).contains(inside), "a closed room without a door was reached");
+
+        placeDoor(level, door, Blocks.OAK_DOOR);
+        final java.util.Set<BlockPos> oak = com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, start, 28, 30000);
+        helper.assertTrue(oak.contains(inside), "the inside of a room shut by an oak door was cut off");
+        helper.assertTrue(!com.minecolonies.core.entity.ai.workers.util.StandSpots.canStandAt(level, door), "the door counts as a stand spot");
+
+        placeDoor(level, door, Blocks.IRON_DOOR);
+        helper.assertTrue(!com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, start, 28, 30000).contains(inside), "an iron door was walked through");
+
+        level.setBlock(door.above(), Blocks.AIR.defaultBlockState(), 3);
+        level.setBlock(door, Blocks.OAK_FENCE_GATE.defaultBlockState().setValue(net.minecraft.world.level.block.FenceGateBlock.FACING, net.minecraft.core.Direction.EAST), 3);
+        helper.assertTrue(com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, start, 28, 30000).contains(inside), "a fence gate was no way through");
+        helper.succeed();
+    }
+
+    private static void placeDoor(final net.minecraft.world.level.Level level, final BlockPos lower, final net.minecraft.world.level.block.Block block)
+    {
+        final net.minecraft.world.level.block.state.BlockState state = block.defaultBlockState().setValue(net.minecraft.world.level.block.DoorBlock.FACING, net.minecraft.core.Direction.EAST);
+        level.setBlock(lower, state.setValue(net.minecraft.world.level.block.DoorBlock.HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.LOWER), 2);
+        level.setBlock(lower.above(), state.setValue(net.minecraft.world.level.block.DoorBlock.HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER), 3);
+    }
+
     /** Called on every tick of {@link #tallStructure} (a test's own look at the world), or null; reset when the next structure starts. */
     static volatile java.util.function.IntConsumer tickHook = null;
 

@@ -531,7 +531,8 @@ public class BuildingModules
         .with(BuildingTownHall.LABOUR_CAP, new IntSetting(8))
         .with(BuildingTownHall.LABOUR_PER_REQUEST, new IntSetting(2))
         .with(BuildingTownHall.LABOUR_STOCKPILE, new BoolSetting(true))
-        .with(BuildingTownHall.LABOUR_SELF_SUPPLY, new BoolSetting(true)),
+        .with(BuildingTownHall.LABOUR_SELF_SUPPLY, new BoolSetting(true))
+        .with(BuildingTownHall.LABOUR_SHAFTS, new BoolSetting(true)),
         () -> TownHallSettingsModuleView::new);
 
     /**

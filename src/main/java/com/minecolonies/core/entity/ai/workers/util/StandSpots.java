@@ -4,6 +4,9 @@ import com.minecolonies.api.util.WorldUtil;
 import com.minecolonies.core.entity.pathfinding.SurfaceType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.FenceGateBlock;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import org.jetbrains.annotations.Nullable;
@@ -171,14 +174,14 @@ public final class StandSpots
                 for (final Direction dir : Direction.Plane.HORIZONTAL)
                 {
                     final BlockPos near = at.relative(dir);
-                    visit(parents, at, level, near, start, radius, seen, queue, climbable(level, near) || canStandAt(level, near));
+                    visit(parents, at, level, near, start, radius, seen, queue, climbable(level, near) || canStandAt(level, near) || isDoorway(level, near));
                 }
                 continue;
             }
             for (final Direction dir : Direction.Plane.HORIZONTAL)
             {
                 final BlockPos near = at.relative(dir);
-                if (climbable(level, near) || canStandAt(level, near))
+                if (climbable(level, near) || canStandAt(level, near) || isDoorway(level, near))
                 {
                     visit(parents, at, level, near, start, radius, seen, queue, true);
                 }
@@ -215,6 +218,36 @@ public final class StandSpots
             }
         }
         return seen;
+    }
+
+    /**
+     * A door or gate a citizen opens on his way (the path planner walks through them): a wooden door or a fence gate with a walkable floor below and
+     * room for the head (the upper half of the door). Not a spot to stand on (canStandAt), only a way through: without it the inside of every hut,
+     * shut by its door, was cut off.
+     *
+     * @param level the world.
+     * @param feet  the block the feet would be in.
+     * @return true if a citizen walks through this block.
+     */
+    public static boolean isDoorway(final Level level, final BlockPos feet)
+    {
+        if (!WorldUtil.isBlockLoaded(level, feet) || !WorldUtil.isBlockLoaded(level, feet.below()))
+        {
+            return false;
+        }
+        final BlockState state = level.getBlockState(feet);
+        final boolean door = state.getBlock() instanceof DoorBlock doorBlock && doorBlock.type().canOpenByHand()
+                               && state.getValue(DoorBlock.HALF) == DoubleBlockHalf.LOWER;
+        if (!door && !(state.getBlock() instanceof FenceGateBlock))
+        {
+            return false;
+        }
+        final BlockPos floor = feet.below();
+        if (SurfaceType.getSurfaceType(level, level.getBlockState(floor), floor) != SurfaceType.WALKABLE)
+        {
+            return false;
+        }
+        return door || isFree(level, feet.above());
     }
 
     /**

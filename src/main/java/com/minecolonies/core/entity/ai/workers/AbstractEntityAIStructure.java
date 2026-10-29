@@ -1538,6 +1538,16 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             return;
         }
         trapCheckAt = now + 40L;
+        // shut in by the walls of his structure: he stands inside its box (anywhere else the unstuck ladder helps a worker who cannot move; a worker
+        // who walks to the site from his hut is not shut in, even if the search below misses the way: preview 20261029-3, a builder put back into
+        // his hut every few seconds on his walk to the town hall)
+        final BlockPos[] area = workArea();
+        if (area != null && (worker.getBlockX() < area[0].getX() - 1 || worker.getBlockX() > area[1].getX() + 1 || worker.getBlockZ() < area[0].getZ() - 1
+                               || worker.getBlockZ() > area[1].getZ() + 1))
+        {
+            trapStrikes = 0;
+            return;
+        }
         final BlockPos home = StandSpots.nearest(world, building.getPosition(), 8, 4, 4, null);
         // (only on the level of his hut: on a wall or in a pit he is not "shut in", that is for the unstuck ladder)
         if (home == null || Math.abs(worker.getBlockY() - home.getY()) > 1 || Math.abs(home.getX() - worker.getBlockX()) >= WALKABLE_RADIUS - 2

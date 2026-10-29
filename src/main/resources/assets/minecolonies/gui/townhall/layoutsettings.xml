@@ -72,4 +72,10 @@
         <button id="trigger" size="29 16" pos="120 0" label="$(com.minecolonies.coremod.gui.townhall.off)" color="black"
                      source="minecolonies:textures/gui/builderhut/builder_button_very_small.png"/>
     </view>
+
+    <view id="labourshafts" size="148 16" pos="270 220" tooltip="$(com.minecolonies.coremod.gui.townhall.labourshafts.tooltip)">
+        <text id="desc" label="$(com.minecolonies.coremod.gui.townhall.labourshafts)" pos="0 3" size="148 11" color="black"/>
+        <button id="trigger" size="29 16" pos="120 0" label="$(com.minecolonies.coremod.gui.townhall.off)" color="black"
+                     source="minecolonies:textures/gui/builderhut/builder_button_very_small.png"/>
+    </view>
 </window>

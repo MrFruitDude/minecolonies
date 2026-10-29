@@ -150,6 +150,7 @@ public final class LabourBoard
     private final LabourSites  sites;
     private final LabourCoverage coverage;
     private final DirectedOrders directed;
+    private final ShaftSites     shafts;
 
     private final Map<Integer, LabourClaim>      byCitizen = new LinkedHashMap<>();
     private final Map<IToken<?>, Integer>        delivered = new HashMap<>();
@@ -193,6 +194,7 @@ public final class LabourBoard
         this.sites = new LabourSites(colony);
         this.coverage = new LabourCoverage(colony);
         this.directed = new DirectedOrders(colony, this);
+        this.shafts = new ShaftSites(colony, this);
     }
 
     // ------------------------------------------------------------------ access
@@ -240,6 +242,14 @@ public final class LabourBoard
     public DirectedOrders directed()
     {
         return directed;
+    }
+
+    /**
+     * @return the colony's stone shafts: who digs where, the search for a spot, the managers' marks.
+     */
+    public ShaftSites shafts()
+    {
+        return shafts;
     }
 
     public Set<BlockPos> takenTrees()
@@ -429,6 +439,70 @@ public final class LabourBoard
         return true;
     }
 
+    // ------------------------------------------------------------------ stone shafts (r4)
+
+    /**
+     * A manager marks a spot for a stone shaft: the server checks the claim, the room, the ground and surveys it ({@link ShaftSites#mark}).
+     */
+    public ShaftSites.Marked markShaft(final BlockPos column, final int openedBy)
+    {
+        return shafts.mark(column, openedBy);
+    }
+
+    /**
+     * A manager closes a shaft (nobody digs there any more; a worker in it stops at his next look).
+     */
+    @Nullable
+    public LabourShafts.Refusal closeShaft(final int id)
+    {
+        return shafts.close(id);
+    }
+
+    /**
+     * A manager opens a closed shaft again (while the colony has room).
+     */
+    @Nullable
+    public LabourShafts.Refusal reopenShaft(final int id)
+    {
+        final LabourShafts.Refusal refusal = shafts.reopen(id);
+        if (refusal == null)
+        {
+            invalidate();
+        }
+        return refusal;
+    }
+
+    /**
+     * @return whether cobblestone is wanted from labour: a request waits for it (nobody covers it for the hut that asks), or the stock goal for it is below its start
+     *   (or still filling up to its target).
+     */
+    public boolean shaftDemand()
+    {
+        for (final Candidate candidate : candidates())
+        {
+            if (candidate.targets().contains(net.minecraft.world.item.Items.COBBLESTONE))
+            {
+                return true;
+            }
+        }
+        if (!LabourSettings.stockpile(colony) || sites.warehouses().isEmpty() || coverage.covered(net.minecraft.world.item.Items.COBBLESTONE))
+        {
+            return false;
+        }
+        for (final LabourDataListener.StockpileGoal goal : stockGoals())
+        {
+            if (LabourDataListener.matches(goal.item(), net.minecraft.world.item.Items.COBBLESTONE))
+            {
+                final int stock = stock(net.minecraft.world.item.Items.COBBLESTONE);
+                if (goalActive(goal, stock, goalActive.getOrDefault(goal.id(), false)))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     /**
      * A session took sites (trees, blocks, posts, items) for the claim: {@code free} gives them back when the claim is released, whoever releases it.
      */
@@ -598,7 +672,8 @@ public final class LabourBoard
             {
                 if (deliverable.matches(new ItemStack(item)))
                 {
-                    if (!coverage.covered(item))
+                    // (a good only the asking hut itself covers is not covered for its own request: a new miner's cobblestone)
+                    if (!coverage.coveredFor(item, hut))
                     {
                         targets.add(item);
                     }
@@ -615,7 +690,7 @@ public final class LabourBoard
                 final ItemStack wanted = com.minecolonies.core.util.DomumOrnamentumUtils.getRequestedStack(request);
                 if (LabourCutter.isCutterStack(wanted) && deliverable.matches(wanted))
                 {
-                    if (coverage.covered(wanted.getItem()))
+                    if (coverage.coveredFor(wanted.getItem(), hut))
                     {
                         coveredItem = wanted.getItem();
                         exact = wanted.copyWithCount(1);
@@ -913,6 +988,32 @@ public final class LabourBoard
     }
 
     /**
+     * r4: the citizen cannot plan cobblestone now (no room in the shafts, no pickaxe and no table or wood to make one), but the colony's shafts still have blocks left
+     * that somebody else digs, or that another jobless adult with a shaft pickaxe could dig: one who has no pickaxe must not keep the one who has one off the request.
+     */
+    private boolean shaftWorkForOthers(final ICitizenData citizen, final Candidate candidate)
+    {
+        if (!candidate.exact().isEmpty() || !candidate.targets().contains(net.minecraft.world.item.Items.COBBLESTONE)
+              || coverage.covered(net.minecraft.world.item.Items.COBBLESTONE) || !shafts.undugWork())
+        {
+            return false;
+        }
+        if (shafts.othersDigging(citizen.getId()))
+        {
+            return true;
+        }
+        for (final ICitizenData other : colony.getCitizenManager().getCitizens())
+        {
+            if (other.getId() != citizen.getId() && DirectedOrders.eligible(other) && directed.orderOf(other.getId()) == null
+                  && DirectedOrders.carries(other, LabourRules.SHAFT_TOOL))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * The builder's episode for his order ended (his session stopped): when he may go again.
      */
     public void selfSupplyEnded(final int orderId, final LabourSelfSupply.Outcome outcome)
@@ -937,6 +1038,7 @@ public final class LabourBoard
     public LabourClaim tryClaim(final ICitizenData citizen, final Candidate candidate, final LabourClaim.Source source, final LabourEnv env, final Map<Item, Integer> inventory,
       final long now)
     {
+        final LabourEnv forHut = env.forRequester(candidate.hut());
         int others = 0;
         for (final LabourClaim claim : byCitizen.values())
         {
@@ -955,7 +1057,7 @@ public final class LabourBoard
         LabourPlanner.Why why = LabourPlanner.Why.NO_RECIPE;
         if (!candidate.exact().isEmpty())
         {
-            final LabourPlanner.Result<Item> result = planCut(env, candidate.exact(), lot, 0, inventory);
+            final LabourPlanner.Result<Item> result = planCut(forHut, candidate.exact(), lot, 0, inventory);
             if (result instanceof LabourPlanner.Blocked<Item> blocked)
             {
                 why = blocked.why();
@@ -967,7 +1069,7 @@ public final class LabourBoard
         }
         for (final Item item : candidate.exact().isEmpty() ? candidate.targets() : List.<Item>of())
         {
-            final LabourPlanner.Result<Item> result = LabourPlanner.next(env, item, lot, inventory);
+            final LabourPlanner.Result<Item> result = LabourPlanner.next(forHut, item, lot, inventory);
             if (result instanceof LabourPlanner.Blocked<Item> blocked)
             {
                 if (chosen == null)
@@ -981,12 +1083,17 @@ public final class LabourBoard
         }
         if (chosen == null)
         {
+            if (shaftWorkForOthers(citizen, candidate))
+            {
+                // (what he lacks is his own, not the request's: no back-off, the next labourer is asked)
+                return null;
+            }
             blocked(candidate.token(), why);
             return null;
         }
         final LabourClaim claim = new LabourClaim(source, candidate.token(), null, citizen.getId(), chosen, lot, candidate.hut(), now, now + LabourSettings.leaseTicks(), 0,
           candidate.exact());
-        if (coverage.covered(chosen))
+        if (coverage.coveredFor(chosen, candidate.hut()))
         {
             LabourStats.CLAIMS_ON_COVERED.incrementAndGet();
         }
@@ -1529,6 +1636,7 @@ public final class LabourBoard
     {
         final long now = now();
         directed.tick();
+        shafts.tick();
         if (!colony.getLabourData().hutDebts().isEmpty() && (now - lastDebtSweep >= 100L || now < lastDebtSweep))
         {
             lastDebtSweep = now;
@@ -1624,6 +1732,7 @@ public final class LabourBoard
             cooldown.values().removeIf(until -> until < now);
             noOffer.values().removeIf(until -> until < now);
             selfSupply.sweep(now);
+            shafts.sweep(byCitizen::containsKey);
         }
     }
 }

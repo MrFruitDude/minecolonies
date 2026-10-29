@@ -87,36 +87,78 @@ public final class LabourCoverage
         return entry.raw || now < entry.coveredUntil;
     }
 
+    /**
+     * {@link #covered} for a request of the hut at {@code requester}: a good that only the requesting hut itself covers is not covered for its own request. A specialist
+     * waiting for its first materials does not make them yet (a new miner asks for cobblestone for his ladder shaft before he digs any); labour may bring them. Any
+     * other building that covers the good keeps it covered, and so does the grace.
+     *
+     * @param requester the requesting hut, or null for none.
+     */
+    public boolean coveredFor(final Item item, @org.jetbrains.annotations.Nullable final net.minecraft.core.BlockPos requester)
+    {
+        if (!covered(item) || requester == null)
+        {
+            return covered(item);
+        }
+        final IBuilding hut = colony.getServerBuildingManager().getBuilding(requester);
+        if (hut == null || !covers(hut, item, gatherersOf(item), LabourSettings.coverageMode() == LabourModes.CoverageMode.STAFFED))
+        {
+            return true;
+        }
+        return raw(item, hut);
+    }
+
     private boolean raw(final Item item)
     {
-        final boolean staffed = LabourSettings.coverageMode() == LabourModes.CoverageMode.STAFFED;
-        final ItemStack probe = new ItemStack(item);
-        List<String> gatherers = List.of();
+        return raw(item, null);
+    }
+
+    private static List<String> gatherersOf(final Item item)
+    {
         for (final Map.Entry<String, List<String>> entry : LabourDataListener.coverage().entrySet())
         {
             if (LabourDataListener.matches(entry.getKey(), item))
             {
-                gatherers = entry.getValue();
-                break;
+                return entry.getValue();
             }
         }
+        return List.of();
+    }
+
+    /**
+     * @return whether a building of the colony other than {@code except} covers the item now.
+     */
+    private boolean raw(final Item item, @org.jetbrains.annotations.Nullable final IBuilding except)
+    {
+        final boolean staffed = LabourSettings.coverageMode() == LabourModes.CoverageMode.STAFFED;
+        final List<String> gatherers = gatherersOf(item);
         for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
         {
-            if (building.getBuildingLevel() <= 0)
-            {
-                continue;
-            }
-            if (!gatherers.isEmpty() && gatherers.contains(building.getBuildingType().getRegistryName().toString())
-                  && (!staffed || hasWorker(building, null)))
+            if (building != except && covers(building, item, gatherers, staffed))
             {
                 return true;
             }
-            for (final ICraftingBuildingModule module : building.getModulesByType(ICraftingBuildingModule.class))
+        }
+        return false;
+    }
+
+    private static boolean covers(final IBuilding building, final Item item, final List<String> gatherers, final boolean staffed)
+    {
+        if (building.getBuildingLevel() <= 0)
+        {
+            return false;
+        }
+        if (!gatherers.isEmpty() && gatherers.contains(building.getBuildingType().getRegistryName().toString())
+              && (!staffed || hasWorker(building, null)))
+        {
+            return true;
+        }
+        final ItemStack probe = new ItemStack(item);
+        for (final ICraftingBuildingModule module : building.getModulesByType(ICraftingBuildingModule.class))
+        {
+            if (module.getFirstRecipe(stack -> stack.is(probe.getItem())) != null && (!staffed || hasWorker(building, module)))
             {
-                if (module.getFirstRecipe(stack -> stack.is(probe.getItem())) != null && (!staffed || hasWorker(building, module)))
-                {
-                    return true;
-                }
+                return true;
             }
         }
         return false;
