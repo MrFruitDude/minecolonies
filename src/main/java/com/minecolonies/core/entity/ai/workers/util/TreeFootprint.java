@@ -614,10 +614,28 @@ public final class TreeFootprint
             return false;
         }
 
+        // The top of the trunk column: a tall tree with a bare trunk (a mega jungle, 4 logs a layer and leaves only on the upper half) has no leaves
+        // within the flood budget from the base, so the flood starts from both ends.
+        BlockPos top = bottom;
+        for (int i = 0; i < MAX_TRUNK_WALK; i++)
+        {
+            final BlockPos above = top.above();
+            final BlockState aboveState = world.getBlockState(above);
+            if (!isTreeBlock(aboveState) || !sameFamily(fam, family(world, above, aboveState, false)))
+            {
+                break;
+            }
+            top = above;
+        }
+
         final Set<BlockPos> seen = new HashSet<>();
         final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
         queue.add(bottom);
         seen.add(bottom);
+        if (seen.add(top))
+        {
+            queue.add(top);
+        }
         int logs = 0;
         int leaves = 0;
         boolean askedLeaf = false;

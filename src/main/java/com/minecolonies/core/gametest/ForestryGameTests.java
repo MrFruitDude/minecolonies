@@ -51,12 +51,14 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -913,18 +915,30 @@ public final class ForestryGameTests
     }
 
     /**
-     * Chop the grown oak twice through TreeChop as a player would, so it is half chopped.
+     * One chop of the grown oak through TreeChop as a player would, with TreeChop on for the chop. A player chops at most once per game tick (TreeChop's
+     * recursion guard cancels a second chop in the same tick), so the half chop is two chops on two ticks, and each test has its own player: the
+     * tests of a batch start in the same tick.
      */
-    private static void halfChop(final GameTestHelper helper, final Grown oak)
+    private static void halfChop(final GameTestHelper helper, final String name, final Grown oak, final boolean last)
     {
         final ServerLevel level = helper.getLevel();
+        final UUID player = UUID.nameUUIDFromBytes(("half chop " + name).getBytes(StandardCharsets.UTF_8));
         final BlockPos base = oak.stumps().get(0);
-        for (int i = 0; i < 2; i++)
+        final boolean enabled = Compatibility.treeChop.setEnabled(true);
+        final TreeChopProxy.ChopOutcome outcome;
+        try
         {
-            final TreeChopProxy.ChopOutcome outcome = Compatibility.treeChop.chop(level, base, Vec3.atCenterOf(base.north(2)), new ItemStack(Items.IRON_AXE), 1);
-            helper.assertTrue(outcome == TreeChopProxy.ChopOutcome.CHOPPED, "the half chop gave " + outcome);
+            outcome = Compatibility.treeChop.chop(level, base, player, Vec3.atCenterOf(base.north(2)), new ItemStack(Items.IRON_AXE), 1);
         }
-        helper.assertTrue(anyChoppedLog(level, oak.box()), "no chopped log after the half chop");
+        finally
+        {
+            Compatibility.treeChop.setEnabled(enabled);
+        }
+        helper.assertTrue(outcome == TreeChopProxy.ChopOutcome.CHOPPED, "the half chop gave " + outcome);
+        if (last)
+        {
+            helper.assertTrue(anyChoppedLog(level, oak.box()), "no chopped log after the half chop");
+        }
     }
 
     /**
@@ -975,9 +989,8 @@ public final class ForestryGameTests
         final Grown oak = grow(helper, new TreeSpec("oak", new BlockPos(22, 1, 18), false, Blocks.OAK_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.OAK, s -> s.is(Blocks.OAK_SAPLING)), 71L);
         if (halfChopped)
         {
-            final boolean enabled = Compatibility.treeChop.setEnabled(true);
-            halfChop(helper, oak);
-            Compatibility.treeChop.setEnabled(enabled);
+            halfChop(helper, name, oak, false);
+            helper.runAfterDelay(1, () -> halfChop(helper, name, oak, true));
         }
 
         helper.runAfterDelay(20, () -> {

@@ -56,10 +56,12 @@ import net.neoforged.neoforge.common.Tags;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 import static com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState.*;
 import static com.minecolonies.api.items.ModTags.fungi;
@@ -939,7 +941,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         if (!mineBlock(target, workFrom, false, false, () -> {
             final BlockState state = world.getBlockState(target);
             final ItemStack copy = worker.getMainHandItem().copy();
-            caught.addAll(DropCapture.capture(world, box, () -> outcome[0] = Compatibility.treeChop.chop((ServerLevel) world, target, worker.position(), copy, treeChopChops)));
+            caught.addAll(DropCapture.capture(world, box, () -> outcome[0] = Compatibility.treeChop.chop((ServerLevel) world, target, treeChopAgentId(), worker.position(), copy, treeChopChops)));
             if (outcome[0] == TreeChopProxy.ChopOutcome.CHOPPED || outcome[0] == TreeChopProxy.ChopOutcome.FELLED)
             {
                 // TreeChop wore the copy; the real axe wears by MineColonies' rule, once per chop
@@ -965,6 +967,15 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
         worker.decreaseSaturationForContinuousAction();
         return getState();
+    }
+
+    /**
+     * Forestry: the id of this Forester's TreeChop agent, stable over restarts and respawns. TreeChop takes one chop per player and game tick, so each
+     * Forester chops as his own player.
+     */
+    private UUID treeChopAgentId()
+    {
+        return UUID.nameUUIDFromBytes(("minecolonies_lumberjack:" + building.getColony().getID() + ":" + worker.getCitizenData().getId()).getBytes(StandardCharsets.UTF_8));
     }
 
     @Override

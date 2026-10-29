@@ -9,6 +9,8 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.UUID;
+
 /**
  * The TreeChop compatibility for when TreeChop is not present. It names no TreeChop type, so this class loads without the mod; {@link TreeChopCompat} replaces
  * it when the mod is loaded.
@@ -116,13 +118,20 @@ public class TreeChopProxy
      *
      * @param level    the level.
      * @param pos      the log to chop.
+     * @param agentId  the fake player's id, one per agent: TreeChop takes one chop per player and game tick.
      * @param agentPos where the fake player stands.
      * @param tool     a copy of the citizen's axe.
      * @param numChops the chops of this action.
      * @return what happened.
      */
     @NotNull
-    public ChopOutcome chop(@NotNull final ServerLevel level, @NotNull final BlockPos pos, @NotNull final Vec3 agentPos, @NotNull final ItemStack tool, final int numChops)
+    public ChopOutcome chop(
+      @NotNull final ServerLevel level,
+      @NotNull final BlockPos pos,
+      @NotNull final UUID agentId,
+      @NotNull final Vec3 agentPos,
+      @NotNull final ItemStack tool,
+      final int numChops)
     {
         return ChopOutcome.IGNORED;
     }

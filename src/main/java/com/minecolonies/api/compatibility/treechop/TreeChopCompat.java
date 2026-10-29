@@ -26,16 +26,17 @@ import java.util.UUID;
 /**
  * Lets a Forester chop through TreeChop. Only created when TreeChop is loaded ({@code CompatibilityManager}); every TreeChop type stays inside method bodies.
  * <p>
- * Citizens break blocks without a break event, so TreeChop never sees them. Here a server-side fake player (fixed id, never in the player list) calls
- * TreeChop's chop with the server config: tree size, leaves strategy, the correct tool rule and the item list apply as for a player. The fake player holds a
+ * Citizens break blocks without a break event, so TreeChop never sees them. Here a server-side fake player (one per Forester, never in the player
+ * list) calls TreeChop's chop with the server config: tree size, leaves strategy, the correct tool rule and the item list apply as for a player. The fake player holds a
  * copy of the citizen's axe; TreeChop's wear lands on the copy, and the caller wears the real axe with MineColonies' own rule.
  */
 public final class TreeChopCompat extends TreeChopProxy
 {
     /**
-     * The fake player's fixed identity, so it is the same agent after a restart.
+     * The fake players' name. Each Forester has his own id: TreeChop's chop recursion guard ({@code preventChopRecursion}, on by default) cancels a
+     * second chop of the same player in one game tick, so two Foresters chopping in the same tick as one shared player would lose a chop.
      */
-    private static final GameProfile PROFILE = new GameProfile(UUID.fromString("6d696e65-636f-4c6f-9e69-6c756d626572"), "minecolonies_lumberjack");
+    private static final String AGENT_NAME = "minecolonies_lumberjack";
 
     /**
      * Chops per action never exceed one and a half per log.
@@ -118,7 +119,13 @@ public final class TreeChopCompat extends TreeChopProxy
 
     @NotNull
     @Override
-    public ChopOutcome chop(@NotNull final ServerLevel level, @NotNull final BlockPos pos, @NotNull final Vec3 agentPos, @NotNull final ItemStack tool, final int numChops)
+    public ChopOutcome chop(
+      @NotNull final ServerLevel level,
+      @NotNull final BlockPos pos,
+      @NotNull final UUID agentId,
+      @NotNull final Vec3 agentPos,
+      @NotNull final ItemStack tool,
+      final int numChops)
     {
         final BlockState state = level.getBlockState(pos);
         if (!isEnabled() || !ChopUtil.isBlockChoppable(level, pos, state))
@@ -136,7 +143,7 @@ public final class TreeChopCompat extends TreeChopProxy
             }
         }
 
-        final FakePlayer agent = FakePlayerFactory.get(level, PROFILE);
+        final FakePlayer agent = FakePlayerFactory.get(level, new GameProfile(agentId, AGENT_NAME));
         agent.setPos(agentPos.x, agentPos.y, agentPos.z);
         agent.setItemInHand(InteractionHand.MAIN_HAND, tool);
         final int damage = tool.getDamageValue();
