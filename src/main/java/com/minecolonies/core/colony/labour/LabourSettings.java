@@ -34,8 +34,9 @@ public final class LabourSettings
     /**
      * Only for tests: forces a value ({@code enabled}, {@code share}, {@code total}, {@code perRequest}, {@code stockpile}, {@code selfSupply}, {@code postMode},
      * {@code coverageMode}, {@code smelt}, {@code pocket}, {@code workScale}, {@code keepTrees}, {@code leaseTicks}, {@code coverageGrace}, {@code graceTicks},
-     * {@code supplyMaxTicks}, {@code worldMax}, {@code early}, {@code earlyGraceTicks}, {@code earlyAll}, {@code quarryDepth}). Null removes the
-     * override.
+     * {@code supplyMaxTicks}, {@code worldMax}, {@code early}, {@code earlyGraceTicks}, {@code earlyAll}, {@code quarryDepth}; the shafts': {@code shafts},
+     * {@code colonyShafts}, {@code shaftsMax}, {@code shaftCooldownTicks}, {@code shaftLaps}, {@code shaftGallery}, {@code shaftWorkers}, {@code shaftRadius},
+     * {@code shaftSpacing}, {@code shaftMinerClearance}, {@code shaftMinY}). Null removes the override.
      */
     public static void override(final String key, final Object value)
     {
@@ -351,6 +352,97 @@ public final class LabourSettings
     public static int quarryDepth()
     {
         return config(c -> c.labourersQuarryDepth.get(), 8, "quarryDepth");
+    }
+
+    // ------------------------------------------------------------------ stone shafts (r4)
+
+    /**
+     * @return whether labour digs stone shafts in this world at all (the colony setting {@link #shafts(IColony)} says whether it opens them by itself).
+     */
+    public static boolean shaftsEnabled()
+    {
+        return config(c -> c.labourersShafts.get(), true, "shafts");
+    }
+
+    /**
+     * @return the most shafts of one colony that are not closed.
+     */
+    public static int shaftsMax()
+    {
+        return Math.max(1, Math.min(16, config(c -> c.labourersShaftsMax.get(), 6, "shaftsMax")));
+    }
+
+    /**
+     * @return the least time between two shafts labour opens by itself (a marked spot does not wait).
+     */
+    public static long shaftCooldownTicks()
+    {
+        return Math.max(0, config(c -> c.labourersShaftCooldownTicks.get(), 24000, "shaftCooldownTicks"));
+    }
+
+    /**
+     * @return the well's depth in laps of 8 blocks (the config gives blocks).
+     */
+    public static int shaftLaps()
+    {
+        final Object forced = OVERRIDES.get("shaftLaps");
+        if (forced instanceof Number n)
+        {
+            return Math.max(1, Math.min(6, n.intValue()));
+        }
+        return Math.max(1, Math.min(6, config(c -> c.labourersShaftDepth.get(), 32, "shaftDepth") / ShaftPlan.LAP_DEPTH));
+    }
+
+    public static int shaftGalleryLength()
+    {
+        return Math.max(0, Math.min(32, config(c -> c.labourersShaftGalleryLength.get(), 24, "shaftGallery")));
+    }
+
+    /**
+     * @return the most workers on one shaft at once.
+     */
+    public static int shaftWorkers()
+    {
+        return Math.max(1, Math.min(4, config(c -> c.labourersShaftWorkers.get(), 2, "shaftWorkers")));
+    }
+
+    /**
+     * @return how far from the warehouse (or the town hall) labour looks for a shaft spot.
+     */
+    public static int shaftRadius()
+    {
+        return Math.max(16, Math.min(96, config(c -> c.labourersShaftRadius.get(), 48, "shaftRadius")));
+    }
+
+    public static int shaftSpacing()
+    {
+        return Math.max(6, config(c -> c.labourersShaftSpacing.get(), 16, "shaftSpacing"));
+    }
+
+    public static int shaftMinerClearance()
+    {
+        return Math.max(0, config(c -> c.labourersShaftMinerClearance.get(), 48, "shaftMinerClearance"));
+    }
+
+    /**
+     * @return the lowest y a shaft digs (the well stops a lap early above it).
+     */
+    public static int shaftMinY()
+    {
+        return config(c -> c.labourersShaftMinY.get(), 8, "shaftMinY");
+    }
+
+    /**
+     * @return whether the colony's labourers open shafts by themselves (world switch, then the colony setting; a marked spot is dug either way).
+     */
+    public static boolean shafts(final IColony colony)
+    {
+        if (!shaftsEnabled())
+        {
+            return false;
+        }
+        final Object forced = OVERRIDES.get("colonyShafts");
+        return forced instanceof Boolean b ? b : colonyBool(colony, BuildingTownHall.LABOUR_SHAFTS, true);
     }
 
     public static int supplyMaxTicks()

@@ -120,7 +120,11 @@ public final class LabourPlanner<K>
         /**
          * Strip the logs of a natural tree with an axe (the axe's own block transformer), then fell them: stripped logs of the tree's species.
          */
-        STRIP
+        STRIP,
+        /**
+         * Dig in one of the colony's stone shafts (needs a wood or stone pickaxe): cobblestone (appended: the order of the others is kept).
+         */
+        SHAFT
     }
 
     /**

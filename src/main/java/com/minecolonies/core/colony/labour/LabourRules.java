@@ -46,6 +46,13 @@ public final class LabourRules
     public static final TagKey<Item>  BASIC_WOOD     = item("labour/basic_wood");
     public static final TagKey<Item>  STRIP_RESULTS  = item("labour/strip_results");
     public static final TagKey<Item>  CUTTER_INPUTS  = item("labour/cutter_inputs");
+    /** Stone shafts: the ground a shaft may be dug in and through (its survey and every fresh look), the ores in it, the pickaxes labour digs it with, what goes to a warehouse. */
+    public static final TagKey<Block> SHAFT_NATURAL  = block("labour/shaft_natural");
+    public static final TagKey<Block> SHAFT_ORES     = block("labour/shaft_ores");
+    public static final TagKey<Item>  SHAFT_PICKAXES = item("labour/shaft_pickaxes");
+    public static final TagKey<Item>  SHAFT_FINDS    = item("labour/shaft_finds");
+    /** The tool kind of shaft work: a pickaxe of {@link #SHAFT_PICKAXES} only (wood or stone; an iron one is a specialist's). */
+    public static final String SHAFT_TOOL = "basic_pickaxe";
     public static final TagKey<Item>  STRIPPED_LOGS  = TagKey.create(Registries.ITEM, Identifier.fromNamespaceAndPath("c", "stripped_logs"));
     public static final TagKey<Block> STRIPPED_LOG_BLOCKS  = TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath("c", "stripped_logs"));
     public static final TagKey<Block> STRIPPED_WOOD_BLOCKS = TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath("c", "stripped_woods"));
@@ -236,6 +243,7 @@ public final class LabourRules
         return switch (tool)
         {
             case "pickaxe" -> stack.is(ItemTags.PICKAXES);
+            case SHAFT_TOOL -> stack.is(ItemTags.PICKAXES) && stack.is(SHAFT_PICKAXES);
             case "axe" -> stack.is(ItemTags.AXES);
             case "shovel" -> stack.is(ItemTags.SHOVELS);
             default -> false;
@@ -253,6 +261,30 @@ public final class LabourRules
             case "shovel" -> Items.WOODEN_SHOVEL;
             default -> Items.WOODEN_PICKAXE;
         };
+    }
+
+    /**
+     * @return whether a shaft may be dug in or next to the block: natural ground or a plain ore ({@code labour/shaft_natural}).
+     */
+    public static boolean shaftNatural(final BlockState state)
+    {
+        return state.is(SHAFT_NATURAL);
+    }
+
+    /**
+     * @return whether the block is an ore of a shaft ({@code labour/shaft_ores}).
+     */
+    public static boolean shaftOre(final BlockState state)
+    {
+        return state.is(SHAFT_ORES);
+    }
+
+    /**
+     * @return whether a labourer brings the stack he dug in a shaft to a warehouse ({@code labour/shaft_finds}).
+     */
+    public static boolean shaftFind(final ItemStack stack)
+    {
+        return stack.is(SHAFT_FINDS);
     }
 
     /**

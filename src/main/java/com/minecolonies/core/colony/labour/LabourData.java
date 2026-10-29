@@ -11,8 +11,8 @@ import java.util.Map;
 
 /**
  * What the colony remembers about its labourers (saved with the colony): the flags the managers put on crafting tables and furnaces, the managers' directed
- * gathering orders ({@link DirectedOrder}), their quarry zones ({@link QuarryZones}) and the hut items the colony owes ({@link HutDebts}); a save without them reads as
- * none.
+ * gathering orders ({@link DirectedOrder}), their quarry zones ({@link QuarryZones}), the hut items the colony owes ({@link HutDebts}) and the stone shafts
+ * ({@link LabourShafts}); a save without them reads as none.
  * <ul>
  *   <li>{@link TableFlag#EXCLUDE}: labourers never use the table (a decorative one in a house);</li>
  *   <li>{@link TableFlag#PREFER}: labourers use it first (and, in the {@code MARKED} post mode, only these).</li>
@@ -31,6 +31,7 @@ public final class LabourData
     private static final String TAG_PLACED_FULL = "placedFull";
     private static final String TAG_QUARRIES    = "quarries";
     private static final String TAG_HUT_DEBTS   = "hutDebts";
+    private static final String TAG_SHAFTS      = "shafts";
 
     /**
      * What a manager says about a table or furnace.
@@ -56,6 +57,17 @@ public final class LabourData
 
     /** The hut items the colony owes for huts placed on credit (absent in older saves: none). */
     private final HutDebts hutDebts = new HutDebts();
+
+    /** The colony's stone shafts (absent in older saves: none). */
+    private final LabourShafts shafts = new LabourShafts();
+
+    /**
+     * @return the stone shafts (the live record; {@link ShaftSites} changes it).
+     */
+    public LabourShafts shafts()
+    {
+        return shafts;
+    }
 
     /**
      * @return the quarry zones (the live record; {@link LabourBoard} changes it).
@@ -176,6 +188,10 @@ public final class LabourData
         {
             tag.put(TAG_HUT_DEBTS, hutDebts.write());
         }
+        if (shafts.used())
+        {
+            tag.put(TAG_SHAFTS, shafts.write());
+        }
         return tag;
     }
 
@@ -212,5 +228,6 @@ public final class LabourData
         placements.read(tag.getLongArray(TAG_PLACED).orElse(new long[0]), tag.getBooleanOr(TAG_PLACED_FULL, false));
         quarries.read(tag.getCompoundOrEmpty(TAG_QUARRIES));
         hutDebts.read(tag.getCompoundOrEmpty(TAG_HUT_DEBTS));
+        shafts.read(tag.getCompoundOrEmpty(TAG_SHAFTS));
     }
 }

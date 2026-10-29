@@ -502,7 +502,23 @@ public final class LabourSites
         return !protectedNow(pos);
     }
 
-    private static boolean loadedNow(final ServerLevel level, final BlockPos pos)
+    /**
+     * Stone shafts: whether a building's box, a work order's or a finished decoration's (the cached ones, {@link #protectedBlock}) comes within {@code margin} blocks of the
+     * rectangle's columns, at any height.
+     */
+    public boolean nearProtected(final int minX, final int minZ, final int maxX, final int maxZ, final int margin)
+    {
+        for (final BoundingBox box : buildingBoxes())
+        {
+            if (box.minX() - margin <= maxX && minX <= box.maxX() + margin && box.minZ() - margin <= maxZ && minZ <= box.maxZ() + margin)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static boolean loadedNow(final ServerLevel level, final BlockPos pos)
     {
         return level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) != null;
     }
@@ -1130,7 +1146,7 @@ public final class LabourSites
     /**
      * @return whether the four sides of the block lie in loaded chunks (a look at them must not load one).
      */
-    private static boolean sidesLoaded(final ServerLevel level, final BlockPos pos)
+    static boolean sidesLoaded(final ServerLevel level, final BlockPos pos)
     {
         for (final net.minecraft.core.Direction direction : net.minecraft.core.Direction.Plane.HORIZONTAL)
         {

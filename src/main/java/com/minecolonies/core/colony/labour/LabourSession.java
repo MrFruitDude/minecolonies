@@ -18,6 +18,7 @@ import com.minecolonies.core.util.ItemMover;
 import com.minecolonies.core.util.WorkerUtil;
 import com.minecolonies.core.util.citizenutils.CitizenItemUtils;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
@@ -97,6 +98,9 @@ public final class LabourSession implements IIdleTaskSession
     /** The block the top block was when he chose it (another block there is not his to dig). */
     private net.minecraft.world.level.block.Block blockChosen;
     private int                  looseId = -1;
+    /** r4: his place in a stone shaft while he digs there, or null. */
+    @Nullable
+    private ShaftSites.Assignment shaftAt;
     private long                 workUntil;
     private long                 lastSwing;
 
@@ -282,6 +286,10 @@ public final class LabourSession implements IIdleTaskSession
             case DELIVER, UNLOAD, END -> "com.minecolonies.coremod.labour.task.deliver";
             default -> "com.minecolonies.coremod.labour.task.plan";
         };
+        if (phase == Phase.GATHER && shaftAt != null)
+        {
+            return Component.translatable("com.minecolonies.coremod.labour.task.shaft", claim.amount(), what, shaftAt.shaft().id);
+        }
         if (claim.source() == LabourClaim.Source.SELF)
         {
             return Component.translatable("com.minecolonies.coremod.labour.task.builder", claim.amount(), what);
@@ -327,6 +335,11 @@ public final class LabourSession implements IIdleTaskSession
         {
             board.takenEntities().remove(looseId);
             looseId = -1;
+        }
+        if (shaftAt != null)
+        {
+            board.shafts().release(citizen.getId());
+            shaftAt = null;
         }
         releasePost();
     }
@@ -479,13 +492,19 @@ public final class LabourSession implements IIdleTaskSession
             thinkTool(now);
             return;
         }
-        if (++thinks > MAX_THINKS || board.coverage().covered(claim.target()))
+        // (a request of the hut that alone covers the good, a new miner's own cobblestone, is not covered for it)
+        final BlockPos requester = claim.source() == LabourClaim.Source.REQUEST || claim.source() == LabourClaim.Source.SELF ? claim.destination() : null;
+        if (++thinks > MAX_THINKS || board.coverage().coveredFor(claim.target(), requester))
         {
             end(false);
             return;
         }
-        final LabourEnv env = new LabourEnv(colony, board, claim.source() != LabourClaim.Source.STOCKPILE);
+        final LabourEnv env = new LabourEnv(colony, board, claim.source() != LabourClaim.Source.STOCKPILE, requester).forCitizen(citizen.getId());
         final boolean cutting = !claim.exact().isEmpty();
+        if (!cutting && shaftToolFromStock(env, now))
+        {
+            return;
+        }
         final int held = cutting ? countClaimed() : 0;
         final LabourPlanner.Result<Item> result = cutting ? board.planCut(env, claim.exact(), claim.amount(), held, materialsOf(citizen, claim))
                                                     : LabourPlanner.next(env, claim.target(), claim.amount(), inventoryOf(citizen));
@@ -654,6 +673,7 @@ public final class LabourSession implements IIdleTaskSession
             case STRIP -> gatherLog(worker, level, item, now, true);
             case SURFACE, STONE -> gatherBlock(worker, level, g, now);
             case LOOSE -> gatherLoose(worker, level, item, now);
+            case SHAFT -> gatherShaft(worker, level, now);
         }
     }
 
@@ -913,6 +933,204 @@ public final class LabourSession implements IIdleTaskSession
         block = null;
         blockChosen = null;
         workUntil = 0L;
+    }
+
+    // ------------------------------------------------------------------ stone shafts (r4)
+
+    /**
+     * Digs in one of the colony's stone shafts ({@link ShaftSites}): the next undone block of the segment he holds (the well or a gallery), nearest shaft first, with a
+     * wood or stone pickaxe only. Before a block breaks it is looked at once more with its neighbours ({@link ShaftSites#check}); a block next to unknown air, water, a
+     * placed block or another claim stays, and the rest of its segment is left. Torches go up on their spots before the work goes deeper; a hostile close by sends him
+     * out. Ores his pickaxe takes are mined (their drops go to a warehouse with the other finds); an ore it cannot take stops the tunnel.
+     */
+    private void gatherShaft(final AbstractEntityCitizen worker, final ServerLevel level, final long now)
+    {
+        final ShaftSites sites = board.shafts();
+        for (int tries = 0; tries < 3; tries++)
+        {
+            if (shaftAt == null)
+            {
+                shaftAt = sites.assign(citizen.getId(), worker.blockPosition());
+                workUntil = 0L;
+                if (shaftAt == null)
+                {
+                    failed(LabourPlanner.Why.NO_SITE);
+                    end(false);
+                    return;
+                }
+            }
+            final ShaftSites.Step step = sites.next(shaftAt);
+            if (step instanceof ShaftSites.Done || step instanceof ShaftSites.Ended)
+            {
+                // (the segment is dug out or left: the next one)
+                sites.release(citizen.getId());
+                shaftAt = null;
+                continue;
+            }
+            if (step instanceof ShaftSites.Wait)
+            {
+                sites.release(citizen.getId());
+                shaftAt = null;
+                failed(LabourPlanner.Why.NO_SITE);
+                end(false);
+                return;
+            }
+            if (step instanceof ShaftSites.Light light)
+            {
+                lightShaft(worker, level, light.torch(), now);
+                return;
+            }
+            digShaft(worker, level, (ShaftSites.Dig) step, now);
+            return;
+        }
+    }
+
+    private void digShaft(final AbstractEntityCitizen worker, final ServerLevel level, final ShaftSites.Dig dig, final long now)
+    {
+        final ShaftSites sites = board.shafts();
+        final ShaftSites.Assignment at = shaftAt;
+        if (sites.hostileNear(dig.pos()) || sites.hostileNear(worker.blockPosition()))
+        {
+            LabourStats.log("citizen {} leaves shaft {}: a hostile is near", citizen.getId(), at.shaft().id);
+            sites.release(citizen.getId());
+            shaftAt = null;
+            failed(LabourPlanner.Why.NO_SITE);
+            end(false);
+            return;
+        }
+        final BlockState state = level.getBlockState(dig.pos());
+        final int toolSlot = bestToolSlot(state, LabourRules.SHAFT_TOOL);
+        if (toolSlot < 0)
+        {
+            if (LabourRules.shaftOre(state) && hasShaftPickaxe())
+            {
+                // his pickaxe cannot take this ore: the tunnel stops at it
+                LabourStats.log("citizen {} meets {} in shaft {}: his pickaxe cannot take it", citizen.getId(), state.getBlock(), at.shaft().id);
+                sites.oreFace(at.shaft(), at.segment(), dig.pos(), state);
+                shaftAt = null;
+                return;
+            }
+            // (the pickaxe broke or is gone: the planner gets him one first)
+            cleanup();
+            go(Phase.THINK, now);
+            return;
+        }
+        if (!EntityNavigationUtils.walkToPos(worker, dig.pos(), 2, true))
+        {
+            return;
+        }
+        final int broken = breakWork(worker, level, dig.pos(), toolSlot, now,
+          pos -> at.shaft().state() == LabourShafts.State.OPEN && sites.check(at.shaft(), pos) == ShaftSites.Safety.OK);
+        if (broken == REFUSED)
+        {
+            if (sites.check(at.shaft(), dig.pos()) == ShaftSites.Safety.END)
+            {
+                sites.end(at.shaft(), at.segment(), dig.pos());
+            }
+            sites.release(citizen.getId());
+            shaftAt = null;
+            workUntil = 0L;
+            return;
+        }
+        if (broken == DONE)
+        {
+            if (LabourRules.shaftOre(state))
+            {
+                sites.found(at.shaft(), dig.pos(), BuiltInRegistries.ITEM.getKey(state.getBlock().asItem()).toString(), true);
+            }
+            sites.dugOne(at.shaft(), at.segment(), dig.index());
+            board.heartbeat(claim);
+        }
+    }
+
+    /**
+     * r4: cobblestone from a shaft needs a wood or stone pickaxe; one in the warehouse's free stock is taken before one is made (an iron one stays for the specialists).
+     *
+     * @return true when he goes to take one.
+     */
+    private boolean shaftToolFromStock(final LabourEnv env, final long now)
+    {
+        if (claim.target() != net.minecraft.world.item.Items.COBBLESTONE || count(claim.target()) >= claim.amount() || hasShaftPickaxe()
+              || board.sites().hasSurface(net.minecraft.world.item.Items.COBBLESTONE)
+              || !env.canGather(new LabourPlanner.GatherDef<>(LabourPlanner.GatherKind.SHAFT, net.minecraft.world.item.Items.COBBLESTONE, LabourRules.SHAFT_TOOL)))
+        {
+            return false;
+        }
+        final Item stocked = stockedTool(board, LabourRules.SHAFT_TOOL);
+        if (stocked == null)
+        {
+            return false;
+        }
+        perform(new LabourPlanner.Withdraw<>(stocked, 1), now);
+        return true;
+    }
+
+    private boolean hasShaftPickaxe()
+    {
+        final var inventory = citizen.getInventory();
+        for (int slot = 0; slot < inventory.getSlots(); slot++)
+        {
+            if (LabourRules.isTool(LabourRules.SHAFT_TOOL, inventory.getStackInSlot(slot).getItem()))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Puts a torch on its spot in the shaft: one he carries; else he makes some from coal or charcoal and a stick in his pockets, or takes some out of the warehouse's
+     * free stock. Without any the shaft is left alone a while and says it needs torches.
+     */
+    private void lightShaft(final AbstractEntityCitizen worker, final ServerLevel level, final ShaftPlan.Torch torch, final long now)
+    {
+        final ShaftSites sites = board.shafts();
+        if (count(net.minecraft.world.item.Items.TORCH) <= 0)
+        {
+            if (LabourSettings.pocketCrafting() && count(net.minecraft.world.item.Items.STICK) > 0
+                  && (count(net.minecraft.world.item.Items.COAL) > 0 || count(net.minecraft.world.item.Items.CHARCOAL) > 0))
+            {
+                take(count(net.minecraft.world.item.Items.COAL) > 0 ? net.minecraft.world.item.Items.COAL : net.minecraft.world.item.Items.CHARCOAL, 1);
+                take(net.minecraft.world.item.Items.STICK, 1);
+                keep(worker, new ItemStack(net.minecraft.world.item.Items.TORCH, 4));
+                return;
+            }
+            final int free = board.stock(net.minecraft.world.item.Items.TORCH);
+            if (free > 0)
+            {
+                perform(new LabourPlanner.Withdraw<>(net.minecraft.world.item.Items.TORCH, Math.min(8, free)), now);
+                return;
+            }
+            LabourStats.log("citizen {}: shaft {} needs torches and none are to be had", citizen.getId(), shaftAt.shaft().id);
+            sites.noTorches(shaftAt.shaft());
+            sites.release(citizen.getId());
+            shaftAt = null;
+            failed(LabourPlanner.Why.NO_SITE);
+            end(false);
+            return;
+        }
+        if (!EntityNavigationUtils.walkToPos(worker, torch.pos(), 2, true))
+        {
+            return;
+        }
+        final BlockState lit = torch.wall()
+                                 ? net.minecraft.world.level.block.Blocks.WALL_TORCH.defaultBlockState()
+                                     .setValue(net.minecraft.world.level.block.WallTorchBlock.FACING, torch.facing())
+                                 : net.minecraft.world.level.block.Blocks.TORCH.defaultBlockState();
+        if (!level.getBlockState(torch.pos()).isAir() || !board.sites().safeNow(null, torch.pos()) || !lit.canSurvive(level, torch.pos()))
+        {
+            // (the spot is taken or cannot hold a torch: the work goes on without it)
+            LabourStats.log("citizen {} cannot put a torch at {} in shaft {}", citizen.getId(), torch.pos().toShortString(), shaftAt.shaft().id);
+            sites.end(shaftAt.shaft(), shaftAt.segment(), torch.pos());
+            shaftAt = null;
+            return;
+        }
+        // (the torch leaves his hands only when the world took it)
+        if (level.setBlock(torch.pos(), lit, 3))
+        {
+            take(net.minecraft.world.item.Items.TORCH, 1);
+            board.heartbeat(claim);
+        }
     }
 
     private int bestToolSlot(final BlockState state, final String tool)
@@ -1474,7 +1692,7 @@ public final class LabourSession implements IIdleTaskSession
         {
             final ItemStack stack = inventory.getStackInSlot(slot);
             if (!stack.isEmpty() && (LabourRules.craftable(stack.getItem()) || LabourRules.looseItem(stack) || LabourRules.stripResult(stack.getItem()) || claim.accepts(stack)
-                                       || LabourRules.smeltable(stack.getItem(), com.minecolonies.api.colony.labour.LabourModes.SmeltMode.IRON))
+                                       || LabourRules.smeltable(stack.getItem(), com.minecolonies.api.colony.labour.LabourModes.SmeltMode.IRON) || LabourRules.shaftFind(stack))
                   && !LabourRules.isTool("pickaxe", stack.getItem()) && !LabourRules.isTool("axe", stack.getItem()) && !LabourRules.isTool("shovel", stack.getItem()))
             {
                 surplus.add(stack);
