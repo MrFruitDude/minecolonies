@@ -1,35 +1,37 @@
 package com.minecolonies.core.entity.ai.workers.util;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Per-level tree claims, so two Foresters never pick the same tree. A claim covers every log of the tree as the Forester saw it and expires on its own
  * (two minutes, refreshed while he works), so a lost claim never blocks a tree for long. A blocked claim marks a tree that touches a player build: no
- * Forester of any colony picks it until the claim expires and the tree is checked again.
+ * Forester of any colony picks it until the claim expires and the tree is checked again. Claims belong to one loaded level (another world opened in the
+ * same game starts with none) and run on its game time (a paused game does not let them expire).
  * <p>
  * The tree search runs off the server thread and only reads this map; claims are made and released on the server thread.
  */
 public final class TreeClaims
 {
     /**
-     * How long a work claim lasts without a refresh.
+     * How long a work claim lasts without a refresh, in game ticks (two minutes).
      */
-    public static final long WORK_CLAIM_MS = 2 * 60 * 1000L;
+    public static final long WORK_CLAIM_TICKS = 2 * 60 * 20L;
 
     /**
-     * How long a tree next to a build stays blocked before it is checked again.
+     * How long a tree next to a build stays blocked before it is checked again, in game ticks (ten minutes).
      */
-    public static final long BLOCKED_CLAIM_MS = 10 * 60 * 1000L;
+    public static final long BLOCKED_CLAIM_TICKS = 10 * 60 * 20L;
 
     /**
      * Owner id of a blocked tree.
@@ -41,7 +43,7 @@ public final class TreeClaims
      */
     private static final int SWEEP_SIZE = 16384;
 
-    private static final Map<ResourceKey<Level>, Map<Long, Claim>> CLAIMS = new ConcurrentHashMap<>();
+    private static final Map<Level, Map<Long, Claim>> CLAIMS = Collections.synchronizedMap(new WeakHashMap<>());
 
     private TreeClaims()
     {
@@ -52,15 +54,15 @@ public final class TreeClaims
      */
     public static final class Claim
     {
-        private final ResourceKey<Level> dimension;
+        private final Level              level;
         private final int                colonyId;
         private final int                citizenId;
         private final List<Long>         positions;
         private volatile long            expiresAt;
 
-        private Claim(final ResourceKey<Level> dimension, final int colonyId, final int citizenId, final List<Long> positions, final long expiresAt)
+        private Claim(final Level level, final int colonyId, final int citizenId, final List<Long> positions, final long expiresAt)
         {
-            this.dimension = dimension;
+            this.level = level;
             this.colonyId = colonyId;
             this.citizenId = citizenId;
             this.positions = positions;
@@ -87,7 +89,7 @@ public final class TreeClaims
         {
             if (!isBlocked())
             {
-                expiresAt = System.currentTimeMillis() + WORK_CLAIM_MS;
+                expiresAt = level.getGameTime() + WORK_CLAIM_TICKS;
             }
         }
     }
@@ -104,7 +106,7 @@ public final class TreeClaims
     @NotNull
     public static Claim claim(@NotNull final Level level, @NotNull final Collection<BlockPos> logs, final int colonyId, final int citizenId)
     {
-        return put(level, logs, colonyId, citizenId, WORK_CLAIM_MS);
+        return put(level, logs, colonyId, citizenId, WORK_CLAIM_TICKS);
     }
 
     /**
@@ -116,13 +118,13 @@ public final class TreeClaims
      */
     public static void block(@NotNull final Level level, @NotNull final Collection<BlockPos> logs, final int colonyId)
     {
-        put(level, logs, colonyId, BLOCKED, BLOCKED_CLAIM_MS);
+        put(level, logs, colonyId, BLOCKED, BLOCKED_CLAIM_TICKS);
     }
 
     private static Claim put(final Level level, final Collection<BlockPos> logs, final int colonyId, final int citizenId, final long ttl)
     {
-        final Map<Long, Claim> map = CLAIMS.computeIfAbsent(level.dimension(), k -> new ConcurrentHashMap<>());
-        final long now = System.currentTimeMillis();
+        final Map<Long, Claim> map = CLAIMS.computeIfAbsent(level, k -> new ConcurrentHashMap<>());
+        final long now = level.getGameTime();
         if (map.size() > SWEEP_SIZE)
         {
             map.values().removeIf(c -> c.expired(now));
@@ -132,7 +134,7 @@ public final class TreeClaims
         {
             positions.add(pos.asLong());
         }
-        final Claim claim = new Claim(level.dimension(), colonyId, citizenId, positions, now + ttl);
+        final Claim claim = new Claim(level, colonyId, citizenId, positions, now + ttl);
         for (final Long pos : positions)
         {
             map.put(pos, claim);
@@ -151,7 +153,7 @@ public final class TreeClaims
         {
             return;
         }
-        final Map<Long, Claim> map = CLAIMS.get(claim.dimension);
+        final Map<Long, Claim> map = CLAIMS.get(claim.level);
         if (map != null)
         {
             for (final Long pos : claim.positions)
@@ -172,13 +174,13 @@ public final class TreeClaims
      */
     public static boolean isTakenByOther(@NotNull final Level level, @NotNull final BlockPos pos, final int colonyId, final int citizenId)
     {
-        final Map<Long, Claim> map = CLAIMS.get(level.dimension());
+        final Map<Long, Claim> map = CLAIMS.get(level);
         if (map == null)
         {
             return false;
         }
         final Claim claim = map.get(pos.asLong());
-        if (claim == null || claim.expired(System.currentTimeMillis()))
+        if (claim == null || claim.expired(level.getGameTime()))
         {
             return false;
         }
@@ -192,8 +194,8 @@ public final class TreeClaims
      */
     public static boolean isBlocked(@NotNull final Level level, @NotNull final BlockPos pos)
     {
-        final Map<Long, Claim> map = CLAIMS.get(level.dimension());
+        final Map<Long, Claim> map = CLAIMS.get(level);
         final Claim claim = map == null ? null : map.get(pos.asLong());
-        return claim != null && claim.isBlocked() && !claim.expired(System.currentTimeMillis());
+        return claim != null && claim.isBlocked() && !claim.expired(level.getGameTime());
     }
 }
