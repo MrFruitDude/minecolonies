@@ -485,8 +485,9 @@ final class BuilderScaffoldGameTests
     /**
      * Preview 20261029-3: a builder walking from his hut to his site was put back into the hut every few seconds. The shut-in rescue asks the stand-spot
      * search whether the spot by his hut block (inside the hut) can be walked to, and the search did not go through doors: from outside, the inside of
-     * every hut was cut off. A closed room with an oak door is reached through it (the door itself is no stand spot); with an iron door, which a citizen
-     * does not open, it stays cut off; an oak fence gate in a fence is a way through as well.
+     * every hut was cut off. The search now goes through what the path planner goes through (r1, Fable r0 F2): an oak door, an iron door (citizens open
+     * every door), a fence gate, a pair of open trapdoors used as a door, a carpet in the doorway, and a hatch (a closed trapdoor in a ceiling over a
+     * ladder). A door and a trapdoor are no stand spots themselves.
      */
     public static void hutDoorIsAWayThrough(final GameTestHelper helper)
     {
@@ -515,12 +516,224 @@ final class BuilderScaffoldGameTests
         helper.assertTrue(!com.minecolonies.core.entity.ai.workers.util.StandSpots.canStandAt(level, door), "the door counts as a stand spot");
 
         placeDoor(level, door, Blocks.IRON_DOOR);
-        helper.assertTrue(!com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, start, 28, 30000).contains(inside), "an iron door was walked through");
+        helper.assertTrue(com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, start, 28, 30000).contains(inside),
+          "the inside of a room shut by an iron door was cut off (citizens open iron doors, the path planner goes through them)");
 
         level.setBlock(door.above(), Blocks.AIR.defaultBlockState(), 3);
         level.setBlock(door, Blocks.OAK_FENCE_GATE.defaultBlockState().setValue(net.minecraft.world.level.block.FenceGateBlock.FACING, net.minecraft.core.Direction.EAST), 3);
         helper.assertTrue(com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, start, 28, 30000).contains(inside), "a fence gate was no way through");
+
+        placeTrapdoorDoor(level, door, true);
+        helper.assertTrue(com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, start, 28, 30000).contains(inside), "a pair of open trapdoors was no way through");
+        helper.assertTrue(!com.minecolonies.core.entity.ai.workers.util.StandSpots.canStandAt(level, door), "a trapdoor counts as a stand spot");
+        placeTrapdoorDoor(level, door, false);
+        helper.assertTrue(com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, start, 28, 30000).contains(inside), "a pair of shut trapdoors was no way through");
+
+        level.setBlock(door, Blocks.CARPET.white().defaultBlockState(), 3);
+        level.setBlock(door.above(), Blocks.AIR.defaultBlockState(), 3);
+        helper.assertTrue(com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, start, 28, 30000).contains(inside), "a carpet in the doorway cut the room off");
+
+        // a hatch: a closed room with a ladder up to a trapdoor in its ceiling, and a closed room above it
+        final BlockPos h = helper.absolutePos(new BlockPos(14, 1, 4));
+        for (int x = 0; x <= 4; x++)
+        {
+            for (int z = 0; z <= 4; z++)
+            {
+                level.setBlock(h.offset(x, -1, z), Blocks.STONE.defaultBlockState(), 3);
+                for (int y = 0; y <= 6; y++)
+                {
+                    final boolean solid = x == 0 || x == 4 || z == 0 || z == 4 || y == 3 || y == 6;
+                    level.setBlock(h.offset(x, y, z), solid ? Blocks.COBBLESTONE.defaultBlockState() : Blocks.AIR.defaultBlockState(), 3);
+                }
+            }
+        }
+        for (int y = 0; y <= 2; y++)
+        {
+            level.setBlock(h.offset(2, y, 1), Blocks.LADDER.defaultBlockState().setValue(net.minecraft.world.level.block.LadderBlock.FACING, net.minecraft.core.Direction.SOUTH), 3);
+        }
+        final BlockPos below = h.offset(2, 0, 3);
+        final BlockPos above = h.offset(2, 4, 3);
+        helper.assertTrue(!com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, below, 28, 30000).contains(above), "the room above was reached through a shut ceiling");
+        level.setBlock(h.offset(2, 3, 1), Blocks.OAK_TRAPDOOR.defaultBlockState().setValue(net.minecraft.world.level.block.TrapDoorBlock.FACING, net.minecraft.core.Direction.SOUTH), 3);
+        helper.assertTrue(com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, below, 28, 30000).contains(above), "the hatch over the ladder was no way up");
+        helper.assertTrue(com.minecolonies.core.entity.ai.workers.util.StandSpots.reachableFrom(level, above, 28, 30000).contains(below), "the hatch over the ladder was no way down");
         helper.succeed();
+    }
+
+    /**
+     * Two trapdoors on top of each other in a doorway (the way the doors of some huts are built), facing north: walked through from east or west.
+     */
+    private static void placeTrapdoorDoor(final net.minecraft.world.level.Level level, final BlockPos lower, final boolean open)
+    {
+        final net.minecraft.world.level.block.state.BlockState state = Blocks.OAK_TRAPDOOR.defaultBlockState()
+                                                                           .setValue(net.minecraft.world.level.block.TrapDoorBlock.FACING, net.minecraft.core.Direction.NORTH)
+                                                                           .setValue(net.minecraft.world.level.block.TrapDoorBlock.OPEN, open);
+        level.setBlock(lower, state.setValue(net.minecraft.world.level.block.TrapDoorBlock.HALF, net.minecraft.world.level.block.state.properties.Half.BOTTOM), 3);
+        level.setBlock(lower.above(), state.setValue(net.minecraft.world.level.block.TrapDoorBlock.HALF, net.minecraft.world.level.block.state.properties.Half.TOP), 3);
+    }
+
+    /**
+     * The way into a walled hut in the walk tests.
+     */
+    enum HutEntry
+    {
+        OAK_DOOR, IRON_DOOR, TRAPDOORS
+    }
+
+    /**
+     * Walls a hut block in: a room of 5 by 5 inside, walls 3 high (no one climbs them), one way in on the east side (towards the sites).
+     *
+     * @param hutRel the hut block (relative).
+     */
+    static void wallHutIn(final GameTestHelper helper, final BlockPos hutRel, final HutEntry entry)
+    {
+        final net.minecraft.world.level.Level level = helper.getLevel();
+        final BlockPos hut = helper.absolutePos(hutRel);
+        for (int x = -3; x <= 3; x++)
+        {
+            for (int z = -3; z <= 3; z++)
+            {
+                if (Math.max(Math.abs(x), Math.abs(z)) != 3)
+                {
+                    continue;
+                }
+                for (int y = 0; y <= 2; y++)
+                {
+                    level.setBlock(hut.offset(x, y, z), Blocks.COBBLESTONE.defaultBlockState(), 3);
+                }
+            }
+        }
+        final BlockPos way = hut.offset(3, 0, 0);
+        switch (entry)
+        {
+            case OAK_DOOR -> placeDoor(level, way, Blocks.OAK_DOOR);
+            case IRON_DOOR -> placeDoor(level, way, Blocks.IRON_DOOR);
+            case TRAPDOORS -> placeTrapdoorDoor(level, way, true);
+        }
+    }
+
+    /**
+     * The builder of a hut walled in with one way in builds a low ring 16 to 22 blocks away (on the level of his hut, in the range of the shut-in
+     * rescue): he walks out through the way in and back, and he is never put back into his hut. Before r1 the stand-spot search did not go through
+     * trapdoors and iron doors: he was snapped home every 120 ticks of standing in the box of the ring (Fable r0 F2).
+     */
+    static void hutDoorWalk(final GameTestHelper helper, final HutEntry entry)
+    {
+        final String name = "hutwalk_" + entry.name().toLowerCase(java.util.Locale.ROOT);
+        final WorkerEfficiencyGameTests.Live[] at = {null};
+        final int blocked0 = com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.trappedBlocked;
+        tallStructure(helper, name, () -> shape(name, 5, 2, 5, (x, y, z) -> y == 0 || x == 0 || z == 0 || x == 4 || z == 4), true, 12_000, false, (live, site) -> {
+            at[0] = live;
+            wallHutIn(helper, new BlockPos(8, 1, 2), entry);
+        }, () -> {
+            final com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure<?, ?> ai = structureAi(at[0].citizen);
+            helper.assertTrue(ai != null, "no structure AI");
+            Log.getLogger().info("WSCAF {} rescues={} blocked={} reason={}", name, ai.trapRescueCount(),
+              com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.trappedBlocked - blocked0, ai.trapBlockedReason());
+            helper.assertTrue(ai.trapRescueCount() == 0, "the builder was put back into his hut " + ai.trapRescueCount() + " times (way in: " + entry + ")");
+            helper.assertTrue(ai.trapBlockedReason() == null, "the builder is marked shut in: " + ai.trapBlockedReason());
+        });
+    }
+
+    public static void hutDoorWalkOak(final GameTestHelper helper)
+    {
+        hutDoorWalk(helper, HutEntry.OAK_DOOR);
+    }
+
+    public static void hutDoorWalkTrapdoor(final GameTestHelper helper)
+    {
+        hutDoorWalk(helper, HutEntry.TRAPDOORS);
+    }
+
+    public static void hutDoorWalkIron(final GameTestHelper helper)
+    {
+        hutDoorWalk(helper, HutEntry.IRON_DOOR);
+    }
+
+    /**
+     * A helper builder (collaboration on) whose own hut is walled in with a pair of trapdoors as the way in: a helper has no structure of his own, so
+     * before r1 the box guard of the shut-in rescue did not hold for him and he was snapped home whenever he stood still near his hut (at the lead's
+     * hut for his materials, at the site). He helps, and neither builder is put back into a hut.
+     */
+    public static void hutDoorHelper(final GameTestHelper helper)
+    {
+        final String name = "hutwalk_helper";
+        twoBuilders(helper, name, () -> shape(name, 7, 11, 7, (x, y, z) -> x == 0 || z == 0 || x == 6 || z == 6), 40_000, true, SITE,
+          live -> wallHutIn(helper, new BlockPos(16, 1, 2), HutEntry.TRAPDOORS),
+          (live, blocksByHelper) -> {
+              final com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure<?, ?> lead = structureAi(live.citizen);
+              final com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure<?, ?> second = structureAi(live.otherCitizen);
+              helper.assertTrue(lead != null && second != null, "no structure AI");
+              Log.getLogger().info("WSCAF {} helperBlocks={} rescues lead={} helper={} reasons {} / {}", name, blocksByHelper, lead.trapRescueCount(), second.trapRescueCount(),
+                lead.trapBlockedReason(), second.trapBlockedReason());
+              helper.assertTrue(blocksByHelper > 0, "the second builder did not help (no block placed): the helper path was not tested");
+              helper.assertTrue(second.trapRescueCount() == 0, "the helper was put back into his hut " + second.trapRescueCount() + " times");
+              helper.assertTrue(lead.trapRescueCount() == 0, "the lead was put back into his hut " + lead.trapRescueCount() + " times");
+          });
+    }
+
+    /**
+     * The rules of the shut-in rescue (ShutInGate, no world): a worker who gets on (moves a block or more between checks) is never put out, however long
+     * the search finds him cut off; a worker outside the box of his structure is never put out (the search is not even asked); one who stands still and is
+     * cut off is put out at the third check; shut in again within 5 minutes he is marked blocked once instead of a second rescue; after the cooldown he is
+     * put out again.
+     */
+    public static void hutDoorProgress(final GameTestHelper helper)
+    {
+        final com.minecolonies.core.entity.ai.workers.util.ShutInGate gate = new com.minecolonies.core.entity.ai.workers.util.ShutInGate();
+        final BlockPos box = BlockPos.ZERO;
+        long now = 0L;
+        for (int i = 0; i < 20; i++, now += 40L)
+        {
+            helper.assertTrue(gate.check(true, 1.5D, () -> true, box, now) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE,
+              "a worker walking a path was put out at check " + i);
+        }
+        final boolean[] asked = {false};
+        for (int i = 0; i < 10; i++, now += 40L)
+        {
+            helper.assertTrue(gate.check(false, 0.0D, () -> asked[0] = true, box, now) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE,
+              "a worker outside the box was put out");
+        }
+        helper.assertTrue(!asked[0], "the search ran for a worker outside the box");
+        // two still, one step on, two still: no three in a row
+        helper.assertTrue(gate.check(true, 0.0D, () -> true, box, now += 40L) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE, "strike 1");
+        helper.assertTrue(gate.check(true, 0.0D, () -> true, box, now += 40L) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE, "strike 2");
+        helper.assertTrue(gate.check(true, 1.2D, () -> true, box, now += 40L) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE, "moved");
+        helper.assertTrue(gate.check(true, 0.0D, () -> true, box, now += 40L) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE, "strike 1 again");
+        helper.assertTrue(gate.check(true, 0.0D, () -> true, box, now += 40L) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE,
+          "put out after a step on reset the count");
+        helper.assertTrue(gate.check(true, 0.0D, () -> true, box, now += 40L) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.RESCUE,
+          "a worker standing still and cut off for three checks was not put out");
+        final long rescuedAt = now;
+        // walks back in at once and stands: blocked once, then nothing
+        com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision d = com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE;
+        for (int i = 0; i < 3; i++)
+        {
+            d = gate.check(true, 0.0D, () -> true, box, now += 40L);
+        }
+        helper.assertTrue(d == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.BLOCKED && gate.isBlocked(), "shut in again within the cooldown: " + d);
+        for (int i = 0; i < 30; i++)
+        {
+            helper.assertTrue(gate.check(true, 0.0D, () -> true, box, now += 40L) == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.NONE,
+              "a second rescue (or a second block note) within the cooldown");
+        }
+        now = rescuedAt + com.minecolonies.core.entity.ai.workers.util.ShutInGate.COOLDOWN;
+        for (int i = 0; i < 3; i++)
+        {
+            d = gate.check(true, 0.0D, () -> true, box, now += 40L);
+        }
+        helper.assertTrue(d == com.minecolonies.core.entity.ai.workers.util.ShutInGate.Decision.RESCUE, "not put out after the cooldown: " + d);
+        // a way out appears: the block note is gone
+        gate.check(true, 0.0D, () -> false, box, now += 40L);
+        helper.assertTrue(!gate.isBlocked(), "still blocked with a way out");
+        helper.succeed();
+    }
+
+    @org.jetbrains.annotations.Nullable
+    private static com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure<?, ?> structureAi(final com.minecolonies.api.colony.ICitizenData citizen)
+    {
+        return citizen.getEntity().map(e -> e.getCitizenJobHandler().getWorkAI() instanceof com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure<?, ?> ai ? ai : null)
+                 .orElse(null);
     }
 
     private static void placeDoor(final net.minecraft.world.level.Level level, final BlockPos lower, final net.minecraft.world.level.block.Block block)
@@ -1304,6 +1517,17 @@ final class BuilderScaffoldGameTests
 
     static void twoBuilders(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final int maxTicks, final boolean collaboration, final BlockPos site)
     {
+        twoBuilders(helper, name, blueprintOf, maxTicks, collaboration, site, null, null);
+    }
+
+    /**
+     * @param beforeOrder called with the scene before the order is made, or null.
+     * @param extraChecks called at the end with the scene and the blocks the second builder placed, or null.
+     */
+    static void twoBuilders(final GameTestHelper helper, final String name, final Supplier<Blueprint> blueprintOf, final int maxTicks, final boolean collaboration, final BlockPos site,
+      @org.jetbrains.annotations.Nullable final java.util.function.Consumer<WorkerEfficiencyGameTests.Live> beforeOrder,
+      @org.jetbrains.annotations.Nullable final java.util.function.ObjIntConsumer<WorkerEfficiencyGameTests.Live> extraChecks)
+    {
         WorkerSettings.overrideReachForTests(null, null, null, 16);
         ReachAudit.enable(true);
         BuilderScaffolding.resetCounters();
@@ -1326,6 +1550,10 @@ final class BuilderScaffoldGameTests
             live.stock(WorkerEfficiencyGameTests.BUILD_BLOCK.asItem(), solidCount(blueprint) + WorkerEfficiencyGameTests.SPARE);
             live.stock(Items.SCAFFOLDING, 32);
             helper.assertTrue(InventoryUtils.forceItemStackToItemHandler(other.getItemHandlerCap(), new ItemStack(Items.SCAFFOLDING, 32), s -> true).isEmpty(), "no room in the second hut");
+            if (beforeOrder != null)
+            {
+                beforeOrder.accept(live);
+            }
             final WorkOrderDecoration order = live.orderFor(name, site, blueprint);
             final BlockPos origin = order.getLocation();
             final Watch watch = new Watch();
@@ -1390,6 +1618,10 @@ final class BuilderScaffoldGameTests
                 helper.assertTrue(watch.conservationBreak == null, "items lost or made: " + watch.conservationBreak);
                 helper.assertTrue(ReachAudit.violations() == 0, "out of reach: " + ReachAudit.examples());
                 helper.assertTrue(BuilderScaffolding.cellsPlaced > 0 || blueprint.getSizeY() <= 4, "no scaffolding");
+                if (extraChecks != null)
+                {
+                    extraChecks.accept(live, blocksBy.getOrDefault(other.getPosition(), 0));
+                }
                 BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
                 BuilderCollab.overrideClusterMinForTests(null);
                 BuilderCollab.overrideMinOrderScoreForTests(null);

@@ -564,8 +564,8 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
         final IItemHandler workerInventory = worker.getInventoryCitizen();
         final List<IRequest<? extends Delivery>> deliveries = job.getTaskListWithSameDestination((IRequest<? extends Delivery>) currentTask);
         final List<ItemStorage> itemsToDeliver = deliveries.stream().map(r -> new ItemStorage(r.getRequest().getStack())).collect(Collectors.toList());
-        // What the target did not take, per item.
-        final Map<ItemStorage, Integer> notDelivered = new HashMap<>();
+        // What went into the target, per item (a short load, less in the bag than the batch asks for, is no full delivery: Sol r0 F4).
+        final Map<ItemStorage, Integer> inserted = new HashMap<>();
 
         for (int i = 0; i < workerInventory.getSlots(); i++)
         {
@@ -638,11 +638,19 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
                 // What came back is what the target could not take, unless it is a stack that was pushed out to make room.
                 if (ItemStack.isSameItemSameComponents(insertionResultStack, stack) && insertionResultStack.getCount() <= count)
                 {
-                    notDelivered.merge(new ItemStorage(stack), insertionResultStack.getCount(), Integer::sum);
+                    inserted.merge(new ItemStorage(stack), count - insertionResultStack.getCount(), Integer::sum);
+                }
+                else
+                {
+                    inserted.merge(new ItemStorage(stack), count, Integer::sum);
                 }
 
                 //Insert the result back into the inventory so we do not lose it.
                 workerInventory.insertItem(i, insertionResultStack, false);
+            }
+            else
+            {
+                inserted.merge(new ItemStorage(stack), count, Integer::sum);
             }
             worker.getCitizenColonyHandler()
               .getColonyOrRegister()
@@ -666,14 +674,28 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
         worker.getCitizenExperienceHandler().addExperience(1.5D);
         worker.decreaseSaturationForContinuousAction();
         CitizenItemUtils.setHeldItem(worker, InteractionHand.MAIN_HAND, SLOT_HAND);
-        // Only the deliveries that arrived in full are resolved; the others fail and go back to the request system, the
-        // items that did not fit stay with the courier and are dumped into the warehouse.
+        // Only the deliveries that arrived in full are resolved; the others fail and go back to the request system (the requester asks again for what it
+        // still lacks). Short is what did not go in: refused by the target (it stays with the courier and is dumped into the warehouse) or never carried
+        // (fewer items picked up than asked, or taken out of the courier's bag on the way). What did go in is counted as delivered.
+        final Map<ItemStorage, Integer> notDelivered = shortfall(deliveries, inserted);
         final Set<IToken<?>> undelivered = undeliveredRequests(deliveries, notDelivered);
+        final Map<ItemStorage, Integer> left = new HashMap<>(inserted);
         for (final IRequest<? extends Delivery> arrived : deliveries)
         {
             if (!undelivered.contains(arrived.getId()))
             {
+                left.merge(new ItemStorage(arrived.getRequest().getStack()), -arrived.getRequest().getStack().getCount(), Integer::sum);
                 RsCourierHooks.arrived(job.getColony().getRequestManager(), arrived);
+            }
+        }
+        for (final IRequest<? extends Delivery> shortOne : deliveries)
+        {
+            final ItemStorage key = new ItemStorage(shortOne.getRequest().getStack());
+            final int part = Math.min(left.getOrDefault(key, 0), shortOne.getRequest().getStack().getCount());
+            if (undelivered.contains(shortOne.getId()) && part > 0)
+            {
+                left.merge(key, -part, Integer::sum);
+                RsCourierHooks.arrivedPartly(job.getColony().getRequestManager(), shortOne, part);
             }
         }
         job.finishRequest(request -> !undelivered.contains(request.getId()));
@@ -681,10 +703,32 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
     }
 
     /**
+     * How much of each item of a batch did not go into the target: what the batch asks for minus what went in.
+     *
+     * @param batch    the deliveries of the batch.
+     * @param inserted how much of each item went into the target.
+     * @return the missing count per item (only items that came up short).
+     */
+    static Map<ItemStorage, Integer> shortfall(final List<IRequest<? extends Delivery>> batch, final Map<ItemStorage, Integer> inserted)
+    {
+        final Map<ItemStorage, Integer> missing = new HashMap<>();
+        for (final IRequest<? extends Delivery> delivery : batch)
+        {
+            missing.merge(new ItemStorage(delivery.getRequest().getStack()), delivery.getRequest().getStack().getCount(), Integer::sum);
+        }
+        for (final Map.Entry<ItemStorage, Integer> in : inserted.entrySet())
+        {
+            missing.computeIfPresent(in.getKey(), (k, v) -> v - in.getValue());
+        }
+        missing.values().removeIf(v -> v <= 0);
+        return missing;
+    }
+
+    /**
      * Finds the deliveries of a batch that did not arrive in full.
      *
      * @param batch        the deliveries of the batch, in order.
-     * @param notDelivered how much of each item the target refused.
+     * @param notDelivered how much of each item did not go into the target (see {@link #shortfall}).
      * @return the tokens of the deliveries that came up short. The last deliveries of an item go short first.
      */
     static Set<IToken<?>> undeliveredRequests(final List<IRequest<? extends Delivery>> batch, final Map<ItemStorage, Integer> notDelivered)

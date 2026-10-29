@@ -363,6 +363,37 @@ public class PathfindingUtils
      * @param options
      * @return
      */
+    /**
+     * The solid blocks (they block motion) that the path planner still walks through: doors and gates the entity opens on its way, and blocks
+     * with a collision box that does not stop it. Shared by the planner and by the searches that model it (StandSpots), so both agree on what is
+     * a way through. Trapdoors and panels are not in it: the planner has its own rules for their facing ({@link #isTrapdoorLike}).
+     *
+     * @param block      the state.
+     * @param enterDoors whether the entity walks through doors (citizens do: they open every door, iron ones too).
+     * @param enterGates whether the entity walks through gates.
+     * @return true if the planner walks through it.
+     */
+    public static boolean walksThroughSolid(final BlockState block, final boolean enterDoors, final boolean enterGates)
+    {
+        return (enterDoors && block.getBlock() instanceof DoorBlock)
+                 || (enterGates && block.getBlock() instanceof FenceGateBlock)
+                 || (enterGates && block.getBlock() instanceof com.minecolonies.api.blocks.decorative.AbstractBlockGate)
+                 || block.getBlock() instanceof com.minecolonies.api.blocks.decorative.AbstractBlockMinecoloniesConstructionTape
+                 || block.getBlock() instanceof PressurePlateBlock
+                 || block.getBlock() instanceof com.minecolonies.core.blocks.BlockDecorationController
+                 || block.getBlock() instanceof SignBlock
+                 || block.getBlock() instanceof AbstractBannerBlock
+                 || !block.getBlock().properties().hasCollision;
+    }
+
+    /**
+     * A trapdoor or a Domum Ornamentum panel: the planner enters its space (citizens open it on their way, see EntityAIInteractToggleAble).
+     */
+    public static boolean isTrapdoorLike(final BlockState block)
+    {
+        return block.getBlock() instanceof TrapDoorBlock || block.getBlock() instanceof PanelBlock;
+    }
+
     public static boolean isLadder(final BlockState blockState, @Nullable final PathingOptions options)
     {
         if (options != null && options.canWalkUnderWater() && isLiquid(blockState))

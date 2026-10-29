@@ -5,8 +5,6 @@ import com.ldtteam.domumornamentum.block.decorative.FloatingCarpetBlock;
 import com.ldtteam.domumornamentum.block.decorative.PanelBlock;
 import com.ldtteam.domumornamentum.block.decorative.ShingleBlock;
 import com.ldtteam.domumornamentum.block.decorative.ShingleSlabBlock;
-import com.minecolonies.api.blocks.decorative.AbstractBlockGate;
-import com.minecolonies.api.blocks.decorative.AbstractBlockMinecoloniesConstructionTape;
 import com.minecolonies.api.entity.pathfinding.IDynamicHeuristicNavigator;
 import com.minecolonies.api.entity.pathfinding.IPathJob;
 import com.minecolonies.api.util.BlockPosUtil;
@@ -14,7 +12,6 @@ import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.ShapeUtil;
 import com.minecolonies.api.util.constant.ColonyConstants;
 import com.minecolonies.core.MineColonies;
-import com.minecolonies.core.blocks.BlockDecorationController;
 import com.minecolonies.core.entity.pathfinding.*;
 import com.minecolonies.core.entity.pathfinding.pathresults.PathResult;
 import com.minecolonies.core.entity.pathfinding.world.CachingBlockLookup;
@@ -1576,15 +1573,7 @@ public abstract class AbstractPathJob implements Callable<Path>, IPathJob
                 }
                 else
                 {
-                    return (pathingOptions.canEnterDoors() && block.getBlock() instanceof DoorBlock)
-                             || (pathingOptions.canEnterGates() && block.getBlock() instanceof FenceGateBlock)
-                             || (pathingOptions.canEnterGates() && block.getBlock() instanceof AbstractBlockGate)
-                             || block.getBlock() instanceof AbstractBlockMinecoloniesConstructionTape
-                             || block.getBlock() instanceof PressurePlateBlock
-                             || block.getBlock() instanceof BlockDecorationController
-                             || block.getBlock() instanceof SignBlock
-                             || block.getBlock() instanceof AbstractBannerBlock
-                             || !block.getBlock().properties().hasCollision;
+                    return PathfindingUtils.walksThroughSolid(block, pathingOptions.canEnterDoors(), pathingOptions.canEnterGates());
                 }
             }
             else if (!pathingOptions.canPassDanger() && PathfindingUtils.isDangerous(block))

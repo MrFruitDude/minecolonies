@@ -489,7 +489,12 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
         {
             int index = Math.min(navigator.getPath().getNextNodeIndex() + teleportRange, navigator.getPath().getNodeCount() - 1);
             final Node togo = navigator.getPath().getNode(index);
-            navigator.getOurEntity().teleportTo(togo.x + 0.5d, togo.y, togo.z + 0.5d);
+            // not in front of a player (he would see the citizen jump ahead): the later steps (ladders, breaking) go on
+            if (!com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(navigator.getOurEntity().level(), navigator.getOurEntity().position(),
+              new BlockPos(togo.x, togo.y, togo.z)))
+            {
+                navigator.getOurEntity().teleportTo(togo.x + 0.5d, togo.y, togo.z + 0.5d);
+            }
             delayToNextUnstuckAction = 200;
         }
 

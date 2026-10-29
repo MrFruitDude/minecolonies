@@ -1,11 +1,11 @@
 package com.minecolonies.core.entity.ai.workers.util;
 
 import com.minecolonies.api.util.WorldUtil;
+import com.minecolonies.core.entity.pathfinding.PathfindingUtils;
 import com.minecolonies.core.entity.pathfinding.SurfaceType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.DoorBlock;
-import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.shapes.CollisionContext;
@@ -49,7 +49,22 @@ public final class StandSpots
             // (the top of a scaffolding block holds a citizen, the path planner climbs onto it)
             return false;
         }
-        return isFree(level, feet) && isFree(level, feet.above());
+        return isLowFloor(level, feet) && isFree(level, feet.above());
+    }
+
+    /**
+     * Room for the feet: free, or a block the path planner walks over as if it were not there (a carpet: a collision box at most 0.1 high, as
+     * AbstractPathJob.isPassable rules). Without it a carpet in a doorway cut the inside of a hut off.
+     */
+    private static boolean isLowFloor(final Level level, final BlockPos feet)
+    {
+        final BlockState state = level.getBlockState(feet);
+        if (!state.getFluidState().isEmpty())
+        {
+            return false;
+        }
+        final net.minecraft.world.phys.shapes.VoxelShape shape = state.getCollisionShape(level, feet, CollisionContext.empty());
+        return shape.isEmpty() || shape.max(Direction.Axis.Y) <= 0.1D;
     }
 
     /**
@@ -169,8 +184,8 @@ public final class StandSpots
             final BlockPos at = queue.poll();
             if (climbable(level, at))
             {
-                visit(parents, at, level, at.above(), start, radius, seen, queue, climbable(level, at.above()) || canStandAt(level, at.above()));
-                visit(parents, at, level, at.below(), start, radius, seen, queue, climbable(level, at.below()) || canStandAt(level, at.below()));
+                visit(parents, at, level, at.above(), start, radius, seen, queue, climbable(level, at.above()) || canStandAt(level, at.above()) || isHatch(level, at.above()));
+                visit(parents, at, level, at.below(), start, radius, seen, queue, climbable(level, at.below()) || canStandAt(level, at.below()) || isHatch(level, at.below()));
                 for (final Direction dir : Direction.Plane.HORIZONTAL)
                 {
                     final BlockPos near = at.relative(dir);
@@ -207,23 +222,31 @@ public final class StandSpots
                     }
                 }
             }
-            // a climbable block under the feet or above them is a way down or up
-            if (climbable(level, at.above()))
+            // a climbable block under the feet or above them is a way down or up, and so is a hatch (a trapdoor over a ladder)
+            if (climbable(level, at.above()) || isHatch(level, at.above()))
             {
                 visit(parents, at, level, at.above(), start, radius, seen, queue, true);
             }
-            if (climbable(level, at.below()))
+            if (climbable(level, at.below()) || isHatch(level, at.below()))
             {
                 visit(parents, at, level, at.below(), start, radius, seen, queue, true);
+            }
+            if (isHatch(level, at))
+            {
+                // through the hatch: up into the room above it, down onto the ladder below it
+                visit(parents, at, level, at.above(), start, radius, seen, queue, canStandAt(level, at.above()) || climbable(level, at.above()));
+                visit(parents, at, level, at.below(), start, radius, seen, queue, canStandAt(level, at.below()) || climbable(level, at.below()));
             }
         }
         return seen;
     }
 
     /**
-     * A door or gate a citizen opens on his way (the path planner walks through them): a wooden door or a fence gate with a walkable floor below and
-     * room for the head (the upper half of the door). Not a spot to stand on (canStandAt), only a way through: without it the inside of every hut,
-     * shut by its door, was cut off.
+     * A block a citizen walks through on his way without standing in it: the solid blocks the path planner passes
+     * ({@link PathfindingUtils#walksThroughSolid}: doors, iron ones too, citizens open every door; fence gates and colony gates; construction tape)
+     * and trapdoors and panels, open or shut (a trapdoor in a wall like a door, a hatch over a ladder; citizens open them on their way). A rough
+     * copy of the planner's rule: a trapdoor's facing is left out, so the search may find a way the planner does not take, never the other way
+     * round. Without it the inside of every hut, shut by its door or hatch, was cut off, and a worker near his hut was "shut in".
      *
      * @param level the world.
      * @param feet  the block the feet would be in.
@@ -231,23 +254,49 @@ public final class StandSpots
      */
     public static boolean isDoorway(final Level level, final BlockPos feet)
     {
-        if (!WorldUtil.isBlockLoaded(level, feet) || !WorldUtil.isBlockLoaded(level, feet.below()))
+        if (!WorldUtil.isBlockLoaded(level, feet) || !WorldUtil.isBlockLoaded(level, feet.below()) || !WorldUtil.isInWorldHeight(feet.getY() + 1, level))
         {
             return false;
         }
         final BlockState state = level.getBlockState(feet);
-        final boolean door = state.getBlock() instanceof DoorBlock doorBlock && doorBlock.type().canOpenByHand()
-                               && state.getValue(DoorBlock.HALF) == DoubleBlockHalf.LOWER;
-        if (!door && !(state.getBlock() instanceof FenceGateBlock))
-        {
-            return false;
-        }
         final BlockPos floor = feet.below();
-        if (SurfaceType.getSurfaceType(level, level.getBlockState(floor), floor) != SurfaceType.WALKABLE)
+        final BlockState floorState = level.getBlockState(floor);
+        final boolean onFloor = SurfaceType.getSurfaceType(level, floorState, floor) == SurfaceType.WALKABLE;
+        if (PathfindingUtils.isTrapdoorLike(state))
+        {
+            // a door in a wall (floor below) or a hatch in a floor (a ladder or scaffolding below it)
+            return (onFloor || climbable(level, floor)) && headRoom(level, feet.above());
+        }
+        if (isFree(level, feet) || !PathfindingUtils.walksThroughSolid(state, true, true))
         {
             return false;
         }
-        return door || isFree(level, feet.above());
+        if (state.getBlock() instanceof DoorBlock)
+        {
+            return onFloor && state.getValue(DoorBlock.HALF) == DoubleBlockHalf.LOWER;
+        }
+        return onFloor && headRoom(level, feet.above());
+    }
+
+    /**
+     * Room for the head of a citizen who walks through a doorway: free, or a block he passes as well (the upper trapdoor of two).
+     */
+    private static boolean headRoom(final Level level, final BlockPos head)
+    {
+        if (isFree(level, head) || climbable(level, head))
+        {
+            return true;
+        }
+        final BlockState state = level.getBlockState(head);
+        return PathfindingUtils.isTrapdoorLike(state) || PathfindingUtils.walksThroughSolid(state, true, true);
+    }
+
+    /**
+     * A trapdoor that is a way through (see {@link #isDoorway}).
+     */
+    private static boolean isHatch(final Level level, final BlockPos pos)
+    {
+        return WorldUtil.isBlockLoaded(level, pos) && PathfindingUtils.isTrapdoorLike(level.getBlockState(pos)) && isDoorway(level, pos);
     }
 
     /**

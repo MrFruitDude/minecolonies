@@ -2147,6 +2147,8 @@ public final class MinecoloniesGameTests
             }
         };
         gameType.updatePlayerAbilities(player.getAbilities());
+        // (a mock player stands somewhere in the shared test world: it does not stop the workers of other tests from being put out, see PlayerWatch)
+        com.minecolonies.core.entity.pathfinding.PlayerWatch.ignoreForTests(playerUuid);
         final Connection connection = new Connection(PacketFlow.SERVERBOUND);
         CHANNELS.put(player, new EmbeddedChannel(connection));
         // NeoForge provides a complete payload/channel setup for test

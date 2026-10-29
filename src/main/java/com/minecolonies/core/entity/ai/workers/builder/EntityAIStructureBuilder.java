@@ -2193,6 +2193,20 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         }
     }
 
+    /**
+     * A helper is shut in by the lead's structure (he has no structure of his own), a builder by his own; one with neither (a helper between
+     * batches, a builder without an order) never is.
+     */
+    @Override
+    protected BlockPos[] trapArea()
+    {
+        if (assistOrder != null)
+        {
+            return assistHandler != null && assistHandler.hasBluePrint() ? boxOf(assistHandler) : null;
+        }
+        return building.hasWorkOrder() ? super.trapArea() : null;
+    }
+
     private static BlockState fillBlockOf(final AbstractBuildingStructureBuilder lead)
     {
         return lead.getSetting(FILL_BLOCK).getValue().getBlock().defaultBlockState();
