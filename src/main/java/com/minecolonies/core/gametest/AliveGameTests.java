@@ -41,7 +41,7 @@ public final class AliveGameTests
 {
     public static final String[] NAMES = {"alive_rules", "alive_chat", "alive_chat_yields", "alive_morning", "alive_building_cheer", "alive_grief", "alive_raid_relief",
       "alive_rain_hurry", "alive_rain_where", "alive_traits_stable", "alive_chat_pairs", "alive_calm_pace", "alive_morning_crowd", "alive_shelter_inside",
-      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn"};
+      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe"};
 
     /**
      * Tests whose citizens must stand in the rain: they run without the barrier ceiling of the GameTest frame, which stops the rain (vanilla's isRainingAt
@@ -88,6 +88,7 @@ public final class AliveGameTests
             case "alive_chorus" -> AliveGameTests::chorus;
             case "alive_lines_wait" -> AliveGameTests::linesWait;
             case "alive_morning_dawn" -> AliveGameTests::morningDawn;
+            case "alive_greet_once_safe" -> AliveGameTests::greetOnceSafe;
             default -> AliveGameTests::rainHurry;
         };
     }
@@ -1103,7 +1104,9 @@ public final class AliveGameTests
                     greeters.add(c);
                     final BlockPos spot = c.getLife().gatherSpot();
                     helper.assertTrue(spot != null, "a greeter without a spot");
-                    atHall += !spot.equals(stood) && Math.abs(spot.getX() - townHall.getX()) <= 3 && Math.abs(spot.getZ() - townHall.getZ()) <= 3 ? 1 : 0;
+                    // (round 8: a safe place to stand may be a few blocks off the wanted one)
+                    final int near = 3 + CitizenLife.STAND_SEARCH;
+                    atHall += !spot.equals(stood) && Math.abs(spot.getX() - townHall.getX()) <= near && Math.abs(spot.getZ() - townHall.getZ()) <= near ? 1 : 0;
                 }
             }
             helper.assertTrue(greeters.size() > ColonyLife.MAX_GREETERS_PER_SPOT && greeters.size() < all.size(), "greeters " + greeters.size() + " of " + all.size());
@@ -1650,6 +1653,112 @@ public final class AliveGameTests
                 helper.runAfterDelay(1, () -> poll[0].run());
             };
             helper.runAfterDelay(1, () -> toBed[0].run());
+        });
+    }
+
+    /**
+     * Round 8 (Sol M4): a greeting is taken once a morning, saved with the citizen: a fresh life (a reloaded entity) does not hold work for it again the same
+     * morning, and the day is in the save data. A greeter stands only where it is safe: with magma under his wanted place he picks another one nearby, and the
+     * rule turns down magma, a block at head height and a floor of air. A greeter shut in by walls does not keep walking to a spot he cannot reach: he gives up
+     * before the timer, without a word with nobody near.
+     */
+    public static void greetOnceSafe(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-greet-once-safe");
+        midday(helper);
+        final ServerLevel level = helper.getLevel();
+        // the rule itself, on the plot's stone floor
+        helper.assertTrue(CitizenLife.safeStand(level, helper.absolutePos(new BlockPos(30, 1, 4))), "plain stone floor is not safe to stand on");
+        helper.setBlock(new BlockPos(31, 0, 4), net.minecraft.world.level.block.Blocks.MAGMA_BLOCK.defaultBlockState());
+        helper.assertTrue(!CitizenLife.safeStand(level, helper.absolutePos(new BlockPos(31, 1, 4))), "magma under the feet is safe");
+        helper.setBlock(new BlockPos(32, 2, 4), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+        helper.assertTrue(!CitizenLife.safeStand(level, helper.absolutePos(new BlockPos(32, 1, 4))), "a block at head height is safe");
+        helper.setBlock(new BlockPos(33, 0, 4), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+        helper.assertTrue(!CitizenLife.safeStand(level, helper.absolutePos(new BlockPos(33, 2, 4))), "air under the feet is safe");
+        // the shut-in greeter's cell: stone walls three high around him
+        final BlockPos shutAt = new BlockPos(14, 1, 18);
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            for (int dz = -1; dz <= 1; dz++)
+            {
+                for (int dy = 0; dy < 3 && (dx != 0 || dz != 0); dy++)
+                {
+                    helper.setBlock(shutAt.offset(dx, dy, dz), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                }
+            }
+        }
+        helper.runAfterDelay(40, () -> {
+            // the greeters are fresh, as on a first look after sleep; the hut block of the town hall is at (2, 1, 2)
+            final ICitizenData data = spawn(helper, colony, new BlockPos(4, 1, 14));
+            final EntityCitizen greeter = entity(data);
+            final EntityCitizen shut = entity(spawn(helper, colony, shutAt));
+            makeTrait(greeter, LifeTrait.CHATTY);
+            makeTrait(shut, LifeTrait.CHATTY);
+            final IBuilding townHall = colony.getServerBuildingManager().getTownHall();
+            helper.assertTrue(townHall != null && townHall.getPosition().equals(helper.absolutePos(new BlockPos(2, 1, 2))), "no town hall at (2, 1, 2)");
+            // magma under the greeter's wanted place by the town hall (the hut block, offset by his id); someone to greet stands two blocks from it
+            final int id = greeter.getCivilianID();
+            final BlockPos wantedRel = new BlockPos(2 + Math.floorMod(id * 5, 7) - 3, 1, 2 + Math.floorMod(id * 3 + 1, 7) - 3);
+            final BlockPos wanted = helper.absolutePos(wantedRel);
+            final BlockPos column = com.minecolonies.core.entity.ai.workers.util.StandSpots.nearest(level, wanted, 0, 2, 2, null);
+            helper.assertTrue(column != null, "precondition failed: no floor at the wanted place " + wanted);
+            level.setBlockAndUpdate(column.below(), net.minecraft.world.level.block.Blocks.MAGMA_BLOCK.defaultBlockState());
+            final BlockPos listenerAt = wantedRel.offset(wantedRel.getX() >= 2 ? 2 : -2, 0, 0);
+            final EntityCitizen listener = entity(spawn(helper, colony, listenerAt));
+            keepFed(greeter, shut, listener);
+            long day = level.getOverworldClockTime() / 24000L + 1;
+            for (int guard = 0; guard < 1000 && !(CitizenLife.greetsOn(id, day, LifeTrait.CHATTY) && CitizenLife.greetsOn(shut.getCivilianID(), day, LifeTrait.CHATTY));
+                 guard++)
+            {
+                day++;
+            }
+            helper.assertTrue(CitizenLife.greetsOn(id, day, LifeTrait.CHATTY) && CitizenLife.greetsOn(shut.getCivilianID(), day, LifeTrait.CHATTY),
+              "precondition failed: no morning where both greet");
+            setClock(helper, day * 24000L + 100L);
+            helper.assertTrue(greeter.getLife().greetingHolds(true), "the greeter does not greet this morning");
+            final BlockPos spot = greeter.getLife().gatherSpot();
+            helper.assertTrue(spot != null && !spot.equals(column) && CitizenLife.safeStand(level, spot)
+                                && Math.max(Math.abs(spot.getX() - wanted.getX()), Math.abs(spot.getZ() - wanted.getZ())) <= CitizenLife.STAND_SEARCH,
+              "the greeting spot is not a safe place near the wanted one: " + spot + " wanted " + column);
+            helper.assertTrue(data.getGreetedDay() == day, "the morning's greeting is not saved: " + data.getGreetedDay() + " for " + day);
+            helper.assertTrue(data.serializeNBT(level.registryAccess()).getLongOr("greetedday", -1L) == day, "the morning's greeting is not in the save data");
+            // a reloaded entity starts with a fresh life: it does not greet again this morning
+            final CitizenLife reloaded = new CitizenLife(greeter);
+            helper.assertTrue(!reloaded.greetingHolds(true) && reloaded.gatherSpot() == null, "a reloaded greeter greets again the same morning");
+            helper.assertTrue(shut.getLife().greetingHolds(true) && shut.getLife().gatherSpot() != null, "precondition failed: the shut-in greeter has no spot");
+            final BlockPos shutSpot = shut.getLife().gatherSpot();
+            final long t0 = level.getGameTime();
+            final int[] lines = {0};
+            final boolean[] speaking = {false};
+            final long[] shutEnded = {-1};
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                final long now = level.getGameTime();
+                keepFed(greeter, shut, listener);
+                pin(helper, listener, listenerAt);
+                final boolean says = greeter.getSpeech().contains(".morning");
+                lines[0] += says && !speaking[0] ? 1 : 0;
+                speaking[0] = says;
+                helper.assertTrue(!shut.getSpeech().contains(".morning"), "the shut-in greeter greeted with nobody near");
+                if (shutEnded[0] < 0 && !shut.getLife().greetingHolds(true))
+                {
+                    shutEnded[0] = now - t0;
+                    helper.assertTrue(shut.getLife().greetSkipped(), "the shut-in greeter's greeting ended with a line");
+                    helper.assertTrue(shutEnded[0] < CitizenLife.MORNING_BUDGET - CitizenLife.GREET_LINGER - 20,
+                      "the shut-in greeter walked to " + shutSpot + " until the timer: " + shutEnded[0]);
+                }
+                if (now - t0 > CitizenLife.MORNING_BUDGET + 60)
+                {
+                    helper.assertTrue(lines[0] == 1, "the greeter said his morning line " + lines[0] + " times");
+                    helper.assertTrue(!greeter.getLife().greetingHolds(true) && !new CitizenLife(greeter).greetingHolds(true), "the greeting came back");
+                    helper.assertTrue(shutEnded[0] >= 0, "the shut-in greeter still holds his greeting");
+                    Log.getLogger().info("ALIVE RESULT greet_once_safe spot={} wanted={} shut_gave_up_after={}", spot, column, shutEnded[0]);
+                    helper.succeed();
+                    return;
+                }
+                helper.runAfterDelay(1, () -> poll[0].run());
+            };
+            helper.runAfterDelay(1, () -> poll[0].run());
         });
     }
 

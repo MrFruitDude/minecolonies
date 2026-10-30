@@ -11,7 +11,9 @@ import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.entity.ai.minimal.EntityAICitizenLife;
 import com.minecolonies.core.entity.ai.minimal.EntityAICitizenWander;
 import com.minecolonies.core.entity.ai.workers.CitizenAI;
+import com.minecolonies.core.entity.ai.workers.util.StandSpots;
 import com.minecolonies.core.entity.citizen.EntityCitizen;
+import com.minecolonies.core.entity.pathfinding.PathfindingUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.resources.Identifier;
@@ -128,6 +130,11 @@ public final class CitizenLife
      * ticks after its look at the clock, and the greeter looks once a second.
      */
     public static final int WAKE_SLACK = 20;
+
+    /**
+     * Round 8 (Sol M4): how far to the side of his wanted place a greeter looks for a safe place to stand (a liquid, a wall or a fire there).
+     */
+    public static final int STAND_SEARCH = 3;
 
     /**
      * Round 6: when rain or a raid starts, each citizen says his line this many ticks after the start at most (by id, and a little chance), so a crowd does not
@@ -998,9 +1005,15 @@ public final class CitizenLife
             greetingDay = day;
             greetingStart = now();
             final IColony colony = citizen.getCitizenColonyHandler().getColony();
+            final ICitizenData data = citizen.getCitizenData();
             greetSkipped = false;
+            // round 8 (Sol M4): a morning's greeting is taken once, saved with the citizen: a reload of the entity or an AI reset does not greet again
             final boolean greets = justWoke && clock % 24000L < MORNING_END && colony != null && !colony.getRaiderManager().isRaided()
-                                     && greetsOn(citizen.getCivilianID(), day, trait());
+                                     && greetsOn(citizen.getCivilianID(), day, trait()) && data != null && data.getGreetedDay() != day;
+            if (greets)
+            {
+                data.setGreetedDay(day);
+            }
             gatherSpot = greets ? chooseGatherSpot(colony, day) : null;
             // round 7 (R6-F3, N48): nobody awake to hear him yet, but a neighbour sleeps close by: he waits a little for the first one up (a brisk first riser
             // too), within the hold. Round 8 (R7-F2, N56): only for a neighbour due to wake inside the wait; else he goes on with his day at once
@@ -1172,17 +1185,55 @@ public final class CitizenLife
         for (final IBuilding spot : new IBuilding[] {townHall, data.getWorkBuilding(), data.getHomeBuilding()})
         {
             // round 6: only a spot where someone will hear him: a greeter is already on his way there today, or an awake citizen is close by now
-            if (spot != null && spot.getPosition().distSqr(citizen.blockPosition()) <= GATHER_RANGE * GATHER_RANGE
-                  && (ColonyLife.greetersAt(colony, spot.getPosition(), day) > 0 || someoneToGreet(spot.getPosition()))
-                  && ColonyLife.claimGreetSpot(colony, spot.getPosition(), day))
+            if (spot == null || spot.getPosition().distSqr(citizen.blockPosition()) > GATHER_RANGE * GATHER_RANGE
+                  || (ColonyLife.greetersAt(colony, spot.getPosition(), day) <= 0 && !someoneToGreet(spot.getPosition())))
             {
-                // a few blocks off the hut block, by id, so the greeters of one spot do not stand on each other
-                final int id = citizen.getCivilianID();
-                return spot.getPosition().offset(Math.floorMod(id * 5, 7) - 3, 0, Math.floorMod(id * 3 + 1, 7) - 3);
+                continue;
+            }
+            // a few blocks off the hut block, by id, so the greeters of one spot do not stand on each other; round 8 (Sol M4): on a floor he can stand on, with
+            // nothing harmful in or under it
+            final int id = citizen.getCivilianID();
+            final BlockPos stand = standNear(citizen.level(), spot.getPosition().offset(Math.floorMod(id * 5, 7) - 3, 0, Math.floorMod(id * 3 + 1, 7) - 3));
+            if (stand != null && ColonyLife.claimGreetSpot(colony, spot.getPosition(), day))
+            {
+                return stand;
             }
         }
         // no spot nearby has room or a listener: he greets where he stands, if someone is there; else he goes on with his day without a word
         return someoneToGreet(citizen.blockPosition()) ? citizen.blockPosition() : null;
+    }
+
+    /**
+     * Round 8 (Sol M4): the place to stand nearest to a wanted one (at most {@link #STAND_SEARCH} blocks to the side, 2 up or down) that is
+     * {@link #safeStand safe}.
+     *
+     * @param level  the world.
+     * @param wanted the wanted place.
+     * @return the place, null when there is none.
+     */
+    @Nullable
+    public static BlockPos standNear(final Level level, final BlockPos wanted)
+    {
+        return StandSpots.nearest(level, wanted, STAND_SEARCH, 2, 2, pos -> unharmed(level, pos));
+    }
+
+    /**
+     * Round 8 (Sol M4): whether a citizen may stand at a place: loaded, on a floor ({@link StandSpots#canStandAt}), and no fire, magma, berry bush or other
+     * harmful block under or around him.
+     *
+     * @param level the world.
+     * @param pos   the place (the block his feet are in).
+     * @return true if safe.
+     */
+    public static boolean safeStand(final Level level, final BlockPos pos)
+    {
+        return StandSpots.canStandAt(level, pos) && unharmed(level, pos);
+    }
+
+    private static boolean unharmed(final Level level, final BlockPos pos)
+    {
+        return !PathfindingUtils.isDangerous(level.getBlockState(pos.below())) && !PathfindingUtils.isDangerous(level.getBlockState(pos))
+                 && !PathfindingUtils.isDangerous(level.getBlockState(pos.above()));
     }
 
     /**

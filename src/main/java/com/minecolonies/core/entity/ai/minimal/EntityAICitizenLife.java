@@ -9,6 +9,9 @@ import com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.TickingT
 import com.minecolonies.core.colony.life.CitizenLife;
 import com.minecolonies.core.entity.citizen.EntityCitizen;
 import com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils;
+import com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate;
+import com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveToLocation;
+import com.minecolonies.core.entity.pathfinding.pathresults.PathResult;
 import com.ldtteam.structurize.api.util.Tuple;
 import com.minecolonies.api.util.constant.SchematicTagConstants;
 import com.minecolonies.core.colony.buildings.modules.BuildingModules;
@@ -123,10 +126,13 @@ public class EntityAICitizenLife implements IStateAI
         final long now = citizen.level().getGameTime();
         if (lineAt < 0)
         {
-            final boolean arrived = EntityNavigationUtils.walkToPos(citizen, spot, 3, true);
+            // round 8 (Sol M4, M1): a computed path that cannot reach the spot is no arrival: he stops walking and greets where he stands, if someone is near him
+            // (asked before the walk, which starts a new path once the last one ended)
+            final boolean blocked = cannotReach(spot);
+            final boolean arrived = !blocked && EntityNavigationUtils.walkToPos(citizen, spot, 3, true);
             final boolean close = citizen.blockPosition().distSqr(spot) <= CitizenLife.GREET_TALK_RANGE * CitizenLife.GREET_TALK_RANGE;
             final boolean late = now - life.greetingStart() >= CitizenLife.MORNING_BUDGET - CitizenLife.GREET_LINGER - 20;
-            if (!arrived && !close && !late)
+            if (!arrived && !close && !late && !blocked)
             {
                 return LifeState.MORNING_GATHER;
             }
@@ -158,6 +164,15 @@ public class EntityAICitizenLife implements IStateAI
             return CitizenAIState.IDLE;
         }
         return LifeState.MORNING_GATHER;
+    }
+
+    /**
+     * Round 8 (Sol M4, M1): whether the path to a place is computed and ends short of it.
+     */
+    private boolean cannotReach(final BlockPos spot)
+    {
+        final PathResult<?> result = ((MinecoloniesAdvancedPathNavigate) citizen.getNavigation()).getPathResult();
+        return result != null && PathJobMoveToLocation.isJobFor(result.getJob(), spot) && result.failedToReachDestination();
     }
 
     private IState startShelter()
