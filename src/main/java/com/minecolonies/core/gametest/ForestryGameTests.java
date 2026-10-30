@@ -114,6 +114,9 @@ public final class ForestryGameTests
         TESTS.put("forestry_unreachable_give_up", ForestryGameTests::unreachableGiveUp);
         TESTS.put("forestry_sweep_near_build", ForestryGameTests::sweepNearBuild);
         TESTS.put("forestry_replant_protected", ForestryGameTests::replantProtected);
+        TESTS.put("forestry_cap_decoration", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_leaf_wall", ForestryGameTests::leafWall);
+        TESTS.put("forestry_same_wood_beam", ForestryGameTests::sameWoodBeam);
 
         TREECHOP_TESTS.put("forestry_treechop_fell", ForestryGameTests::treeChopFell);
         TREECHOP_TESTS.put("forestry_treechop_half_chopped", ForestryGameTests::treeChopHalfChopped);
@@ -1523,6 +1526,207 @@ public final class ForestryGameTests
                 helper.assertTrue(!level.getBlockState(base).is(Blocks.OAK_SAPLING), "the stump inside the new hut's box was replanted: " + last[0]);
                 return tree(worker) == null && planted == 0 && held + onGround == start;
             }, () -> last[0] + ", " + describe(worker), null, "forestry_replant_protected");
+        });
+    }
+
+    // ---------------------------------------------------------------- player blocks on trees, leaf walls (improve-all r3)
+
+    /**
+     * r2 Sol H1: a player's decoration joined to a mushroom's cap is no cap of the mushroom. A huge red mushroom; against its cap a player built a row of
+     * red mushroom blocks out to a plank on a fence post (the blocks next to the cap touch only caps and air), and put a shroomlight on top of the cap. He
+     * fells the stem; the row, the plank, the post and the shroomlight all stay, though the first blocks of the row lie within the sweep's reach.
+     */
+    private static void capDecoration(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry cap decoration");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final Grown mushroom = grow(helper, new TreeSpec("huge red mushroom", new BlockPos(24, 1, 18), false, Blocks.RED_MUSHROOM, Blocks.MYCELIUM, null, null), 11L);
+        final BlockPos stem = mushroom.stumps().get(0);
+        // the cap's outer block on +x, on the highest level the cap reaches out there
+        BlockPos edge = null;
+        for (int y = 8; y >= 1 && edge == null; y--)
+        {
+            for (int dx = 4; dx >= 1; dx--)
+            {
+                if (level.getBlockState(stem.offset(dx, y, 0)).is(Blocks.RED_MUSHROOM_BLOCK))
+                {
+                    edge = stem.offset(dx, y, 0);
+                    break;
+                }
+            }
+        }
+        helper.assertTrue(edge != null, "the mushroom has no cap on +x");
+        final List<BlockPos> row = new ArrayList<>();
+        for (int i = 1; i <= 4; i++)
+        {
+            final BlockPos pos = edge.east(i);
+            level.setBlockAndUpdate(pos, Blocks.RED_MUSHROOM_BLOCK.defaultBlockState());
+            row.add(pos);
+        }
+        final BlockPos plank = edge.east(5);
+        level.setBlockAndUpdate(plank, Blocks.OAK_PLANKS.defaultBlockState());
+        for (BlockPos post = plank.below(); post.getY() >= stem.getY(); post = post.below())
+        {
+            level.setBlockAndUpdate(post, Blocks.OAK_FENCE.defaultBlockState());
+        }
+        BlockPos top = stem.above();
+        while (TreeFootprint.isTreeBlock(level.getBlockState(top)) || TreeFootprint.isCap(level.getBlockState(top)))
+        {
+            top = top.above();
+        }
+        final BlockPos shroomlight = top;
+        level.setBlockAndUpdate(shroomlight, Blocks.SHROOMLIGHT.defaultBlockState());
+        final AABB stemBox = new AABB(stem).expandTowards(0, 12, 0);
+
+        helper.runAfterDelay(20, () -> {
+            final Tree tree = new Tree(level, stem.above(1), colony);
+            helper.assertTrue(tree.isTree() && tree.getSkip() == TreeFootprint.Skip.NONE, "the mushroom is no tree: " + tree.getSkip() + " " + tree.getSkipDetail());
+            final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10));
+            helper.assertTrue(worker.getJob() instanceof JobLumberjack, "no lumberjack job");
+            ((JobLumberjack) worker.getJob()).setTree(tree);
+            final String[] last = {""};
+            pump(helper, List.of(worker), 12_000, () -> {
+                final int stems = count(level, stemBox, TreeFootprint::isTreeBlock);
+                final long rowLeft = row.stream().filter(pos -> level.getBlockState(pos).is(Blocks.RED_MUSHROOM_BLOCK)).count();
+                last[0] = "stem blocks " + stems + ", decoration row " + rowLeft + "/4, plank " + level.getBlockState(plank).getBlock() + ", shroomlight "
+                            + level.getBlockState(shroomlight).getBlock();
+                helper.assertTrue(rowLeft == 4 && level.getBlockState(plank).is(Blocks.OAK_PLANKS), "the decoration joined to the cap was taken: " + last[0]);
+                helper.assertTrue(level.getBlockState(shroomlight).is(Blocks.SHROOMLIGHT), "the shroomlight on the cap was taken: " + last[0]);
+                return stems == 0 && tree(worker) == null;
+            }, () -> last[0] + ", " + describe(worker), null, "forestry_cap_decoration");
+        });
+    }
+
+    /**
+     * r2 Fable N3: the planner never plans through a leaf he may not clear. An oak sealed in stone, its only way in a tunnel whose mouth is closed by two
+     * natural oak leaves next to glass in the wall (a player's block: he may not clear them). He gives the tree up at once with that reason, not
+     * after two minutes at the leaves, and a tree given up again is left be longer each time. Nothing is cut, the leaves and the glass stay.
+     */
+    private static void leafWall(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry leaf wall");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final BlockPos base = helper.absolutePos(new BlockPos(26, 1, 20));
+        final Map<BlockPos, Block> leaves = new HashMap<>();
+        synthTrunk(level, base, 6, Blocks.OAK_LOG, Blocks.OAK_LEAVES, leaves);
+        placeLeaves(level, leaves);
+        for (final BlockPos pos : BlockPos.betweenClosed(base.offset(-3, 0, -3), base.offset(3, 8, 3)))
+        {
+            if (level.getBlockState(pos).isAir())
+            {
+                level.setBlockAndUpdate(pos, Blocks.STONE.defaultBlockState());
+            }
+        }
+        // the tunnel from the stump out to the east, its mouth closed by natural leaves, glass in the wall beside them
+        for (int dx = 1; dx <= 3; dx++)
+        {
+            for (int dy = 0; dy <= 1; dy++)
+            {
+                level.setBlockAndUpdate(base.offset(dx, dy, 0), dx == 3 ? Blocks.OAK_LEAVES.defaultBlockState().setValue(LeavesBlock.DISTANCE, LeavesBlock.DECAY_DISTANCE)
+                                                                     : Blocks.AIR.defaultBlockState());
+            }
+        }
+        final List<BlockPos> mouth = List.of(base.offset(3, 0, 0), base.offset(3, 1, 0));
+        final BlockPos glass = base.offset(3, 0, 1);
+        level.setBlockAndUpdate(glass, Blocks.GLASS.defaultBlockState());
+        level.setBlockAndUpdate(glass.above(), Blocks.GLASS.defaultBlockState());
+        final AABB box = new AABB(base).inflate(3, 0, 3).expandTowards(0, 9, 0);
+
+        helper.runAfterDelay(20, () -> {
+            final Tree tree = new Tree(level, base.above(2), colony);
+            helper.assertTrue(tree.isTree() && tree.getSkip() == TreeFootprint.Skip.NONE, "the sealed oak is no tree: " + tree.getSkip() + " " + tree.getSkipDetail());
+            final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10), new ItemStack(Items.OAK_SAPLING, 4));
+            helper.assertTrue(worker.getJob() instanceof JobLumberjack, "no lumberjack job");
+            ((JobLumberjack) worker.getJob()).setTree(tree);
+            final long start = level.getGameTime();
+            final String[] last = {""};
+            pump(helper, List.of(worker), 6_000, () -> {
+                final EntityAIWorkLumberjack ai = ai(worker);
+                final int logs = count(level, box, s -> s.is(Blocks.OAK_LOG));
+                final long mouthLeft = mouth.stream().filter(pos -> level.getBlockState(pos).is(Blocks.OAK_LEAVES)).count();
+                last[0] = "oak logs " + logs + "/6, mouth leaves " + mouthLeft + "/2, glass " + level.getBlockState(glass).getBlock() + ", given up "
+                            + (ai == null ? -1 : ai.getTreesGivenUp()) + " (" + (ai == null ? "" : ai.getGiveUpNote()) + "), hut reason " + building.getSkipReason(base);
+                helper.assertTrue(logs == 6 && mouthLeft == 2 && level.getBlockState(glass).is(Blocks.GLASS), "the walled oak or its leaf wall was cut: " + last[0]);
+                if (ai == null || ai.getTreesGivenUp() < 1)
+                {
+                    return false;
+                }
+                final long waited = level.getGameTime() - start;
+                helper.assertTrue(ai.getGiveUpNote().contains("leaves"), "given up without the reason of the leaves: " + last[0]);
+                helper.assertTrue(waited < 2 * 60 * 20L, "stood at the leaf wall for " + waited + " ticks before giving up");
+                helper.assertTrue(building.getSkipReason(base) == BuildingLumberjack.SkipReason.UNREACHABLE, "the hut does not count it: " + last[0]);
+                helper.assertTrue(com.minecolonies.core.entity.ai.workers.util.TreeClaims.giveUpBlockTicks(2)
+                                    == 2 * com.minecolonies.core.entity.ai.workers.util.TreeClaims.giveUpBlockTicks(1), "a tree given up again is not left be longer");
+                return true;
+            }, () -> last[0] + ", " + describe(worker), null, "forestry_leaf_wall");
+        });
+    }
+
+    /**
+     * r2 Fable N5: a beam or floor of the tree's own wood resting on it is a player's work, as a post of another wood is. Oak A carries a 3 by 3 floor of
+     * oak logs, oak B a level beam of five oak logs; oak C has a natural branch of two level logs. A and B stay whole and count as next to a build, C is
+     * felled and replanted.
+     */
+    private static void sameWoodBeam(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry same wood beam");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        IColonyManager.getInstance().getCompatibilityManager().connectLeafToSapling(Blocks.OAK_LEAVES, new ItemStack(Items.OAK_SAPLING));
+        final Map<BlockPos, Block> leaves = new HashMap<>();
+        final BlockPos floorOak = helper.absolutePos(new BlockPos(22, 1, 24));
+        final BlockPos beamOak = helper.absolutePos(new BlockPos(28, 1, 14));
+        final BlockPos branchOak = helper.absolutePos(new BlockPos(34, 1, 25));
+        for (final BlockPos base : List.of(floorOak, beamOak, branchOak))
+        {
+            synthTrunk(level, base, 6, Blocks.OAK_LOG, Blocks.OAK_LEAVES, leaves);
+        }
+        final BlockState level_x = Blocks.OAK_LOG.defaultBlockState().setValue(RotatedPillarBlock.AXIS, Direction.Axis.X);
+        for (int dx = 1; dx <= 3; dx++)
+        {
+            for (int dz = -1; dz <= 1; dz++)
+            {
+                level.setBlockAndUpdate(floorOak.offset(dx, 3, dz), level_x);
+            }
+        }
+        for (int dx = 1; dx <= TreeFootprint.BEAM_RUN; dx++)
+        {
+            level.setBlockAndUpdate(beamOak.offset(dx, 3, 0), level_x);
+        }
+        for (int dx = 1; dx <= 2; dx++)
+        {
+            level.setBlockAndUpdate(branchOak.offset(dx, 3, 0), level_x);
+        }
+        placeLeaves(level, leaves);
+        final int budget = MineColonies.getConfig().getServer().maxTreeSize.get();
+        for (final BlockPos base : List.of(floorOak, beamOak))
+        {
+            final TreeFootprint.Footprint print = TreeFootprint.scan(level, base.above(1), colony, budget);
+            helper.assertTrue(print != null && print.skip == TreeFootprint.Skip.BUILD, "the oak at " + base.toShortString() + " with logs built on is no tree next to a build: "
+                                                                                      + (print == null ? "no footprint" : print.skip + " " + print.skipDetail));
+        }
+        final TreeFootprint.Footprint natural = TreeFootprint.scan(level, branchOak.above(1), colony, budget);
+        helper.assertTrue(natural != null && natural.skip == TreeFootprint.Skip.NONE && natural.logs.size() == 8,
+          "the oak with a natural branch is not a whole tree: " + (natural == null ? "no footprint" : natural.logs.size() + " logs, " + natural.skip + " " + natural.skipDetail));
+        final AABB floorBox = new AABB(floorOak).inflate(3, 0, 3).expandTowards(0, 8, 0);
+        final AABB beamBox = new AABB(beamOak).inflate(3, 0, 3).expandTowards(TreeFootprint.BEAM_RUN, 8, 0);
+        final AABB branchBox = new AABB(branchOak).inflate(3, 0, 3).expandTowards(0, 8, 0);
+
+        helper.runAfterDelay(20, () -> {
+            final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10), new ItemStack(Items.OAK_SAPLING, 4));
+            final String[] last = {""};
+            pump(helper, List.of(worker), FELL_CAP, () -> {
+                final int floorLogs = count(level, floorBox, s -> s.is(Blocks.OAK_LOG));
+                final int beamLogs = count(level, beamBox, s -> s.is(Blocks.OAK_LOG));
+                final int branchLogs = count(level, branchBox, s -> s.is(Blocks.OAK_LOG));
+                last[0] = "floor oak logs " + floorLogs + "/15, beam oak logs " + beamLogs + "/" + (6 + TreeFootprint.BEAM_RUN) + ", branch oak logs " + branchLogs
+                            + ", skip floor " + building.getSkipReason(floorOak) + " beam " + building.getSkipReason(beamOak) + ", stump " + level.getBlockState(branchOak).getBlock();
+                helper.assertTrue(floorLogs == 15 && beamLogs == 6 + TreeFootprint.BEAM_RUN, "an oak with logs built on was cut: " + last[0]);
+                return branchLogs == 0 && level.getBlockState(branchOak).is(Blocks.OAK_SAPLING) && building.getSkipReason(floorOak) == BuildingLumberjack.SkipReason.BUILD
+                         && building.getSkipReason(beamOak) == BuildingLumberjack.SkipReason.BUILD && tree(worker) == null;
+            }, () -> last[0] + ", " + describe(worker), null, "forestry_same_wood_beam");
         });
     }
 
