@@ -337,6 +337,17 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private static final long LEAF_GUARD_TICKS     = 600L;
 
     /**
+     * Forestry (r4 Fable N24): other spots around the stump he tries when the navigator backs off from the one he walks to, and the tree his own search
+     * just reached (a path got there), which gets one more round of the give-up clock from another spot before he counts it unreachable.
+     */
+    private static final int MAX_WORK_SPOTS = 4;
+    private final Set<BlockPos> triedWorkSpots = new HashSet<>();
+    @Nullable
+    private Tree searchedTree;
+    @Nullable
+    private Tree walkRetriedTree;
+
+    /**
      * Forestry: the idle planting spot he walks to, and since when.
      */
     @Nullable
@@ -347,6 +358,14 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      * Forestry: leaves and caps the sweep left because they touch a build, a hut box or another colony's land (tests).
      */
     private int sweepKept = 0;
+
+    /**
+     * Forestry: why the sweep of the current tree left blocks standing, by reason, and the last cap tree's sweep in one line (r4 Fable N12: the tests
+     * print it on failure).
+     */
+    private final Map<String, Integer> sweepRefusals = new java.util.TreeMap<>();
+    private String sweepNote = "";
+    private String walkNoteAtGiveUp = "";
 
     /**
      * Forestry: blocks of chosen trees left alone because they changed since the choice, and trees given up for that before the first cut (tests).
@@ -433,6 +452,14 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     public int getSweepKept()
     {
         return sweepKept;
+    }
+
+    /**
+     * @return the last huge mushroom's or fungus's sweep in one line: its seeds, what it queued, held, kept, and why blocks were refused (tests).
+     */
+    public String getSweepNote()
+    {
+        return sweepNote;
     }
 
     /**
@@ -767,6 +794,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 claim = TreeClaims.claim(world, tree.getAllLogs().isEmpty() ? List.of(tree.getLocation()) : tree.getAllLogs(), colonyId, citizenId);
                 building.removeSkippedTree(tree.getLocation());
                 chooseChopPath(tree);
+                searchedTree = tree;
                 startTreeClock();
                 pathResult = null;
                 return LUMBERJACK_CHOP_TREE;
@@ -882,13 +910,13 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         if (recheck == TreeFootprint.Recheck.OK && part == TreeFootprint.Part.LEAF && TreeFootprint.isCap(world.getBlockState(pos))
               && !tree.capWasThere(pos, world.getBlockState(pos)))
         {
-            // a wart block or shroomlight put there after he chose the tree (r3 Sol H1)
-            Log.getLogger().debug("Forester {} leaves the cap at {}: it was added after he chose the tree", worker.getCitizenData().getId(), pos.toShortString());
-            lastRefusal = "a cap block added after the tree was chosen";
+            // a wart block or shroomlight put there after he chose the tree (r3 Sol H1), or any cap of a tree whose caps he never saw (r4 Sol H1)
+            Log.getLogger().debug("Forester {} leaves the cap at {}: he did not see it there when he chose the tree", worker.getCitizenData().getId(), pos.toShortString());
+            lastRefusal = "a cap block not seen there when the tree was chosen";
             return false;
         }
         if (recheck == TreeFootprint.Recheck.OK && part == TreeFootprint.Part.LEAF && TreeFootprint.isCap(world.getBlockState(pos))
-              && !TreeFootprint.capComponentIsOwn(world, pos, tree.getBox(), tree.getFamily(), tree.isStrippedBase()))
+              && !TreeFootprint.capComponentIsOwn(world, pos, tree.getBox(), tree.getFamily(), tree.isStrippedBase(), building.getColony().getID()))
         {
             // a cap joined to a player's decoration (built after the tree was chosen): it stays whole, the tree goes on
             Log.getLogger().debug("Forester {} leaves the cap at {}: it is joined to a decoration", worker.getCitizenData().getId(), pos.toShortString());
@@ -944,6 +972,9 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         useTreeChop = false;
         treeChopTarget = null;
         workFrom = null;
+        triedWorkSpots.clear();
+        searchedTree = null;
+        walkRetriedTree = null;
         startTreeClock();
     }
 
@@ -1137,8 +1168,28 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         final boolean treeWork = job.getTree().hasLogs() || job.getTree().hasDecorations() || (shouldBreakLeaves && job.getTree().hasLeaves());
         if (treeWork && now - treeProgressAt > TREE_GIVE_UP_TICKS)
         {
+            final Tree tree = job.getTree();
+            final boolean guardRefused = leafGuard != null && leafGuardTree == tree && leafGuard.refused();
+            if (!reachedTree && lastRefusal == null && !guardRefused && tree == searchedTree && walkRetriedTree != tree)
+            {
+                // r4 Fable N24: his own search just found a way to this tree; two minutes without getting there and nothing in his way is a walk that went
+                // wrong (a search cut short on a busy server, a spot the navigator backs off from), not proof it cannot be reached: once more from
+                // another spot before he counts it
+                walkRetriedTree = tree;
+                Log.getLogger().debug("Forester {} tries the tree at {} once more: {}", worker.getCitizenData().getId(), tree.getLocation().toShortString(), walkNote());
+                if (workFrom != null)
+                {
+                    triedWorkSpots.add(workFrom);
+                }
+                workFrom = otherWorkSpot(tree.getStumpLocations().isEmpty() ? tree.getLocation() : tree.getStumpLocations().get(0));
+                pathToTree = null;
+                failedTreePaths = 0;
+                startTreeClock();
+                return getState();
+            }
             // Forestry: never stand at a tree for ever
-            return giveUpTree(job.getTree());
+            walkNoteAtGiveUp = walkNote();
+            return giveUpTree(tree);
         }
         if (treeWork || checkedInHut)
         {
@@ -1327,11 +1378,14 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                     removed.add(log);
                 }
             }
-            sweep = new TreeFootprint.LeafSweep(world, removed, tree.getBox(), tree.isNetherTree(), tree.getFamily(), tree.isStrippedBase());
+            final int colonyId = building.getColony().getID();
+            sweep = new TreeFootprint.LeafSweep(world, removed, tree.getBox(), tree.isNetherTree(), tree.getFamily(), tree.isStrippedBase(), colonyId,
+              tree.isNetherTree() ? tree.capEdge(world) : List.of());
+            sweepRefusals.clear();
             if (tree.isNetherTree() && !removed.isEmpty() && tree.getBox() != null)
             {
-                // a cap this one shares with a neighbour still standing goes when the neighbour is felled (r3 Fable N12)
-                FelledCapTrees.felled(world, tree.getBox(), tree.getFamily());
+                // a cap this one shares with a neighbour still standing goes when the neighbour is felled (r3 Fable N12), and only the caps he saw (r4 Sol H1)
+                FelledCapTrees.felled(world, colonyId, tree.getBox(), tree.getFamily(), tree.getCapsAtChoice());
             }
         }
         final List<BlockPos> batch = sweep.next(LEAF_BATCH);
@@ -1362,6 +1416,11 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
         if (sweep.isDone())
         {
+            if (tree.isNetherTree())
+            {
+                sweepNote = "sweep at " + tree.getLocation().toShortString() + ": " + sweep.capNote() + ", broken " + sweep.getBroken() + ", refused " + sweepRefusals;
+                Log.getLogger().debug("Forester {} {}", worker.getCitizenData().getId(), sweepNote);
+            }
             sweptTree = tree;
             sweep = null;
             return false;
@@ -1387,16 +1446,27 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             final IColony owner = IColonyManager.getInstance().getColonyByPosFromWorld(world, pos);
             return (owner == null || owner.getID() == building.getColony().getID()) && !TreeFootprint.leafTouchesBuild(world, pos, tree.isStrippedBase());
         }
-        if (TreeFootprint.recheck(world, pos, TreeFootprint.Part.LEAF, tree.getFamily(), tree.isStrippedBase(), building.getColony()) != TreeFootprint.Recheck.OK)
+        final TreeFootprint.Recheck recheck = TreeFootprint.recheck(world, pos, TreeFootprint.Part.LEAF, tree.getFamily(), tree.isStrippedBase(), building.getColony());
+        if (recheck != TreeFootprint.Recheck.OK)
         {
+            sweepRefusals.merge("recheck " + recheck, 1, Integer::sum);
             return false;
         }
         if (TreeFootprint.isCap(world.getBlockState(pos)))
         {
-            // a cap added since he chose the tree is a player's (r3 Sol H1); a cap of a joined neighbour felled lately is in reach too (r3 Fable N12)
+            // a cap added since he chose the tree is a player's (r3 Sol H1); a cap of a joined neighbour his colony felled lately is in reach too (r3 Fable
+            // N12, r4 Fable N33)
             final AABB box = tree.getBox();
-            return box != null && tree.capWasThere(pos, world.getBlockState(pos))
-                     && TreeFootprint.inAny(FelledCapTrees.capBounds(world, box, tree.getFamily(), SWEEP_CAP_MARGIN), pos);
+            if (box == null || !tree.capWasThere(pos, world.getBlockState(pos)))
+            {
+                sweepRefusals.merge("not seen", 1, Integer::sum);
+                return false;
+            }
+            if (!TreeFootprint.inAny(FelledCapTrees.capBounds(world, building.getColony().getID(), box, tree.getFamily(), SWEEP_CAP_MARGIN), pos))
+            {
+                sweepRefusals.merge("out of reach", 1, Integer::sum);
+                return false;
+            }
         }
         return true;
     }
@@ -1935,6 +2005,29 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             closeSince = -1;
         }
 
+        if ((pathToTree == null || !pathToTree.isInProgress()) && triedWorkSpots.size() < MAX_WORK_SPOTS
+              && ((MinecoloniesAdvancedPathNavigate) worker.getNavigation()).isDestinationUnreachable(workFrom))
+        {
+            // r4 Fable N24: the navigator backs off from this spot (two searches to it failed); standing through the back-off runs the give-up clock out on
+            // a tree he may reach from another side. He tries another spot around the stump
+            triedWorkSpots.add(workFrom);
+            final BlockPos other = otherWorkSpot(workAt);
+            if (other != null)
+            {
+                Log.getLogger().debug("Forester {} walks to {} instead of {}: no way found there", worker.getCitizenData().getId(), other.toShortString(), workFrom.toShortString());
+                if (pathToTree != null && pathToTree.failedToReachDestination())
+                {
+                    failedTreePaths++;
+                }
+                // the give-up clock runs on: another spot is no progress
+                workFrom = other;
+                treeProgressFrom = other;
+                treeBestDistance = Math.sqrt(worker.blockPosition().distSqr(other));
+                pathToTree = null;
+                return false;
+            }
+        }
+
         if (pathToTree == null || !pathToTree.isInProgress())
         {
             if (pathToTree != null && pathToTree.failedToReachDestination())
@@ -1965,6 +2058,61 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
 
         return false;
+    }
+
+    /**
+     * Forestry (r4 Fable N24): another spot to work at the stump from, one he has not tried: air for his feet and head on a solid floor, within two blocks
+     * of the stump and one up or down, the nearest to him first.
+     *
+     * @param workAt the stump.
+     * @return the spot, or null if there is none.
+     */
+    @Nullable
+    private BlockPos otherWorkSpot(@NotNull final BlockPos workAt)
+    {
+        BlockPos best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (final BlockPos pos : BlockPos.betweenClosed(workAt.offset(-2, -1, -2), workAt.offset(2, 1, 2)))
+        {
+            if (triedWorkSpots.contains(pos) || !world.getBlockState(pos).isAir() || !world.getBlockState(pos.above()).isAir())
+            {
+                continue;
+            }
+            final BlockState floor = world.getBlockState(pos.below());
+            if (floor.getCollisionShape(world, pos.below()).isEmpty() || !floor.getFluidState().isEmpty())
+            {
+                continue;
+            }
+            final double dist = pos.distSqr(worker.blockPosition());
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                best = pos.immutable();
+            }
+        }
+        return best;
+    }
+
+    /**
+     * @return where his walk to the tree stands, for the debug line and the tests (r4 Fable N24).
+     */
+    @NotNull
+    private String walkNote()
+    {
+        final BlockPos at = worker.blockPosition();
+        return "at " + at.toShortString() + ", work spot " + (workFrom == null ? "none" : workFrom.toShortString()) + " (tried " + triedWorkSpots.size() + ")"
+                 + ", failed paths " + failedTreePaths + ", navigator backs off " + (workFrom != null && ((MinecoloniesAdvancedPathNavigate) worker.getNavigation()).isDestinationUnreachable(workFrom))
+                 + ", path " + (pathToTree == null ? "none" : pathToTree.getStatus()) + ", reached " + reachedTree + ", searched " + (job.getTree() != null && job.getTree() == searchedTree)
+                 + ", retried " + (job.getTree() != null && job.getTree() == walkRetriedTree);
+    }
+
+    /**
+     * @return his walk to the tree when he last gave one up (tests).
+     */
+    @NotNull
+    public String getWalkNoteAtGiveUp()
+    {
+        return walkNoteAtGiveUp;
     }
 
     /**

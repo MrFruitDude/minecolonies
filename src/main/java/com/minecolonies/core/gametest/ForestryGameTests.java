@@ -245,7 +245,9 @@ public final class ForestryGameTests
                  + ", tree " + (tree == null ? "none" : tree.getLocation() + " logs left " + tree.getLogsLeft() + " skip " + tree.getSkip() + " sapling " + tree.getSapling()
                  + " stumps " + tree.getStumpLocations())
                  + ", at " + worker.getEntity().map(e -> e.blockPosition().toShortString()).orElse("?") + ", inventory " + inventory
-                 + ", given up " + (ai == null ? "?" : ai.getTreesGivenUp() + " (" + ai.getGiveUpNote() + ")");
+                 + ", given up " + (ai == null ? "?" : ai.getTreesGivenUp() + " (" + ai.getGiveUpNote() + ")")
+                 + (ai == null || ai.getWalkNoteAtGiveUp().isEmpty() ? "" : ", walk at give-up: " + ai.getWalkNoteAtGiveUp())
+                 + (ai == null || ai.getSweepNote().isEmpty() ? "" : ", last cap sweep: " + ai.getSweepNote());
     }
 
     /**
@@ -1430,9 +1432,11 @@ public final class ForestryGameTests
                 final int pairLogs = count(level, pair, s -> s.is(BlockTags.LOGS));
                 final int beamOakLogs = count(level, beamBox, s -> s.is(Blocks.OAK_LOG));
                 final long beamLeft = beam.stream().filter(pos -> level.getBlockState(pos).is(Blocks.SPRUCE_LOG)).count();
+                final EntityAIWorkLumberjack ai = ai(worker);
                 last[0] = "oak and birch logs " + pairLogs + ", beam oak logs " + beamOakLogs + "/6, beam " + beamLeft + "/3, skip oak " + building.getSkipReason(oak)
                             + " birch " + building.getSkipReason(birch) + " beam oak " + building.getSkipReason(beamOak) + ", stumps " + level.getBlockState(oak).getBlock()
-                            + " " + level.getBlockState(birch).getBlock();
+                            + " " + level.getBlockState(birch).getBlock() + (ai == null ? "" : ", give-up note '" + ai.getGiveUpNote() + "', walk at give-up: "
+                                                                                                    + ai.getWalkNoteAtGiveUp() + ", hut note '" + building.getLastSkipNote() + "'");
                 helper.assertTrue(beamOakLogs == 6 && beamLeft == 3, "the oak with the beam was cut: " + last[0]);
                 helper.assertTrue(building.getSkipReason(oak) == null && building.getSkipReason(birch) == null, "a natural tree was counted as left standing: " + last[0]);
                 return pairLogs == 0 && level.getBlockState(oak).is(Blocks.OAK_SAPLING) && level.getBlockState(birch).is(Blocks.BIRCH_SAPLING)
@@ -1763,8 +1767,12 @@ public final class ForestryGameTests
             pump(helper, List.of(worker), 24_000, () -> {
                 final int stems = count(level, both, TreeFootprint::isTreeBlock);
                 final int caps = count(level, both, TreeFootprint::isCap);
+                // which half the caps left stand over (r4 Fable N12: the sweep note says why)
+                final double mid = (stemA.getX() + stemB.getX() + 1) / 2.0D;
+                final int capsByA = count(level, new AABB(both.minX, both.minY, both.minZ, mid, both.maxY, both.maxZ), TreeFootprint::isCap);
                 final EntityAIWorkLumberjack ai = ai(worker);
-                last[0] = "stems " + stems + ", caps " + caps + ", given up " + (ai == null ? "?" : ai.getTreesGivenUp() + " (" + ai.getGiveUpNote() + ")");
+                last[0] = "stems " + stems + ", caps " + caps + " (" + capsByA + " on a's side), given up " + (ai == null ? "?" : ai.getTreesGivenUp() + " (" + ai.getGiveUpNote() + ")")
+                            + (ai == null ? "" : ", last cap sweep: " + ai.getSweepNote());
                 helper.assertTrue(ai == null || ai.getTreesGivenUp() == 0, "he gave a mushroom up: " + last[0]);
                 return stems == 0 && caps == 0 && tree(worker) == null;
             }, () -> last[0] + ", " + describe(worker), null, "forestry_joined_caps");

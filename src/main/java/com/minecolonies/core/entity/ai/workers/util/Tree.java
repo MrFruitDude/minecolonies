@@ -170,10 +170,16 @@ public class Tree
     /**
      * Forestry: every cap around a mushroom or fungus when it was chosen, by position, with its block (r3 Sol H1). A cap that is not here, or is another
      * block now (a wart block or shroomlight a player added or swapped in during the felling), is somebody's: he never cuts, clears or sweeps it. Null
-     * when unknown (not a cap tree, or a save from before).
+     * when unknown (not a cap tree, a save from before, a box too big to look at): then no cap is proven his and none goes (r4 Sol H1).
      */
     @Nullable
     private Map<Long, Block> capsAtChoice;
+
+    /**
+     * Forestry: the colony whose Forester chose the tree, -1 if unknown (a save from before): only stems this colony felled widen the reach of its caps
+     * (r4 Fable N33).
+     */
+    private int capColony = -1;
 
     /**
      * Private constructor of the tree. Used by the equals and createFromNBt method.
@@ -234,6 +240,7 @@ public class Tree
      */
     private void initFromFootprint(@NotNull final Level world, @NotNull final BlockPos log, @Nullable final IColony colony)
     {
+        capColony = colony == null ? -1 : colony.getID();
         footprint = TreeFootprint.scan(world, log, colony, MineColonies.getConfig().getServer().maxTreeSize.get());
         if (footprint == null || footprint.logs.isEmpty())
         {
@@ -363,7 +370,7 @@ public class Tree
                 return !known;
             }
             // one flood per connected cap, not per block of it (filled outside computeIfAbsent: the flood writes the same map)
-            final TreeFootprint.CapComponent component = TreeFootprint.capComponent(world, pos, logBox, family, strippedBase);
+            final TreeFootprint.CapComponent component = TreeFootprint.capComponent(world, pos, logBox, family, strippedBase, capColony);
             for (final BlockPos cell : component.cells())
             {
                 capOwned.putIfAbsent(cell, component.own());
@@ -824,6 +831,7 @@ public class Tree
         {
             tree.allLogs.add(BlockPosUtil.readFromListNBT(allLogsBin, i));
         }
+        tree.capColony = compound.getIntOr(TAG_CAP_COLONY, -1);
         if (compound.contains(TAG_CAPS))
         {
             final CompoundTag caps = compound.getCompoundOrEmpty(TAG_CAPS);
@@ -1104,6 +1112,7 @@ public class Tree
     private static final String TAG_STARTED       = "forestryStarted";
     private static final String TAG_ALL_LOGS      = "forestryAllLogs";
     private static final String TAG_CAPS          = "forestryCaps";
+    private static final String TAG_CAP_COLONY    = "forestryCapColony";
 
     /**
      * @return true once a block of the tree was broken.
@@ -1195,7 +1204,67 @@ public class Tree
                 }
             }
         }
+        // a cap by a stem his colony felled lately is natural only if that stem's Forester saw it so (r4 Sol H1): a wart block or shroomlight added
+        // to the half a felled stem left is no part of this fresh look
+        final net.minecraft.world.phys.AABB logBox = net.minecraft.world.phys.AABB.encapsulatingFullBlocks(boxMin, boxMax);
+        final java.util.function.BiPredicate<BlockPos, BlockState> proven = FelledCapTrees.provenNatural(world, capColony, logBox, family, reach);
+        caps.entrySet().removeIf(e -> !proven.test(BlockPos.of(e.getKey()), world.getBlockState(BlockPos.of(e.getKey()))));
         return caps;
+    }
+
+    /**
+     * @return the caps he saw when he chose the tree (unmodifiable), or null if unknown.
+     */
+    @Nullable
+    public Map<Long, Block> getCapsAtChoice()
+    {
+        return capsAtChoice == null ? null : java.util.Collections.unmodifiableMap(capsAtChoice);
+    }
+
+    /**
+     * @return the colony whose Forester chose the tree, -1 if unknown.
+     */
+    public int getCapColony()
+    {
+        return capColony;
+    }
+
+    /**
+     * Forestry: the caps next to (faces, edges, corners) caps of this tree he saw and that are gone now (r4 Fable N12). The sweep starts from them as well
+     * as from the stems: the rest of a joined cap lies far from this tree's stems once the part that linked it to them was taken.
+     *
+     * @param world the level.
+     * @return the caps, at most {@link TreeFootprint#LEAF_BUDGET}.
+     */
+    @NotNull
+    public List<BlockPos> capEdge(@NotNull final Level world)
+    {
+        final List<BlockPos> out = new ArrayList<>();
+        if (capsAtChoice == null)
+        {
+            return out;
+        }
+        final java.util.Set<Long> added = new java.util.HashSet<>();
+        for (final long key : capsAtChoice.keySet())
+        {
+            final BlockPos gone = BlockPos.of(key);
+            if (!world.getBlockState(gone).isAir())
+            {
+                continue;
+            }
+            for (final BlockPos near : BlockPos.betweenClosed(gone.offset(-1, -1, -1), gone.offset(1, 1, 1)))
+            {
+                if (capsAtChoice.containsKey(near.asLong()) && TreeFootprint.isCap(world.getBlockState(near)) && added.add(near.asLong()))
+                {
+                    out.add(near.immutable());
+                    if (out.size() >= TreeFootprint.LEAF_BUDGET)
+                    {
+                        return out;
+                    }
+                }
+            }
+        }
+        return out;
     }
 
     /**
@@ -1204,13 +1273,14 @@ public class Tree
      *
      * @param pos   the cap.
      * @param state what is there now.
-     * @return true if it is as he saw it, or if he saw none (not a cap tree, an older save).
+     * @return true if it is as he saw it; false if he does not know what he saw (not a cap tree, a save from before): a cap not proven the tree's own
+     * stays (r4 Sol H1).
      */
     public boolean capWasThere(@NotNull final BlockPos pos, @NotNull final BlockState state)
     {
         if (capsAtChoice == null)
         {
-            return true;
+            return false;
         }
         final Block seen = capsAtChoice.get(pos.asLong());
         return seen != null && state.is(seen);
@@ -1227,7 +1297,7 @@ public class Tree
     public boolean mayClearCap(@NotNull final Level world, @NotNull final BlockPos pos)
     {
         return ownsCap(pos) && capWasThere(pos, world.getBlockState(pos))
-                 && TreeFootprint.capComponentIsOwn(world, pos, getBox(), family, strippedBase);
+                 && TreeFootprint.capComponentIsOwn(world, pos, getBox(), family, strippedBase, capColony);
     }
 
     /**
@@ -1567,6 +1637,7 @@ public class Tree
             BlockPosUtil.writeToListNBT(allLogsBin, pos);
         }
         compound.put(TAG_ALL_LOGS, allLogsBin);
+        compound.putInt(TAG_CAP_COLONY, capColony);
         if (capsAtChoice != null)
         {
             // per block kind, the positions of its caps

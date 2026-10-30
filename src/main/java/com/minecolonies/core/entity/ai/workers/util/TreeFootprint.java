@@ -390,7 +390,7 @@ public final class TreeFootprint
 
     /**
      * Whether the connected cap (faces, edges and corners) a cap belongs to is all the tree's own: every block of it a cap of the tree's kind, within
-     * {@link LeafSweep#CAP_BOUNDS} of the box of the tree's logs or of a stem of its kind felled here lately (two caps grown into one, r3 Fable N12), and
+     * {@link LeafSweep#CAP_BOUNDS} of the box of the tree's logs or of a stem of its kind his colony felled here lately (two caps grown into one, r3 Fable N12), and
      * touching no player's block. A cap joined to a player's decoration (wart blocks or shroomlights built against the canopy, a cap of another kind) is
      * kept whole, by the direct cut, the clearing and the sweep alike (r2 Sol H1).
      *
@@ -399,6 +399,7 @@ public final class TreeFootprint
      * @param logBox       the box of the tree's logs, or null if unknown.
      * @param family       the tree's family.
      * @param strippedBase true if the tree itself is stripped.
+     * @param colony       the Forester's colony (only its own felled stems widen the bounds, r4 Fable N33).
      * @return true if he may take it as the tree's cap.
      */
     public static boolean capComponentIsOwn(
@@ -406,9 +407,10 @@ public final class TreeFootprint
       @NotNull final BlockPos seed,
       @Nullable final AABB logBox,
       @NotNull final String family,
-      final boolean strippedBase)
+      final boolean strippedBase,
+      final int colony)
     {
-        return capComponent(level, seed, logBox, family, strippedBase).own();
+        return capComponent(level, seed, logBox, family, strippedBase, colony).own();
     }
 
     /**
@@ -429,6 +431,7 @@ public final class TreeFootprint
      * @param logBox       the box of the tree's logs, or null if unknown.
      * @param family       the tree's family.
      * @param strippedBase true if the tree itself is stripped.
+     * @param colony       the Forester's colony (only its own felled stems widen the bounds, r4 Fable N33).
      * @return the cap and the verdict.
      */
     @NotNull
@@ -437,9 +440,10 @@ public final class TreeFootprint
       @NotNull final BlockPos seed,
       @Nullable final AABB logBox,
       @NotNull final String family,
-      final boolean strippedBase)
+      final boolean strippedBase,
+      final int colony)
     {
-        final List<AABB> bounds = logBox == null ? null : FelledCapTrees.capBounds(level, logBox, family, LeafSweep.CAP_BOUNDS);
+        final List<AABB> bounds = logBox == null ? null : FelledCapTrees.capBounds(level, colony, logBox, family, LeafSweep.CAP_BOUNDS);
         final Set<BlockPos> seen = new HashSet<>();
         final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
         queue.add(seed.immutable());
@@ -1557,12 +1561,27 @@ public final class TreeFootprint
             return capsKept;
         }
 
+        /**
+         * @return what the sweep saw of the caps, for the Forester's debug line (r4 Fable N12): seeds, caps queued, held by a stem, kept foreign, over budget.
+         */
+        @NotNull
+        public String capNote()
+        {
+            return "seeds " + seedCount + " (cap edge " + edgeSeeds + "), caps queued " + capsQueued + ", held " + capsHeld + ", foreign " + capsKept + ", over budget "
+                     + capsOverBudget + ", rounds " + rounds;
+        }
+
         private final Level               level;
         private final String              family;
         private final boolean             strippedBase;
         @Nullable
         private final List<AABB>          capBounds;
         private       int                 capsKept = 0;
+        private       int                 capsHeld = 0;
+        private       int                 capsQueued = 0;
+        private       int                 capsOverBudget = 0;
+        private       int                 seedCount = 0;
+        private       int                 edgeSeeds = 0;
         private final Set<BlockPos>       removedLogs;
         private final ArrayDeque<BlockPos> toBreak = new ArrayDeque<>();
         private final Set<BlockPos>       capsSeen = new HashSet<>();
@@ -1581,6 +1600,9 @@ public final class TreeFootprint
          * @param capTree     true for a huge mushroom or fungus, whose cap may hang away from the stem.
          * @param family      the tree's family: a cap of another kind is no cap of this tree.
          * @param strippedBase true if the tree itself is stripped.
+         * @param colony      the Forester's colony (only its own felled stems widen the cap bounds).
+         * @param capEdge     caps next to the caps of this tree he already took (r4 Fable N12): the rest of a joined cap, which may lie far from the stems
+         *                    once the part that linked it to them is gone.
          */
         public LeafSweep(
           @NotNull final Level level,
@@ -1588,12 +1610,14 @@ public final class TreeFootprint
           @Nullable final AABB box,
           final boolean capTree,
           @NotNull final String family,
-          final boolean strippedBase)
+          final boolean strippedBase,
+          final int colony,
+          @NotNull final Collection<BlockPos> capEdge)
         {
             this.level = level;
             this.family = family;
             this.strippedBase = strippedBase;
-            this.capBounds = box == null ? null : FelledCapTrees.capBounds(level, box, family, CAP_BOUNDS);
+            this.capBounds = box == null ? null : FelledCapTrees.capBounds(level, colony, box, family, CAP_BOUNDS);
             this.removedLogs = new HashSet<>(removedLogs);
             this.nextRound = level.getGameTime() + ROUND_INTERVAL;
             for (final BlockPos log : this.removedLogs)
@@ -1650,6 +1674,17 @@ public final class TreeFootprint
                     }
                 }
             }
+            if (capTree)
+            {
+                for (final BlockPos pos : capEdge)
+                {
+                    if (isCap(level.getBlockState(pos)) && seeds.add(pos.immutable()))
+                    {
+                        edgeSeeds++;
+                    }
+                }
+            }
+            seedCount = seeds.size();
         }
 
         /**
@@ -1790,6 +1825,7 @@ public final class TreeFootprint
                 }
                 if (component.size() > LEAF_BUDGET)
                 {
+                    capsOverBudget += component.size();
                     return 0;
                 }
                 // Through faces, edges and corners: a cap's side and top touch only at the edges
@@ -1820,6 +1856,7 @@ public final class TreeFootprint
             }
             if (held)
             {
+                capsHeld += component.size();
                 return 0;
             }
             if (foreign)
@@ -1827,6 +1864,7 @@ public final class TreeFootprint
                 capsKept += component.size();
                 return 0;
             }
+            capsQueued += component.size();
             toBreak.addAll(component);
             return component.size();
         }

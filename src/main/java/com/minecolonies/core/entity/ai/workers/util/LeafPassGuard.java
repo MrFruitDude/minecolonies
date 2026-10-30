@@ -79,7 +79,7 @@ public final class LeafPassGuard
         }
         if (tree.isNetherTree())
         {
-            guard.judgeCaps(level, tree);
+            guard.judgeCaps(level, tree, colony.getID());
         }
         for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
         {
@@ -160,7 +160,7 @@ public final class LeafPassGuard
     /**
      * Judge each cap within reach of the tree's stems once, one flood per connected cap. Server thread.
      */
-    private void judgeCaps(@NotNull final Level level, @NotNull final Tree tree)
+    private void judgeCaps(@NotNull final Level level, @NotNull final Tree tree, final int colony)
     {
         final Set<Long> judged = new HashSet<>();
         for (final BlockPos log : logs)
@@ -172,7 +172,7 @@ public final class LeafPassGuard
                 {
                     continue;
                 }
-                final TreeFootprint.CapComponent component = TreeFootprint.capComponent(level, near, tree.getBox(), family, tree.isStrippedBase());
+                final TreeFootprint.CapComponent component = TreeFootprint.capComponent(level, near, tree.getBox(), family, tree.isStrippedBase(), colony);
                 for (final BlockPos cell : component.cells())
                 {
                     judged.add(cell.asLong());
