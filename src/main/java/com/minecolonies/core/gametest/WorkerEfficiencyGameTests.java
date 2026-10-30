@@ -215,6 +215,9 @@ public final class WorkerEfficiencyGameTests
         BuilderCollab.overrideForTests(false, 3, 10_000, 10, 100_000, 8, 2400);
         helper.runAfterDelay(200, () -> {
             forceArea(live.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(40, 1, 32)));
+            // noon before the builders' first look of the day, as everyTick holds it later: on a morning clock left by an earlier test a new citizen
+            // greets at the town hall first (round 4 life), and that walk took the builder of scaffold_climb_arm_twice off the arm into the trench
+            live.level.getServer().clockManager().setTotalTicks(live.level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 6000L);
             live.citizen = live.colony.getCitizenManager().spawnOrCreateCivilian(null, live.level, List.of(anchor), true);
             final ICitizenData second = live.colony.getCitizenManager().spawnOrCreateCivilian(null, live.level, List.of(otherAnchor), true);
             helper.assertTrue(live.citizen != null && second != null && live.citizen.getEntity().isPresent(), "builder did not spawn");

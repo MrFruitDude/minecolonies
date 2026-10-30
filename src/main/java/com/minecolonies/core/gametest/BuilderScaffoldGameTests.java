@@ -2277,6 +2277,9 @@ final class BuilderScaffoldGameTests
             final var nav = (com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate) raider.getNavigation();
             @SuppressWarnings("unchecked")
             final var handler = (com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler<com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate>) nav.getStuckHandler();
+            // a raider on its way in (RaiderWalkAI) has lost the spawn immunity to environmental damage; the fresh one here has not
+            helper.assertTrue(raider instanceof com.minecolonies.api.entity.mobs.AbstractEntityMinecoloniesRaider, "fixture: the barbarian is no raider");
+            ((com.minecolonies.api.entity.mobs.AbstractEntityMinecoloniesRaider) raider).setTempEnvDamageImmunity(false);
             raider.setHealth(raider.getMaxHealth());
             final float before = raider.getHealth();
             handler.completeStuckForTests(nav);
