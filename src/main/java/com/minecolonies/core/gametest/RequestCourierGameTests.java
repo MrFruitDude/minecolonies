@@ -264,7 +264,10 @@ final class RequestCourierGameTests
     /**
      * r2 Sol H2: a citizen whose navigator gives up completely while a player watches is never hurt by it. A courier at 3 health, a player 3 blocks away
      * in clear view: three complete stucks in a row (the first two wait for the watcher, the third puts him by his goal in sight) take no health. The same
-     * with nobody near hurts him (the old rule for a citizen nobody sees).
+     * with nobody near hurts him (the old rule for an entity nobody sees).
+     * <p>
+     * A citizen's own stuck handler (AbstractEntityCitizen#getNavigation) deals no complete-stuck damage at all; raiders' handlers do. The courier gets a
+     * handler with the stuck damage (as the navigator's default and the raiders have it), so the watch rule on the damage is what the test checks.
      */
     static void watchedNoStuckDamage(final GameTestHelper helper)
     {
@@ -277,9 +280,10 @@ final class RequestCourierGameTests
             final com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate nav =
               (com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate) entity.getNavigation();
             helper.assertTrue(nav.getStuckHandler() instanceof com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler<?>, "no stuck handler");
-            @SuppressWarnings("unchecked")
             final com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler<com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate> handler =
-              (com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler<com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate>) nav.getStuckHandler();
+              com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler.<com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate>createStuckHandler();
+            handler.withTakeDamageOnStuck(0.2f).withTeleportOnFullStuck();
+            nav.setStuckHandler(handler);
             final net.minecraft.server.level.ServerPlayer watcher = MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
             com.minecolonies.core.entity.pathfinding.PlayerWatch.watchForTests(watcher.getUUID());
             watcher.teleportTo(entity.getX() + 3.0D, entity.getY(), entity.getZ());
