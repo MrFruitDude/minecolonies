@@ -20,8 +20,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Round 4 life: free-time moments of a citizen (see {@link CitizenLife}): a short chat with a neighbour, the morning greeting, waiting out the rain at home. It
- * runs only in free time (IDLE, a leisure site) and is registered before the wander AI, so its checks come first there. The citizen AI's own decisions run as
+ * Round 4 life: free-time moments of a citizen (see {@link CitizenLife}): a short chat with a neighbour, the morning greeting, waiting out the rain at home
+ * (where housemates may chat, round 6). It runs only in free time (IDLE, a leisure site, the shelter) and is registered before the wander AI, so its checks
+ * come first there. The citizen AI's own decisions run as
  * events above all of this, so work, food, sleep and danger end any of these moments at once.
  */
 public class EntityAICitizenLife implements IStateAI
@@ -63,6 +64,8 @@ public class EntityAICitizenLife implements IStateAI
           () -> enterChat(EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE), 20));
         citizen.getCitizenAI().addTransition(new TickingTransition<>(CitizenAIState.IDLE, life::greetingActive, this::startGathering, 20));
         citizen.getCitizenAI().addTransition(new TickingTransition<>(CitizenAIState.IDLE, life::wantsShelter, this::startShelter, 40));
+        // round 6: citizens sheltering together may chat (before the shelter step, which always runs); the chat ends back in the shelter
+        citizen.getCitizenAI().addTransition(new TickingTransition<>(LifeState.SHELTER, this::wantsShelterChat, () -> enterChat(LifeState.SHELTER), 20));
 
         citizen.getCitizenAI().addTransition(new TickingTransition<>(LifeState.CHAT, () -> true, this::chat, 20));
         citizen.getCitizenAI().addTransition(new TickingTransition<>(LifeState.MORNING_GATHER, () -> true, this::gather, 20));
@@ -73,6 +76,11 @@ public class EntityAICitizenLife implements IStateAI
     {
         // a citizen who would rather get out of the rain or is off to greet the morning does not stop for a chat
         return life.chatting() || (!life.greetingActive() && !life.wantsShelter() && life.tryStartChat());
+    }
+
+    private boolean wantsShelterChat()
+    {
+        return life.shelteredAtHome() && (life.chatting() || (!life.greetingActive() && life.tryStartChat()));
     }
 
     private IState enterChat(final IState from)
@@ -94,9 +102,9 @@ public class EntityAICitizenLife implements IStateAI
     }
 
     /**
-     * The morning greeting: walk to the spot and greet the nearest citizen (or the town) on arrival, close to the spot, or at the latest
-     * {@link CitizenLife#GREET_LINGER} ticks before the budget ends, so the line is always said; linger a little, then free the citizen for work. Bounded by
-     * {@link CitizenLife#MORNING_BUDGET}.
+     * The morning greeting: walk to the spot and greet the nearest citizen on arrival, close to the spot, or at the latest {@link CitizenLife#GREET_LINGER} ticks
+     * before the budget ends; linger a little, then free the citizen for work. Round 6: with nobody awake within {@link CitizenLife#GREET_HEAR_RANGE} blocks
+     * there is no line and no linger, he goes on with his day. Bounded by {@link CitizenLife#MORNING_BUDGET}.
      */
     private IState gather()
     {
@@ -116,10 +124,10 @@ public class EntityAICitizenLife implements IStateAI
             {
                 return LifeState.MORNING_GATHER;
             }
-            lineAt = now;
             citizen.getNavigation().stop();
-            final List<EntityCitizen> near = citizen.level().getEntitiesOfClass(EntityCitizen.class, citizen.getBoundingBox().inflate(8),
-              other -> other != citizen && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == citizen.getCitizenColonyHandler().getColonyId());
+            final List<EntityCitizen> near = citizen.level().getEntitiesOfClass(EntityCitizen.class, citizen.getBoundingBox().inflate(CitizenLife.GREET_HEAR_RANGE),
+              other -> other != citizen && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == citizen.getCitizenColonyHandler().getColonyId()
+                         && !other.getCitizenSleepHandler().isAsleep() && other.distanceToSqr(citizen) <= CitizenLife.GREET_HEAR_RANGE * CitizenLife.GREET_HEAR_RANGE);
             EntityCitizen nearest = null;
             for (final EntityCitizen other : near)
             {
@@ -128,10 +136,13 @@ public class EntityAICitizenLife implements IStateAI
                     nearest = other;
                 }
             }
-            if (nearest != null)
+            if (nearest == null)
             {
-                citizen.getLookControl().setLookAt(nearest, 30.0F, 30.0F);
+                life.skipGreeting();
+                return CitizenAIState.IDLE;
             }
+            lineAt = now;
+            citizen.getLookControl().setLookAt(nearest, 30.0F, 30.0F);
             citizen.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
             life.say(life.morningLine());
         }

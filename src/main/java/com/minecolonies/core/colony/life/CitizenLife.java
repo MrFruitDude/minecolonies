@@ -26,7 +26,10 @@ import net.minecraft.world.level.biome.Biome;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Round 4 life: the small things one citizen does that make him look like a person, on top of MineColonies' leisure, mourning and sleep. Lives with the entity
@@ -90,16 +93,34 @@ public final class CitizenLife
     public static final String GRIEF_LINE      = LINE + "grief";
     public static final String CHEER_BUILDING  = LINE + "cheer.building.";
     public static final int    CHEER_BUILDING_LINES = 3;
-    public static final String RAID_START      = LINE + "raid.start";
+    public static final String RAID_START      = LINE + "raid.start.";
+    public static final int    RAID_START_LINES = 3;
     public static final String RAID_END        = LINE + "raid.end.";
     public static final int    RAID_END_LINES  = 2;
     public static final String RAID_END_GRIEF  = LINE + "raid.endgrief";
     public static final String RAID_END_QUIET  = LINE + "raid.endquiet";
     public static final String RAIN            = LINE + "rain.";
-    public static final int    RAIN_LINES      = 3;
+    public static final int    RAIN_LINES      = 5;
     public static final String RAIN_CALM       = LINE + "rain.calm";
     public static final String MORNING         = LINE + "morning.";
     public static final int    MORNING_LINES   = 4;
+
+    /**
+     * Round 6: the morning line only a worker says ("Another day, another job!"); it is the last of {@link #MORNING_LINES}.
+     */
+    public static final int MORNING_JOB_LINE = 4;
+
+    /**
+     * Round 6: a citizen greets only with someone to greet: an awake citizen of his colony within this many blocks of the spot when he picks it, and of
+     * himself when he says the line.
+     */
+    public static final int GREET_HEAR_RANGE = 8;
+
+    /**
+     * Round 6: when rain or a raid starts, each citizen says his line this many ticks after the start at most (by id, and a little chance), so a crowd does not
+     * speak in the same second; neighbours within {@link #GREET_HEAR_RANGE} pick a line not said around them.
+     */
+    public static final int CHORUS_SPREAD = 100;
 
     /**
      * Each chat opener has this many replies that fit it (key of the opener + ".reply." + 1 to N).
@@ -112,11 +133,16 @@ public final class CitizenLife
     public static final int EVENING_FROM = 11000;
 
     /**
+     * Round 6: from this time of day until dawn it is dark; the openers about the day ("Lovely day, isn't it?") are not said then.
+     */
+    public static final int NIGHT_FROM = 12000;
+
+    /**
      * What a chat is about: each topic has its own openers (key {@link #CHAT} + topic + "." + 1 to N), each opener its own replies.
      */
     public enum ChatTopic
     {
-        HAPPY(7),
+        HAPPY(7, 1, 3),
         UNHAPPY(5),
         RAIN(4),
         COLD(3),
@@ -124,11 +150,36 @@ public final class CitizenLife
         JOB(2),
         GRIEF(1);
 
-        private final int lines;
+        private final int   lines;
+        private final int[] dayOnly;
 
-        ChatTopic(final int lines)
+        ChatTopic(final int lines, final int... dayOnly)
         {
             this.lines = lines;
+            this.dayOnly = dayOnly;
+        }
+
+        /**
+         * Round 6: whether an opener fits the time of day: the openers about the day are said only in daylight.
+         *
+         * @param line     the opener's number.
+         * @param daylight whether it is light ({@link #NIGHT_FROM}).
+         * @return true if it may be said.
+         */
+        public boolean fits(final int line, final boolean daylight)
+        {
+            if (daylight)
+            {
+                return true;
+            }
+            for (final int day : dayOnly)
+            {
+                if (day == line)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /**
@@ -153,9 +204,18 @@ public final class CitizenLife
     private long speechUntil = 0;
     private long lastRemark  = Long.MIN_VALUE / 2;
 
-    private String  pendingLine  = null;
-    private long    pendingAt    = 0;
-    private boolean pendingCheer = false;
+    /**
+     * A line to say later: when, and whether it is a cheer (a hop and sparkles).
+     */
+    private record Pending(String raw, long at, boolean cheer)
+    {
+    }
+
+    /**
+     * The lines waiting to be said, at most {@link #MAX_PENDING}, the first due first.
+     */
+    private final List<Pending> pending = new ArrayList<>(2);
+    private static final int    MAX_PENDING = 2;
 
     /**
      * A cheer or a grief line is not talked over by a chat until then.
@@ -178,7 +238,9 @@ public final class CitizenLife
 
     private boolean sawRaid       = false;
     private boolean rainLineSaid  = false;
+    private long    rainLineAt    = -1;
     private long    shelterRetry  = 0;
+    private boolean greetSkipped  = false;
 
     private double    appliedPace = 0;
     private LifeTrait trait       = null;
@@ -276,22 +338,42 @@ public final class CitizenLife
     }
 
     /**
-     * Says a line (and cheers: a hop, an arm wave and sparkles) after a delay; a newer line replaces one that is still waiting.
+     * Says a line (and cheers: a hop, an arm wave and sparkles) after a delay. A cheer never pushes out a line that is still waiting (it is dropped); any other
+     * line drops the waiting cheers and waits after the lines before it (at most {@link #MAX_PENDING}, the oldest goes).
      */
     public void schedule(final String raw, final int delay, final boolean cheer)
     {
-        pendingLine = raw;
-        pendingAt = now() + delay;
-        pendingCheer = cheer;
+        if (cheer && !pending.isEmpty())
+        {
+            return;
+        }
+        if (!cheer)
+        {
+            pending.removeIf(Pending::cheer);
+        }
+        if (pending.size() >= MAX_PENDING)
+        {
+            pending.remove(0);
+        }
+        pending.add(new Pending(raw, now() + delay, cheer));
+        pending.sort(java.util.Comparator.comparingLong(Pending::at));
     }
 
     /**
-     * @return the line waiting to be said, null for none (for tests).
+     * @return the line waiting to be said first, null for none (for tests).
      */
     @Nullable
     public String pendingLine()
     {
-        return pendingLine;
+        return pending.isEmpty() ? null : pending.get(0).raw();
+    }
+
+    /**
+     * @return whether nothing is said, due or in a chat now, so a remark may be made without talking over a line.
+     */
+    private boolean quiet()
+    {
+        return speechUntil == 0 && pending.isEmpty() && !chatting();
     }
 
     /**
@@ -332,7 +414,7 @@ public final class CitizenLife
                 citizen.setSpeech("");
                 speechUntil = 0;
             }
-            pendingLine = null;
+            pending.clear();
             chatPartnerId = 0;
             greetingDone = true;
             applyPace(0);
@@ -348,53 +430,84 @@ public final class CitizenLife
         final IColony colony = citizen.getCitizenColonyHandler().getColony();
         final boolean raided = colony != null && colony.getRaiderManager().isRaided();
         final String grief = grief();
-        if (pendingLine != null && now >= pendingAt)
+        if (!pending.isEmpty() && now >= pending.get(0).at())
         {
-            final String line = pendingLine;
-            pendingLine = null;
-            if (!asleep)
+            final Pending due = pending.get(0);
+            // a cheer waits for the chat to end rather than talk over it; if the chat outlasts it, it is dropped below
+            if (!due.cheer() || !chatting() || now - due.at() > CHAT_TICKS)
             {
-                if (!pendingCheer)
+                pending.remove(0);
+                if (!asleep)
                 {
-                    say(line);
-                    lineHeldUntil = line.startsWith(GRIEF_LINE) ? now + SPEECH_TICKS : lineHeldUntil;
-                }
-                else if (!raided && grief == null && !mourning())
-                {
-                    // a cheer that comes due in a raid, a grief or a mourning is dropped
-                    cheer(line);
+                    if (due.raw().equals(RAID_START))
+                    {
+                        // the raid warning, in a line the neighbours are not saying; dropped if the raid is already over
+                        if (raided)
+                        {
+                            say(varied(RAID_START, RAID_START_LINES));
+                        }
+                    }
+                    else if (!due.cheer())
+                    {
+                        say(due.raw());
+                        lineHeldUntil = due.raw().startsWith(GRIEF_LINE) ? now + SPEECH_TICKS : lineHeldUntil;
+                    }
+                    else if (!raided && grief == null && !mourning() && !chatting())
+                    {
+                        // a cheer that comes due in a raid, a grief, a mourning or a long chat is dropped
+                        cheer(due.raw());
+                    }
                 }
             }
         }
 
         if (raided && !sawRaid)
         {
+            // round 6: a raid ends every chat; the warning comes a little later for each citizen, so a crowd does not shout it in one second
             sawRaid = true;
+            if (chatting())
+            {
+                endChat();
+                if (citizen.getSpeech().startsWith(CHAT))
+                {
+                    citizen.setSpeech("");
+                    speechUntil = 0;
+                }
+            }
             if (!asleep)
             {
-                say(RAID_START);
+                schedule(RAID_START, chorusDelay(citizen.getCivilianID()) + citizen.getRandom().nextInt(20), false);
             }
         }
         else if (!raided && sawRaid)
         {
             // relief: one after the other, spread by id over 3 seconds; a griever or a mourner only says a quiet line, without the cheer
             sawRaid = false;
+            pending.removeIf(p -> p.raw().equals(RAID_START));
             final boolean mourning = mourning();
             final String line = grief != null ? RAID_END_GRIEF + "|n:" + grief
                                   : mourning ? RAID_END_QUIET : RAID_END + (1 + citizen.getRandom().nextInt(RAID_END_LINES));
             schedule(line, 20 + Math.floorMod(citizen.getCivilianID() * 13, 60), grief == null && !mourning);
         }
 
-        // rain: one line per rain spell, said when the citizen first stands in it; a steady citizen keeps his pace and says a calm word
+        // rain: one line per rain spell, said a little after the citizen first stands in it (spread over a crowd, a line the neighbours are not saying),
+        // never over a chat or a line he is saying or about to say; a steady citizen keeps his pace and says a calm word
         if (!citizen.level().isRaining())
         {
             rainLineSaid = false;
+            rainLineAt = -1;
         }
         final boolean wet = !asleep && wetWithoutHat();
-        if (wet && !rainLineSaid
-              && remark(trait().mindsRain() ? RAIN + (1 + citizen.getRandom().nextInt(RAIN_LINES)) : RAIN_CALM))
+        if (wet && !rainLineSaid)
         {
-            rainLineSaid = true;
+            if (rainLineAt < 0)
+            {
+                rainLineAt = now + chorusDelay(citizen.getCivilianID()) + citizen.getRandom().nextInt(20);
+            }
+            if (now >= rainLineAt && quiet() && remark(trait().mindsRain() ? varied(RAIN, RAIN_LINES) : RAIN_CALM))
+            {
+                rainLineSaid = true;
+            }
         }
         final boolean hurry = wet && trait().mindsRain();
         applyPace(pace(hurry, !raided && isFreeTime(citizen.getCitizenAI().getState()), trait(), grief != null));
@@ -417,6 +530,41 @@ public final class CitizenLife
     public static boolean rainsAt(final Level level, final BlockPos pos)
     {
         return level.isRaining() && level.getBiome(pos).value().getPrecipitationAt(pos, level.getSeaLevel()) == Biome.Precipitation.RAIN;
+    }
+
+    /**
+     * Round 6: how long after the start of rain or a raid a citizen says his line, by id (plus up to 19 ticks of chance), so the citizens of a crowd speak one
+     * after the other.
+     *
+     * @param citizenId the citizen id.
+     * @return 0 to {@link #CHORUS_SPREAD} - 20 ticks.
+     */
+    public static int chorusDelay(final int citizenId)
+    {
+        return Math.floorMod(citizenId * 37, CHORUS_SPREAD - 20);
+    }
+
+    /**
+     * A line of a pool (prefix + 1 to N) that no citizen within {@link #GREET_HEAR_RANGE} blocks is saying now, at random among those; any line when all are.
+     */
+    private String varied(final String prefix, final int lines)
+    {
+        final Set<String> heard = new HashSet<>();
+        for (final EntityCitizen other : citizen.level().getEntitiesOfClass(EntityCitizen.class, citizen.getBoundingBox().inflate(GREET_HEAR_RANGE),
+          other -> other != citizen && other.isAlive()))
+        {
+            heard.add(other.getSpeech());
+        }
+        final int start = citizen.getRandom().nextInt(lines);
+        for (int i = 0; i < lines; i++)
+        {
+            final String line = prefix + (1 + (start + i) % lines);
+            if (!heard.contains(line))
+            {
+                return line;
+            }
+        }
+        return prefix + (1 + start);
     }
 
     private boolean wetWithoutHat()
@@ -525,13 +673,34 @@ public final class CitizenLife
     }
 
     /**
-     * Whether another citizen may start a chat with this one now: free time (idle or at a leisure site), awake, not chatting, not a child.
+     * Whether another citizen may start a chat with this one now: free time (idle, at a leisure site, or sheltering at home out of the rain), awake, not
+     * chatting, not a child, and no raid on.
      */
     public boolean canJoinChat()
     {
         final IState state = citizen.getCitizenAI().getState();
         return enabled() && !chatting() && now() >= nextChatAt - 200 && !citizen.isBaby() && !citizen.getCitizenSleepHandler().isAsleep() && !lineHeld() && !greetingActive()
-                 && (state == CitizenAIState.IDLE || state == EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE) && !hurriesInRain();
+                 && (state == CitizenAIState.IDLE || state == EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE
+                       || state == EntityAICitizenLife.LifeState.SHELTER && shelteredAtHome()) && !hurriesInRain() && !raided();
+    }
+
+    /**
+     * Round 6: whether the citizen waits out the rain inside his home, dry (a housemate may chat with him there).
+     */
+    public boolean shelteredAtHome()
+    {
+        final ICitizenData data = citizen.getCitizenData();
+        final IBuilding home = data == null ? null : data.getHomeBuilding();
+        return home != null && home.isInBuilding(citizen.blockPosition()) && !inRain();
+    }
+
+    /**
+     * @return whether the citizen's colony is raided now.
+     */
+    private boolean raided()
+    {
+        final IColony colony = citizen.getCitizenColonyHandler().getColony();
+        return colony != null && colony.getRaiderManager().isRaided();
     }
 
     /**
@@ -543,7 +712,7 @@ public final class CitizenLife
     public boolean tryStartChat()
     {
         final long now = now();
-        if (!enabled() || now < nextChatTry || now < nextChatAt || citizen.isBaby() || lineHeld() || hurriesInRain())
+        if (!enabled() || now < nextChatTry || now < nextChatAt || citizen.isBaby() || lineHeld() || hurriesInRain() || raided())
         {
             return false;
         }
@@ -619,7 +788,7 @@ public final class CitizenLife
     {
         final EntityCitizen partner = chatPartner.get();
         if (!chatting() || partner == null || !partner.isAlive() || partner.getLife().chatPartnerId() != citizen.getCivilianID()
-              || !inFreeTime(partner.getCitizenAI().getState()))
+              || !inFreeTime(partner.getCitizenAI().getState()) || raided())
         {
             endChat();
             return false;
@@ -630,18 +799,39 @@ public final class CitizenLife
         {
             replyAt = -1;
             final String grief = grief();
-            say(grief != null && !replyTo.startsWith(ChatTopic.GRIEF.prefix()) ? CHAT_GRIEF_OWN + "|n:" + grief
-                  : replyFor(replyTo, 1 + citizen.getRandom().nextInt(CHAT_REPLIES)));
+            final int roll = 1 + citizen.getRandom().nextInt(CHAT_REPLIES);
+            if (replyTo.startsWith(ChatTopic.GRIEF.prefix()))
+            {
+                say(replyFor(replyTo, griefReply(replyTo, grief, roll)));
+            }
+            else
+            {
+                say(grief != null ? CHAT_GRIEF_OWN + "|n:" + grief : replyFor(replyTo, roll));
+            }
         }
         return true;
     }
 
     /**
-     * @return whether the AI state is free time a chat may run in (idle, at a leisure site, or in the chat itself).
+     * Round 6: which reply a citizen gives to a friend's grief: "Me too, a good soul" (reply 1) only when he grieves for the same friend, else "I'm so sorry."
+     *
+     * @param opener the grief opener as said (with "|n:" and the name).
+     * @param grief  whom the replier grieves for, null for nobody.
+     * @param roll   the reply he would pick, 1 to {@link #CHAT_REPLIES}.
+     * @return the reply number.
+     */
+    public static int griefReply(final String opener, @Nullable final String grief, final int roll)
+    {
+        return grief != null && opener.endsWith("|n:" + grief) ? roll : 2;
+    }
+
+    /**
+     * @return whether the AI state is free time a chat may run in (idle, at a leisure site, sheltering at home, or in the chat itself).
      */
     public static boolean inFreeTime(final IState state)
     {
-        return state == CitizenAIState.IDLE || state == EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE || state == EntityAICitizenLife.LifeState.CHAT;
+        return state == CitizenAIState.IDLE || state == EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE || state == EntityAICitizenLife.LifeState.CHAT
+                 || state == EntityAICitizenLife.LifeState.SHELTER;
     }
 
     /**
@@ -666,11 +856,16 @@ public final class CitizenLife
         final Biome.Precipitation weather = level.isRaining()
                                               ? level.getBiome(citizen.blockPosition()).value().getPrecipitationAt(citizen.blockPosition(), level.getSeaLevel())
                                               : Biome.Precipitation.NONE;
-        final ChatTopic topic = topic(grief != null, weather, level.getOverworldClockTime() % 24000L >= EVENING_FROM, happy(), partnerJob,
-          citizen.getRandom().nextInt(100));
+        final long clock = level.getOverworldClockTime() % 24000L;
+        final ChatTopic topic = topic(grief != null, weather, clock >= EVENING_FROM, happy(), partnerJob, citizen.getRandom().nextInt(100));
+        final boolean daylight = clock < NIGHT_FROM;
         final IColony colony = citizen.getCitizenColonyHandler().getColony();
-        final int index = colony == null ? 1 + citizen.getRandom().nextInt(topic.lines())
-                            : ColonyLife.pickLine(colony, citizen.getCivilianID(), partner.getCivilianID(), topic, now(), citizen.getRandom());
+        int index = colony == null ? 1 + citizen.getRandom().nextInt(topic.lines())
+                      : ColonyLife.pickLine(colony, citizen.getCivilianID(), partner.getCivilianID(), topic, now(), citizen.getRandom(), line -> topic.fits(line, daylight));
+        while (!topic.fits(index, daylight))
+        {
+            index = index % topic.lines() + 1;
+        }
         final String key = topic.prefix() + index;
         return switch (topic)
         {
@@ -761,6 +956,7 @@ public final class CitizenLife
             greetingDay = day;
             greetingStart = now();
             final IColony colony = citizen.getCitizenColonyHandler().getColony();
+            greetSkipped = false;
             gatherSpot = justWoke && clock % 24000L < MORNING_END && colony != null && !colony.getRaiderManager().isRaided()
                            && greetsOn(citizen.getCivilianID(), day, trait()) ? chooseGatherSpot(colony, day) : null;
             greetingDone = gatherSpot == null;
@@ -786,6 +982,37 @@ public final class CitizenLife
     public void finishGreeting()
     {
         greetingDone = true;
+    }
+
+    /**
+     * Round 6: ends today's greeting without a line: nobody was there to hear it.
+     */
+    public void skipGreeting()
+    {
+        greetSkipped = true;
+        greetingDone = true;
+    }
+
+    /**
+     * @return whether today's greeting ended without a line for want of a listener (for tests).
+     */
+    public boolean greetSkipped()
+    {
+        return greetSkipped;
+    }
+
+    /**
+     * Round 6: whether an awake citizen of the colony (not this one) is within {@link #GREET_HEAR_RANGE} blocks of a place, to hear a greeting.
+     *
+     * @param at the place.
+     * @return true if someone would hear it.
+     */
+    public boolean someoneToGreet(final BlockPos at)
+    {
+        final int colonyId = citizen.getCitizenColonyHandler().getColonyId();
+        return !citizen.level().getEntitiesOfClass(EntityCitizen.class, new net.minecraft.world.phys.AABB(at).inflate(GREET_HEAR_RANGE),
+          other -> other != citizen && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == colonyId && !other.getCitizenSleepHandler().isAsleep()
+                     && other.blockPosition().distSqr(at) <= GREET_HEAR_RANGE * GREET_HEAR_RANGE).isEmpty();
     }
 
     /**
@@ -833,7 +1060,9 @@ public final class CitizenLife
         final IBuilding townHall = colony.getServerBuildingManager().getTownHall();
         for (final IBuilding spot : new IBuilding[] {townHall, data.getWorkBuilding(), data.getHomeBuilding()})
         {
+            // round 6: only a spot where someone will hear him: a greeter is already on his way there today, or an awake citizen is close by now
             if (spot != null && spot.getPosition().distSqr(citizen.blockPosition()) <= GATHER_RANGE * GATHER_RANGE
+                  && (ColonyLife.greetersAt(colony, spot.getPosition(), day) > 0 || someoneToGreet(spot.getPosition()))
                   && ColonyLife.claimGreetSpot(colony, spot.getPosition(), day))
             {
                 // a few blocks off the hut block, by id, so the greeters of one spot do not stand on each other
@@ -841,26 +1070,48 @@ public final class CitizenLife
                 return spot.getPosition().offset(Math.floorMod(id * 5, 7) - 3, 0, Math.floorMod(id * 3 + 1, 7) - 3);
             }
         }
-        // every spot nearby has its greeters: he greets where he stands
-        return citizen.blockPosition();
+        // no spot nearby has room or a listener: he greets where he stands, if someone is there; else he goes on with his day without a word
+        return someoneToGreet(citizen.blockPosition()) ? citizen.blockPosition() : null;
     }
 
     /**
-     * The morning greeting line, in the voice of the citizen's trait now and then.
+     * The morning greeting line, in the voice of the citizen's trait now and then; a jobless citizen does not talk of his job.
      */
     public String morningLine()
     {
-        if (citizen.getRandom().nextInt(3) == 0)
+        final ICitizenData data = citizen.getCitizenData();
+        final boolean job = data != null && data.getJob() != null;
+        if (citizen.getRandom().nextInt(3) == 0 && traitMorningFits(trait(), job))
         {
             return trait().nameKey() + ".morning";
         }
-        return MORNING + (1 + citizen.getRandom().nextInt(MORNING_LINES));
+        return MORNING + (1 + citizen.getRandom().nextInt(morningLines(job)));
+    }
+
+    /**
+     * @param job whether the citizen has a job.
+     * @return how many of the shared morning lines he may say (1 to N): the job line is the last and only for workers.
+     */
+    public static int morningLines(final boolean job)
+    {
+        return job ? MORNING_LINES : MORNING_JOB_LINE - 1;
+    }
+
+    /**
+     * @param trait the citizen's trait.
+     * @param job   whether he has a job.
+     * @return whether his trait's morning line fits him (the steady one speaks of work).
+     */
+    public static boolean traitMorningFits(final LifeTrait trait, final boolean job)
+    {
+        return job || trait != LifeTrait.STEADY;
     }
 
     // ---- shelter ------------------------------------------------------------------------------------------------------------------------------------------
 
     /**
-     * An idle citizen in the rain without a hat goes home to wait it out (when the home is within 48 blocks).
+     * An idle citizen in the rain without a hat goes home to wait it out (when the home is within 48 blocks and it rains there too: a home in a dry biome is no
+     * shelter to run to, so he does not start for it).
      */
     public boolean wantsShelter()
     {
@@ -870,7 +1121,8 @@ public final class CitizenLife
         }
         final ICitizenData data = citizen.getCitizenData();
         final IBuilding home = data == null ? null : data.getHomeBuilding();
-        return home != null && !home.isInBuilding(citizen.blockPosition()) && home.getPosition().distSqr(citizen.blockPosition()) <= 48 * 48;
+        return home != null && !home.isInBuilding(citizen.blockPosition()) && home.getPosition().distSqr(citizen.blockPosition()) <= 48 * 48
+                 && rainsAt(citizen.level(), home.getPosition());
     }
 
     /**
