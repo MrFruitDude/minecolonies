@@ -692,6 +692,8 @@ final class ShaftGameTests
             final boolean[] marked = {false};
             final boolean[] fetched = {false};
             poll(helper, List.of(colony), 16000, () -> {
+                // (cobblestone a cleared plot spilt is no part of this test: picked up, it would be cobblestone found with no shaft)
+                clearStrayLoose(helper, Items.COBBLESTONE);
                 if (!marked[0])
                 {
                     helper.assertTrue(colony.getLabourData().shafts().shafts().isEmpty(), "a shaft was opened without a mark");

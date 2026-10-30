@@ -214,10 +214,10 @@ final class RequestCourierGameTests
 
     /**
      * r2 (Opus R1-F3, Fable F16): a worker who cannot get to his hut while a player watches is never put there in sight at once, and never left stuck
-     * silently. A courier without AI (he cannot move: stuck) is driven through the walk to his hut tick by tick, 20 blocks from it, with a player 3 blocks
-     * from him in clear view. He says why he stands (a stuck reason, job status STUCK, the stuck notice valid), tries another way instead of a jump, and
-     * after WATCHED_SKIPS rounds (about a minute) he is put at his hut all the same (bounded: a player who stays near cannot hold him stuck for ever);
-     * then the reason and the notice are gone.
+     * silently. A courier who cannot move (held on his spot every tick: a citizen ignores setNoAi, so without the hold he simply walks there) is driven
+     * through the walk to his hut tick by tick, 20 blocks from it, with a player 3 blocks from him in clear view. He says why he stands (a stuck reason,
+     * job status STUCK, the stuck notice valid), tries another way instead of a jump, and after WATCHED_SKIPS rounds (about a minute) he is put at his
+     * hut all the same (bounded: a player who stays near cannot hold him stuck for ever); then the reason and the notice are gone.
      */
     static void watchedStuck(final GameTestHelper helper)
     {
@@ -238,9 +238,16 @@ final class RequestCourierGameTests
             helper.assertTrue(notice != null, "no validator for the stuck notice");
             final long start = f.level.getGameTime();
             final long[] reasonAt = {-1L};
+            final net.minecraft.world.phys.Vec3 hold = entity.position();
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
                 final long now = f.level.getGameTime();
+                if (ai.putBackCount() == 0)
+                {
+                    // (he cannot move: whatever moved him since the last tick, his own steps or the navigator, is undone until the ladder puts him back)
+                    entity.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+                    entity.snapTo(hold.x, hold.y, hold.z);
+                }
                 ai.walkToBuildingForTests();
                 final int putBacks = ai.putBackCount();
                 if (reasonAt[0] < 0 && ai.stuckReason() != null)
