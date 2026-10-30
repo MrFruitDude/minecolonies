@@ -117,6 +117,12 @@ public final class CitizenLife
     public static final int GREET_HEAR_RANGE = 8;
 
     /**
+     * Round 7 (R6-F3, N48): a greeter who finds nobody awake to hear him but a neighbour asleep within {@link #GREET_HEAR_RANGE} blocks waits this many ticks
+     * of his hold for the first one up, then greets him (or gives up without a word). Inside {@link #MORNING_BUDGET}, with time left for the line and its linger.
+     */
+    public static final int GREET_WAIT = MORNING_BUDGET - GREET_LINGER - 40;
+
+    /**
      * Round 6: when rain or a raid starts, each citizen says his line this many ticks after the start at most (by id, and a little chance), so a crowd does not
      * speak in the same second; neighbours within {@link #GREET_HEAR_RANGE} pick a line not said around them.
      */
@@ -235,6 +241,7 @@ public final class CitizenLife
     private long     greetingStart = 0;
     private boolean  greetingDone  = true;
     private BlockPos gatherSpot    = null;
+    private boolean  greetWaiting  = false;
 
     private boolean sawRaid       = false;
     private boolean rainLineSaid  = false;
@@ -417,6 +424,7 @@ public final class CitizenLife
             pending.clear();
             chatPartnerId = 0;
             greetingDone = true;
+            greetWaiting = false;
             applyPace(0);
             return;
         }
@@ -429,6 +437,10 @@ public final class CitizenLife
         final boolean asleep = citizen.getCitizenSleepHandler().isAsleep();
         final IColony colony = citizen.getCitizenColonyHandler().getColony();
         final boolean raided = colony != null && colony.getRaiderManager().isRaided();
+        if (greetWaiting)
+        {
+            awaitListener(colony, asleep || raided);
+        }
         final String grief = grief();
         if (!pending.isEmpty() && now >= pending.get(0).at())
         {
@@ -674,12 +686,12 @@ public final class CitizenLife
 
     /**
      * Whether another citizen may start a chat with this one now: free time (idle, at a leisure site, or sheltering at home out of the rain), awake, not
-     * chatting, not a child, and no raid on.
+     * chatting, not a child, and no raid on. Round 7 (N50): not while a line of his own is still up, so an opener never covers his fresh rain words.
      */
     public boolean canJoinChat()
     {
         final IState state = citizen.getCitizenAI().getState();
-        return enabled() && !chatting() && now() >= nextChatAt - 200 && !citizen.isBaby() && !citizen.getCitizenSleepHandler().isAsleep() && !lineHeld() && !greetingActive()
+        return enabled() && !chatting() && now() >= nextChatAt - 200 && now() >= speechUntil && !citizen.isBaby() && !citizen.getCitizenSleepHandler().isAsleep() && !lineHeld() && !greetingActive()
                  && (state == CitizenAIState.IDLE || state == EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE
                        || state == EntityAICitizenLife.LifeState.SHELTER && shelteredAtHome()) && !hurriesInRain() && !raided();
     }
@@ -731,14 +743,16 @@ public final class CitizenLife
     }
 
     /**
-     * @return the nearest citizen of the same colony within {@link #CHAT_RANGE} blocks who may chat, null for none.
+     * @return the nearest citizen of the same colony within {@link #CHAT_RANGE} blocks who may chat, null for none. Round 7 (R6-F4): a chat in a rain shelter
+     * is only between housemates who both wait out the rain in it.
      */
     @Nullable
     public EntityCitizen findChatPartner()
     {
         final int colonyId = citizen.getCitizenColonyHandler().getColonyId();
         final List<EntityCitizen> near = citizen.level().getEntitiesOfClass(EntityCitizen.class, citizen.getBoundingBox().inflate(CHAT_RANGE),
-          other -> other != citizen && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == colonyId && other.getLife().canJoinChat());
+          other -> other != citizen && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == colonyId && other.getLife().canJoinChat()
+                     && shelterFits(other));
         EntityCitizen best = null;
         for (final EntityCitizen other : near)
         {
@@ -748,6 +762,27 @@ public final class CitizenLife
             }
         }
         return best;
+    }
+
+    /**
+     * Round 7 (R6-F4): whether a chat between this citizen and another fits the rain shelter: outside it any pair may chat; from or into it only two
+     * housemates who both shelter, dry, inside the same home.
+     */
+    private boolean shelterFits(final EntityCitizen other)
+    {
+        final boolean mine = citizen.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER;
+        final boolean theirs = other.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER;
+        if (!mine && !theirs)
+        {
+            return true;
+        }
+        if (!mine || !theirs || !shelteredAtHome() || !other.getLife().shelteredAtHome())
+        {
+            return false;
+        }
+        final IBuilding home = citizen.getCitizenData().getHomeBuilding();
+        final ICitizenData otherData = other.getCitizenData();
+        return otherData != null && otherData.getHomeBuilding() != null && otherData.getHomeBuilding().getID().equals(home.getID());
     }
 
     /**
@@ -957,9 +992,17 @@ public final class CitizenLife
             greetingStart = now();
             final IColony colony = citizen.getCitizenColonyHandler().getColony();
             greetSkipped = false;
-            gatherSpot = justWoke && clock % 24000L < MORNING_END && colony != null && !colony.getRaiderManager().isRaided()
-                           && greetsOn(citizen.getCivilianID(), day, trait()) ? chooseGatherSpot(colony, day) : null;
-            greetingDone = gatherSpot == null;
+            final boolean greets = justWoke && clock % 24000L < MORNING_END && colony != null && !colony.getRaiderManager().isRaided()
+                                     && greetsOn(citizen.getCivilianID(), day, trait());
+            gatherSpot = greets ? chooseGatherSpot(colony, day) : null;
+            // round 7 (R6-F3, N48): nobody awake to hear him yet, but a neighbour sleeps close by: he waits a little for the first one up (a brisk first riser
+            // too), within the hold
+            greetWaiting = greets && gatherSpot == null && sleeperNear(citizen.blockPosition());
+            greetingDone = gatherSpot == null && !greetWaiting;
+        }
+        if (greetWaiting && now() - greetingStart >= GREET_WAIT)
+        {
+            skipGreeting();
         }
         if (!greetingDone && now() - greetingStart >= MORNING_BUDGET)
         {
@@ -982,6 +1025,7 @@ public final class CitizenLife
     public void finishGreeting()
     {
         greetingDone = true;
+        greetWaiting = false;
     }
 
     /**
@@ -991,6 +1035,51 @@ public final class CitizenLife
     {
         greetSkipped = true;
         greetingDone = true;
+        greetWaiting = false;
+    }
+
+    /**
+     * Round 7: whether the greeter still waits for a neighbour to wake (no spot yet; for the free-time AI and tests).
+     */
+    public boolean awaitingListener()
+    {
+        return greetWaiting && greetingActive();
+    }
+
+    /**
+     * Round 7 (R6-F3, N48): once a second while the greeter waits: the first neighbour up within {@link #GREET_HEAR_RANGE} blocks of him is greeted where he
+     * stands, else a spot with a listener is taken as at the first look; after {@link #GREET_WAIT} ticks, in a raid or asleep he gives up without a word.
+     */
+    private void awaitListener(@Nullable final IColony colony, final boolean stop)
+    {
+        if (greetingDone)
+        {
+            greetWaiting = false;
+            return;
+        }
+        if (stop || colony == null || now() - greetingStart >= GREET_WAIT)
+        {
+            skipGreeting();
+            return;
+        }
+        final BlockPos here = citizen.blockPosition();
+        final BlockPos spot = someoneToGreet(here) ? here : chooseGatherSpot(colony, greetingDay);
+        if (spot != null)
+        {
+            gatherSpot = spot;
+            greetWaiting = false;
+        }
+    }
+
+    /**
+     * Round 7: whether a citizen of the colony (not this one) sleeps within {@link #GREET_HEAR_RANGE} blocks of a place, to be greeted when he wakes.
+     */
+    private boolean sleeperNear(final BlockPos at)
+    {
+        final int colonyId = citizen.getCitizenColonyHandler().getColonyId();
+        return !citizen.level().getEntitiesOfClass(EntityCitizen.class, new net.minecraft.world.phys.AABB(at).inflate(GREET_HEAR_RANGE),
+          other -> other != citizen && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == colonyId && other.getCitizenSleepHandler().isAsleep()
+                     && other.blockPosition().distSqr(at) <= GREET_HEAR_RANGE * GREET_HEAR_RANGE).isEmpty();
     }
 
     /**

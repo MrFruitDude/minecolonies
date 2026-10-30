@@ -104,11 +104,17 @@ public class EntityAICitizenLife implements IStateAI
     /**
      * The morning greeting: walk to the spot and greet the nearest citizen on arrival, close to the spot, or at the latest {@link CitizenLife#GREET_LINGER} ticks
      * before the budget ends; linger a little, then free the citizen for work. Round 6: with nobody awake within {@link CitizenLife#GREET_HEAR_RANGE} blocks
-     * there is no line and no linger, he goes on with his day. Bounded by {@link CitizenLife#MORNING_BUDGET}.
+     * there is no line and no linger, he goes on with his day. Round 7: while he waits for a sleeping neighbour to wake he stands where he is. Bounded by
+     * {@link CitizenLife#MORNING_BUDGET}.
      */
     private IState gather()
     {
         final BlockPos spot = life.gatherSpot();
+        if (spot == null && life.awaitingListener())
+        {
+            citizen.getNavigation().stop();
+            return LifeState.MORNING_GATHER;
+        }
         if (!life.greetingActive() || spot == null)
         {
             life.finishGreeting();
