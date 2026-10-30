@@ -14,6 +14,7 @@ import com.minecolonies.core.colony.life.ColonyLife;
 import com.minecolonies.core.colony.life.LifeTrait;
 import com.minecolonies.core.entity.ai.minimal.EntityAICitizenLife;
 import com.minecolonies.core.entity.ai.minimal.EntityAICitizenWander;
+import com.minecolonies.core.entity.ai.minimal.EntityAISleep;
 import com.minecolonies.core.entity.ai.workers.CitizenAI;
 import com.minecolonies.core.entity.citizen.EntityCitizen;
 import net.minecraft.core.BlockPos;
@@ -40,7 +41,7 @@ public final class AliveGameTests
 {
     public static final String[] NAMES = {"alive_rules", "alive_chat", "alive_chat_yields", "alive_morning", "alive_building_cheer", "alive_grief", "alive_raid_relief",
       "alive_rain_hurry", "alive_rain_where", "alive_traits_stable", "alive_chat_pairs", "alive_calm_pace", "alive_morning_crowd", "alive_shelter_inside",
-      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn"};
+      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe"};
 
     /**
      * Tests whose citizens must stand in the rain: they run without the barrier ceiling of the GameTest frame, which stops the rain (vanilla's isRainingAt
@@ -66,6 +67,29 @@ public final class AliveGameTests
 
     public static Consumer<GameTestHelper> test(final String name)
     {
+        final Consumer<GameTestHelper> body = byName(name);
+        return helper -> {
+            isolate();
+            body.accept(helper);
+        };
+    }
+
+    /**
+     * Round 8 (R7-F1): puts back the shared state a test before may have left when it failed before its own clean-up: the life setting on (several tests turn it
+     * off for a moment), no labour overrides, waiting colonies, labour debug or idle settings of a labour test (teamwork_world_cap_fair failed in run 053
+     * before its clean-up).
+     */
+    private static void isolate()
+    {
+        MineColonies.getConfig().getServer().citizenLifeExtras.set(true);
+        com.minecolonies.core.colony.labour.LabourSettings.clearOverrides();
+        com.minecolonies.core.colony.labour.LabourBoard.forgetWaiting();
+        com.minecolonies.core.colony.labour.LabourStats.debug = false;
+        com.minecolonies.core.colony.idle.IdleCitizenSettings.overrideForTests(null, null, null);
+    }
+
+    private static Consumer<GameTestHelper> byName(final String name)
+    {
         return switch (name)
         {
             case "alive_rules" -> AliveGameTests::rules;
@@ -87,6 +111,7 @@ public final class AliveGameTests
             case "alive_chorus" -> AliveGameTests::chorus;
             case "alive_lines_wait" -> AliveGameTests::linesWait;
             case "alive_morning_dawn" -> AliveGameTests::morningDawn;
+            case "alive_greet_once_safe" -> AliveGameTests::greetOnceSafe;
             default -> AliveGameTests::rainHurry;
         };
     }
@@ -1102,7 +1127,9 @@ public final class AliveGameTests
                     greeters.add(c);
                     final BlockPos spot = c.getLife().gatherSpot();
                     helper.assertTrue(spot != null, "a greeter without a spot");
-                    atHall += !spot.equals(stood) && Math.abs(spot.getX() - townHall.getX()) <= 3 && Math.abs(spot.getZ() - townHall.getZ()) <= 3 ? 1 : 0;
+                    // (round 8: a safe place to stand may be a few blocks off the wanted one)
+                    final int near = 3 + CitizenLife.STAND_SEARCH;
+                    atHall += !spot.equals(stood) && Math.abs(spot.getX() - townHall.getX()) <= near && Math.abs(spot.getZ() - townHall.getZ()) <= near ? 1 : 0;
                 }
             }
             helper.assertTrue(greeters.size() > ColonyLife.MAX_GREETERS_PER_SPOT && greeters.size() < all.size(), "greeters " + greeters.size() + " of " + all.size());
@@ -1511,116 +1538,266 @@ public final class AliveGameTests
     }
 
     /**
-     * Round 7 (R6-F3, N48): a dawn with neighbours waking at different times. A brisk first riser with only sleepers around him waits within his hold and
-     * greets the first one up, never before; a greeter whose only neighbour sleeps through the wait gives up without a word and is not held past
-     * {@link CitizenLife#GREET_WAIT}.
+     * Round 7 (R6-F3, N48), round 8 (R7-F2, N56): a dawn with real sleepers: their own AI puts them to sleep at night and gets them up at their wake time. A
+     * first riser whose only neighbour sleeps on past the wait goes on with his day at once, without a word and without standing still. A first riser with a
+     * neighbour due inside the wait holds his greeting, the neighbour gets up by himself inside it, and he is greeted then, never before.
      */
     public static void morningDawn(final GameTestHelper helper)
     {
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-morning-dawn");
         midday(helper);
         helper.runAfterDelay(40, () -> {
+            final ServerLevel level = helper.getLevel();
             final BlockPos greeterAt = new BlockPos(10, 1, 10);
-            final EntityCitizen greeter = entity(spawn(helper, colony, greeterAt));
-            makeTrait(greeter, LifeTrait.BRISK);
             final BlockPos lateAt = new BlockPos(36, 1, 29);
-            final EntityCitizen late = entity(spawn(helper, colony, lateAt));
-            makeTrait(late, LifeTrait.BRISK);
-            // neighbours of the first riser wake one after the other; the late greeter's only neighbour sleeps through the test
-            final BlockPos[] sleeperAt = {new BlockPos(12, 1, 10), new BlockPos(10, 1, 13), new BlockPos(13, 1, 12), new BlockPos(34, 1, 28)};
-            final int[] wakeAfter = {40, 100, Integer.MAX_VALUE, Integer.MAX_VALUE};
+            // two neighbours of the first riser, one of the late greeter; thoughtful, so all of them sleep well past dawn
+            final BlockPos[] sleeperAt = {new BlockPos(12, 1, 10), new BlockPos(10, 1, 13), new BlockPos(34, 1, 28)};
             final EntityCitizen[] sleepers = new EntityCitizen[sleeperAt.length];
             for (int i = 0; i < sleepers.length; i++)
             {
                 sleepers[i] = entity(spawn(helper, colony, sleeperAt[i]));
                 makeTrait(sleepers[i], LifeTrait.THOUGHTFUL);
             }
-            // a sleeper's AI would wake him at its next look in daylight: it is frozen (tick rate 0) until the test wakes him. A fresh transition may still run
-            // once on a frozen machine, so the sleepers are put to bed only once those have run, not on the tick they spawn
-            final int aiRate = sleepers[0].getCitizenAI().getTickRate();
-            for (final EntityCitizen sleeper : sleepers)
-            {
-                sleeper.getCitizenAI().setTickRate(0);
-            }
-            final Runnable holdSleep = () -> {
+            final Runnable hold = () -> {
+                keepFed(sleepers);
                 for (int i = 0; i < sleepers.length; i++)
                 {
-                    if (sleepers[i].getCitizenData().isAsleep())
-                    {
-                        pin(helper, sleepers[i], sleeperAt[i]);
-                    }
+                    pin(helper, sleepers[i], sleeperAt[i]);
                 }
             };
-            helper.runAfterDelay(40, () -> {
+            // the night before: their AI sends them to sleep (homeless, they have no bed to lie down in: the test lays them down once they are in their sleep)
+            setClock(helper, (level.getOverworldClockTime() / 24000L + 1) * 24000L - 600L);
+            final long night = level.getGameTime();
+            final Runnable[] toBed = new Runnable[1];
+            toBed[0] = () -> {
+                hold.run();
+                boolean all = true;
+                for (final EntityCitizen sleeper : sleepers)
+                {
+                    final IState state = sleeper.getCitizenAI().getState();
+                    all &= state == CitizenAIState.SLEEP || state instanceof EntityAISleep.SleepState;
+                }
+                if (!all)
+                {
+                    helper.assertTrue(level.getGameTime() - night < 300, "the sleepers' AI did not send them to sleep at night");
+                    helper.runAfterDelay(1, () -> toBed[0].run());
+                    return;
+                }
                 for (final EntityCitizen sleeper : sleepers)
                 {
                     sleeper.getCitizenData().setAsleep(true);
                 }
-                holdSleep.run();
-                final ServerLevel level = helper.getLevel();
-                long day = level.getOverworldClockTime() / 24000L + 1;
-                for (int guard = 0; guard < 1000 && !(CitizenLife.greetsOn(greeter.getCivilianID(), day, LifeTrait.BRISK)
-                                                       && CitizenLife.greetsOn(late.getCivilianID(), day, LifeTrait.BRISK)); guard++)
-                {
-                    day++;
-                }
-                helper.assertTrue(CitizenLife.greetsOn(greeter.getCivilianID(), day, LifeTrait.BRISK) && CitizenLife.greetsOn(late.getCivilianID(), day, LifeTrait.BRISK),
-                  "precondition failed: no morning where both greet");
-                setClock(helper, day * 24000L + 100L);
-                for (final EntityCitizen c : new EntityCitizen[] {greeter, late})
-                {
-                    helper.assertTrue(!c.getLife().someoneToGreet(c.blockPosition()), "precondition failed: someone is awake by " + c.getCivilianID());
-                    helper.assertTrue(c.getLife().greetingHolds(true) && c.getLife().gatherSpot() == null && c.getLife().awaitingListener(),
-                      "a first riser among sleepers does not wait: holds " + c.getLife().greetingHolds(true) + " spot " + c.getLife().gatherSpot());
-                }
-                final long t0 = level.getGameTime();
+                final EntityCitizen[] late = new EntityCitizen[1];
+                final EntityCitizen[] greeter = new EntityCitizen[1];
+                final long[] lateFrom = {-1};
+                final long[] greetFrom = {-1};
+                final long[] wokeAt = {-1};
                 final long[] greetedAt = {-1};
-                final long[] lateHeld = {0};
                 final Runnable[] poll = new Runnable[1];
                 poll[0] = () -> {
+                    hold.run();
                     final long now = level.getGameTime();
-                    keepFed(greeter, late);
-                    keepFed(sleepers);
-                    for (int i = 0; i < sleepers.length; i++)
+                    final long dayTime = level.getOverworldClockTime() % 24000L;
+                    helper.assertTrue(now - night < 2400, "the dawn did not play out: late " + lateFrom[0] + " greeter " + greetFrom[0] + " woke " + wokeAt[0]);
+                    if (late[0] == null)
                     {
-                        if (sleepers[i].getCitizenData().isAsleep() && now - t0 >= wakeAfter[i])
+                        if (dayTime < 20 || dayTime > 300)
                         {
-                            sleepers[i].getCitizenSleepHandler().onWakeUp();
-                            sleepers[i].getCitizenAI().setTickRate(aiRate);
+                            helper.runAfterDelay(1, () -> poll[0].run());
+                            return;
                         }
+                        // a little after dawn: the late greeter's neighbour sleeps on for minutes
+                        helper.assertTrue(sleepers[2].getCitizenSleepHandler().isAsleep() && sleepers[2].getDecisionAI() != null
+                                            && !sleepers[2].getDecisionAI().wakesWithin(CitizenLife.GREET_WAIT), "precondition failed: the late greeter's neighbour is due");
+                        late[0] = entity(spawn(helper, colony, lateAt));
+                        makeTrait(late[0], LifeTrait.BRISK);
+                        toGreetingDay(helper, late[0]);
+                        helper.assertTrue(!late[0].getLife().someoneToGreet(late[0].blockPosition()), "precondition failed: someone is awake by the late greeter");
+                        helper.assertTrue(!late[0].getLife().greetingHolds(true) && late[0].getLife().greetSkipped() && late[0].getLife().gatherSpot() == null,
+                          "a greeter whose neighbour sleeps on waits or walks off: holds " + late[0].getLife().greetingHolds(true) + " spot " + late[0].getLife().gatherSpot());
+                        lateFrom[0] = now;
                     }
-                    holdSleep.run();
-                    if (greetedAt[0] < 0 && greeter.getSpeech().contains(".morning"))
+                    else if (now - lateFrom[0] <= 60)
+                    {
+                        keepFed(late[0]);
+                        helper.assertTrue(!late[0].getSpeech().contains(".morning") && !late[0].getLife().greetingHolds(true)
+                                            && late[0].getCitizenAI().getState() != EntityAICitizenLife.LifeState.MORNING_GATHER,
+                          "the late greeter held work or greeted a sleeper: '" + late[0].getSpeech() + "' " + late[0].getCitizenAI().getState());
+                    }
+                    final int wake = Math.min(CitizenAI.wakeDelayOf(sleepers[0]), CitizenAI.wakeDelayOf(sleepers[1]));
+                    if (greeter[0] == null)
+                    {
+                        if (lateFrom[0] < 0 || now - lateFrom[0] <= 60 || dayTime < wake - 60)
+                        {
+                            helper.runAfterDelay(1, () -> poll[0].run());
+                            return;
+                        }
+                        // a minute or so before the first of his neighbours is due: he is up first and waits for that one
+                        helper.assertTrue(sleepers[0].getCitizenSleepHandler().isAsleep() && sleepers[1].getCitizenSleepHandler().isAsleep(),
+                          "precondition failed: a neighbour of the first riser is up early");
+                        greeter[0] = entity(spawn(helper, colony, greeterAt));
+                        makeTrait(greeter[0], LifeTrait.BRISK);
+                        toGreetingDay(helper, greeter[0]);
+                        final EntityCitizen g = greeter[0];
+                        helper.assertTrue(!g.getLife().someoneToGreet(g.blockPosition()), "precondition failed: someone is awake by the first riser");
+                        helper.assertTrue(g.getLife().greetingHolds(true) && g.getLife().gatherSpot() == null && g.getLife().awaitingListener(),
+                          "a first riser with a neighbour due does not wait: holds " + g.getLife().greetingHolds(true) + " spot " + g.getLife().gatherSpot());
+                        greetFrom[0] = now;
+                        helper.runAfterDelay(1, () -> poll[0].run());
+                        return;
+                    }
+                    final EntityCitizen g = greeter[0];
+                    keepFed(g);
+                    if (wokeAt[0] < 0 && (!sleepers[0].getCitizenSleepHandler().isAsleep() || !sleepers[1].getCitizenSleepHandler().isAsleep()))
+                    {
+                        wokeAt[0] = now;
+                        helper.assertTrue(now - greetFrom[0] <= CitizenLife.GREET_WAIT, "the neighbour got up after the wait: " + (now - greetFrom[0]));
+                    }
+                    if (greetedAt[0] < 0 && g.getSpeech().contains(".morning"))
                     {
                         greetedAt[0] = now;
-                        helper.assertTrue(now - t0 >= wakeAfter[0], "the first riser greeted before anyone woke, at " + (now - t0));
-                        helper.assertTrue(greeter.getLife().someoneToGreet(greeter.blockPosition()), "the first riser greets with nobody awake near");
+                        helper.assertTrue(wokeAt[0] >= 0, "the first riser greeted before anyone woke, at " + (now - greetFrom[0]));
+                        helper.assertTrue(g.getLife().someoneToGreet(g.blockPosition()), "the first riser greets with nobody awake near");
                     }
-                    if (greeter.getLife().greetingHolds(true))
+                    if (g.getLife().greetingHolds(true))
                     {
-                        helper.assertTrue(now - greeter.getLife().greetingStart() <= CitizenLife.MORNING_BUDGET, "the greeting held work past the budget");
+                        helper.assertTrue(now - g.getLife().greetingStart() <= CitizenLife.MORNING_BUDGET, "the greeting held work past the budget");
                     }
-                    helper.assertTrue(!late.getSpeech().contains(".morning"), "the late greeter greeted a sleeper: '" + late.getSpeech() + "'");
-                    helper.assertTrue(late.getLife().gatherSpot() == null, "the late greeter walks off to greet: " + late.getLife().gatherSpot());
-                    if (late.getLife().greetingHolds(true))
+                    if (now - greetFrom[0] > CitizenLife.MORNING_BUDGET + 60)
                     {
-                        lateHeld[0] = now - late.getLife().greetingStart();
-                        helper.assertTrue(lateHeld[0] <= CitizenLife.GREET_WAIT, "the late greeter waited " + lateHeld[0] + " ticks");
-                    }
-                    if (now - t0 > CitizenLife.MORNING_BUDGET + 60)
-                    {
-                        helper.assertTrue(greetedAt[0] >= 0, "the first riser never greeted: state " + greeter.getCitizenAI().getState() + " waiting "
-                                                             + greeter.getLife().awaitingListener() + " skipped " + greeter.getLife().greetSkipped());
-                        helper.assertTrue(late.getLife().greetSkipped() && !late.getLife().greetingHolds(true), "the late greeter's wait did not end");
-                        Log.getLogger().info("ALIVE RESULT morning_dawn greeted_after={} late_held={}", greetedAt[0] - t0, lateHeld[0]);
+                        helper.assertTrue(greetedAt[0] >= 0, "the first riser never greeted: state " + g.getCitizenAI().getState() + " waiting "
+                                                               + g.getLife().awaitingListener() + " skipped " + g.getLife().greetSkipped() + " woke " + wokeAt[0]);
+                        Log.getLogger().info("ALIVE RESULT morning_dawn woke_after={} greeted_after={}", wokeAt[0] - greetFrom[0], greetedAt[0] - greetFrom[0]);
                         helper.succeed();
                         return;
                     }
                     helper.runAfterDelay(1, () -> poll[0].run());
                 };
                 helper.runAfterDelay(1, () -> poll[0].run());
-            });
+            };
+            helper.runAfterDelay(1, () -> toBed[0].run());
         });
+    }
+
+    /**
+     * Round 8 (Sol M4): a greeting is taken once a morning, saved with the citizen: a fresh life (a reloaded entity) does not hold work for it again the same
+     * morning, and the day is in the save data. A greeter stands only where it is safe: with magma under his wanted place he picks another one nearby, and the
+     * rule turns down magma, a block at head height and a floor of air. A greeter shut in by walls does not keep walking to a spot he cannot reach: he gives up
+     * before the timer, without a word with nobody near.
+     */
+    public static void greetOnceSafe(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-greet-once-safe");
+        midday(helper);
+        final ServerLevel level = helper.getLevel();
+        // the rule itself, on the plot's stone floor
+        helper.assertTrue(CitizenLife.safeStand(level, helper.absolutePos(new BlockPos(30, 1, 4))), "plain stone floor is not safe to stand on");
+        helper.setBlock(new BlockPos(31, 0, 4), net.minecraft.world.level.block.Blocks.MAGMA_BLOCK.defaultBlockState());
+        helper.assertTrue(!CitizenLife.safeStand(level, helper.absolutePos(new BlockPos(31, 1, 4))), "magma under the feet is safe");
+        helper.setBlock(new BlockPos(32, 2, 4), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+        helper.assertTrue(!CitizenLife.safeStand(level, helper.absolutePos(new BlockPos(32, 1, 4))), "a block at head height is safe");
+        helper.setBlock(new BlockPos(33, 0, 4), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+        helper.assertTrue(!CitizenLife.safeStand(level, helper.absolutePos(new BlockPos(33, 2, 4))), "air under the feet is safe");
+        // the shut-in greeter's cell: stone walls three high around him
+        final BlockPos shutAt = new BlockPos(14, 1, 18);
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            for (int dz = -1; dz <= 1; dz++)
+            {
+                for (int dy = 0; dy < 3 && (dx != 0 || dz != 0); dy++)
+                {
+                    helper.setBlock(shutAt.offset(dx, dy, dz), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                }
+            }
+        }
+        helper.runAfterDelay(40, () -> {
+            // the greeters are fresh, as on a first look after sleep; the hut block of the town hall is at (2, 1, 2)
+            final ICitizenData data = spawn(helper, colony, new BlockPos(4, 1, 14));
+            final EntityCitizen greeter = entity(data);
+            final EntityCitizen shut = entity(spawn(helper, colony, shutAt));
+            makeTrait(greeter, LifeTrait.CHATTY);
+            makeTrait(shut, LifeTrait.CHATTY);
+            final IBuilding townHall = colony.getServerBuildingManager().getTownHall();
+            helper.assertTrue(townHall != null && townHall.getPosition().equals(helper.absolutePos(new BlockPos(2, 1, 2))), "no town hall at (2, 1, 2)");
+            // magma under the greeter's wanted place by the town hall (the hut block, offset by his id); someone to greet stands two blocks from it
+            final int id = greeter.getCivilianID();
+            final BlockPos wantedRel = new BlockPos(2 + Math.floorMod(id * 5, 7) - 3, 1, 2 + Math.floorMod(id * 3 + 1, 7) - 3);
+            final BlockPos wanted = helper.absolutePos(wantedRel);
+            final BlockPos column = com.minecolonies.core.entity.ai.workers.util.StandSpots.nearest(level, wanted, 0, 2, 2, null);
+            helper.assertTrue(column != null, "precondition failed: no floor at the wanted place " + wanted);
+            level.setBlockAndUpdate(column.below(), net.minecraft.world.level.block.Blocks.MAGMA_BLOCK.defaultBlockState());
+            final BlockPos listenerAt = wantedRel.offset(wantedRel.getX() >= 2 ? 2 : -2, 0, 0);
+            final EntityCitizen listener = entity(spawn(helper, colony, listenerAt));
+            keepFed(greeter, shut, listener);
+            long day = level.getOverworldClockTime() / 24000L + 1;
+            for (int guard = 0; guard < 1000 && !(CitizenLife.greetsOn(id, day, LifeTrait.CHATTY) && CitizenLife.greetsOn(shut.getCivilianID(), day, LifeTrait.CHATTY));
+                 guard++)
+            {
+                day++;
+            }
+            helper.assertTrue(CitizenLife.greetsOn(id, day, LifeTrait.CHATTY) && CitizenLife.greetsOn(shut.getCivilianID(), day, LifeTrait.CHATTY),
+              "precondition failed: no morning where both greet");
+            setClock(helper, day * 24000L + 100L);
+            helper.assertTrue(greeter.getLife().greetingHolds(true), "the greeter does not greet this morning");
+            final BlockPos spot = greeter.getLife().gatherSpot();
+            helper.assertTrue(spot != null && !spot.equals(column) && CitizenLife.safeStand(level, spot)
+                                && Math.max(Math.abs(spot.getX() - wanted.getX()), Math.abs(spot.getZ() - wanted.getZ())) <= CitizenLife.STAND_SEARCH,
+              "the greeting spot is not a safe place near the wanted one: " + spot + " wanted " + column);
+            helper.assertTrue(data.getGreetedDay() == day, "the morning's greeting is not saved: " + data.getGreetedDay() + " for " + day);
+            helper.assertTrue(data.serializeNBT(level.registryAccess()).getLongOr("greetedday", -1L) == day, "the morning's greeting is not in the save data");
+            // a reloaded entity starts with a fresh life: it does not greet again this morning
+            final CitizenLife reloaded = new CitizenLife(greeter);
+            helper.assertTrue(!reloaded.greetingHolds(true) && reloaded.gatherSpot() == null, "a reloaded greeter greets again the same morning");
+            helper.assertTrue(shut.getLife().greetingHolds(true) && shut.getLife().gatherSpot() != null, "precondition failed: the shut-in greeter has no spot");
+            final BlockPos shutSpot = shut.getLife().gatherSpot();
+            final long t0 = level.getGameTime();
+            final int[] lines = {0};
+            final boolean[] speaking = {false};
+            final long[] shutEnded = {-1};
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                final long now = level.getGameTime();
+                keepFed(greeter, shut, listener);
+                pin(helper, listener, listenerAt);
+                final boolean says = greeter.getSpeech().contains(".morning");
+                lines[0] += says && !speaking[0] ? 1 : 0;
+                speaking[0] = says;
+                helper.assertTrue(!shut.getSpeech().contains(".morning"), "the shut-in greeter greeted with nobody near");
+                if (shutEnded[0] < 0 && !shut.getLife().greetingHolds(true))
+                {
+                    shutEnded[0] = now - t0;
+                    helper.assertTrue(shut.getLife().greetSkipped(), "the shut-in greeter's greeting ended with a line");
+                    helper.assertTrue(shutEnded[0] < CitizenLife.MORNING_BUDGET - CitizenLife.GREET_LINGER - 20,
+                      "the shut-in greeter walked to " + shutSpot + " until the timer: " + shutEnded[0]);
+                }
+                if (now - t0 > CitizenLife.MORNING_BUDGET + 60)
+                {
+                    helper.assertTrue(lines[0] == 1, "the greeter said his morning line " + lines[0] + " times");
+                    helper.assertTrue(!greeter.getLife().greetingHolds(true) && !new CitizenLife(greeter).greetingHolds(true), "the greeting came back");
+                    helper.assertTrue(shutEnded[0] >= 0, "the shut-in greeter still holds his greeting");
+                    Log.getLogger().info("ALIVE RESULT greet_once_safe spot={} wanted={} shut_gave_up_after={}", spot, column, shutEnded[0]);
+                    helper.succeed();
+                    return;
+                }
+                helper.runAfterDelay(1, () -> poll[0].run());
+            };
+            helper.runAfterDelay(1, () -> poll[0].run());
+        });
+    }
+
+    /**
+     * Moves the clock by whole days (the time of day stays) to the first morning on which the citizen greets, so his first look of the day greets.
+     */
+    private static void toGreetingDay(final GameTestHelper helper, final EntityCitizen citizen)
+    {
+        final long clock = helper.getLevel().getOverworldClockTime();
+        long day = clock / 24000L;
+        for (int guard = 0; guard < 1000 && !CitizenLife.greetsOn(citizen.getCivilianID(), day, citizen.getLife().trait()); guard++)
+        {
+            day++;
+        }
+        helper.assertTrue(CitizenLife.greetsOn(citizen.getCivilianID(), day, citizen.getLife().trait()), "precondition failed: no morning where " + citizen.getCivilianID() + " greets");
+        setClock(helper, day * 24000L + clock % 24000L);
     }
 
     /**
@@ -1796,9 +1973,12 @@ public final class AliveGameTests
     private static String lifeGates(final EntityCitizen c)
     {
         final CitizenLife life = c.getLife();
+        // round 8 (R7-F1): also whether the setting is on, the entity is alive and still the citizen's entity (a replaced entity has a fresh life), and the time
+        final boolean current = c.getCitizenData() != null && c.getCitizenData().getEntity().orElse(null) == c;
         return c.getCivilianID() + " " + c.getCitizenAI().getState() + " joins " + life.canJoinChat() + " chatting " + life.chatting() + " says '" + c.getSpeech()
                  + "' held " + life.lineHeld() + " greets " + life.greetingActive() + " rain " + c.level().isRaining() + "/" + life.hurriesInRain() + " grief "
-                 + life.grief() + " mourns " + life.mourning();
+                 + life.grief() + " mourns " + life.mourning() + " on " + CitizenLife.enabled() + " alive " + c.isAlive() + " current " + current + " day "
+                 + c.level().getOverworldClockTime() % 24000L;
     }
 
     private static void keepFed(final EntityCitizen... citizens)

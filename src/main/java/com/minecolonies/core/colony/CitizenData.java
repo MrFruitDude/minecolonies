@@ -364,6 +364,12 @@ public class CitizenData implements ICitizenData
     private String lifeTrait = "";
 
     /**
+     * Round 8 life (Sol M4): the save key and the day number of the morning the citizen last took his greeting (-1 for none).
+     */
+    private static final String TAG_GREETED_DAY = "greetedday";
+    private long greetedDay = -1L;
+
+    /**
      * Create a CitizenData given an ID. Used as a super-constructor or during loading.
      *
      * @param id     ID of the Citizen.
@@ -1222,6 +1228,22 @@ public class CitizenData implements ICitizenData
     }
 
     @Override
+    public long getGreetedDay()
+    {
+        return greetedDay;
+    }
+
+    @Override
+    public void setGreetedDay(final long day)
+    {
+        if (day != greetedDay)
+        {
+            greetedDay = day;
+            markDirty(0);
+        }
+    }
+
+    @Override
     public void increaseSaturation(final double extraSaturation)
     {
         this.saturation = Math.min(MAX_SATURATION, this.saturation + Math.abs(extraSaturation));
@@ -1457,6 +1479,10 @@ public class CitizenData implements ICitizenData
         {
             nbtTagCompound.putString(TAG_LIFE_TRAIT, lifeTrait);
         }
+        if (greetedDay >= 0)
+        {
+            nbtTagCompound.putLong(TAG_GREETED_DAY, greetedDay);
+        }
 
         @NotNull final ListTag avQuestNBT = new ListTag();
         for (final Identifier quest : availableQuests)
@@ -1637,6 +1663,7 @@ public class CitizenData implements ICitizenData
         this.isWorking = nbtTagCompound.getBooleanOr(TAG_ACTIVE, false);
         this.leisureTime = nbtTagCompound.getIntOr(TAG_LEISURE, 0);
         this.lifeTrait = nbtTagCompound.getStringOr(TAG_LIFE_TRAIT, "");
+        this.greetedDay = nbtTagCompound.getLongOr(TAG_GREETED_DAY, -1L);
 
         @NotNull final ListTag availQuestNbt = nbtTagCompound.getListOrEmpty(TAG_AV_QUESTS);
         for (int i = 0; i < availQuestNbt.size(); i++)

@@ -238,6 +238,11 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
      */
     private final CitizenLife life = new CitizenLife(this);
     /**
+     * Round 8: the decisions of this citizen (sleep, food, work), set once its tasks start; null before (and on the client).
+     */
+    @Nullable
+    private CitizenAI decisionAI = null;
+    /**
      * Constructor for a new citizen typed entity.
      *
      * @param type  the entity type.
@@ -328,7 +333,7 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
     @SuppressWarnings(INCREMENT_AND_DECREMENT_OPERATORS_SHOULD_NOT_BE_USED_IN_A_METHOD_CALL_OR_MIXED_WITH_OTHER_OPERATORS_IN_AN_EXPRESSION)
     private void initTasks()
     {
-        new CitizenAI(this);
+        decisionAI = new CitizenAI(this);
         if (citizenAI instanceof CitizenAIStateMachine machine)
         {
             // B4: after repeated failures the AI starts over from IDLE: stop walking, empty the hand, clear the status
@@ -1781,6 +1786,15 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
     public ITickRateStateMachine<IState> getCitizenAI()
     {
         return citizenAI;
+    }
+
+    /**
+     * @return the decisions of this citizen (round 8: when a sleeper wakes), null before its tasks started.
+     */
+    @Nullable
+    public CitizenAI getDecisionAI()
+    {
+        return decisionAI;
     }
 
     /**

@@ -489,4 +489,24 @@ public interface ICitizenData extends ICivilianData, IQuestGiver, IQuestParticip
     default void setLifeTrait(final String trait)
     {
     }
+
+    /**
+     * Round 8 life (Sol M4): the day number of the morning the citizen last took his greeting (-1 for none), saved, so a reload or an AI reset does not greet
+     * twice in one morning.
+     *
+     * @return the day number.
+     */
+    default long getGreetedDay()
+    {
+        return -1L;
+    }
+
+    /**
+     * Round 8 life: saves the morning the citizen took his greeting.
+     *
+     * @param day the day number.
+     */
+    default void setGreetedDay(final long day)
+    {
+    }
 }
