@@ -11,8 +11,8 @@ import java.util.Map;
 
 /**
  * What the colony remembers about its labourers (saved with the colony): the flags the managers put on crafting tables and furnaces, the managers' directed
- * gathering orders ({@link DirectedOrder}), their quarry zones ({@link QuarryZones}), the hut items the colony owes ({@link HutDebts}) and the stone shafts
- * ({@link LabourShafts}); a save without them reads as none.
+ * gathering orders ({@link DirectedOrder}), their quarry zones ({@link QuarryZones}), the hut items the colony owes ({@link HutDebts}), the stone shafts
+ * ({@link LabourShafts}) and what labourers carry for requests ({@link LabourCargo}); a save without them reads as none.
  * <ul>
  *   <li>{@link TableFlag#EXCLUDE}: labourers never use the table (a decorative one in a house);</li>
  *   <li>{@link TableFlag#PREFER}: labourers use it first (and, in the {@code MARKED} post mode, only these).</li>
@@ -32,6 +32,7 @@ public final class LabourData
     private static final String TAG_QUARRIES    = "quarries";
     private static final String TAG_HUT_DEBTS   = "hutDebts";
     private static final String TAG_SHAFTS      = "shafts";
+    private static final String TAG_CARGO       = "cargo";
 
     /**
      * What a manager says about a table or furnace.
@@ -60,6 +61,17 @@ public final class LabourData
 
     /** The colony's stone shafts (absent in older saves: none). */
     private final LabourShafts shafts = new LabourShafts();
+
+    /** What labourers carry for requests and stock goals (absent in older saves: nothing on record). */
+    private final LabourCargo cargo = new LabourCargo();
+
+    /**
+     * @return what labourers carry (the live record; {@link LabourBoard} changes it).
+     */
+    public LabourCargo cargo()
+    {
+        return cargo;
+    }
 
     /**
      * @return the stone shafts (the live record; {@link ShaftSites} changes it).
@@ -192,6 +204,10 @@ public final class LabourData
         {
             tag.put(TAG_SHAFTS, shafts.write());
         }
+        if (!cargo.isEmpty())
+        {
+            tag.put(TAG_CARGO, cargo.write());
+        }
         return tag;
     }
 
@@ -229,5 +245,6 @@ public final class LabourData
         quarries.read(tag.getCompoundOrEmpty(TAG_QUARRIES));
         hutDebts.read(tag.getCompoundOrEmpty(TAG_HUT_DEBTS));
         shafts.read(tag.getCompoundOrEmpty(TAG_SHAFTS));
+        cargo.read(tag.getListOrEmpty(TAG_CARGO));
     }
 }

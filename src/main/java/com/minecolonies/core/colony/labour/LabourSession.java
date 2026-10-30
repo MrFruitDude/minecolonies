@@ -66,6 +66,11 @@ public final class LabourSession implements IIdleTaskSession
     private static final int SHAFT_WAIT = 1800;
     private static final int SHAFT_LOOK = 40;
 
+    /**
+     * Round 6 teamwork: ticks a helping worker whose own work came back may still take to put the goods he carries into the hut that asked.
+     */
+    public static final int HAND_IN_GRACE = 600;
+
     private final String      taskId;
     private final Colony      colony;
     private final ICitizenData citizen;
@@ -308,6 +313,17 @@ public final class LabourSession implements IIdleTaskSession
     public boolean isEnded()
     {
         return ended;
+    }
+
+    /**
+     * Round 6 teamwork: whether he is on his way with the goods of the claim to the hut that asked, for at most {@link #HAND_IN_GRACE} ticks: a helping worker whose
+     * own work came back finishes this short walk first, so that the goods do not end up in his own hut.
+     *
+     * @param now the game time.
+     */
+    public boolean handingIn(final long now)
+    {
+        return phase == Phase.DELIVER && !stashing && !ended && now - actionStart <= HAND_IN_GRACE && countClaimed() > 0;
     }
 
     /**
@@ -609,7 +625,8 @@ public final class LabourSession implements IIdleTaskSession
         }
         // (a request of the hut that alone covers the good, a new miner's own cobblestone, is not covered for it)
         final BlockPos requester = claim.source() == LabourClaim.Source.REQUEST || claim.source() == LabourClaim.Source.SELF ? claim.destination() : null;
-        if (++thinks > MAX_THINKS || board.coverage().coveredFor(claim.target(), requester))
+        // (a hand-in of carried goods plans nothing: a specialist who covers the good does not stop it)
+        if (++thinks > MAX_THINKS || (!claim.cargo() && board.coverage().coveredFor(claim.target(), requester)))
         {
             end(false);
             return;
@@ -623,6 +640,12 @@ public final class LabourSession implements IIdleTaskSession
         final int held = cutting ? countClaimed() : 0;
         final LabourPlanner.Result<Item> result = cutting ? board.planCut(env, claim.exact(), claim.amount(), held, materialsOf(citizen, claim))
                                                     : LabourPlanner.next(env, claim.target(), claim.amount(), inventoryOf(citizen));
+        if (claim.cargo() && (!(result instanceof LabourPlanner.Done<Item>) || (cutting && held < claim.amount())))
+        {
+            // round 6: a hand-in brings only what he carries; it is gone (taken out of his bag), nothing new is gathered for it
+            end(false);
+            return;
+        }
         if (result instanceof LabourPlanner.Done<Item>)
         {
             if (cutting && held < claim.amount())
