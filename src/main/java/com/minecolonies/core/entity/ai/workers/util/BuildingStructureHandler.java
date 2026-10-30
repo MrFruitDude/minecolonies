@@ -212,6 +212,8 @@ public class BuildingStructureHandler<J extends AbstractJobStructure<?, J>, B ex
 
         if (placement)
         {
+            // a cap block of the order is the player's build: no Forester takes it (round 8, r7 Fable N53)
+            PlacedCaps.placedByBuilder(getWorld(), worldPos);
             ReachAudit.record(structureAI.getWorker(), worldPos);
             com.minecolonies.core.colony.workorders.collab.BuilderCollab.placed(worldPos, structureAI.getWorker().getCitizenData().getWorkBuilding().getID());
             structureAI.getWorker().getCitizenExperienceHandler().addExperience(XP_EACH_BLOCK);

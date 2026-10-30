@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.piston.PistonStructureResolver;
@@ -26,6 +27,8 @@ import net.neoforged.neoforge.attachment.IAttachmentHolder;
 import net.neoforged.neoforge.attachment.IAttachmentSerializer;
 import net.neoforged.neoforge.common.util.BlockSnapshot;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.level.ChunkEvent;
+import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.event.level.PistonEvent;
 import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -39,7 +42,9 @@ import java.util.function.Supplier;
 /**
  * Forestry (r6 Sol H1, round 7 strategy): the cap blocks a player placed (huge mushroom blocks and stems, nether and warped wart blocks, shroomlight),
  * marked in saved per-chunk data. A Forester never cuts a marked block; the tree snapshot rules stay as a second guard. The mark is set when a player places
- * the block and cleared when it is broken or replaced; a piston carries it to the moved block and keeps it at the old place too (conservative). A lookup is
+ * the block or the colony's builder places it from a schematic (round 8, r7 Fable N53), and cleared when it is broken or replaced; a piston carries it to the
+ * moved block and keeps it at the old place too (conservative). A mark whose block went without an event is stale (round 8, r7 Fable N59): an explosion
+ * clears the marks of what it destroys, and a lookup, a box query or the chunk's next load drops a mark that no longer holds a markable block. A lookup is
  * one hash probe in the block's chunk; nothing is scanned.
  */
 public final class PlacedCaps
@@ -263,7 +268,8 @@ public final class PlacedCaps
     }
 
     /**
-     * Whether any marked block lies in a box (reads the marks of the chunks it touches; no block is scanned).
+     * Whether any marked block lies in a box (reads the marks of the chunks it touches; only a marked block in the box is looked at). A mark there whose block
+     * is no longer a markable one is stale: it counts for nothing and is dropped, on the server thread.
      *
      * @param level the level.
      * @param min   the box's low corner.
@@ -294,7 +300,8 @@ public final class PlacedCaps
                     final int x = (cx << 4) | ((local >> 4) & 15);
                     final int z = (cz << 4) | (local & 15);
                     final int y = local >> 8;
-                    if (x >= min.getX() && x <= max.getX() && y >= min.getY() && y <= max.getY() && z >= min.getZ() && z <= max.getZ())
+                    if (x >= min.getX() && x <= max.getX() && y >= min.getY() && y <= max.getY() && z >= min.getZ() && z <= max.getZ()
+                          && isPlaced(level, new BlockPos(x, y, z)))
                     {
                         return true;
                     }
@@ -324,6 +331,95 @@ public final class PlacedCaps
             }
         }
         return false;
+    }
+
+    /**
+     * The colony's builder placed a block from a schematic (round 8, r7 Fable N53): a work order is the player's build, so a markable block is marked as one
+     * placed by hand; anything else clears the mark of what it replaced. Placement fires no event for the builder.
+     *
+     * @param level the level.
+     * @param pos   the block, after it was placed.
+     */
+    public static void placedByBuilder(@NotNull final Level level, @NotNull final BlockPos pos)
+    {
+        if (isMarkable(level.getBlockState(pos)))
+        {
+            mark(level, pos);
+        }
+        else
+        {
+            unmark(level, pos);
+        }
+    }
+
+    /**
+     * An explosion destroys blocks without a break event: their marks go, so a block that grows or is set there later is not taken for a player's (round 8,
+     * r7 Fable N59). An explosion that only triggers blocks (a wind charge) destroys nothing and keeps them.
+     *
+     * @param event the explosion, with the blocks it destroys.
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onExplosion(@NotNull final ExplosionEvent.Detonate event)
+    {
+        if (!(event.getLevel() instanceof final ServerLevel level) || event.getExplosion().getBlockInteraction() == Explosion.BlockInteraction.TRIGGER_BLOCK)
+        {
+            return;
+        }
+        for (final BlockPos pos : event.getAffectedBlocks())
+        {
+            unmark(level, pos);
+        }
+    }
+
+    /**
+     * A chunk comes back from disk: a mark whose block went while nobody looked (a command, another mod) is dropped now, before anything can grow or be set
+     * there and be taken for a player's (round 8, r7 Fable N59). Only the chunk's own blocks are read; the level is not touched while the chunk loads.
+     *
+     * @param event the load.
+     */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onChunkLoad(@NotNull final ChunkEvent.Load event)
+    {
+        if (!(event.getLevel() instanceof ServerLevel) || event.isNewChunk())
+        {
+            return;
+        }
+        final LevelChunk chunk = event.getChunk();
+        final Marks marks = chunk.getExistingDataOrNull(PLACED_CAPS.get());
+        if (marks == null)
+        {
+            return;
+        }
+        final int baseX = chunk.getPos().getMinBlockX();
+        final int baseZ = chunk.getPos().getMinBlockZ();
+        boolean changed = false;
+        for (final int local : marks.toArray())
+        {
+            final BlockPos pos = new BlockPos(baseX | ((local >> 4) & 15), local >> 8, baseZ | (local & 15));
+            if (!isMarkable(chunk.getBlockState(pos)))
+            {
+                changed |= marks.remove(local);
+            }
+        }
+        if (changed)
+        {
+            if (marks.isEmpty())
+            {
+                chunk.removeData(PLACED_CAPS.get());
+            }
+            chunk.markUnsaved();
+        }
+    }
+
+    /**
+     * A chunk load of the marks of one chunk, as {@link #onChunkLoad} runs it (tests: a stale mark is gone after a reload).
+     *
+     * @param level the level.
+     * @param pos   a block of the chunk.
+     */
+    public static void reload(@NotNull final Level level, @NotNull final BlockPos pos)
+    {
+        onChunkLoad(new ChunkEvent.Load(level.getChunkAt(pos), false));
     }
 
     /**

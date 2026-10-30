@@ -107,6 +107,11 @@ public final class CreativeBuildingStructureHandler extends CreativeStructureHan
     {
         super.triggerSuccess(pos, list, placement);
         final BlockPos worldPos = getProgressPosInWorld(pos);
+        if (placement)
+        {
+            // a cap block of the build is the player's: no Forester takes it (round 8, r7 Fable N53)
+            com.minecolonies.core.entity.ai.workers.util.PlacedCaps.placedByBuilder(getWorld(), worldPos);
+        }
 
         final Blueprint blueprint = getBluePrint();
         final CompoundTag teData = blueprint.getTileEntityData(worldPos, pos);

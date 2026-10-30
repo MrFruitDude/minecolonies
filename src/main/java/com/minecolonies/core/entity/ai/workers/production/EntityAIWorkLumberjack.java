@@ -288,6 +288,11 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private int treeChopRefusedCount = 0;
 
     /**
+     * Forestry: chops TreeChop did not get because a player's cap block stood within its reach at the chop (round 8, r7 Sol H2; tests).
+     */
+    private int treeChopMarkRefusedCount = 0;
+
+    /**
      * Forestry: the give-up clock of the current tree: when he last got nearer to it or broke a block of it, when the tree work last ran, his best
      * distance to the work spot (and for which spot), since when he stands close to the stump without getting nearer, and whether he got there.
      */
@@ -356,6 +361,20 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      * Forestry (r6 Fable N44): how long a cap tree waits while another Forester works the joined cap next to it, in game ticks (thirty seconds).
      */
     private static final long CAP_NEIGHBOUR_DEFER_TICKS = 30 * 20L;
+
+    /**
+     * Forestry (round 8, r7 Fable N60): how long he walks home to search before he gives the search up for this round, in game ticks (one minute), and the
+     * gap after which a walk counts as a new one (a meal, a night between).
+     */
+    public static final long WALK_HOME_TICKS = 60 * 20L;
+    private static final long WALK_HOME_GAP_TICKS = 5 * 20L;
+
+    /**
+     * Forestry (round 8, r7 Fable N60): since when he walks home to search, when he last did, and how often he gave the walk up (tests).
+     */
+    private long walkHomeSince = -1;
+    private long walkHomeLast = -1;
+    private int walkHomeGivenUp = 0;
 
     /**
      * Cap trees he left for now because the joined cap next to them was worked (r6 Fable N44; tests).
@@ -451,6 +470,30 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     public int getTreeChopRefusedCount()
     {
         return treeChopRefusedCount;
+    }
+
+    /**
+     * @return chops TreeChop did not get because a player's cap block stood within its reach at the chop.
+     */
+    public int getTreeChopMarkRefusedCount()
+    {
+        return treeChopMarkRefusedCount;
+    }
+
+    /**
+     * @return true if his current tree is cut through TreeChop.
+     */
+    public boolean usesTreeChop()
+    {
+        return useTreeChop;
+    }
+
+    /**
+     * @return walks home to search he gave up because he did not get there in time.
+     */
+    public int getWalkHomeGivenUp()
+    {
+        return walkHomeGivenUp;
     }
 
     /**
@@ -777,9 +820,25 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             if (!building.shouldRestrict() && outsideSearchDisc() && !walkToBuilding())
             {
                 // r6 Fable N43: the search maps only the disc round the hut (radius plus a margin); from outside it (back from a meal, a bed, a flight) it finds
-                // nothing, so he walks home first
-                return getState();
+                // nothing, so he walks home first. Round 8 (r7 Fable N60): not for ever; a hut he cannot get to (an island, a sealed hut) ends the search for
+                // this round as no tree found, with the usual wait, instead of leaving him searching until the stuck handler moves him
+                final long now = world.getGameTime();
+                if (walkHomeSince < 0 || now - walkHomeLast > WALK_HOME_GAP_TICKS)
+                {
+                    walkHomeSince = now;
+                }
+                walkHomeLast = now;
+                if (now - walkHomeSince < WALK_HOME_TICKS)
+                {
+                    return getState();
+                }
+                walkHomeSince = -1;
+                walkHomeGivenUp++;
+                searchNote = "could not get back to the hut at " + building.getPosition().toShortString() + " to search, from " + worker.blockPosition().toShortString();
+                Log.getLogger().debug("Forester {} {}", worker.getCitizenData().getId(), searchNote);
+                return LUMBERJACK_NO_TREES_FOUND;
             }
+            walkHomeSince = -1;
             if (building.shouldRestrict())
             {
                 final BlockPos startPos = building.getStartRestriction();
@@ -923,15 +982,10 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         {
             return;
         }
-        if (tree.getBox() != null)
+        if (placedCapInReach(tree))
         {
             // TreeChop breaks leaves and caps of its own choosing: near a player's cap block he cuts the normal way, which never takes it (round 7)
-            final BlockPos min = BlockPos.containing(tree.getBox().minX, tree.getBox().minY, tree.getBox().minZ).offset(-CAPTURE_MARGIN, -CAPTURE_MARGIN, -CAPTURE_MARGIN);
-            final BlockPos max = BlockPos.containing(tree.getBox().maxX, tree.getBox().maxY, tree.getBox().maxZ).offset(CAPTURE_MARGIN, CAPTURE_MARGIN, CAPTURE_MARGIN);
-            if (PlacedCaps.anyIn(world, min, max))
-            {
-                return;
-            }
+            return;
         }
         BlockPos target = null;
         for (final BlockPos pos : tree.getAllLogs())
@@ -948,6 +1002,23 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             treeChopTarget = target;
             treeChopChops = Compatibility.treeChop.chopsPerAction((ServerLevel) world, target, tree.getAllLogs().size());
         }
+    }
+
+    /**
+     * Forestry: whether a player's cap block stands where TreeChop may break leaves and caps for this tree (its box and the drop margin round it).
+     *
+     * @param tree his tree.
+     * @return true if one does.
+     */
+    private boolean placedCapInReach(@NotNull final Tree tree)
+    {
+        if (tree.getBox() == null)
+        {
+            return false;
+        }
+        final BlockPos min = BlockPos.containing(tree.getBox().minX, tree.getBox().minY, tree.getBox().minZ).offset(-CAPTURE_MARGIN, -CAPTURE_MARGIN, -CAPTURE_MARGIN);
+        final BlockPos max = BlockPos.containing(tree.getBox().maxX, tree.getBox().maxY, tree.getBox().maxZ).offset(CAPTURE_MARGIN, CAPTURE_MARGIN, CAPTURE_MARGIN);
+        return PlacedCaps.anyIn(world, min, max);
     }
 
     /**
@@ -1016,6 +1087,12 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     {
         if (!tree.isFootprintTree() || tree.isDynamicTree())
         {
+            // round 8 (r7 Sol H2): no tree of any kind takes a player's cap block (the footprint check below holds the same rule)
+            if (part != TreeFootprint.Part.DECORATION && PlacedCaps.isPlaced(world, pos))
+            {
+                lastRefusal = "a player's cap block";
+                return false;
+            }
             return true;
         }
         final TreeFootprint.Recheck recheck = TreeFootprint.recheck(world, pos, part, tree.getFamily(), tree.isStrippedBase(), building.getColony());
@@ -1645,6 +1722,17 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         final BlockPos target = treeChopTarget;
         if (target == null || !Compatibility.treeChop.isChoppable(world, target))
         {
+            useTreeChop = false;
+            return getState();
+        }
+        // Round 8 (r7 Sol H2): a player's cap block placed within TreeChop's reach since he chose the tree, or since his last chop (also one put in place of
+        // a natural cap, same state), would go with the felling: checked again before every chop, in the tick of the chop; then he cuts the normal way
+        if (placedCapInReach(tree))
+        {
+            treeChopRefusedCount++;
+            treeChopMarkRefusedCount++;
+            Log.getLogger().debug("Forester {} cuts the tree at {} the normal way: a player's cap block stands within TreeChop's reach", worker.getCitizenData().getId(),
+              tree.getLocation());
             useTreeChop = false;
             return getState();
         }

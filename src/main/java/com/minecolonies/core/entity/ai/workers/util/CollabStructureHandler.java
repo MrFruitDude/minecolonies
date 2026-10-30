@@ -135,6 +135,11 @@ public class CollabStructureHandler extends AbstractStructureHandler
             structureBuilding.registerBlockPosition(state, worldPos, this.getWorld());
         }
 
+        if (placement)
+        {
+            // a cap block of the order is the player's build: no Forester takes it (round 8, r7 Fable N53)
+            PlacedCaps.placedByBuilder(getWorld(), worldPos);
+        }
         if (placement && worker != null)
         {
             ReachAudit.record(worker, worldPos);

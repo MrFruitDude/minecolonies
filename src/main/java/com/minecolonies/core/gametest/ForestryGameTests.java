@@ -1,5 +1,6 @@
 package com.minecolonies.core.gametest;
 
+import com.ldtteam.structurize.blueprints.v1.Blueprint;
 import com.minecolonies.api.blocks.ModBlocks;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
@@ -20,6 +21,8 @@ import com.minecolonies.core.colony.buildings.modules.BuildingModules;
 import com.minecolonies.core.colony.buildings.modules.ItemListModule;
 import com.minecolonies.core.colony.buildings.modules.settings.BoolSetting;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack;
+import com.minecolonies.core.colony.workorders.WorkOrderDecoration;
+import com.minecolonies.core.colony.workorders.collab.BuilderCollab;
 import com.minecolonies.core.colony.jobs.JobLumberjack;
 import com.minecolonies.core.entity.ai.workers.production.EntityAIWorkLumberjack;
 import com.minecolonies.core.entity.ai.workers.util.PlacedCaps;
@@ -135,12 +138,17 @@ public final class ForestryGameTests
         TESTS.put("forestry_placed_cap_marks", ForestryGameTests::placedCapMarks);
         TESTS.put("forestry_joined_caps_two", ForestryGameTests::joinedCapsTwo);
         TESTS.put("forestry_far_search", ForestryGameTests::farSearch);
+        TESTS.put("forestry_placed_cap_after_choice", helper -> placedCapAfterChoice(helper, "forestry_placed_cap_after_choice", false));
+        TESTS.put("forestry_builder_marks_caps", ForestryGameTests::builderMarksCaps);
+        TESTS.put("forestry_stale_marks", ForestryGameTests::staleMarks);
+        TESTS.put("forestry_walk_home_bounded", ForestryGameTests::walkHomeBounded);
 
         TREECHOP_TESTS.put("forestry_treechop_fell", ForestryGameTests::treeChopFell);
         TREECHOP_TESTS.put("forestry_treechop_half_chopped", ForestryGameTests::treeChopHalfChopped);
         TREECHOP_TESTS.put("forestry_treechop_disabled_fallback", ForestryGameTests::treeChopDisabledFallback);
         TREECHOP_TESTS.put("forestry_treechop_setting_off", ForestryGameTests::treeChopSettingOff);
         TREECHOP_TESTS.put("forestry_treechop_stays_in_footprint", ForestryGameTests::treeChopStaysInFootprint);
+        TREECHOP_TESTS.put("forestry_treechop_placed_cap_after_choice", helper -> placedCapAfterChoice(helper, "forestry_treechop_placed_cap_after_choice", true));
     }
 
     static void register(final RegisterGameTestsEvent event)
@@ -2105,6 +2113,272 @@ public final class ForestryGameTests
                     helper.assertTrue(chosenAt[0] <= ai.getSearchRadius() + 8, "he chose the tree from outside the disc, " + Math.round(chosenAt[0]) + " blocks from the hut");
                 }
             }, "forestry_far_search");
+        });
+    }
+
+    // ---------------------------------------------------------------- marks at the cut, builder marks, stale marks, bounded walk home (improve-all r8)
+
+    /**
+     * r7 Sol H2: every cut checks the marks when it is made, not only when the tree is chosen. A huge red mushroom; he finds it himself (so the TreeChop
+     * lane chooses TreeChop for it), and right after the choice a co-manager puts a red mushroom block of the same state in place of an outer natural one of
+     * its cap: no snapshot can tell it from the natural block, only its mark can. He fells the mushroom; the placed block stays. In the TreeChop lane TreeChop
+     * was chosen for it and he turned to the normal cut at the chop (TreeChop breaks caps of its own choosing).
+     */
+    private static void placedCapAfterChoice(final GameTestHelper helper, final String name, final boolean treeChop)
+    {
+        if (treeChop)
+        {
+            resetTreeChop(helper);
+        }
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, name);
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final Grown mushroom = grow(helper, new TreeSpec("huge red mushroom", new BlockPos(22, 1, 8), false, Blocks.RED_MUSHROOM, Blocks.MYCELIUM, null, null), 11L);
+        final BlockPos stem = mushroom.stumps().get(0);
+
+        helper.runAfterDelay(20, () -> {
+            final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10));
+            final BlockPos[] placed = {null};
+            final boolean[] treeChopChosen = {false};
+            final String[] last = {""};
+            pump(helper, List.of(worker), FELL_CAP, () -> {
+                final EntityAIWorkLumberjack ai = ai(worker);
+                final int stems = count(level, mushroom.box(), TreeFootprint::isTreeBlock);
+                final int markRefused = ai == null ? 0 : ai.getTreeChopMarkRefusedCount();
+                last[0] = "stems " + stems + ", placed cap " + (placed[0] == null ? "not yet" : level.getBlockState(placed[0]).getBlock()
+                            + (PlacedCaps.isPlaced(level, placed[0]) ? " (marked)" : " (no mark)")) + ", TreeChop chosen " + treeChopChosen[0] + ", chops "
+                            + (ai == null ? 0 : ai.getTreeChopChopCount()) + ", refused for a mark " + markRefused;
+                helper.assertTrue(placed[0] == null || level.getBlockState(placed[0]).is(Blocks.RED_MUSHROOM_BLOCK), "the cap block placed after the choice was taken: " + last[0]);
+                if (treeChop)
+                {
+                    helper.assertTrue(placed[0] == null || treeChopChosen[0], "fixture: TreeChop was not chosen for the mushroom: " + last[0]);
+                }
+                return placed[0] != null && stems == 0 && tree(worker) == null && (!treeChop || markRefused >= 1);
+            }, () -> last[0] + ", " + describe(worker), () -> {
+                final Tree tree = tree(worker);
+                final EntityAIWorkLumberjack ai = ai(worker);
+                if (placed[0] != null || tree == null || ai == null || tree.isStarted())
+                {
+                    return;
+                }
+                // he chose the mushroom: a co-manager puts the same block in place of a natural one at the edge of its cap
+                treeChopChosen[0] = ai.usesTreeChop();
+                placed[0] = outerCap(level, mushroom.box(), stem);
+                helper.assertTrue(placed[0] != null, "no natural cap block at the edge of the mushroom: " + describe(worker));
+                playerPlaces(level, placed[0], level.getBlockState(placed[0]));
+                helper.assertTrue(PlacedCaps.isPlaced(level, placed[0]), "the cap block put in place of the natural one is not marked");
+            }, name);
+        });
+    }
+
+    /**
+     * The red mushroom block of a cap farthest out from the stem (the lowest of those), touching no stem.
+     */
+    private static BlockPos outerCap(final ServerLevel level, final AABB box, final BlockPos stem)
+    {
+        BlockPos best = null;
+        int bestReach = -1;
+        for (final BlockPos pos : BlockPos.betweenClosed(BlockPos.containing(box.minX, box.minY, box.minZ), BlockPos.containing(box.maxX - 1, box.maxY - 1, box.maxZ - 1)))
+        {
+            if (!level.getBlockState(pos).is(Blocks.RED_MUSHROOM_BLOCK))
+            {
+                continue;
+            }
+            boolean byStem = false;
+            for (final Direction dir : Direction.values())
+            {
+                byStem |= TreeFootprint.isTreeBlock(level.getBlockState(pos.relative(dir)));
+            }
+            final int reach = Math.max(Math.abs(pos.getX() - stem.getX()), Math.abs(pos.getZ() - stem.getZ()));
+            if (!byStem && (reach > bestReach || (reach == bestReach && pos.getY() < best.getY())))
+            {
+                best = pos.immutable();
+                bestReach = reach;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * r7 Fable N53: the colony's builder places the cap blocks of a work order, and they are marked as a player's (no Forester takes them); a block of the
+     * order that is no cap block is not. A small order of a shroomlight, a nether and a warped wart block, a red mushroom block and a mushroom stem, each
+     * on its own, and a stone brick: the builder builds it from his hut's stock.
+     */
+    private static void builderMarksCaps(final GameTestHelper helper)
+    {
+        final String name = "forestry_builder_marks_caps";
+        final List<BlockState> caps = List.of(Blocks.SHROOMLIGHT.defaultBlockState(), Blocks.NETHER_WART_BLOCK.defaultBlockState(), Blocks.WARPED_WART_BLOCK.defaultBlockState(),
+          Blocks.RED_MUSHROOM_BLOCK.defaultBlockState(), Blocks.MUSHROOM_STEM.defaultBlockState());
+        final int length = caps.size() * 2 + 1;
+        final Blueprint blueprint = new Blueprint((short) length, (short) 1, (short) 1).setName(name).setFileName(name).setPackName("Minecolonies Original");
+        for (int x = 0; x < length; x++)
+        {
+            // (a gap between the blocks: mushroom blocks next to each other change their faces, and the builder would see a block not as planned)
+            final BlockState state = x == length - 1 ? Blocks.STONE_BRICKS.defaultBlockState() : x % 2 == 0 ? caps.get(x / 2) : Blocks.AIR.defaultBlockState();
+            blueprint.addBlockState(new BlockPos(x, 0, 0), state);
+        }
+        blueprint.setCachePrimaryOffset(BlockPos.ZERO);
+
+        WorkerEfficiencyGameTests.scene(helper, name, live -> {
+            live.setSkills(40, 40);
+            live.giveTools();
+            for (final BlockState cap : caps)
+            {
+                live.stock(cap.getBlock().asItem(), 2);
+            }
+            live.stock(Items.STONE_BRICKS, 2);
+            final WorkOrderDecoration order = live.orderFor(name, BuilderScaffoldGameTests.SITE, blueprint);
+            final BlockPos origin = order.getLocation();
+            WorkerEfficiencyGameTests.everyTick(live, 6000, tick -> live.colony.getWorkManager().getWorkOrder(order.getID()) == null && !live.hut.hasWorkOrder(), () -> {
+                final List<String> failures = new ArrayList<>();
+                for (int i = 0; i < caps.size(); i++)
+                {
+                    final BlockPos pos = origin.offset(i * 2, 0, 0);
+                    if (!live.level.getBlockState(pos).is(caps.get(i).getBlock()))
+                    {
+                        failures.add(caps.get(i).getBlock() + " not built: " + live.level.getBlockState(pos).getBlock());
+                    }
+                    else if (!PlacedCaps.isPlaced(live.level, pos))
+                    {
+                        failures.add(caps.get(i).getBlock() + " the builder placed is not marked");
+                    }
+                }
+                final BlockPos brick = origin.offset(length - 1, 0, 0);
+                if (PlacedCaps.isPlaced(live.level, brick) || !live.level.getBlockState(brick).is(Blocks.STONE_BRICKS))
+                {
+                    failures.add("the stone brick is " + live.level.getBlockState(brick).getBlock() + (PlacedCaps.isPlaced(live.level, brick) ? ", marked" : ""));
+                }
+                BuilderCollab.overrideForTests(null, null, null, null, null, null, null);
+                Log.getLogger().info("[{}] failures {}", name, failures);
+                helper.assertTrue(failures.isEmpty(), "builder marks: " + failures);
+                helper.succeed();
+            }, () -> "order " + (live.colony.getWorkManager().getWorkOrder(order.getID()) != null) + ", " + live.ai());
+        });
+    }
+
+    /**
+     * r7 Fable N59: a mark whose block went without a player's break is dropped before another block standing there could be taken for a player's. An
+     * explosion clears the marks of what it destroys; a chunk load drops a mark over air (a block removed by a command); a box query drops one it passes
+     * over; a builder's block that is no cap clears the mark of the one it replaced. In each case a wart block set there afterwards, with no lookup between,
+     * is not marked. A mark over its own block survives the chunk load, and the builder's cap block is marked.
+     */
+    private static void staleMarks(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final List<String> failures = new ArrayList<>();
+        final BlockPos base = helper.absolutePos(new BlockPos(40, 3, 30));
+        level.setChunkForced(base.getX() >> 4, base.getZ() >> 4, true);
+        final BlockState wart = Blocks.NETHER_WART_BLOCK.defaultBlockState();
+
+        // removed by a command, then the chunk loads again
+        final BlockPos commanded = base;
+        final BlockPos kept = base.east(2);
+        playerPlaces(level, commanded, wart);
+        playerPlaces(level, kept, wart);
+        level.setBlock(commanded, Blocks.AIR.defaultBlockState(), 3);
+        PlacedCaps.reload(level, commanded);
+        level.setBlockAndUpdate(commanded, wart);
+        if (PlacedCaps.isPlaced(level, commanded))
+        {
+            failures.add("a mark over air outlived the chunk load");
+        }
+        if (!PlacedCaps.isPlaced(level, kept))
+        {
+            failures.add("the chunk load dropped the mark of a block still there");
+        }
+        // a box query passes over it
+        final BlockPos queried = base.south(2);
+        playerPlaces(level, queried, wart);
+        level.setBlock(queried, Blocks.AIR.defaultBlockState(), 3);
+        if (PlacedCaps.anyIn(level, queried.offset(-1, -1, -1), queried.offset(1, 1, 1)))
+        {
+            failures.add("a box query counted a mark over air");
+        }
+        level.setBlockAndUpdate(queried, wart);
+        if (PlacedCaps.isPlaced(level, queried))
+        {
+            failures.add("a box query left a mark over air");
+        }
+        // the builder puts something else there, then a cap block of his own
+        final BlockPos built = base.south(4);
+        playerPlaces(level, built, wart);
+        level.setBlockAndUpdate(built, Blocks.STONE_BRICKS.defaultBlockState());
+        PlacedCaps.placedByBuilder(level, built);
+        level.setBlockAndUpdate(built, wart);
+        if (PlacedCaps.isPlaced(level, built))
+        {
+            failures.add("the builder's stone brick left the mark of the cap block it replaced");
+        }
+        final BlockPos builderCap = base.south(4).east(2);
+        level.setBlockAndUpdate(builderCap, Blocks.SHROOMLIGHT.defaultBlockState());
+        PlacedCaps.placedByBuilder(level, builderCap);
+        if (!PlacedCaps.isPlaced(level, builderCap))
+        {
+            failures.add("the builder's shroomlight is not marked");
+        }
+        // an explosion (away from the rest)
+        final BlockPos blown = base.east(10).south(8);
+        playerPlaces(level, blown, wart);
+        level.explode(null, blown.getX() + 0.5D, blown.getY() + 0.5D, blown.getZ() + 0.5D, 1.5F, net.minecraft.world.level.Level.ExplosionInteraction.BLOCK);
+        final boolean destroyed = !level.getBlockState(blown).is(Blocks.NETHER_WART_BLOCK);
+        level.setBlockAndUpdate(blown, wart);
+        if (!destroyed)
+        {
+            failures.add("fixture: the explosion left the wart block");
+        }
+        else if (PlacedCaps.isPlaced(level, blown))
+        {
+            failures.add("a mark outlived the explosion that destroyed its block");
+        }
+        Log.getLogger().info("[forestry_stale_marks] failures {}", failures);
+        helper.assertTrue(failures.isEmpty(), "stale marks: " + failures);
+        helper.succeed();
+    }
+
+    /**
+     * r7 Fable N60: the walk home before a search has an end. He is to search from far outside the disc round his hut and never gets home (held where he
+     * stands, as on an island or by a sealed hut). After a minute of walking he ends the search for this round as no tree found, without searching from
+     * where he stands; the oak by his hut is not chosen from out there.
+     */
+    private static void walkHomeBounded(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry walk home bounded");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        grow(helper, new TreeSpec("oak", new BlockPos(16, 1, 18), false, Blocks.OAK_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.OAK, null), 61L);
+        final BlockPos far = helper.absolutePos(new BlockPos(58, 1, 38));
+        level.setChunkForced(far.getX() >> 4, far.getZ() >> 4, true);
+
+        helper.runAfterDelay(20, () -> {
+            final ICitizenData worker = forester(helper, colony, building, new BlockPos(58, 1, 38), new ItemStack(Items.OAK_SAPLING, 4));
+            final long[] searchingAt = {-1};
+            final String[] last = {""};
+            pump(helper, List.of(worker), (int) EntityAIWorkLumberjack.WALK_HOME_TICKS + 1_200, () -> {
+                final EntityAIWorkLumberjack ai = ai(worker);
+                final int givenUp = ai == null ? 0 : ai.getWalkHomeGivenUp();
+                final long walked = searchingAt[0] < 0 ? -1 : level.getGameTime() - searchingAt[0];
+                last[0] = "searching since " + (walked < 0 ? "not yet" : walked + " ticks") + ", walks home given up " + givenUp + ", note " + (ai == null ? "?" : ai.getSearchNote());
+                helper.assertTrue(tree(worker) == null, "he chose a tree from outside the disc: " + last[0]);
+                if (givenUp > 0)
+                {
+                    helper.assertTrue(walked >= EntityAIWorkLumberjack.WALK_HOME_TICKS - 20, "he gave the walk home up early: " + last[0]);
+                    return true;
+                }
+                return false;
+            }, () -> last[0] + ", " + describe(worker), () -> {
+                // he never gets home: held where he stands
+                worker.getEntity().ifPresent(e -> e.setPos(far.getX() + 0.5D, far.getY(), far.getZ() + 0.5D));
+                final EntityAIWorkLumberjack ai = ai(worker);
+                if (ai != null && searchingAt[0] < 0)
+                {
+                    final IAIState state = ai.getState();
+                    if (state == AIWorkerState.START_WORKING || state == AIWorkerState.LUMBERJACK_START_WORKING)
+                    {
+                        ai.getStateAI().transitionToNext(new AITarget<>(AIWorkerState.IDLE, AIWorkerState.LUMBERJACK_SEARCHING_TREE, 1));
+                        searchingAt[0] = level.getGameTime();
+                    }
+                }
+            }, "forestry_walk_home_bounded");
         });
     }
 
