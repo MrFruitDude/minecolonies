@@ -2142,4 +2142,96 @@ final class BuilderScaffoldGameTests
             }, () -> helper.succeed(), () -> "x");
         });
     }
+
+    /**
+     * r2 Sol H4: scaffolding goes only on land the builder's colony may build on: its own land or land nobody claims. Colony A is founded on the test
+     * plot, colony B (another owner) 140 blocks away. A cell in A's land is A's to build on and never B's; an unclaimed cell is anybody's; a planted flower,
+     * sapling or crop is never replaced by a tower, grass and air are.
+     */
+    public static void escapeClaims(final GameTestHelper helper)
+    {
+        final net.minecraft.server.level.ServerLevel level = helper.getLevel();
+        final com.minecolonies.api.colony.IColony a = MinecoloniesGameTests.foundGameTestColony(helper, "scaffold claims A");
+        com.minecolonies.core.colony.ColonyLimits.overrideMaxPerPlayer(2);
+        final BlockPos hallB = helper.absolutePos(new BlockPos(140, 1, 2));
+        level.setChunkForced(hallB.getX() >> 4, hallB.getZ() >> 4, true);
+        for (int x = -2; x <= 2; x++)
+        {
+            for (int z = -2; z <= 2; z++)
+            {
+                level.setBlock(hallB.offset(x, -1, z), Blocks.STONE.defaultBlockState(), 3);
+            }
+        }
+        level.setBlock(hallB, com.minecolonies.api.blocks.ModBlocks.blockHutTownHall.defaultBlockState(), 3);
+        final com.minecolonies.core.tileentities.TileEntityColonyBuilding hut = (com.minecolonies.core.tileentities.TileEntityColonyBuilding) level.getBlockEntity(hallB);
+        helper.assertTrue(hut != null, "town hall B has no tile entity");
+        hut.setPackName("Minecolonies Original");
+        hut.setBlueprintPath("fundamentals/townhall1.blueprint");
+        final com.minecolonies.api.colony.IColony b = com.minecolonies.api.colony.IColonyManager.getInstance()
+          .createColony(level, hallB, MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper), "scaffold claims B", "Minecolonies Original");
+        com.minecolonies.core.colony.ColonyLimits.overrideMaxPerPlayer(null);
+        helper.assertTrue(b != null && b.getID() != a.getID(), "colony B not created: " + b);
+
+        final BlockPos inA = helper.absolutePos(new BlockPos(6, 2, 6));
+        helper.assertTrue(BuilderScaffolding.mayBuildOn(level, inA, a.getID()), "A may not put scaffolding on its own land");
+        helper.assertTrue(!BuilderScaffolding.mayBuildOn(level, inA, b.getID()), "B may put scaffolding on A's land");
+        final BlockPos inB = hallB.above(2);
+        helper.assertTrue(BuilderScaffolding.mayBuildOn(level, inB, b.getID()) && !BuilderScaffolding.mayBuildOn(level, inB, a.getID()), "B's land is not B's alone");
+        BlockPos free = null;
+        for (int dz = 80; dz <= 400 && free == null; dz += 16)
+        {
+            final BlockPos pos = inA.offset(0, 0, dz);
+            final com.minecolonies.api.colony.claim.IChunkClaimData claim = com.minecolonies.api.colony.IColonyManager.getInstance()
+              .getClaimData(level.dimension(), net.minecraft.world.level.ChunkPos.containing(pos));
+            if (claim == null || claim.getOwningColony() == 0)
+            {
+                free = pos;
+            }
+        }
+        helper.assertTrue(free != null, "no unclaimed chunk found near the plot");
+        helper.assertTrue(BuilderScaffolding.mayBuildOn(level, free, a.getID()) && BuilderScaffolding.mayBuildOn(level, free, b.getID()), "unclaimed land is refused");
+
+        helper.assertTrue(BuilderScaffolding.mayReplace(Blocks.AIR.defaultBlockState()) && BuilderScaffolding.mayReplace(Blocks.SHORT_GRASS.defaultBlockState()),
+          "air or grass may not be replaced by scaffolding");
+        for (final Block planted : new Block[] {Blocks.POPPY, Blocks.OAK_SAPLING, Blocks.WHEAT})
+        {
+            helper.assertTrue(!BuilderScaffolding.mayReplace(planted.defaultBlockState()), planted + " may be replaced by scaffolding");
+        }
+        level.setChunkForced(hallB.getX() >> 4, hallB.getZ() >> 4, false);
+        helper.succeed();
+    }
+
+    /**
+     * r2 Fable N2, N10, Opus R2-F4: one rule for a block a watched builder cannot reach (kept for later WATCHED_KEEPS times, then put by it in sight, so
+     * watching leaves no hole; the watch is not even asked once the keeps are used up), and one stuck notice per episode with words that fit (the
+     * in-site notice has its own text and validator).
+     */
+    public static void watchedPolicy(final GameTestHelper helper)
+    {
+        final int keeps = com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.WATCHED_KEEPS;
+        for (int kept = 0; kept < keeps; kept++)
+        {
+            helper.assertTrue(com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.keepForWatcher(kept, () -> true), "a watched block is not kept at keep " + kept);
+            helper.assertTrue(!com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.keepForWatcher(kept, () -> false), "an unwatched block is kept at keep " + kept);
+        }
+        final boolean[] asked = {false};
+        helper.assertTrue(!com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.keepForWatcher(keeps, () -> asked[0] = true),
+          "a watched block is kept for ever: watching leaves a hole");
+        helper.assertTrue(!asked[0], "the watch was asked after the keeps were used up");
+
+        final long gap = com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic.STUCK_NOTICE_GAP;
+        helper.assertTrue(com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic.newStuckEpisode(10_000L, Long.MIN_VALUE / 2), "the first stuck is no episode");
+        helper.assertTrue(!com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic.newStuckEpisode(10_000L + gap / 2, 10_000L),
+          "a second unreachable block soon after brings a second notice");
+        helper.assertTrue(com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic.newStuckEpisode(10_000L + gap + 1, 10_000L), "a stuck long after the last brings none");
+
+        final String block = com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic.BLOCK_NOTICE;
+        final String stuck = com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic.STUCK_NOTICE;
+        helper.assertTrue(!block.equals(stuck), "the in-site notice shares the stuck notice's words");
+        helper.assertTrue(com.minecolonies.api.colony.interactionhandling.InteractionValidatorRegistry
+                            .getStandardInteractionValidatorPredicate(net.minecraft.network.chat.Component.translatableEscape(block)) != null, "no validator for the in-site notice");
+        helper.assertTrue(net.minecraft.locale.Language.getInstance().has(block) || !net.minecraft.locale.Language.getInstance().has(stuck),
+          "the in-site notice has no text");
+        helper.succeed();
+    }
 }
