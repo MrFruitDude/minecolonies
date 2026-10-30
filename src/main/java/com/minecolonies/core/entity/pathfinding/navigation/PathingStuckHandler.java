@@ -416,8 +416,9 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
                     && SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos), pos) == SurfaceType.DROPABLE
                     && SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos.above()), pos.above()) == SurfaceType.DROPABLE);
         }
-        // r2 Sol H2: a player who watches the citizen or the spot never costs him health; the stuck damage is for a citizen nobody sees
-        final boolean watched = com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(world, entity.position(), tpPos);
+        // r2 Sol H2: a player who watches the citizen or the spot never costs him health; the stuck damage is for a citizen nobody sees. A raider gets no such
+        // care (r3 Fable N19): wedged in sight of a defender, he still takes the damage that ends the raid
+        final boolean watched = watchedCitizen(entity, world, tpPos);
         if (tpPos != null && watched && watchedFullStucks < WATCHED_FULL_STUCKS)
         {
             // a player watches the citizen or the spot: no jump in sight (r1 Fable F9, Sol M3), and nothing else that hurts him or the place. The ladder
@@ -460,6 +461,21 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
 
         navigator.stop();
         resetGlobalStuckTimers();
+    }
+
+    /**
+     * The watch rule is for citizens (r3 Fable N19): a player who sees a citizen or the spot he would be put at spares him jumps and damage. Raiders and
+     * other mobs with this handler keep the plain ladder.
+     *
+     * @param entity the entity.
+     * @param world  its level.
+     * @param spot   where it would be put, or null.
+     * @return true if it is a citizen a player watches.
+     */
+    public static boolean watchedCitizen(final Mob entity, final Level world, @org.jetbrains.annotations.Nullable final BlockPos spot)
+    {
+        return entity instanceof com.minecolonies.api.entity.citizen.AbstractEntityCitizen
+                 && com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(world, entity.position(), spot);
     }
 
     /**
@@ -531,8 +547,7 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
             int index = Math.min(navigator.getPath().getNextNodeIndex() + teleportRange, navigator.getPath().getNodeCount() - 1);
             final Node togo = navigator.getPath().getNode(index);
             // not in front of a player (he would see the citizen jump ahead): the later steps (ladders, breaking) go on
-            if (!com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(navigator.getOurEntity().level(), navigator.getOurEntity().position(),
-              new BlockPos(togo.x, togo.y, togo.z)))
+            if (!watchedCitizen(navigator.getOurEntity(), navigator.getOurEntity().level(), new BlockPos(togo.x, togo.y, togo.z)))
             {
                 navigator.getOurEntity().teleportTo(togo.x + 0.5d, togo.y, togo.z + 0.5d);
             }
@@ -733,7 +748,7 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
             navigator.getSafeDestination() == null ? entity.getDirection() : BlockPosUtil.getFacing(BlockPos.containing(entity.position()), navigator.getSafeDestination());
 
         if (breakBlocksAhead(world, entity.blockPosition(), facing) && entity.getHealth() >= entity.getMaxHealth() / 3
-              && !com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(world, entity.position(), (BlockPos) null))
+              && !watchedCitizen(entity, world, null))
         {
             entity.hurt(world.damageSources().source(DamageSourceKeys.STUCK_DAMAGE), (float) Math.max(0.5, entity.getHealth() / 20.0));
         }

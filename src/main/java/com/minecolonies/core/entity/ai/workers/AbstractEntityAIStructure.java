@@ -1183,7 +1183,7 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
                         break;
                     }
                     final BlockPos out = outSpot(target);
-                    if (!shutIn && keepForWatcher(keptWhileWatched.getOrDefault(target, 0), () -> PlayerWatch.watched(world, worker.position(), out)))
+                    if (!shutIn && keepCountedForWatcher(keptWhileWatched, keepWhileWatched, target, () -> PlayerWatch.watched(world, worker.position(), out)))
                     {
                         // a player watches the worker or the spot he would be put on: no jump. He walks on (a new path), says why he stands, and the ladder
                         // goes on to DEFER: the block waits for later (it comes again at the end of the stage), the worker moves on
@@ -2280,6 +2280,31 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     public static boolean keepForWatcher(final int keptSoFar, final java.util.function.BooleanSupplier watched)
     {
         return keptSoFar < WATCHED_KEEPS && watched.getAsBoolean();
+    }
+
+    /**
+     * The watched walk ladder's use of {@link #keepForWatcher} (r3 Fable N13): each keep counts, as in the reach rule, so after {@link #WATCHED_KEEPS}
+     * rounds he is put by the block in sight all the same, as the block notice promises; a kept block comes again instead of being left out.
+     *
+     * @param kept    how often each block was kept for a watcher (raised here).
+     * @param keepSet the blocks kept for the next round (added here).
+     * @param target  the block.
+     * @param watched whether a player watches.
+     * @return true to keep the block for later without a jump.
+     */
+    public static boolean keepCountedForWatcher(
+      final java.util.Map<BlockPos, Integer> kept,
+      final Set<BlockPos> keepSet,
+      final BlockPos target,
+      final java.util.function.BooleanSupplier watched)
+    {
+        if (!keepForWatcher(kept.getOrDefault(target, 0), watched))
+        {
+            return false;
+        }
+        kept.merge(target.immutable(), 1, Integer::sum);
+        keepSet.add(target.immutable());
+        return true;
     }
 
     /**

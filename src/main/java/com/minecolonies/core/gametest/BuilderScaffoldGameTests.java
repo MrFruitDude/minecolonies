@@ -2234,4 +2234,59 @@ final class BuilderScaffoldGameTests
           "the in-site notice has no text");
         helper.succeed();
     }
+
+    /**
+     * Round 4 (r3 Fable N13, N19): the watch rules after the bounded wait.
+     * <ul>
+     *   <li>the walk ladder counts each keep for a watcher, as the reach rule does: a block he can reach from somewhere but not walk to is kept
+     *   {@code WATCHED_KEEPS} times, then he is put by it in sight all the same (the block notice's promise); an unwatched block is never kept or counted;</li>
+     *   <li>the watch spares citizens only: a raider wedged in sight of a defender still takes the complete-stuck damage.</li>
+     * </ul>
+     */
+    public static void watchRulesR4(final GameTestHelper helper)
+    {
+        final int keeps = com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.WATCHED_KEEPS;
+        final java.util.Map<BlockPos, Integer> kept = new java.util.HashMap<>();
+        final java.util.Set<BlockPos> keep = new java.util.HashSet<>();
+        final BlockPos block = helper.absolutePos(new BlockPos(3, 4, 3));
+        for (int round = 0; round < keeps; round++)
+        {
+            helper.assertTrue(com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.keepCountedForWatcher(kept, keep, block, () -> true),
+              "a watched block is not kept in round " + round);
+            helper.assertTrue(kept.getOrDefault(block, 0) == round + 1, "the walk ladder does not count the keep of round " + round + ": " + kept.get(block));
+            helper.assertTrue(keep.contains(block), "a kept block is not kept for the next round");
+        }
+        helper.assertTrue(!com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.keepCountedForWatcher(kept, keep, block, () -> true),
+          "the walk ladder keeps a block for ever while a player watches: the promised move never comes");
+        final BlockPos other = block.east();
+        helper.assertTrue(!com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.keepCountedForWatcher(kept, keep, other, () -> false)
+                            && !kept.containsKey(other) && !keep.contains(other), "an unwatched block is kept or counted");
+
+        final net.minecraft.server.level.ServerPlayer watcher = MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
+        com.minecolonies.core.entity.pathfinding.PlayerWatch.watchForTests(watcher.getUUID());
+        final var raider = helper.spawn(com.minecolonies.api.entity.ModEntities.BARBARIAN, new BlockPos(4, 2, 4));
+        watcher.teleportTo(raider.getX() + 3.0D, raider.getY(), raider.getZ());
+        try
+        {
+            helper.assertTrue(com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(helper.getLevel(), raider.position(), (BlockPos) null),
+              "fixture: the player does not see the raider");
+            helper.assertTrue(!com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler.watchedCitizen(raider, helper.getLevel(), null),
+              "a raider in sight counts as a watched citizen");
+            helper.assertTrue(raider.getNavigation() instanceof com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate nav
+                                && nav.getStuckHandler() instanceof com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler<?>, "fixture: the raider has no stuck handler");
+            final var nav = (com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate) raider.getNavigation();
+            @SuppressWarnings("unchecked")
+            final var handler = (com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler<com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate>) nav.getStuckHandler();
+            raider.setHealth(raider.getMaxHealth());
+            final float before = raider.getHealth();
+            handler.completeStuckForTests(nav);
+            helper.assertTrue(raider.getHealth() < before, "a raider stuck in sight of a player took no stuck damage: health " + raider.getHealth() + " of " + before);
+        }
+        finally
+        {
+            raider.discard();
+            watcher.discard();
+        }
+        helper.succeed();
+    }
 }

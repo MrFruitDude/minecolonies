@@ -1463,7 +1463,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           "scaffold_pillar_undelivered", "scaffold_flooded_pool", "scaffold_tall_hut_no_scaffold",
           "scaffold_path_blocked", "scaffold_default_no_place_while_pathing", "scaffold_path_blocked_lava",
           "scaffold_path_blocked_13th", "scaffold_path_blocked_clear", "scaffold_next_order_no_hut", "scaffold_next_order_no_blueprint", "scaffold_next_order_race", "scaffold_next_order_cancelled",
-          "scaffold_next_order_box_only", "scaffold_escape_claims", "scaffold_watched_policy"})
+          "scaffold_next_order_box_only", "scaffold_escape_claims", "scaffold_watched_policy", "scaffold_watch_rules_r4"})
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = switch (name)
             {
@@ -1525,6 +1525,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 case "scaffold_next_order_box_only" -> Round11GameTests::nextOrderBoxOnlySkipsHutWalk;
                 case "scaffold_escape_claims" -> BuilderScaffoldGameTests::escapeClaims;
                 case "scaffold_watched_policy" -> BuilderScaffoldGameTests::watchedPolicy;
+                case "scaffold_watch_rules_r4" -> BuilderScaffoldGameTests::watchRulesR4;
                 case "scaffold_next_order_race" -> WorkHungerGameTests::twoBuildersRaceForOneOrder;
                 case "scaffold_next_order_cancelled" -> WorkHungerGameTests::nextOrderCancelledDuringWait;
                 default -> BuilderScaffoldGameTests::stockArrives;
