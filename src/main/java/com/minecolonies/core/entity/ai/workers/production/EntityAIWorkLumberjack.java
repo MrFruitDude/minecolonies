@@ -346,6 +346,12 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private Tree searchedTree;
     @Nullable
     private Tree walkRetriedTree;
+    /**
+     * The work spot {@link #otherWorkSpot} picked, unchecked: he is there only when his path reaches it, never because he stands within reach of it from the
+     * far side of a wall (r5).
+     */
+    @Nullable
+    private BlockPos pickedWorkFrom;
 
     /**
      * Forestry: the idle planting spot he walks to, and since when.
@@ -975,6 +981,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         triedWorkSpots.clear();
         searchedTree = null;
         walkRetriedTree = null;
+        pickedWorkFrom = null;
         startTreeClock();
     }
 
@@ -1182,6 +1189,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                     triedWorkSpots.add(workFrom);
                 }
                 workFrom = otherWorkSpot(tree.getStumpLocations().isEmpty() ? tree.getLocation() : tree.getStumpLocations().get(0));
+                pickedWorkFrom = workFrom;
                 pathToTree = null;
                 failedTreePaths = 0;
                 startTreeClock();
@@ -1962,7 +1970,8 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             workFrom = getWorkingPosition(workAt);
         }
 
-        if (MathUtils.twoDimDistance(worker.blockPosition(), workFrom) <= MIN_WORKING_RANGE && Math.abs(worker.blockPosition().getY() - workFrom.getY()) <= MAX_WORK_HEIGHT)
+        if (MathUtils.twoDimDistance(worker.blockPosition(), workFrom) <= MIN_WORKING_RANGE && Math.abs(worker.blockPosition().getY() - workFrom.getY()) <= MAX_WORK_HEIGHT
+              && (!workFrom.equals(pickedWorkFrom) || worker.blockPosition().equals(workFrom) || (pathToTree != null && pathToTree.isPathReachingDestination())))
         {
             return true;
         }
@@ -2005,11 +2014,14 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             closeSince = -1;
         }
 
-        if ((pathToTree == null || !pathToTree.isInProgress()) && triedWorkSpots.size() < MAX_WORK_SPOTS
+        final boolean leafWall = leafGuard != null && leafGuardTree == job.getTree() && leafGuard.refused();
+        if ((pathToTree == null || !pathToTree.isInProgress()) && triedWorkSpots.size() < MAX_WORK_SPOTS && !leafWall
               && ((MinecoloniesAdvancedPathNavigate) worker.getNavigation()).isDestinationUnreachable(workFrom))
         {
             // r4 Fable N24: the navigator backs off from this spot (two searches to it failed); standing through the back-off runs the give-up clock out on
-            // a tree he may reach from another side. He tries another spot around the stump
+            // a tree he may reach from another side. He tries another spot around the stump. Not when a leaf he may not clear stands in his way: that tree
+            // is given up with its reason, and another spot behind the leaves could lie within his working range from outside them (r5: he cut a walled
+            // oak through the stone from the tunnel mouth)
             triedWorkSpots.add(workFrom);
             final BlockPos other = otherWorkSpot(workAt);
             if (other != null)
@@ -2021,6 +2033,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 }
                 // the give-up clock runs on: another spot is no progress
                 workFrom = other;
+                pickedWorkFrom = other;
                 treeProgressFrom = other;
                 treeBestDistance = Math.sqrt(worker.blockPosition().distSqr(other));
                 pathToTree = null;
