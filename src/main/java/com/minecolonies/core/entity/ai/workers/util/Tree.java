@@ -333,6 +333,11 @@ public class Tree
             }
             layer = next;
         }
+        // a cap joined to a player's decoration is no cap of this tree (r2 Sol H1): the whole connected cap stays
+        final net.minecraft.world.phys.AABB logBox = boxMin == null || boxMax == null ? null : net.minecraft.world.phys.AABB.encapsulatingFullBlocks(boxMin, boxMax);
+        final java.util.Map<BlockPos, Boolean> capOwned = new java.util.HashMap<>();
+        own.removeIf(pos -> TreeFootprint.isCap(world.getBlockState(pos))
+                              && !capOwned.computeIfAbsent(pos, p -> TreeFootprint.capComponentIsOwn(world, p, logBox, family, strippedBase)));
         // farthest first: pollLast takes from the end
         own.sort((c1, c2) -> (int) (c1.distSqr(location) - c2.distSqr(location)));
         return own;

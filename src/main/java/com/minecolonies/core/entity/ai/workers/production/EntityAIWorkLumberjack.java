@@ -59,8 +59,10 @@ import org.jetbrains.annotations.Nullable;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -305,6 +307,27 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private int    treesGivenUp = 0;
     @NotNull
     private String giveUpNote   = "";
+
+    /**
+     * Forestry: give-ups by tree base (a tree given up again is left be longer), and leaves swept from trees he gave up after a partial cut (tests).
+     */
+    private final Map<BlockPos, Integer> giveUpsByTree = new HashMap<>();
+    private int giveUpLeavesSwept = 0;
+
+    /**
+     * Forestry: the leaf rule of the path planner for the current tree (r2 Fable N3), and how many path searches in a row found no way to it.
+     */
+    @Nullable
+    private com.minecolonies.core.entity.ai.workers.util.LeafPassGuard leafGuard;
+    @Nullable
+    private Tree leafGuardTree;
+    private int  failedTreePaths = 0;
+
+    /**
+     * Path searches in a row that find no way to the tree, past leaves he may not clear, before he gives it up at once.
+     */
+    private static final int  FAILED_PATHS_GIVE_UP = 3;
+    private static final long LEAF_GUARD_TICKS     = 600L;
 
     /**
      * Forestry: the idle planting spot he walks to, and since when.
@@ -849,6 +872,13 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             return true;
         }
         final TreeFootprint.Recheck recheck = TreeFootprint.recheck(world, pos, part, tree.getFamily(), tree.isStrippedBase(), building.getColony());
+        if (recheck == TreeFootprint.Recheck.OK && part == TreeFootprint.Part.LEAF && TreeFootprint.isCap(world.getBlockState(pos))
+              && !TreeFootprint.capComponentIsOwn(world, pos, tree.getBox(), tree.getFamily(), tree.isStrippedBase()))
+        {
+            // a cap joined to a player's decoration (built after the tree was chosen): it stays whole, the tree goes on
+            Log.getLogger().debug("Forester {} leaves the cap at {}: it is joined to a decoration", worker.getCitizenData().getId(), pos.toShortString());
+            return false;
+        }
         if (recheck == TreeFootprint.Recheck.OK)
         {
             return true;
@@ -930,20 +960,71 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      */
     private IAIState giveUpTree(@NotNull final Tree tree)
     {
+        return giveUpTree(tree, false);
+    }
+
+    /**
+     * @param leavesInTheWay true if the only way to it goes through leaves he may not clear (next to a build, in a hut box, on another colony's land).
+     */
+    private IAIState giveUpTree(@NotNull final Tree tree, final boolean leavesInTheWay)
+    {
         final BlockPos location = tree.getLocation();
-        final String note = (reachedTree ? "Left the tree at " + location.toShortString() + ": nothing of it came off for two minutes"
-                                         : "Left the tree at " + location.toShortString() + ": could not get to it for two minutes");
+        final String note = leavesInTheWay ? "Left the tree at " + location.toShortString() + ": the only way to it goes through leaves next to a build, a hut or other land"
+                              : reachedTree ? "Left the tree at " + location.toShortString() + ": nothing of it came off for two minutes"
+                              : "Left the tree at " + location.toShortString() + ": could not get to it for two minutes";
         final List<BlockPos> logs = new ArrayList<>(tree.getAllLogs());
         logs.add(location);
         Log.getLogger().debug("Forester {} gives up: {}", worker.getCitizenData().getId(), note);
+        sweepGivenUpTree(tree);
+        if (giveUpsByTree.size() > 256)
+        {
+            giveUpsByTree.clear();
+        }
+        final int giveUps = giveUpsByTree.merge(location.immutable(), 1, Integer::sum);
         finishTree();
-        TreeClaims.block(world, logs, building.getColony().getID());
+        TreeClaims.block(world, logs, building.getColony().getID(), TreeClaims.giveUpBlockTicks(giveUps));
         building.addSkippedTree(location, BuildingLumberjack.SkipReason.UNREACHABLE, note);
         treesGivenUp++;
         giveUpNote = note;
         worker.getNavigation().stop();
         worker.getCitizenData().setVisibleStatus(SEARCH);
         return LUMBERJACK_SEARCHING_TREE;
+    }
+
+    /**
+     * Forestry: a tree given up after part of it was cut leaves no floating leaves (r2 Fable N11): the natural leaves its cut logs held, now doomed, go with
+     * their drops to him, under the sweep's rules.
+     */
+    private void sweepGivenUpTree(@NotNull final Tree tree)
+    {
+        if (!tree.isFootprintTree() || !tree.isStarted() || tree.getBox() == null)
+        {
+            return;
+        }
+        final AABB box = captureBox(tree);
+        final ItemStack tool = worker.getMainHandItem();
+        final List<ItemStack> drops = new ArrayList<>();
+        for (final BlockPos pos : TreeFootprint.LeafSweep.doomedAround(world, tree.getBox()))
+        {
+            if (!maySweep(tree, pos))
+            {
+                sweepKept++;
+                continue;
+            }
+            final BlockState state = world.getBlockState(pos);
+            drops.addAll(Block.getDrops(state, (ServerLevel) world, pos, world.getBlockEntity(pos), worker, tool));
+            drops.addAll(DropCapture.capture(world, box, () -> WorldUtil.removeBlock(world, pos, false)));
+            giveUpLeavesSwept++;
+        }
+        deliverCaught(drops);
+    }
+
+    /**
+     * @return leaves swept from trees he gave up after a partial cut (tests).
+     */
+    public int getGiveUpLeavesSwept()
+    {
+        return giveUpLeavesSwept;
     }
 
     /**
@@ -1032,6 +1113,11 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         {
             if (!walkToTree(job.getTree().getStumpLocations().isEmpty() ? job.getTree().getLocation() : job.getTree().getStumpLocations().get(0)))
             {
+                if (failedTreePaths >= FAILED_PATHS_GIVE_UP && leafGuard != null && leafGuard.refused())
+                {
+                    // no way to it but through leaves he may not clear: skip it now, with that reason, instead of standing at it for two minutes
+                    return giveUpTree(job.getTree(), true);
+                }
                 if (checkIfStuck())
                 {
                     tryUnstuck();
@@ -1210,7 +1296,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                     removed.add(log);
                 }
             }
-            sweep = new TreeFootprint.LeafSweep(world, removed, tree.getBox(), tree.isNetherTree());
+            sweep = new TreeFootprint.LeafSweep(world, removed, tree.getBox(), tree.isNetherTree(), tree.getFamily(), tree.isStrippedBase());
         }
         final List<BlockPos> batch = sweep.next(LEAF_BATCH);
         if (!batch.isEmpty())
@@ -1813,12 +1899,31 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
 
         if (pathToTree == null || !pathToTree.isInProgress())
         {
+            if (pathToTree != null && pathToTree.failedToReachDestination())
+            {
+                failedTreePaths++;
+            }
+            else if (pathToTree != null && pathToTree.isPathReachingDestination())
+            {
+                failedTreePaths = 0;
+            }
+            final Tree tree = job.getTree();
+            if (tree != null && (leafGuard == null || leafGuardTree != tree || world.getGameTime() - leafGuard.madeAt() > LEAF_GUARD_TICKS))
+            {
+                if (leafGuardTree != tree)
+                {
+                    failedTreePaths = 0;
+                }
+                leafGuard = com.minecolonies.core.entity.ai.workers.util.LeafPassGuard.of(world, building.getColony(), tree, worker.blockPosition(), workFrom);
+                leafGuardTree = tree;
+            }
+            final com.minecolonies.core.entity.ai.workers.util.LeafPassGuard guard = tree == null ? null : leafGuard;
             pathToTree = ((MinecoloniesAdvancedPathNavigate) worker.getNavigation()).setPathJob(new PathJobMoveToWithPassable(world,
               PathfindingUtils.prepareStart(worker),
               workFrom,
               SEARCH_RANGE,
               worker,
-              this::isPassable), workFrom, 1.0d, true);
+              this::isPassable, guard == null ? null : guard::passable), workFrom, 1.0d, true);
         }
 
         return false;
@@ -1832,6 +1937,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      */
     private Boolean isPassable(final BlockState blockState)
     {
+        // (with a tree, the planner also asks LeafPassGuard by position: only what isClearableObstruction would clear)
         return (blockState.is(BlockTags.LEAVES) && !blockState.getOptionalValue(LeavesBlock.PERSISTENT).orElse(false)) || blockState.is(ModTags.hugeMushroomBlocks);
     }
 
@@ -1967,7 +2073,8 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         final BlockState state = world.getBlockState(pos);
         final boolean natural = TreeFootprint.isDecayingLeaves(state)
                                   ? !state.getValue(LeavesBlock.PERSISTENT)
-                                  : TreeFootprint.isCap(state) && job.getTree() != null && job.getTree().ownsCap(pos);
+                                  : TreeFootprint.isCap(state) && job.getTree() != null && job.getTree().ownsCap(pos)
+                                      && TreeFootprint.capComponentIsOwn(world, pos, job.getTree().getBox(), job.getTree().getFamily(), job.getTree().isStrippedBase());
         if (!natural || TreeFootprint.guardPosition(world, pos, building.getColony()) != TreeFootprint.Recheck.OK)
         {
             return false;

@@ -19,6 +19,7 @@ import net.minecraft.world.level.block.BaseTorchBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LeavesBlock;
+import net.minecraft.world.level.block.RotatedPillarBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.common.Tags;
@@ -353,6 +354,176 @@ public final class TreeFootprint
     }
 
     /**
+     * Whether a cap can be of a tree of the family: wart blocks of the matching fungus, shroomlight on a fungus, mushroom blocks on a mushroom. A cap of
+     * another kind on the tree (a red mushroom block on a crimson fungus, warped wart on a crimson one) is somebody's (r2 Sol H1). Families of other mods
+     * and unknown ones take any cap.
+     *
+     * @param family the tree's family.
+     * @param state  the cap.
+     * @return true if it may be the tree's own.
+     */
+    public static boolean capFitsFamily(@NotNull final String family, @NotNull final BlockState state)
+    {
+        if (ANY_FAMILY.equals(family) || !family.startsWith("minecraft:"))
+        {
+            return true;
+        }
+        final String wood = family.substring("minecraft:".length());
+        if (state.is(Blocks.NETHER_WART_BLOCK))
+        {
+            return wood.equals("crimson");
+        }
+        if (state.is(Blocks.WARPED_WART_BLOCK))
+        {
+            return wood.equals("warped");
+        }
+        if (state.is(Blocks.SHROOMLIGHT))
+        {
+            return wood.equals("crimson") || wood.equals("warped");
+        }
+        if (state.is(Blocks.RED_MUSHROOM_BLOCK) || state.is(Blocks.BROWN_MUSHROOM_BLOCK))
+        {
+            return wood.equals("mushroom");
+        }
+        return true;
+    }
+
+    /**
+     * Whether the connected cap (faces, edges and corners) a cap belongs to is all the tree's own: every block of it a cap of the tree's kind, within
+     * {@link LeafSweep#CAP_BOUNDS} of the box of the tree's logs, and touching no player's block. A cap joined to a player's decoration (wart blocks or
+     * shroomlights built against the canopy, a cap of another kind) is kept whole, by the direct cut, the clearing and the sweep alike (r2 Sol H1).
+     *
+     * @param level        the level.
+     * @param seed         a cap.
+     * @param logBox       the box of the tree's logs, or null if unknown.
+     * @param family       the tree's family.
+     * @param strippedBase true if the tree itself is stripped.
+     * @return true if he may take it as the tree's cap.
+     */
+    public static boolean capComponentIsOwn(
+      @NotNull final Level level,
+      @NotNull final BlockPos seed,
+      @Nullable final AABB logBox,
+      @NotNull final String family,
+      final boolean strippedBase)
+    {
+        final AABB bounds = logBox == null ? null : logBox.inflate(LeafSweep.CAP_BOUNDS);
+        final Set<BlockPos> seen = new HashSet<>();
+        final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
+        queue.add(seed.immutable());
+        seen.add(seed.immutable());
+        while (!queue.isEmpty())
+        {
+            final BlockPos pos = queue.poll();
+            final BlockState state = level.getBlockState(pos);
+            if (!capFitsFamily(family, state) || (bounds != null && !bounds.contains(net.minecraft.world.phys.Vec3.atCenterOf(pos))) || leafTouchesBuild(level, pos, strippedBase))
+            {
+                return false;
+            }
+            if (seen.size() > LEAF_BUDGET)
+            {
+                return false;
+            }
+            for (final BlockPos near : BlockPos.betweenClosed(pos.offset(-1, -1, -1), pos.offset(1, 1, 1)))
+            {
+                if (!seen.contains(near) && isCap(level.getBlockState(near)))
+                {
+                    final BlockPos found = near.immutable();
+                    seen.add(found);
+                    queue.add(found);
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * A same-wood beam is this many horizontal logs in a row or more: no vanilla branch runs that far level (a cherry branch at most 4).
+     */
+    public static final int BEAM_RUN = 5;
+
+    /**
+     * Whether a log of the tree's own wood is a player's beam, platform or bridge resting on the tree (r2 Fable N5): a horizontal log in a level run of
+     * {@link #BEAM_RUN} or more, a horizontal log with a parallel one beside it on the same level where both run on (a floor of logs), or a horizontal run
+     * that ends on a built block (a post of stone bricks, cobblestone). Natural branches climb as they go out and end in leaves or air.
+     *
+     * @param level  the level.
+     * @param log    the log.
+     * @param family the tree's family.
+     * @return what was found (for the skip detail), or null for a natural log.
+     */
+    @Nullable
+    public static String sameWoodBeam(@NotNull final Level level, @NotNull final BlockPos log, @NotNull final String family)
+    {
+        final BlockState state = level.getBlockState(log);
+        final Direction.Axis axis = state.getOptionalValue(RotatedPillarBlock.AXIS).orElse(Direction.Axis.Y);
+        if (axis == Direction.Axis.Y)
+        {
+            return null;
+        }
+        int run = 1;
+        for (final Direction dir : new Direction[] {Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE),
+          Direction.fromAxisAndDirection(axis, Direction.AxisDirection.NEGATIVE)})
+        {
+            BlockPos pos = log.relative(dir);
+            for (int i = 0; i < BEAM_RUN; i++)
+            {
+                if (!isLevelLog(level, pos, family, axis))
+                {
+                    if (isBuiltSupport(level, pos, level.getBlockState(pos)))
+                    {
+                        return "a beam of logs at " + log.toShortString() + " resting on " + level.getBlockState(pos).getBlock() + " at " + pos.toShortString();
+                    }
+                    break;
+                }
+                run++;
+                pos = pos.relative(dir);
+            }
+        }
+        if (run >= BEAM_RUN)
+        {
+            return "a beam of " + run + " level logs at " + log.toShortString();
+        }
+        final Direction along = Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE);
+        for (final Direction side : Direction.Plane.HORIZONTAL)
+        {
+            if (side.getAxis() == axis || !isLevelLog(level, log.relative(side), family, axis))
+            {
+                continue;
+            }
+            for (final Direction step : new Direction[] {along, along.getOpposite()})
+            {
+                if (isLevelLog(level, log.relative(step), family, axis) && isLevelLog(level, log.relative(side).relative(step), family, axis))
+                {
+                    return "a floor of logs at " + log.toShortString();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean isLevelLog(final Level level, final BlockPos pos, final String family, final Direction.Axis axis)
+    {
+        final BlockState state = level.getBlockState(pos);
+        return isTreeBlock(state) && state.getOptionalValue(RotatedPillarBlock.AXIS).orElse(Direction.Axis.Y) == axis && sameFamily(family, family(level, pos, state, true));
+    }
+
+    /**
+     * @return true for a solid block no tree grows into: no tree block, leaf, cap, and no natural ground (dirt, stone, sand, gravel, terracotta).
+     */
+    private static boolean isBuiltSupport(final Level level, final BlockPos pos, final BlockState state)
+    {
+        if (state.isAir() || isTreeBlock(state) || state.is(BlockTags.LEAVES) || isCap(state) || isDecoration(state) || state.canBeReplaced()
+              || state.getCollisionShape(level, pos).isEmpty())
+        {
+            return false;
+        }
+        return !(state.is(BlockTags.DIRT) || state.is(BlockTags.BASE_STONE_OVERWORLD) || state.is(BlockTags.BASE_STONE_NETHER) || state.is(BlockTags.SAND)
+                   || state.is(BlockTags.TERRACOTTA) || state.is(Blocks.GRAVEL) || state.is(BlockTags.NYLIUM) || state.is(Blocks.MYCELIUM)
+                   || state.is(Blocks.PODZOL) || state.is(Blocks.MUD) || state.is(Blocks.SNOW_BLOCK) || state.is(Blocks.ICE));
+    }
+
+    /**
      * Counts the leaves and caps on the 3x3 ring above a log (a brown mushroom's flat cap touches its stem only from above).
      */
     private static int leavesAbove(@NotNull final LevelReader level, @NotNull final BlockPos log)
@@ -575,6 +746,14 @@ public final class TreeFootprint
             {
                 result.skip = Skip.CLAIM;
                 result.skipDetail = "log " + log.toShortString() + " in the claim of colony " + owner;
+                return result;
+            }
+            final String beam = sameWoodBeam(level, log, fam);
+            if (beam != null)
+            {
+                // a beam or floor of the tree's own wood on it is a player's work, as a post of another wood is
+                result.skip = Skip.BUILD;
+                result.skipDetail = beam;
                 return result;
             }
 
@@ -957,7 +1136,7 @@ public final class TreeFootprint
         final boolean own = switch (part)
         {
             case LOG -> isTreeBlock(state) && sameFamily(family, family(level, pos, state, true)) && (strippedBase || !isStripped(state));
-            case LEAF -> isDecayingLeaves(state) ? !state.getValue(LeavesBlock.PERSISTENT) : isCap(state);
+            case LEAF -> isDecayingLeaves(state) ? !state.getValue(LeavesBlock.PERSISTENT) : isCap(state) && capFitsFamily(family, state);
             case DECORATION -> isDecoration(state);
         };
         if (!own)
@@ -972,6 +1151,10 @@ public final class TreeFootprint
         if (part == Part.LEAF)
         {
             return leafTouchesBuild(level, pos, strippedBase) ? Recheck.BUILD : Recheck.OK;
+        }
+        if (sameWoodBeam(level, pos, family) != null)
+        {
+            return Recheck.BUILD;
         }
         for (final Direction dir : Direction.values())
         {
@@ -1198,7 +1381,57 @@ public final class TreeFootprint
         private static final int LEAF_REACH  = LeavesBlock.DECAY_DISTANCE - 1;
         private static final int SCAN_VOLUME = 65536;
 
+        /**
+         * A cap of the tree lies at most this far out of the box of its stems (the brown mushroom's flat cap reaches 3 out): a connected cap that reaches
+         * further is no part of this tree alone (r2 Sol H1).
+         */
+        public static final int CAP_BOUNDS = CAP_REACH + 2;
+
+        /**
+         * The leaves vanilla dooms around a tree's box (after a partial cut that was given up, r2 Fable N11): the logs he cut hold none of them any more.
+         *
+         * @param level the level.
+         * @param box   the box of the tree's logs.
+         * @return the doomed natural leaves within the decay reach of the box, at most {@link #LEAF_BUDGET}.
+         */
+        @NotNull
+        public static List<BlockPos> doomedAround(@NotNull final Level level, @NotNull final AABB box)
+        {
+            final List<BlockPos> out = new ArrayList<>();
+            final AABB around = box.inflate(LEAF_REACH, LEAF_REACH, LEAF_REACH);
+            if (around.getXsize() * around.getYsize() * around.getZsize() > SCAN_VOLUME)
+            {
+                return out;
+            }
+            for (final BlockPos pos : BlockPos.betweenClosed(BlockPos.containing(around.minX, around.minY, around.minZ),
+              BlockPos.containing(around.maxX - 1, around.maxY - 1, around.maxZ - 1)))
+            {
+                if (isDoomedLeaf(level.getBlockState(pos)))
+                {
+                    out.add(pos.immutable());
+                    if (out.size() >= LEAF_BUDGET)
+                    {
+                        break;
+                    }
+                }
+            }
+            return out;
+        }
+
+        /**
+         * @return caps left standing because their connected cap was no part of this tree alone (for the tests).
+         */
+        public int getCapsKept()
+        {
+            return capsKept;
+        }
+
         private final Level               level;
+        private final String              family;
+        private final boolean             strippedBase;
+        @Nullable
+        private final AABB                capBounds;
+        private       int                 capsKept = 0;
         private final Set<BlockPos>       removedLogs;
         private final ArrayDeque<BlockPos> toBreak = new ArrayDeque<>();
         private final Set<BlockPos>       capsSeen = new HashSet<>();
@@ -1215,10 +1448,21 @@ public final class TreeFootprint
          * @param box         the box of the tree's logs: doomed leaves around it are swept, and all its leaves when the removed logs are unknown (after a
          *                    reload).
          * @param capTree     true for a huge mushroom or fungus, whose cap may hang away from the stem.
+         * @param family      the tree's family: a cap of another kind is no cap of this tree.
+         * @param strippedBase true if the tree itself is stripped.
          */
-        public LeafSweep(@NotNull final Level level, @NotNull final Collection<BlockPos> removedLogs, @Nullable final AABB box, final boolean capTree)
+        public LeafSweep(
+          @NotNull final Level level,
+          @NotNull final Collection<BlockPos> removedLogs,
+          @Nullable final AABB box,
+          final boolean capTree,
+          @NotNull final String family,
+          final boolean strippedBase)
         {
             this.level = level;
+            this.family = family;
+            this.strippedBase = strippedBase;
+            this.capBounds = box == null ? null : box.inflate(CAP_BOUNDS);
             this.removedLogs = new HashSet<>(removedLogs);
             this.nextRound = level.getGameTime() + ROUND_INTERVAL;
             for (final BlockPos log : this.removedLogs)
@@ -1389,7 +1633,9 @@ public final class TreeFootprint
         }
 
         /**
-         * A connected cap (mushroom cap, wart blocks, shroomlight) goes when it touches no remaining stem or log.
+         * A connected cap (mushroom cap, wart blocks, shroomlight) goes when it touches no remaining stem or log, and when it is all the tree's own: every
+         * block of it a cap of the tree's kind, within {@link #CAP_BOUNDS} of the tree's box, and touching no player's block. A cap that is joined to a
+         * player's decoration (wart blocks and shroomlights built against the canopy, a cap of another kind) stays whole (r2 Sol H1).
          */
         private int sweepCaps(final BlockPos seed)
         {
@@ -1402,10 +1648,16 @@ public final class TreeFootprint
             queue.add(seed);
             capsSeen.add(seed);
             boolean held = false;
+            boolean foreign = false;
             while (!queue.isEmpty())
             {
                 final BlockPos pos = queue.poll();
                 component.add(pos);
+                if (!foreign)
+                {
+                    foreign = !capFitsFamily(family, level.getBlockState(pos)) || (capBounds != null && !capBounds.contains(net.minecraft.world.phys.Vec3.atCenterOf(pos)))
+                                || leafTouchesBuild(level, pos, strippedBase);
+                }
                 if (component.size() > LEAF_BUDGET)
                 {
                     return 0;
@@ -1438,6 +1690,11 @@ public final class TreeFootprint
             }
             if (held)
             {
+                return 0;
+            }
+            if (foreign)
+            {
+                capsKept += component.size();
                 return 0;
             }
             toBreak.addAll(component);

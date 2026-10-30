@@ -121,6 +121,30 @@ public final class TreeClaims
         put(level, logs, colonyId, BLOCKED, BLOCKED_CLAIM_TICKS);
     }
 
+    /**
+     * Block a tree for a given time (a tree given up again and again is left be longer each time).
+     *
+     * @param level    the level.
+     * @param logs     the logs of the tree.
+     * @param colonyId the colony that found it.
+     * @param ticks    how long.
+     */
+    public static void block(@NotNull final Level level, @NotNull final Collection<BlockPos> logs, final int colonyId, final long ticks)
+    {
+        put(level, logs, colonyId, BLOCKED, ticks);
+    }
+
+    /**
+     * How long a tree is left be after its n-th give-up in a row (r2 Fable N3): {@link #BLOCKED_CLAIM_TICKS}, doubling up to eight times that.
+     *
+     * @param giveUps the give-ups of the tree so far, this one included.
+     * @return the ticks.
+     */
+    public static long giveUpBlockTicks(final int giveUps)
+    {
+        return BLOCKED_CLAIM_TICKS << Math.min(Math.max(0, giveUps - 1), 3);
+    }
+
     private static Claim put(final Level level, final Collection<BlockPos> logs, final int colonyId, final int citizenId, final long ttl)
     {
         final Map<Long, Claim> map = CLAIMS.computeIfAbsent(level, k -> new ConcurrentHashMap<>());
