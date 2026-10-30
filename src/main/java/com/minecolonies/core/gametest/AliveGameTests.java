@@ -1397,100 +1397,112 @@ public final class AliveGameTests
                     level.setBlock(new BlockPos(x, roofY, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
                 }
             }
+            // the roof is sky light: canSeeSky reads it, and the light engine settles the new roof a few ticks later, not on the tick it is laid
             final BlockPos inside = EntityAICitizenLife.insideSpot(home, 0);
-            helper.assertTrue(home.isInBuilding(inside) && !level.canSeeSky(inside.above()), "precondition failed: the house is not roofed at " + inside);
-            for (int i = 0; i < 2; i++)
-            {
-                final BlockPos start = helper.absolutePos(new BlockPos(6 + i * 2, 1, 24));
-                helper.assertTrue(!home.isInBuilding(start) && level.canSeeSky(start.above()), "precondition failed: the roof covers the start " + start + " roof x "
-                                                                                              + x0 + ".." + x1 + " z " + z0 + ".." + z1);
-            }
-            final EntityCitizen[] mates = new EntityCitizen[2];
-            for (int i = 0; i < 2; i++)
-            {
-                final ICitizenData data = spawn(helper, colony, new BlockPos(6 + i * 2, 1, 24));
-                if (data.getHomeBuilding() != null)
+            final long roofedAt = level.getGameTime();
+            final Runnable[] lit = new Runnable[1];
+            lit[0] = () -> {
+                if (level.canSeeSky(inside.above()) && level.getGameTime() - roofedAt < 100)
                 {
-                    data.getHomeBuilding().getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).removeCitizen(data);
+                    helper.runAfterDelay(1, () -> lit[0].run());
+                    return;
                 }
-                home.getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).assignCitizen(data);
-                helper.assertTrue(data.getHomeBuilding() == home, "precondition failed: no home for housemate " + i);
-                mates[i] = entity(data);
-                makeTrait(mates[i], LifeTrait.CHATTY);
-            }
-            final EntityCitizen a = mates[0];
-            final EntityCitizen b = mates[1];
-            // round 7 (R6-F4): a chatty guest who does not live here stands dry inside the house; nobody sheltering there chats with him
-            final ICitizenData guestData = spawn(helper, colony, new BlockPos(10, 1, 24));
-            if (guestData.getHomeBuilding() != null)
-            {
-                guestData.getHomeBuilding().getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).removeCitizen(guestData);
-            }
-            helper.assertTrue(guestData.getHomeBuilding() == null, "precondition failed: the guest has a home");
-            final EntityCitizen guest = entity(guestData);
-            makeTrait(guest, LifeTrait.CHATTY);
-            BlockPos guestSpot = null;
-            for (final BlockPos at : new BlockPos[] {inside.offset(2, 0, 0), inside.offset(-2, 0, 0), inside.offset(0, 0, 2), inside.offset(0, 0, -2), inside.offset(1, 0, 1)})
-            {
-                if (guestSpot == null && at.getX() >= x0 && at.getX() <= x1 && at.getZ() >= z0 && at.getZ() <= z1 && !level.canSeeSky(at.above()))
+                helper.assertTrue(home.isInBuilding(inside) && !level.canSeeSky(inside.above()), "precondition failed: the house is not roofed at " + inside + " roof y " + roofY
+                                                                                                 + " x " + x0 + ".." + x1 + " z " + z0 + ".." + z1);
+                for (int i = 0; i < 2; i++)
                 {
-                    guestSpot = at;
+                    final BlockPos start = helper.absolutePos(new BlockPos(6 + i * 2, 1, 24));
+                    helper.assertTrue(!home.isInBuilding(start) && level.canSeeSky(start.above()), "precondition failed: the roof covers the start " + start + " roof x "
+                                                                                                  + x0 + ".." + x1 + " z " + z0 + ".." + z1);
                 }
-            }
-            helper.assertTrue(guestSpot != null, "precondition failed: no dry spot for the guest by " + inside);
-            final BlockPos guestAt = guestSpot;
-            rain(helper, true);
-            final long t0 = helper.getLevel().getGameTime();
-            final String[] opener = {""};
-            final long[] chatEnd = {-1};
-            final Runnable[] poll = new Runnable[1];
-            poll[0] = () -> {
-                keepFed(a, b, guest);
+                final EntityCitizen[] mates = new EntityCitizen[2];
+                for (int i = 0; i < 2; i++)
+                {
+                    final ICitizenData data = spawn(helper, colony, new BlockPos(6 + i * 2, 1, 24));
+                    if (data.getHomeBuilding() != null)
+                    {
+                        data.getHomeBuilding().getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).removeCitizen(data);
+                    }
+                    home.getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).assignCitizen(data);
+                    helper.assertTrue(data.getHomeBuilding() == home, "precondition failed: no home for housemate " + i);
+                    mates[i] = entity(data);
+                    makeTrait(mates[i], LifeTrait.CHATTY);
+                }
+                final EntityCitizen a = mates[0];
+                final EntityCitizen b = mates[1];
+                // round 7 (R6-F4): a chatty guest who does not live here stands dry inside the house; nobody sheltering there chats with him
+                final ICitizenData guestData = spawn(helper, colony, new BlockPos(10, 1, 24));
                 if (guestData.getHomeBuilding() != null)
                 {
-                    // the colony may give the homeless guest a free bed; he stays a guest
                     guestData.getHomeBuilding().getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).removeCitizen(guestData);
                 }
-                guest.getNavigation().stop();
-                if (!guest.blockPosition().equals(guestAt))
+                helper.assertTrue(guestData.getHomeBuilding() == null, "precondition failed: the guest has a home");
+                final EntityCitizen guest = entity(guestData);
+                makeTrait(guest, LifeTrait.CHATTY);
+                BlockPos guestSpot = null;
+                for (final BlockPos at : new BlockPos[] {inside.offset(2, 0, 0), inside.offset(-2, 0, 0), inside.offset(0, 0, 2), inside.offset(0, 0, -2), inside.offset(1, 0, 1)})
                 {
-                    guest.teleportTo(guestAt.getX() + 0.5D, guestAt.getY(), guestAt.getZ() + 0.5D);
-                }
-                helper.assertTrue(!guest.getLife().chatting(), "a sheltering housemate chats with a guest: " + guest.getSpeech());
-                final long now = helper.getLevel().getGameTime();
-                if (opener[0].isEmpty())
-                {
-                    if (a.getLife().chatting() && b.getLife().chatting() && a.getLife().chatPartnerId() == b.getCivilianID())
+                    if (guestSpot == null && at.getX() >= x0 && at.getX() <= x1 && at.getZ() >= z0 && at.getZ() <= z1 && !level.canSeeSky(at.above()))
                     {
-                        helper.assertTrue(home.isInBuilding(a.blockPosition()) && home.isInBuilding(b.blockPosition()), "the chat is not inside the house");
-                        final EntityCitizen leader = a.getLife().chatLeader() ? a : b;
-                        opener[0] = leader.getSpeech();
-                        helper.assertTrue(opener[0].startsWith(CitizenLife.ChatTopic.RAIN.prefix()), "a dry opener in a rain shelter: " + opener[0]);
+                        guestSpot = at;
                     }
                 }
-                else if (chatEnd[0] < 0 && !a.getLife().chatting() && !b.getLife().chatting())
-                {
-                    chatEnd[0] = now;
-                }
-                else if (chatEnd[0] >= 0 && now - chatEnd[0] >= 60)
-                {
-                    helper.assertTrue(a.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER || b.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER,
-                      "after the chat nobody waits out the rain: " + a.getCitizenAI().getState() + " / " + b.getCitizenAI().getState());
-                    rain(helper, false);
-                    Log.getLogger().info("ALIVE RESULT shelter_chat chat_after={} opener={}", chatEnd[0] - t0, opener[0]);
-                    helper.succeed();
-                    return;
-                }
-                if (now - t0 > 2000)
-                {
-                    rain(helper, false);
-                    helper.fail("no chat in the shelter: states " + a.getCitizenAI().getState() + " / " + b.getCitizenAI().getState() + " at " + a.blockPosition() + " "
-                                  + b.blockPosition() + " inside " + a.getLife().shelteredAtHome() + "/" + b.getLife().shelteredAtHome());
-                    return;
-                }
+                helper.assertTrue(guestSpot != null, "precondition failed: no dry spot for the guest by " + inside);
+                final BlockPos guestAt = guestSpot;
+                rain(helper, true);
+                final long t0 = helper.getLevel().getGameTime();
+                final String[] opener = {""};
+                final long[] chatEnd = {-1};
+                final Runnable[] poll = new Runnable[1];
+                poll[0] = () -> {
+                    keepFed(a, b, guest);
+                    if (guestData.getHomeBuilding() != null)
+                    {
+                        // the colony may give the homeless guest a free bed; he stays a guest
+                        guestData.getHomeBuilding().getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).removeCitizen(guestData);
+                    }
+                    guest.getNavigation().stop();
+                    if (!guest.blockPosition().equals(guestAt))
+                    {
+                        guest.teleportTo(guestAt.getX() + 0.5D, guestAt.getY(), guestAt.getZ() + 0.5D);
+                    }
+                    helper.assertTrue(!guest.getLife().chatting(), "a sheltering housemate chats with a guest: " + guest.getSpeech());
+                    final long now = helper.getLevel().getGameTime();
+                    if (opener[0].isEmpty())
+                    {
+                        if (a.getLife().chatting() && b.getLife().chatting() && a.getLife().chatPartnerId() == b.getCivilianID())
+                        {
+                            helper.assertTrue(home.isInBuilding(a.blockPosition()) && home.isInBuilding(b.blockPosition()), "the chat is not inside the house");
+                            final EntityCitizen leader = a.getLife().chatLeader() ? a : b;
+                            opener[0] = leader.getSpeech();
+                            helper.assertTrue(opener[0].startsWith(CitizenLife.ChatTopic.RAIN.prefix()), "a dry opener in a rain shelter: " + opener[0]);
+                        }
+                    }
+                    else if (chatEnd[0] < 0 && !a.getLife().chatting() && !b.getLife().chatting())
+                    {
+                        chatEnd[0] = now;
+                    }
+                    else if (chatEnd[0] >= 0 && now - chatEnd[0] >= 60)
+                    {
+                        helper.assertTrue(a.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER || b.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER,
+                          "after the chat nobody waits out the rain: " + a.getCitizenAI().getState() + " / " + b.getCitizenAI().getState());
+                        rain(helper, false);
+                        Log.getLogger().info("ALIVE RESULT shelter_chat chat_after={} opener={}", chatEnd[0] - t0, opener[0]);
+                        helper.succeed();
+                        return;
+                    }
+                    if (now - t0 > 2000)
+                    {
+                        rain(helper, false);
+                        helper.fail("no chat in the shelter: states " + a.getCitizenAI().getState() + " / " + b.getCitizenAI().getState() + " at " + a.blockPosition() + " "
+                                      + b.blockPosition() + " inside " + a.getLife().shelteredAtHome() + "/" + b.getLife().shelteredAtHome());
+                        return;
+                    }
+                    helper.runAfterDelay(1, () -> poll[0].run());
+                };
                 helper.runAfterDelay(1, () -> poll[0].run());
             };
-            helper.runAfterDelay(1, () -> poll[0].run());
+            helper.runAfterDelay(1, () -> lit[0].run());
         });
     }
 
