@@ -85,6 +85,11 @@ public final class LabourSession implements IIdleTaskSession
     private boolean ended;
     private boolean ok;
     private boolean stopped;
+
+    /**
+     * Round 7 (N45): his own work came back and he turned to put what he carried into the hut that asked; the session ends with that hand-in.
+     */
+    private boolean recalled;
     /**
      * Round 11 (W4-10): the request was served by someone else while he worked on it; he brings what he carries of the basic goods to a warehouse before the
      * session ends.
@@ -324,6 +329,33 @@ public final class LabourSession implements IIdleTaskSession
     public boolean handingIn(final long now)
     {
         return phase == Phase.DELIVER && !stashing && !ended && now - actionStart <= HAND_IN_GRACE && countClaimed() > 0;
+    }
+
+    /**
+     * Round 7 teamwork (N45): his own work came back while he helps. If he carries goods of the claim for a request that still waits, he first takes them to the hut
+     * that asked (the short walk of {@link #handingIn}, from now on), so that they are counted for the request and are not put into his own hut by his work's dump,
+     * and the request is not gathered again. What he carries is handed in, a part of the lot as well; the session then ends.
+     *
+     * @param now the game time.
+     * @return whether he hands in first (his own work waits that long).
+     */
+    public boolean handInBeforeLeaving(final long now)
+    {
+        if (handingIn(now))
+        {
+            return true;
+        }
+        if (recalled || !claim.byWorker() || ended || stashing || toolKind != null || claim.source() != LabourClaim.Source.REQUEST || claim.request() == null
+              || phase == Phase.DELIVER || phase == Phase.UNLOAD || phase == Phase.END || !board.alive(claim) || countClaimed() <= 0 || !board.stillWaiting(claim.request()))
+        {
+            return false;
+        }
+        recalled = true;
+        LabourStats.log("citizen {}: his own work came back, he hands in the {} he carries for request {} first", citizen.getId(), countClaimed(), claim.request());
+        cleanup();
+        go(Phase.DELIVER, now);
+        board.heartbeat(claim);
+        return true;
     }
 
     /**
@@ -1882,6 +1914,12 @@ public final class LabourSession implements IIdleTaskSession
         }
         board.handedIn(claim, moved);
         board.heartbeat(claim);
+        if (recalled)
+        {
+            // (his own work waits: what else he carries stays with him)
+            end(true);
+            return;
+        }
         go(Phase.UNLOAD, now);
     }
 

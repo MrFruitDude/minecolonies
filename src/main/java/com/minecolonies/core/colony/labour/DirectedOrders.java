@@ -418,8 +418,9 @@ public final class DirectedOrders
         {
             return refuse(Refusal.DESTINATION_FULL);
         }
-        if (assigned() + chosen.size() > board.allowed())
+        if (!board.roomForDirected(chosen))
         {
+            // (round 7, Sol H2: the free places, every claim and pending directed citizen of the colony and the world counted, not the bare ceiling)
             return refuse(Refusal.CAP);
         }
         final DirectedOrder order = new DirectedOrder(colony.getLabourData().takeOrderId(), resource, amount, area, destination, now(),
@@ -545,6 +546,8 @@ public final class DirectedOrders
         if (structure)
         {
             colony.getLabourData().bumpDirected();
+            // (round 7, Sol H2: an order that started, ended or lost a worker changes the places the other colonies see)
+            board.syncPlaces();
         }
         colony.markDirty();
     }

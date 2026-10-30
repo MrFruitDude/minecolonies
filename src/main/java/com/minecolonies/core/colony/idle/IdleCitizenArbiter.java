@@ -280,9 +280,10 @@ public final class IdleCitizenArbiter
                 return IdleStopReason.SETTING_OFF;
             }
             if (!WorkerHelp.outOfWork(citizen)
-                  && !(entry.session() instanceof com.minecolonies.core.colony.labour.LabourSession labour && labour.handingIn(now)))
+                  && !(entry.session() instanceof com.minecolonies.core.colony.labour.LabourSession labour && labour.handInBeforeLeaving(now)))
             {
-                // his hut has work for him again: back to it (round 6: unless he is on his short way to put the goods he carries into the hut that asked)
+                // his hut has work for him again: back to it (round 6: unless he is on his short way to put the goods he carries into the hut that asked; round 7,
+                // N45: if he carries goods for it, he turns to that short way first)
                 return IdleStopReason.OWN_WORK;
             }
         }
