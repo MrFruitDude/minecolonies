@@ -1340,8 +1340,43 @@ public final class ForestryGameTests
                 helper.assertTrue(building.getSkippedTreeCount() == 0 && building.getSkippedTreeCount(BuildingLumberjack.SkipReason.TOO_BIG) == 0,
                   "a touching oak was left standing: " + last[0]);
                 return logs == 0 && replanted == 4 && tree(worker) == null;
-            }, () -> last[0] + ", " + describe(worker), null, "forestry_touching_same_wood");
+            }, () -> last[0] + ", standing " + standingTrunks(level, colony, building, worker, trunks) + ", " + describe(worker), null, "forestry_touching_same_wood");
         });
+    }
+
+    /**
+     * Why each trunk still standing is no tree for the Forester: what the search check, the full scan, the claims and the colony border say (open since
+     * round 3, the logs show none of it).
+     */
+    private static String standingTrunks(final ServerLevel level, final IColony colony, final BuildingLumberjack building, final ICitizenData worker,
+      final List<BlockPos> trunks)
+    {
+        final List<String> out = new ArrayList<>();
+        for (int i = 0; i < trunks.size(); i++)
+        {
+            final BlockPos base = trunks.get(i);
+            if (!level.getBlockState(base).is(Blocks.OAK_LOG))
+            {
+                continue;
+            }
+            final TreeFootprint.Footprint print = TreeFootprint.scan(level, base, colony, MineColonies.getConfig().getServer().maxTreeSize.get());
+            int blocked = 0;
+            int taken = 0;
+            if (print != null)
+            {
+                for (final BlockPos log : print.logs)
+                {
+                    blocked += com.minecolonies.core.entity.ai.workers.util.TreeClaims.isBlocked(level, log) ? 1 : 0;
+                    taken += com.minecolonies.core.entity.ai.workers.util.TreeClaims.isTakenByOther(level, log, colony.getID(), worker.getId()) ? 1 : 0;
+                }
+            }
+            final Tree tree = new Tree(level, base, colony);
+            out.add("trunk " + i + " at " + base.toShortString() + ": search " + TreeFootprint.check(level, base, level, colony.getID(), worker.getId(), p -> true)
+                      + ", in colony " + Tree.checkIfInColony(base, colony, level, false) + ", " + (int) Math.sqrt(base.distSqr(building.getPosition()))
+                      + " from the hut, scan " + (print == null ? "none" : print.logs.size() + " logs " + print.leaves + " leaves " + print.skip + " " + print.skipDetail)
+                      + ", tree " + tree.isTree() + " " + tree.getSkip() + ", logs blocked " + blocked + " taken " + taken);
+        }
+        return out.toString();
     }
 
     /**
