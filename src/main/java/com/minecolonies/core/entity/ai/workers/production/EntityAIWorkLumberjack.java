@@ -144,9 +144,10 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private static final int MAX_WORK_HEIGHT = 3;
 
     /**
-     * Forestry: this close to the stump (around, and up or down) and this long without getting nearer, he works from where he stands.
+     * Forestry: this close to the stump (around, and up or down) and this long without getting nearer, he works from where he stands (3.7: also from
+     * beside the edge of a red mushroom's cap, two out from the stem, when he may not clear it).
      */
-    private static final double CLOSE_ENOUGH        = 3.0D;
+    private static final double CLOSE_ENOUGH        = 3.7D;
     private static final int    CLOSE_ENOUGH_HEIGHT = 2;
     private static final long   CLOSE_ENOUGH_TICKS  = 10 * 20L;
 
@@ -1247,9 +1248,9 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     }
 
     /**
-     * Forestry: the sweep's block, checked as a direct cut is: still a natural leaf or a cap, outside hut boxes and other colonies' land, touching no
-     * player's block (a torch, a fence; a placed leaf is kept by itself, never swept), and a cap only near the tree (a cap far out is somebody's, even
-     * when it touches the canopy).
+     * Forestry: the sweep's block, checked as a direct cut is: still a natural leaf or a cap, outside other colonies' land, touching no player's block
+     * (a torch, a fence; a placed leaf is kept by itself, never swept), a cap outside hut boxes and only near the tree (a cap far out is somebody's, even
+     * when it touches the canopy). A doomed leaf in a hut's box goes: it would decay there anyway.
      *
      * @param tree the felled tree.
      * @param pos  the leaf or cap.
@@ -1257,6 +1258,13 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      */
     private boolean maySweep(@NotNull final Tree tree, @NotNull final BlockPos pos)
     {
+        if (TreeFootprint.isDoomedLeaf(world.getBlockState(pos)))
+        {
+            // A natural leaf vanilla decays anyway goes in a hut's box too (the box is no build: the leaves of a hut's own blueprint are placed ones, or
+            // held by its logs, and never doomed). Another colony's land and a player's block next to it keep it, as for a cap
+            final IColony owner = IColonyManager.getInstance().getColonyByPosFromWorld(world, pos);
+            return (owner == null || owner.getID() == building.getColony().getID()) && !TreeFootprint.leafTouchesBuild(world, pos, tree.isStrippedBase());
+        }
         if (TreeFootprint.recheck(world, pos, TreeFootprint.Part.LEAF, tree.getFamily(), tree.isStrippedBase(), building.getColony()) != TreeFootprint.Recheck.OK)
         {
             return false;

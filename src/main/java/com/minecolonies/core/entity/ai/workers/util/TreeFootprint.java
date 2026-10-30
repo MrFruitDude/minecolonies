@@ -535,7 +535,7 @@ public final class TreeFootprint
 
         // The trunks of the neighbour trees in it: a log on the ground away from this trunk (never a root, mangroves stand on many). Each log goes to the
         // trunk it is nearest to along the wood, so touching trees of one wood are cut one by one; ties go to the neighbour.
-        final Set<BlockPos> own = ownLogs(level, cluster, baseLayer, cx, cz);
+        final Set<BlockPos> own = ownLogs(level, cluster, baseLayer, cx, cz, bottom.getY());
 
         final Set<BlockPos> seen = new HashSet<>(baseLayer);
         final Set<BlockPos> decorations = new HashSet<>();
@@ -706,6 +706,7 @@ public final class TreeFootprint
      * @param baseLayer this tree's trunk at its bottom.
      * @param cx        the trunk's centre x.
      * @param cz        the trunk's centre z.
+     * @param bottomY   the height of this tree's trunk bottom.
      * @return the logs of this tree.
      */
     private static Set<BlockPos> ownLogs(
@@ -713,7 +714,8 @@ public final class TreeFootprint
       @NotNull final Set<BlockPos> cluster,
       @NotNull final List<BlockPos> baseLayer,
       final double cx,
-      final double cz)
+      final double cz,
+      final int bottomY)
     {
         double baseReach = 0;
         for (final BlockPos pos : baseLayer)
@@ -724,7 +726,14 @@ public final class TreeFootprint
         final List<BlockPos> otherBases = new ArrayList<>();
         for (final BlockPos pos : cluster)
         {
-            if (ownBase.contains(pos) || Math.max(Math.abs(pos.getX() - cx), Math.abs(pos.getZ() - cz)) <= baseReach + TRUNK_GAP + 0.5D)
+            final double away = Math.max(Math.abs(pos.getX() - cx), Math.abs(pos.getZ() - cz));
+            if (ownBase.contains(pos) || away <= baseReach + TRUNK_GAP + 0.5D)
+            {
+                continue;
+            }
+            // A neighbour's trunk goes up from ground about as high as this one's (a slope at most as steep as it is far): a branch of a giant that
+            // rests on a block high up is no trunk, and the giant stays one tree (it is skipped whole when over the budget, never half felled)
+            if (!cluster.contains(pos.above()) || Math.abs(pos.getY() - bottomY) > away)
             {
                 continue;
             }
@@ -962,17 +971,7 @@ public final class TreeFootprint
         }
         if (part == Part.LEAF)
         {
-            // A leaf or cap touching a player's block (a torch, a fence, a lantern) stays; a placed leaf next to it does not count, a hedge under a
-            // canopy is no reason to leave its doomed leaves
-            for (final Direction dir : Direction.values())
-            {
-                final BlockState near = level.getBlockState(pos.relative(dir));
-                if (!near.is(BlockTags.LEAVES) && !isDecoration(near) && isBuildSignal(near, strippedBase))
-                {
-                    return Recheck.BUILD;
-                }
-            }
-            return Recheck.OK;
+            return leafTouchesBuild(level, pos, strippedBase) ? Recheck.BUILD : Recheck.OK;
         }
         for (final Direction dir : Direction.values())
         {
@@ -1147,6 +1146,37 @@ public final class TreeFootprint
     }
 
     /**
+     * A leaf or cap touching a player's block (a torch, a fence, a lantern) stays; a placed leaf next to it does not count, a hedge under a canopy is no
+     * reason to leave its doomed leaves.
+     *
+     * @param level        the level.
+     * @param pos          the leaf or cap.
+     * @param strippedBase true if the tree itself is stripped.
+     * @return true if it touches a player's block.
+     */
+    public static boolean leafTouchesBuild(@NotNull final Level level, @NotNull final BlockPos pos, final boolean strippedBase)
+    {
+        for (final Direction dir : Direction.values())
+        {
+            final BlockState near = level.getBlockState(pos.relative(dir));
+            if (!near.is(BlockTags.LEAVES) && !isDecoration(near) && isBuildSignal(near, strippedBase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param state a block.
+     * @return true for a natural leaf vanilla decays (not persistent, no log within its reach): it goes by itself, whoever breaks it.
+     */
+    public static boolean isDoomedLeaf(@NotNull final BlockState state)
+    {
+        return isDecayingLeaves(state) && !state.getValue(LeavesBlock.PERSISTENT) && state.getValue(LeavesBlock.DISTANCE) >= LeavesBlock.DECAY_DISTANCE;
+    }
+
+    /**
      * The leaf sweep after a felling: rounds ten ticks apart, each a flood from the leaves that touched the removed logs (and the leaves of the previous
      * round that were still held), which hands out the leaves vanilla would decay. Server thread; at most {@link #LEAF_BUDGET} reads per round.
      */
@@ -1299,7 +1329,7 @@ public final class TreeFootprint
 
         private static boolean isDoomed(final BlockState state)
         {
-            return isDecayingLeaves(state) && !state.getValue(LeavesBlock.PERSISTENT) && state.getValue(LeavesBlock.DISTANCE) >= LeavesBlock.DECAY_DISTANCE;
+            return isDoomedLeaf(state);
         }
 
         private void round()
