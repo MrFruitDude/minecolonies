@@ -242,7 +242,8 @@ public final class ForestryGameTests
         return "ai " + (ai == null ? "none" : ai.getState() + " history " + ai.getStateAI().getHistory().getString())
                  + ", tree " + (tree == null ? "none" : tree.getLocation() + " logs left " + tree.getLogsLeft() + " skip " + tree.getSkip() + " sapling " + tree.getSapling()
                  + " stumps " + tree.getStumpLocations())
-                 + ", at " + worker.getEntity().map(e -> e.blockPosition().toShortString()).orElse("?") + ", inventory " + inventory;
+                 + ", at " + worker.getEntity().map(e -> e.blockPosition().toShortString()).orElse("?") + ", inventory " + inventory
+                 + ", given up " + (ai == null ? "?" : ai.getTreesGivenUp() + " (" + ai.getGiveUpNote() + ")");
     }
 
     /**
@@ -1666,8 +1667,9 @@ public final class ForestryGameTests
 
     /**
      * r2 Fable N5: a beam or floor of the tree's own wood resting on it is a player's work, as a post of another wood is. Oak A carries a 3 by 3 floor of
-     * oak logs, oak B a level beam of five oak logs; oak C has a natural branch of two level logs. A and B stay whole and count as next to a build, C is
-     * felled and replanted.
+     * oak logs, oak B a level beam of five oak logs that ends in nothing; oak C has a natural branch of two level logs. A and B stay whole and count as next
+     * to a build, C is felled and replanted. Oak D (scan only) has a level branch of seven logs that ends in its leaves, as cherry, fancy oak and giant branches
+     * do: a whole tree, no beam.
      */
     private static void sameWoodBeam(final GameTestHelper helper)
     {
@@ -1679,7 +1681,8 @@ public final class ForestryGameTests
         final BlockPos floorOak = helper.absolutePos(new BlockPos(22, 1, 24));
         final BlockPos beamOak = helper.absolutePos(new BlockPos(28, 1, 14));
         final BlockPos branchOak = helper.absolutePos(new BlockPos(34, 1, 25));
-        for (final BlockPos base : List.of(floorOak, beamOak, branchOak))
+        final BlockPos longOak = helper.absolutePos(new BlockPos(36, 1, 4));
+        for (final BlockPos base : List.of(floorOak, beamOak, branchOak, longOak))
         {
             synthTrunk(level, base, 6, Blocks.OAK_LOG, Blocks.OAK_LEAVES, leaves);
         }
@@ -1699,6 +1702,15 @@ public final class ForestryGameTests
         {
             level.setBlockAndUpdate(branchOak.offset(dx, 3, 0), level_x);
         }
+        final int longRun = TreeFootprint.BEAM_RUN + 2;
+        for (int dx = 1; dx <= longRun; dx++)
+        {
+            level.setBlockAndUpdate(longOak.offset(dx, 3, 0), level_x);
+        }
+        for (final BlockPos pos : BlockPos.betweenClosed(longOak.offset(longRun - 1, 3, -1), longOak.offset(longRun + 1, 5, 1)))
+        {
+            leaves.putIfAbsent(pos.immutable(), Blocks.OAK_LEAVES);
+        }
         placeLeaves(level, leaves);
         final int budget = MineColonies.getConfig().getServer().maxTreeSize.get();
         for (final BlockPos base : List.of(floorOak, beamOak))
@@ -1710,6 +1722,18 @@ public final class ForestryGameTests
         final TreeFootprint.Footprint natural = TreeFootprint.scan(level, branchOak.above(1), colony, budget);
         helper.assertTrue(natural != null && natural.skip == TreeFootprint.Skip.NONE && natural.logs.size() == 8,
           "the oak with a natural branch is not a whole tree: " + (natural == null ? "no footprint" : natural.logs.size() + " logs, " + natural.skip + " " + natural.skipDetail));
+        final TreeFootprint.Footprint longBranch = TreeFootprint.scan(level, longOak.above(1), colony, budget);
+        helper.assertTrue(longBranch != null && longBranch.skip == TreeFootprint.Skip.NONE && longBranch.logs.size() == 6 + longRun,
+          "the oak with a long level branch that ends in its leaves is not a whole tree: "
+            + (longBranch == null ? "no footprint" : longBranch.logs.size() + " logs, " + longBranch.skip + " " + longBranch.skipDetail));
+        // (oak D was only for the scan: gone before the Forester comes)
+        for (final BlockPos pos : BlockPos.betweenClosed(longOak.offset(-2, 0, -2), longOak.offset(longRun + 1, 6, 2)))
+        {
+            if (TreeFootprint.isTreeBlock(level.getBlockState(pos)) || level.getBlockState(pos).is(BlockTags.LEAVES))
+            {
+                level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
+            }
+        }
         final AABB floorBox = new AABB(floorOak).inflate(3, 0, 3).expandTowards(0, 8, 0);
         final AABB beamBox = new AABB(beamOak).inflate(3, 0, 3).expandTowards(TreeFootprint.BEAM_RUN, 8, 0);
         final AABB branchBox = new AABB(branchOak).inflate(3, 0, 3).expandTowards(0, 8, 0);

@@ -438,14 +438,20 @@ public final class TreeFootprint
     }
 
     /**
-     * A same-wood beam is this many horizontal logs in a row or more: no vanilla branch runs that far level (a cherry branch at most 4).
+     * A same-wood beam is this many horizontal logs in a row or more with an open end (see {@link #openBeam}). Vanilla branches run level that far too (a
+     * cherry branch up to 5, fancy oak limbs, giant arms), but they end in their foliage or go on as a branch; only the open end tells a beam.
      */
     public static final int BEAM_RUN = 5;
 
     /**
-     * Whether a log of the tree's own wood is a player's beam, platform or bridge resting on the tree (r2 Fable N5): a horizontal log in a level run of
-     * {@link #BEAM_RUN} or more, a horizontal log with a parallel one beside it on the same level where both run on (a floor of logs), or a horizontal run
-     * that ends on a built block (a post of stone bricks, cobblestone). Natural branches climb as they go out and end in leaves or air.
+     * How far a level run is followed each way to find its ends.
+     */
+    private static final int MAX_BEAM_WALK = 32;
+
+    /**
+     * Whether a log of the tree's own wood is part of a player's structure resting on the tree (r2 Fable N5): a horizontal log with a parallel one beside it
+     * on the same level where both run on (a floor of logs), or a horizontal run that ends on a built block (a post of stone bricks, cobblestone). The open
+     * level run is {@link #openBeam}, judged once the whole tree is known.
      *
      * @param level  the level.
      * @param log    the log.
@@ -461,28 +467,18 @@ public final class TreeFootprint
         {
             return null;
         }
-        int run = 1;
         for (final Direction dir : new Direction[] {Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE),
           Direction.fromAxisAndDirection(axis, Direction.AxisDirection.NEGATIVE)})
         {
             BlockPos pos = log.relative(dir);
-            for (int i = 0; i < BEAM_RUN; i++)
+            for (int i = 0; i < MAX_BEAM_WALK && isLevelLog(level, pos, family, axis); i++)
             {
-                if (!isLevelLog(level, pos, family, axis))
-                {
-                    if (isBuiltSupport(level, pos, level.getBlockState(pos)))
-                    {
-                        return "a beam of logs at " + log.toShortString() + " resting on " + level.getBlockState(pos).getBlock() + " at " + pos.toShortString();
-                    }
-                    break;
-                }
-                run++;
                 pos = pos.relative(dir);
             }
-        }
-        if (run >= BEAM_RUN)
-        {
-            return "a beam of " + run + " level logs at " + log.toShortString();
+            if (!isLevelLog(level, pos, family, axis) && isBuiltSupport(level, pos, level.getBlockState(pos)))
+            {
+                return "a beam of logs at " + log.toShortString() + " resting on " + level.getBlockState(pos).getBlock() + " at " + pos.toShortString();
+            }
         }
         final Direction along = Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE);
         for (final Direction side : Direction.Plane.HORIZONTAL)
@@ -500,6 +496,76 @@ public final class TreeFootprint
             }
         }
         return null;
+    }
+
+    /**
+     * Whether a log of the tree's own wood lies in a player's beam (r2 Fable N5): a level run of {@link #BEAM_RUN} or more horizontal logs with an open end,
+     * an end log that touches (faces, edges, corners) no natural leaf or cap and no other log of the wood. A natural branch, however long and level, ends in
+     * its foliage or goes on (up, down, sideways) as the branch; a beam stuck out past the canopy ends in nothing. Only for a tree that holds leaves: a bare
+     * trunk with bare arms tells nothing (the caller checks).
+     *
+     * @param level  the level.
+     * @param log    the log.
+     * @param family the tree's family.
+     * @return what was found (for the skip detail), or null.
+     */
+    @Nullable
+    public static String openBeam(@NotNull final Level level, @NotNull final BlockPos log, @NotNull final String family)
+    {
+        final BlockState state = level.getBlockState(log);
+        final Direction.Axis axis = state.getOptionalValue(RotatedPillarBlock.AXIS).orElse(Direction.Axis.Y);
+        if (axis == Direction.Axis.Y)
+        {
+            return null;
+        }
+        final Direction up = Direction.fromAxisAndDirection(axis, Direction.AxisDirection.POSITIVE);
+        BlockPos first = log;
+        BlockPos last = log;
+        int run = 1;
+        for (int i = 0; i < MAX_BEAM_WALK && isLevelLog(level, last.relative(up), family, axis); i++)
+        {
+            last = last.relative(up);
+            run++;
+        }
+        for (int i = 0; i < MAX_BEAM_WALK && isLevelLog(level, first.relative(up.getOpposite()), family, axis); i++)
+        {
+            first = first.relative(up.getOpposite());
+            run++;
+        }
+        if (run < BEAM_RUN)
+        {
+            return null;
+        }
+        for (final BlockPos end : new BlockPos[] {first, last})
+        {
+            if (openEnd(level, end, first, last, family))
+            {
+                return "a beam of " + run + " level logs at " + log.toShortString() + " ending in nothing at " + end.toShortString();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @return true if the end log of a level run touches no natural leaf or cap and no log of the wood outside the run.
+     */
+    private static boolean openEnd(final Level level, final BlockPos end, final BlockPos first, final BlockPos last, final String family)
+    {
+        final AABB run = AABB.encapsulatingFullBlocks(first, last);
+        for (final BlockPos near : BlockPos.betweenClosed(end.offset(-1, -1, -1), end.offset(1, 1, 1)))
+        {
+            if (run.contains(net.minecraft.world.phys.Vec3.atCenterOf(near)))
+            {
+                continue;
+            }
+            final BlockState state = level.getBlockState(near);
+            if ((isDecayingLeaves(state) && !state.getValue(LeavesBlock.PERSISTENT)) || isCap(state)
+                  || (isTreeBlock(state) && sameFamily(family, family(level, near, state, true))))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean isLevelLog(final Level level, final BlockPos pos, final String family, final Direction.Axis axis)
@@ -716,6 +782,8 @@ public final class TreeFootprint
         queue.addAll(baseLayer);
         final int ownId = colony == null ? 0 : colony.getID();
         final Collection<IBuilding> buildings = colony == null ? List.of() : colony.getServerBuildingManager().getBuildings().values();
+        String builtOn = null;
+        String beamOn = null;
         while (!queue.isEmpty())
         {
             final BlockPos log = queue.poll();
@@ -748,13 +816,15 @@ public final class TreeFootprint
                 result.skipDetail = "log " + log.toShortString() + " in the claim of colony " + owner;
                 return result;
             }
-            final String beam = sameWoodBeam(level, log, fam);
-            if (beam != null)
+            // a beam or floor of the tree's own wood on it is a player's work, as a post of another wood is; judged once the whole tree is known, so a tree
+            // past the budget or the radius is too big first, and an open run only counts on a tree that holds leaves
+            if (builtOn == null)
             {
-                // a beam or floor of the tree's own wood on it is a player's work, as a post of another wood is
-                result.skip = Skip.BUILD;
-                result.skipDetail = beam;
-                return result;
+                builtOn = sameWoodBeam(level, log, fam);
+            }
+            if (beamOn == null)
+            {
+                beamOn = openBeam(level, log, fam);
             }
 
             for (final Direction dir : Direction.values())
@@ -841,6 +911,11 @@ public final class TreeFootprint
                     }
                 }
             }
+        }
+        if (builtOn != null || (beamOn != null && result.leaves >= MIN_LEAVES))
+        {
+            result.skip = Skip.BUILD;
+            result.skipDetail = builtOn != null ? builtOn : beamOn;
         }
         return result;
     }
@@ -1152,6 +1227,7 @@ public final class TreeFootprint
         {
             return leafTouchesBuild(level, pos, strippedBase) ? Recheck.BUILD : Recheck.OK;
         }
+        // (an open level run is judged by the scan only: half way through the cut a natural branch may end in nothing)
         if (sameWoodBeam(level, pos, family) != null)
         {
             return Recheck.BUILD;
