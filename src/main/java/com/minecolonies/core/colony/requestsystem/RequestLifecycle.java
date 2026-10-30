@@ -48,6 +48,14 @@ public final class RequestLifecycle
                     }
                 }
             }
+            switch (state)
+            {
+                // round 6 teamwork: what arrived of a request counts for it until it is done
+                case COMPLETED, RECEIVED, CANCELLED, OVERRULED -> RsCourierHooks.forgetCredit(manager, request.getId());
+                default ->
+                {
+                }
+            }
             if (RsFlags.smartRetry())
             {
                 final RequestWaitTracker tracker = standard.getWaitTracker();

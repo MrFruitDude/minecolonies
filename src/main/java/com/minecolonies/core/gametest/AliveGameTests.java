@@ -40,13 +40,14 @@ public final class AliveGameTests
 {
     public static final String[] NAMES = {"alive_rules", "alive_chat", "alive_chat_yields", "alive_morning", "alive_building_cheer", "alive_grief", "alive_raid_relief",
       "alive_rain_hurry", "alive_rain_where", "alive_traits_stable", "alive_chat_pairs", "alive_calm_pace", "alive_morning_crowd", "alive_shelter_inside",
-      "alive_no_cheer"};
+      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait"};
 
     /**
      * Tests whose citizens must stand in the rain: they run without the barrier ceiling of the GameTest frame, which stops the rain (vanilla's isRainingAt
      * reads the MOTION_BLOCKING heightmap) while it lets the sky light through.
      */
-    public static final java.util.Set<String> NEEDS_SKY = java.util.Set.of("alive_rain_hurry", "alive_rain_where", "alive_shelter_inside");
+    public static final java.util.Set<String> NEEDS_SKY = java.util.Set.of("alive_rain_hurry", "alive_rain_where", "alive_shelter_inside", "alive_shelter_dry",
+      "alive_shelter_chat", "alive_chorus", "alive_lines_wait");
 
     /**
      * A life moment must give way within this many ticks: the AI decides every 10 ticks, a life step runs every 20, the setting is read once a second.
@@ -81,6 +82,10 @@ public final class AliveGameTests
             case "alive_morning_crowd" -> AliveGameTests::morningCrowd;
             case "alive_shelter_inside" -> AliveGameTests::shelterInside;
             case "alive_no_cheer" -> AliveGameTests::noCheer;
+            case "alive_shelter_dry" -> AliveGameTests::shelterDry;
+            case "alive_shelter_chat" -> AliveGameTests::shelterChat;
+            case "alive_chorus" -> AliveGameTests::chorus;
+            case "alive_lines_wait" -> AliveGameTests::linesWait;
             default -> AliveGameTests::rainHurry;
         };
     }
@@ -186,7 +191,8 @@ public final class AliveGameTests
             helper.assertTrue(!CitizenLife.inFreeTime(state), "a chat may run in " + state);
         }
         helper.assertTrue(CitizenLife.inFreeTime(CitizenAIState.IDLE) && CitizenLife.inFreeTime(EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE)
-                            && CitizenLife.inFreeTime(EntityAICitizenLife.LifeState.CHAT), "free time states");
+                            && CitizenLife.inFreeTime(EntityAICitizenLife.LifeState.CHAT) && CitizenLife.inFreeTime(EntityAICitizenLife.LifeState.SHELTER),
+          "free time states");
 
         // round 5 chats: the topic fits the moment, the reply fits the opener
         final net.minecraft.world.level.biome.Biome.Precipitation none = net.minecraft.world.level.biome.Biome.Precipitation.NONE;
@@ -206,6 +212,36 @@ public final class AliveGameTests
         helper.assertTrue(CitizenLife.topic(false, none, false, true, true, 0) == CitizenLife.ChatTopic.JOB, "no job talk");
         helper.assertTrue(CitizenLife.topic(false, none, true, true, false, 50) == CitizenLife.ChatTopic.EVENING, "no evening talk");
         helper.assertTrue(CitizenLife.replyFor("minecolonies.life.chat.rain.2", 1).equals("minecolonies.life.chat.rain.2.reply.1"), "plain reply");
+
+        // round 6: openers fit the time of day and the speaker
+        for (final CitizenLife.ChatTopic topic : CitizenLife.ChatTopic.values())
+        {
+            boolean night = false;
+            for (int i = 1; i <= topic.lines(); i++)
+            {
+                helper.assertTrue(topic.fits(i, true), topic + " " + i + " does not fit in daylight");
+                night |= topic.fits(i, false);
+            }
+            helper.assertTrue(night, topic + " has no opener for the night");
+        }
+        helper.assertTrue(!CitizenLife.ChatTopic.HAPPY.fits(1, false), "\"Lovely day\" at night");
+        helper.assertTrue(CitizenLife.morningLines(false) < CitizenLife.MORNING_JOB_LINE && CitizenLife.morningLines(true) == CitizenLife.MORNING_LINES,
+          "the job line is in the jobless pool");
+        helper.assertTrue(!CitizenLife.traitMorningFits(LifeTrait.STEADY, false) && CitizenLife.traitMorningFits(LifeTrait.STEADY, true)
+                            && CitizenLife.traitMorningFits(LifeTrait.CHATTY, false), "trait morning lines for the jobless");
+        final String griefOpener = CitizenLife.ChatTopic.GRIEF.prefix() + "1|n:Ann";
+        helper.assertTrue(CitizenLife.griefReply(griefOpener, "Ann", 1) == 1 && CitizenLife.griefReply(griefOpener, null, 1) == 2
+                            && CitizenLife.griefReply(griefOpener, "Bob", 1) == 2 && CitizenLife.griefReply(griefOpener, "Ann", 2) == 2, "grief replies");
+
+        // round 6: the citizens of a crowd say their rain or raid line one after the other
+        final java.util.Set<Integer> bins = new java.util.HashSet<>();
+        for (int id = 1; id <= 12; id++)
+        {
+            final int d = CitizenLife.chorusDelay(id);
+            helper.assertTrue(d >= 0 && d + 20 <= CitizenLife.CHORUS_SPREAD, "chorus delay " + d + " of " + id);
+            bins.add(d / 20);
+        }
+        helper.assertTrue(bins.size() >= 3, "a crowd speaks at once: " + bins);
         helper.assertTrue(CitizenLife.replyFor("minecolonies.life.chat.job.1|t:com.minecolonies.job.builder", 2)
                             .equals("minecolonies.life.chat.job.1.reply.2|t:com.minecolonies.job.builder"), "reply keeps the argument");
 
@@ -239,7 +275,11 @@ public final class AliveGameTests
         {
             keys.add(CitizenLife.CHEER_BUILDING + i);
         }
-        keys.addAll(List.of(CitizenLife.RAIN_CALM, CitizenLife.RAID_START, CitizenLife.RAID_END_GRIEF, CitizenLife.RAID_END_QUIET, CitizenLife.GRIEF_LINE,
+        for (int i = 1; i <= CitizenLife.RAID_START_LINES; i++)
+        {
+            keys.add(CitizenLife.RAID_START + i);
+        }
+        keys.addAll(List.of(CitizenLife.RAIN_CALM, CitizenLife.RAID_END_GRIEF, CitizenLife.RAID_END_QUIET, CitizenLife.GRIEF_LINE,
           CitizenLife.CHAT_GRIEF_OWN));
         for (final LifeTrait t : LifeTrait.values())
         {
@@ -247,7 +287,14 @@ public final class AliveGameTests
         }
         final List<String> missing = keys.stream().filter(k -> !lang.has(k)).toList();
         helper.assertTrue(missing.isEmpty(), "lines without words: " + missing);
-        helper.assertTrue(lang.get(LifeTrait.BRISK.lineKey()).getAsString().length() <= 48, "the trait line is long");
+        for (final LifeTrait t : LifeTrait.values())
+        {
+            helper.assertTrue(lang.get(t.lineKey()).getAsString().length() <= 48, "the " + t + " trait line is long");
+        }
+        // round 6 (N42): the steady line promises only what the trait does (MineColonies' rain rule for work still applies)
+        final String steady = lang.get(LifeTrait.STEADY.lineKey()).getAsString();
+        helper.assertTrue(steady.contains("rain") && !steady.contains("even in the rain"), "the steady line: " + steady);
+        helper.assertTrue(lang.get(CitizenLife.MORNING + CitizenLife.MORNING_JOB_LINE).getAsString().contains("job"), "the job morning line moved");
 
         // round 5 morning: a different set of citizens each day, by the chance of the trait
         int chatty = 0;
@@ -458,7 +505,10 @@ public final class AliveGameTests
         helper.runAfterDelay(40, () -> {
             final EntityCitizen a = entity(spawn(helper, colony, new BlockPos(12, 1, 12)));
             final EntityCitizen worker = entity(spawn(helper, colony, new BlockPos(18, 1, 12)));
-            keepFed(a, worker);
+            // round 6: a greeting needs a listener; one stands by the town hall
+            final BlockPos listenerAt = new BlockPos(5, 1, 6);
+            final EntityCitizen listener = entity(spawn(helper, colony, listenerAt));
+            keepFed(a, worker, listener);
             final ServerLevel level = helper.getLevel();
             // round 5: only some citizens greet each morning; take the next morning this one does
             long day = level.getOverworldClockTime() / 24000L + 1;
@@ -475,7 +525,8 @@ public final class AliveGameTests
             final boolean[] gathered = {false};
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
-                keepFed(a, worker);
+                keepFed(a, worker, listener);
+                pin(helper, listener, listenerAt);
                 final long now = level.getGameTime();
                 if (a.getLife().greetingHolds(true))
                 {
@@ -644,7 +695,7 @@ public final class AliveGameTests
                 poll[0] = () -> {
                     keepFed(a, b);
                     final long now = helper.getLevel().getGameTime();
-                    warned[0] |= a.getSpeech().equals(CitizenLife.RAID_START) || b.getSpeech().equals(CitizenLife.RAID_START);
+                    warned[0] |= a.getSpeech().startsWith(CitizenLife.RAID_START) || b.getSpeech().startsWith(CitizenLife.RAID_START);
                     if (over[0] < 0 && !colony.getRaiderManager().isRaided())
                     {
                         over[0] = now;
@@ -684,7 +735,9 @@ public final class AliveGameTests
             final EntityCitizen hat = entity(spawn(helper, colony, new BlockPos(24, 1, 18)));
             makeTrait(bare, LifeTrait.BRISK);
             makeTrait(hat, LifeTrait.CHATTY);
-            hat.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET));
+            // round 6 (N40): the hat goes into the citizen's own armor inventory, the one EntityCitizen.getItemBySlot reads (not the vanilla slot)
+            hat.getCitizenData().getInventory().forceArmorStackToSlot(EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET));
+            helper.assertTrue(!hat.getItemBySlot(EquipmentSlot.HEAD).isEmpty(), "precondition failed: the hat is not on");
             keepFed(bare, hat);
             final var weather = helper.getLevel().getWeatherData();
             weather.setClearWeatherTime(0);
@@ -696,7 +749,10 @@ public final class AliveGameTests
             final boolean[] said = {false};
             poll[0] = () -> {
                 keepFed(bare, hat);
-                hat.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET));
+                if (hat.getItemBySlot(EquipmentSlot.HEAD).isEmpty())
+                {
+                    hat.getCitizenData().getInventory().forceArmorStackToSlot(EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET));
+                }
                 final long now = helper.getLevel().getGameTime();
                 said[0] |= bare.getSpeech().startsWith(CitizenLife.RAIN);
                 final boolean hurrying = bare.getLife().appliedPace() >= CitizenLife.RAIN_HURRY + bare.getLife().trait().offWorkPace() - 1.0E-6;
@@ -760,6 +816,7 @@ public final class AliveGameTests
             final long[] firstLine = {-1};
             final boolean[] stopped = {false};
             final long[] stoppedAt = {-1};
+            final long[] dryAt = {-1};
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
                 final long now = helper.getLevel().getGameTime();
@@ -793,8 +850,14 @@ public final class AliveGameTests
                     }
                     helper.assertTrue(now - t0 < 300 || firstLine[0] >= 0, "no rain line under the open sky in 300 ticks: '" + c[0].getSpeech() + "'");
                 }
-                else if (!helper.getLevel().isRaining() && now - stoppedAt[0] > 40)
+                else if (!helper.getLevel().isRaining() && dryAt[0] < 0)
                 {
+                    dryAt[0] = now;
+                }
+                else if (dryAt[0] >= 0 && now - dryAt[0] >= 25 && now - stoppedAt[0] > 40)
+                {
+                    // round 6 (N40): the rain level fades over many ticks after the stop, and the line is made ready at the citizen's next once-a-second
+                    // tick, up to 19 ticks after the world reads dry
                     helper.assertTrue(!c[0].getLife().rainLineSaid(), "the rain line is not ready for the next spell");
                     Log.getLogger().info("ALIVE RESULT rain_where first_line_after={} lines={}", firstLine[0] - t0, lines[0]);
                     helper.succeed();
@@ -872,6 +935,12 @@ public final class AliveGameTests
               "the pair did not come back to the oldest opener");
             helper.assertTrue(ColonyLife.pickLine(colony, a.getCivilianID(), b.getCivilianID(), happy, now0 + 10 + ColonyLife.CHAT_REPEAT_WINDOW, a.getRandom()) >= 1,
               "the pair memory does not expire");
+            // round 6: at night a pair never picks an opener about the day, even once the others are used up
+            for (int i = 0; i < 2 * happy.lines(); i++)
+            {
+                final int night = ColonyLife.pickLine(colony, a.getCivilianID(), c.getCivilianID(), happy, now0 + i, a.getRandom(), line -> happy.fits(line, false));
+                helper.assertTrue(happy.fits(night, false), "a day opener at night: " + night);
+            }
 
             // in the rain (once it really rains, with both in their free time): a rain opener, and the reply is one of that opener's own
             rain(helper, true);
@@ -982,7 +1051,8 @@ public final class AliveGameTests
 
     /**
      * A morning with twelve citizens near the town hall: only some greet, at most {@link ColonyLife#MAX_GREETERS_PER_SPOT} at the town hall (the rest where they
-     * stand), each greeter says his line, nobody is held beyond {@link CitizenLife#MORNING_BUDGET}, and the others are never held.
+     * stand), each greeter says his line, nobody is held beyond {@link CitizenLife#MORNING_BUDGET}, and the others are never held. Round 6: no line without an
+     * awake listener within {@link CitizenLife#GREET_HEAR_RANGE} blocks, and a greeter alone, far from everyone, neither walks nor speaks.
      */
     public static void morningCrowd(final GameTestHelper helper)
     {
@@ -998,19 +1068,25 @@ public final class AliveGameTests
                 keepFed(c);
                 all.add(c);
             }
-            // a morning where more than one spot's worth of them greets, but not everyone
+            final BlockPos lonerAt = new BlockPos(36, 1, 29);
+            final EntityCitizen loner = entity(spawn(helper, colony, lonerAt));
+            makeTrait(loner, LifeTrait.CHATTY);
+            keepFed(loner);
+            // a morning where more than one spot's worth of them greets, but not everyone, and the loner would greet too
             final ServerLevel level = helper.getLevel();
             long day = level.getOverworldClockTime() / 24000L + 1;
             for (int guard = 0; guard < 500; guard++, day++)
             {
                 final long d = day;
                 final long count = all.stream().filter(c -> CitizenLife.greetsOn(c.getCivilianID(), d, LifeTrait.CHATTY)).count();
-                if (count > ColonyLife.MAX_GREETERS_PER_SPOT && count < all.size())
+                if (count > ColonyLife.MAX_GREETERS_PER_SPOT && count < all.size() && CitizenLife.greetsOn(loner.getCivilianID(), d, LifeTrait.CHATTY))
                 {
                     break;
                 }
             }
             setClock(helper, day * 24000L + 100L);
+            helper.assertTrue(!loner.getLife().greetingHolds(true) && loner.getLife().gatherSpot() == null, "a greeter with nobody near walks off to greet: "
+                                                                                                             + loner.getLife().gatherSpot());
             final List<EntityCitizen> greeters = new ArrayList<>();
             int atHall = 0;
             for (final EntityCitizen c : all)
@@ -1032,10 +1108,19 @@ public final class AliveGameTests
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
                 final long now = level.getGameTime();
+                keepFed(loner);
+                pin(helper, loner, lonerAt);
+                helper.assertTrue(!loner.getSpeech().contains(".morning") && loner.getCitizenAI().getState() != EntityAICitizenLife.LifeState.MORNING_GATHER,
+                  "the loner greets nobody: '" + loner.getSpeech() + "'");
                 for (int i = 0; i < all.size(); i++)
                 {
                     final EntityCitizen c = all.get(i);
                     keepFed(c);
+                    if (!said[i] && c.getSpeech().contains(".morning"))
+                    {
+                        helper.assertTrue(c.getLife().someoneToGreet(c.blockPosition()), "citizen " + c.getCivilianID() + " greets with nobody within "
+                                                                                       + CitizenLife.GREET_HEAR_RANGE + " blocks");
+                    }
                     said[i] |= c.getSpeech().contains(".morning");
                     if (!greeters.contains(c))
                     {
@@ -1050,14 +1135,18 @@ public final class AliveGameTests
                 if (now - t0 > CitizenLife.MORNING_BUDGET + 40)
                 {
                     final List<Integer> mute = new ArrayList<>();
+                    int spoke = 0;
                     for (int i = 0; i < all.size(); i++)
                     {
-                        if (greeters.contains(all.get(i)) && !said[i])
+                        // a greeter who found nobody near on arrival rightly says nothing (round 6)
+                        if (greeters.contains(all.get(i)) && !said[i] && !all.get(i).getLife().greetSkipped())
                         {
                             mute.add(all.get(i).getCivilianID());
                         }
+                        spoke += said[i] ? 1 : 0;
                     }
                     helper.assertTrue(mute.isEmpty(), "greeters who never said their line: " + mute);
+                    helper.assertTrue(spoke >= ColonyLife.MAX_GREETERS_PER_SPOT, "only " + spoke + " greeted in a crowd");
                     Log.getLogger().info("ALIVE RESULT morning_crowd greeters={} at_hall={}", greeters.size(), hall);
                     helper.succeed();
                     return;
@@ -1126,7 +1215,8 @@ public final class AliveGameTests
 
     /**
      * No cheer at the wrong moment: a mourner does not cheer a finished building, nobody cheers during a raid (a cheer that comes due then is dropped), and when
-     * the raid ends a griever says a quiet line and a mourner a calm one, never "We made it!", while the others are relieved.
+     * the raid ends a griever says a quiet line and a mourner a calm one, never "We made it!", while the others are relieved. Round 6 (N38): a chat under way
+     * ends when the raid starts, and no chat starts while it lasts.
      */
     public static void noCheer(final GameTestHelper helper)
     {
@@ -1141,7 +1231,9 @@ public final class AliveGameTests
             final EntityCitizen mourner = entity(mournerData);
             final EntityCitizen griever = entity(grieverData);
             final EntityCitizen glad = entity(gladData);
-            keepFed(mourner, griever, glad);
+            final EntityCitizen talkA = entity(spawn(helper, colony, new BlockPos(20, 1, 8)));
+            final EntityCitizen talkB = entity(spawn(helper, colony, new BlockPos(23, 1, 8)));
+            keepFed(mourner, griever, glad, talkA, talkB);
             mournerData.getCitizenMournHandler().setMourning(true);
             helper.assertTrue(mourner.getLife().mourning(), "precondition failed: not mourning");
 
@@ -1149,6 +1241,10 @@ public final class AliveGameTests
             helper.assertTrue(ColonyLife.onBuildingFinished(townHall) >= 2, "nobody cheers");
             helper.assertTrue(mourner.getLife().pendingLine() == null, "a mourner cheers: " + mourner.getLife().pendingLine());
             helper.assertTrue(glad.getLife().pendingLine() != null && glad.getLife().pendingLine().startsWith(CitizenLife.CHEER_BUILDING), "no cheer");
+
+            // a chat is under way when the raid comes
+            talkA.getLife().startChat(talkB);
+            helper.assertTrue(talkA.getLife().chatting() && talkB.getLife().chatting(), "precondition failed: no chat");
 
             // the raid comes before the cheers are said: they are dropped, and no new cheer starts
             colony.getRaiderManager().setPassThroughRaid();
@@ -1161,11 +1257,21 @@ public final class AliveGameTests
             final long[] over = {-1};
             final String[] end = {"", "", ""};
             final EntityCitizen[] who = {mourner, griever, glad};
+            final EntityCitizen[] everyone = {mourner, griever, glad, talkA, talkB};
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
-                keepFed(mourner, griever, glad);
+                keepFed(everyone);
                 final long now = helper.getLevel().getGameTime();
                 final boolean raided = colony.getRaiderManager().isRaided();
+                if (raided && now - t0 > 60)
+                {
+                    // past a once-a-second tick and a chat step: the chat has ended, and nobody may start or join one
+                    for (final EntityCitizen e : everyone)
+                    {
+                        helper.assertTrue(!e.getLife().chatting() && !e.getLife().canJoinChat() && e.getCitizenAI().getState() != EntityAICitizenLife.LifeState.CHAT,
+                          "a chat during the raid: citizen " + e.getCivilianID() + " in " + e.getCitizenAI().getState() + " says '" + e.getSpeech() + "'");
+                    }
+                }
                 for (int i = 0; i < who.length; i++)
                 {
                     final String said = who[i].getSpeech();
@@ -1192,6 +1298,287 @@ public final class AliveGameTests
                     return;
                 }
                 helper.assertTrue(now - t0 < 1000, "the raid never ended");
+                helper.runAfterDelay(1, () -> poll[0].run());
+            };
+            helper.runAfterDelay(1, () -> poll[0].run());
+        });
+    }
+
+    // ------------------------------------------------------------------ round 6
+
+    /**
+     * N39: a citizen in the rain whose home stands in a dry biome (a desert) does not set off for it: he never enters the shelter, so he does not flicker into it
+     * and out again, while he still hurries through the rain.
+     */
+    public static void shelterDry(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-shelter-dry");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            fillBiome(helper, new BlockPos(-8, 0, -8), new BlockPos(39, 12, 31), net.minecraft.world.level.biome.Biomes.PLAINS);
+            final IBuilding home = MinecoloniesGameTests.placeProductionBuilding(helper, colony, com.minecolonies.api.blocks.ModBlocks.blockHutHome, new BlockPos(26, 1, 20),
+              "fundamentals/residence1.blueprint");
+            fillBiome(helper, new BlockPos(18, 0, 12), new BlockPos(39, 12, 31), net.minecraft.world.level.biome.Biomes.DESERT);
+            final BlockPos at = new BlockPos(6, 1, 24);
+            final ICitizenData data = spawn(helper, colony, at);
+            if (data.getHomeBuilding() != null)
+            {
+                data.getHomeBuilding().getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).removeCitizen(data);
+            }
+            home.getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).assignCitizen(data);
+            helper.assertTrue(data.getHomeBuilding() == home, "precondition failed: no home");
+            final EntityCitizen citizen = entity(data);
+            makeTrait(citizen, LifeTrait.BRISK);
+            rain(helper, true);
+            final long t0 = helper.getLevel().getGameTime();
+            final int[] wet = {0};
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                keepFed(citizen);
+                pin(helper, citizen, at);
+                final long now = helper.getLevel().getGameTime();
+                helper.assertTrue(citizen.getCitizenAI().getState() != EntityAICitizenLife.LifeState.SHELTER, "he set off for a dry home");
+                if (helper.getLevel().isRaining() && citizen.getLife().hurriesInRain())
+                {
+                    helper.assertTrue(!CitizenLife.rainsAt(helper.getLevel(), home.getPosition()), "precondition failed: it rains at the desert home");
+                    helper.assertTrue(!citizen.getLife().wantsShelter(), "he wants to shelter in a dry home");
+                    if (++wet[0] >= 200)
+                    {
+                        rain(helper, false);
+                        Log.getLogger().info("ALIVE RESULT shelter_dry wet_ticks={}", wet[0]);
+                        helper.succeed();
+                        return;
+                    }
+                }
+                if (now - t0 > 800)
+                {
+                    rain(helper, false);
+                    helper.fail("he was not out in the rain long enough: " + wet[0] + " ticks, raining " + helper.getLevel().isRaining());
+                    return;
+                }
+                helper.runAfterDelay(1, () -> poll[0].run());
+            };
+            helper.runAfterDelay(1, () -> poll[0].run());
+        });
+    }
+
+    /**
+     * R5-F5: two chatty housemates wait out the rain inside their home and chat there (about the rain), then go back to waiting it out.
+     */
+    public static void shelterChat(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-shelter-chat");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            fillBiome(helper, new BlockPos(-8, 0, -8), new BlockPos(39, 12, 31), net.minecraft.world.level.biome.Biomes.PLAINS);
+            final IBuilding home = MinecoloniesGameTests.placeProductionBuilding(helper, colony, com.minecolonies.api.blocks.ModBlocks.blockHutHome, new BlockPos(26, 1, 20),
+              "fundamentals/residence1.blueprint");
+            home.setBuildingLevel(2);
+            final EntityCitizen[] mates = new EntityCitizen[2];
+            for (int i = 0; i < 2; i++)
+            {
+                final ICitizenData data = spawn(helper, colony, new BlockPos(6 + i * 2, 1, 24));
+                if (data.getHomeBuilding() != null)
+                {
+                    data.getHomeBuilding().getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).removeCitizen(data);
+                }
+                home.getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).assignCitizen(data);
+                helper.assertTrue(data.getHomeBuilding() == home, "precondition failed: no home for housemate " + i);
+                mates[i] = entity(data);
+                makeTrait(mates[i], LifeTrait.CHATTY);
+            }
+            final EntityCitizen a = mates[0];
+            final EntityCitizen b = mates[1];
+            rain(helper, true);
+            final long t0 = helper.getLevel().getGameTime();
+            final String[] opener = {""};
+            final long[] chatEnd = {-1};
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                keepFed(a, b);
+                final long now = helper.getLevel().getGameTime();
+                if (opener[0].isEmpty())
+                {
+                    if (a.getLife().chatting() && b.getLife().chatting() && a.getLife().chatPartnerId() == b.getCivilianID())
+                    {
+                        helper.assertTrue(home.isInBuilding(a.blockPosition()) && home.isInBuilding(b.blockPosition()), "the chat is not inside the house");
+                        final EntityCitizen leader = a.getLife().chatLeader() ? a : b;
+                        opener[0] = leader.getSpeech();
+                        helper.assertTrue(opener[0].startsWith(CitizenLife.ChatTopic.RAIN.prefix()), "a dry opener in a rain shelter: " + opener[0]);
+                    }
+                }
+                else if (chatEnd[0] < 0 && !a.getLife().chatting() && !b.getLife().chatting())
+                {
+                    chatEnd[0] = now;
+                }
+                else if (chatEnd[0] >= 0 && now - chatEnd[0] >= 60)
+                {
+                    helper.assertTrue(a.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER || b.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER,
+                      "after the chat nobody waits out the rain: " + a.getCitizenAI().getState() + " / " + b.getCitizenAI().getState());
+                    rain(helper, false);
+                    Log.getLogger().info("ALIVE RESULT shelter_chat chat_after={} opener={}", chatEnd[0] - t0, opener[0]);
+                    helper.succeed();
+                    return;
+                }
+                if (now - t0 > 2000)
+                {
+                    rain(helper, false);
+                    helper.fail("no chat in the shelter: states " + a.getCitizenAI().getState() + " / " + b.getCitizenAI().getState() + " at " + a.blockPosition() + " "
+                                  + b.blockPosition() + " inside " + a.getLife().shelteredAtHome() + "/" + b.getLife().shelteredAtHome());
+                    return;
+                }
+                helper.runAfterDelay(1, () -> poll[0].run());
+            };
+            helper.runAfterDelay(1, () -> poll[0].run());
+        });
+    }
+
+    /**
+     * R5-F4: when rain starts, and again when a raid starts, six citizens standing together do not all speak in the same second, and not all with the same line.
+     */
+    public static void chorus(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-chorus");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            fillBiome(helper, new BlockPos(-8, 0, -8), new BlockPos(39, 12, 31), net.minecraft.world.level.biome.Biomes.PLAINS);
+            final int n = 6;
+            final EntityCitizen[] c = new EntityCitizen[n];
+            final BlockPos[] at = new BlockPos[n];
+            for (int i = 0; i < n; i++)
+            {
+                at[i] = new BlockPos(12 + i * 3, 1, 16);
+                c[i] = entity(spawn(helper, colony, at[i]));
+                makeTrait(c[i], LifeTrait.BRISK);
+            }
+            rain(helper, true);
+            final long[] first = new long[n];
+            final String[] line = new String[n];
+            java.util.Arrays.fill(first, -1);
+            final int[] phase = {0};
+            final long[] phaseStart = {helper.getLevel().getGameTime()};
+            final List<String> log = new ArrayList<>();
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                final long now = helper.getLevel().getGameTime();
+                final String prefix = phase[0] == 0 ? CitizenLife.RAIN : CitizenLife.RAID_START;
+                int done = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    keepFed(c[i]);
+                    pin(helper, c[i], at[i]);
+                    if (first[i] < 0 && c[i].getSpeech().startsWith(prefix))
+                    {
+                        first[i] = now;
+                        line[i] = c[i].getSpeech();
+                    }
+                    done += first[i] >= 0 ? 1 : 0;
+                }
+                if (done == n)
+                {
+                    final long spread = java.util.Arrays.stream(first).max().getAsLong() - java.util.Arrays.stream(first).min().getAsLong();
+                    final long distinct = java.util.Arrays.stream(line).distinct().count();
+                    log.add(prefix + " spread " + spread + " lines " + distinct);
+                    helper.assertTrue(spread >= 20, "a chorus: all six said '" + prefix + "' within " + spread + " ticks");
+                    helper.assertTrue(distinct >= 2, "all six said the same line: " + line[0]);
+                    if (phase[0] == 1)
+                    {
+                        Log.getLogger().info("ALIVE RESULT chorus {}", log);
+                        helper.succeed();
+                        return;
+                    }
+                    rain(helper, false);
+                    colony.getRaiderManager().setPassThroughRaid();
+                    java.util.Arrays.fill(first, -1);
+                    phase[0] = 1;
+                    phaseStart[0] = now;
+                }
+                if (now - phaseStart[0] > 400)
+                {
+                    rain(helper, false);
+                    helper.fail("only " + done + " of " + n + " said a line in phase " + phase[0] + " " + log);
+                    return;
+                }
+                helper.runAfterDelay(1, () -> poll[0].run());
+            };
+            helper.runAfterDelay(1, () -> poll[0].run());
+        });
+    }
+
+    /**
+     * N41: lines do not talk over each other. Rain that starts mid-chat gets its remark only after the chat; a cheer due mid-chat waits for its end; a cheer
+     * does not push out a waiting relief line, and a rain word waits until the relief line was said.
+     */
+    public static void linesWait(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-lines-wait");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            fillBiome(helper, new BlockPos(-8, 0, -8), new BlockPos(39, 12, 31), net.minecraft.world.level.biome.Biomes.PLAINS);
+            final EntityCitizen a = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));
+            final EntityCitizen b = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
+            final BlockPos cAt = new BlockPos(32, 1, 27);
+            final EntityCitizen c = entity(spawn(helper, colony, cAt));
+            makeTrait(a, LifeTrait.BRISK);
+            makeTrait(b, LifeTrait.BRISK);
+            makeTrait(c, LifeTrait.STEADY);
+            keepFed(a, b, c);
+
+            // a relief line waits; a cheer that comes after it is dropped, not said over it
+            c.getLife().schedule(CitizenLife.RAID_END + "1", 40, true);
+            c.getLife().schedule(CitizenLife.CHEER_BUILDING + "1", 10, true);
+            helper.assertTrue(c.getLife().pendingLine() != null && c.getLife().pendingLine().startsWith(CitizenLife.RAID_END), "the cheer pushed out the relief: "
+                                                                                                                                + c.getLife().pendingLine());
+
+            a.getLife().startChat(b);
+            helper.assertTrue(a.getLife().chatting() && b.getLife().chatting(), "precondition failed: no chat");
+            b.getLife().schedule(CitizenLife.CHEER_BUILDING + "2", 0, true);
+            rain(helper, true);
+            final long t0 = helper.getLevel().getGameTime();
+            final long[] chatEnd = {-1};
+            final long[] rainAfter = {-1};
+            final long[] cheerAfter = {-1};
+            final boolean[] relief = {false};
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                keepFed(a, b, c);
+                pin(helper, c, cAt);
+                final long now = helper.getLevel().getGameTime();
+                final boolean talking = a.getLife().chatting() || b.getLife().chatting();
+                if (talking)
+                {
+                    helper.assertTrue(!a.getSpeech().startsWith(CitizenLife.RAIN) && !b.getSpeech().startsWith(CitizenLife.RAIN), "a rain remark over the chat: '"
+                                                                                                                              + a.getSpeech() + "' '" + b.getSpeech() + "'");
+                    helper.assertTrue(!b.getSpeech().startsWith(CitizenLife.CHEER_BUILDING), "a cheer over the chat");
+                }
+                else if (chatEnd[0] < 0)
+                {
+                    chatEnd[0] = now;
+                }
+                if (chatEnd[0] >= 0)
+                {
+                    rainAfter[0] = rainAfter[0] < 0 && a.getSpeech().startsWith(CitizenLife.RAIN) ? now : rainAfter[0];
+                    cheerAfter[0] = cheerAfter[0] < 0 && b.getSpeech().startsWith(CitizenLife.CHEER_BUILDING) ? now : cheerAfter[0];
+                }
+                helper.assertTrue(!c.getSpeech().startsWith(CitizenLife.CHEER_BUILDING), "the dropped cheer was said");
+                relief[0] |= c.getSpeech().startsWith(CitizenLife.RAID_END);
+                helper.assertTrue(relief[0] || !c.getSpeech().equals(CitizenLife.RAIN_CALM), "the rain word came before the relief line");
+                if (chatEnd[0] >= 0 && rainAfter[0] >= 0 && cheerAfter[0] >= 0 && relief[0])
+                {
+                    helper.assertTrue(cheerAfter[0] - chatEnd[0] <= 60, "the waiting cheer came late: " + (cheerAfter[0] - chatEnd[0]));
+                    rain(helper, false);
+                    Log.getLogger().info("ALIVE RESULT lines_wait chat_end={} rain_after={} cheer_after={}", chatEnd[0] - t0, rainAfter[0] - chatEnd[0],
+                      cheerAfter[0] - chatEnd[0]);
+                    helper.succeed();
+                    return;
+                }
+                if (now - t0 > 600)
+                {
+                    rain(helper, false);
+                    helper.fail("lines missing: chat end " + chatEnd[0] + " rain " + rainAfter[0] + " cheer " + cheerAfter[0] + " relief " + relief[0] + " a '"
+                                  + a.getSpeech() + "' b '" + b.getSpeech() + "' c '" + c.getSpeech() + "'");
+                    return;
+                }
                 helper.runAfterDelay(1, () -> poll[0].run());
             };
             helper.runAfterDelay(1, () -> poll[0].run());

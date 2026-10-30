@@ -63,7 +63,9 @@ public final class RsCourierHooks
         RsStats.deliveriesArrived++;
         if (delivery.hasParent())
         {
-            forgetCredit(manager, delivery.getParent());
+            // round 6 teamwork: every arrival counts for its request until the request is done (RequestLifecycle forgets it then); a full sibling that arrives
+            // after a short one no longer wipes what the short one brought (Sol r5)
+            credit(manager, delivery.getParent(), delivery.getRequest().getStack().getCount());
         }
         final ReservationLedger ledger = RsAccess.ledger(manager);
         if (ledger == null)
@@ -97,7 +99,9 @@ public final class RsCourierHooks
 
     /**
      * Part of a delivery went into the destination (a short load): the items are there and count as moved, but the delivery is not done. It fails
-     * and goes back to the request system, which asks again for what is missing; no space is committed and nothing is held for the requester.
+     * and goes back to the request system, which asks again for what is missing; no space is committed. What went in is held for the request it was
+     * fetched for (round 6 teamwork, as for a full delivery): another request of the building cannot be handed it, and what is missing is asked for
+     * once, also after a reload ({@link #outstanding}: the hold is saved with the ledger).
      *
      * @param manager  the request manager.
      * @param delivery the delivery request.
@@ -114,16 +118,54 @@ public final class RsCourierHooks
         }
         RsStats.itemsDelivered += count;
         RsStats.deliveriesShort++;
-        if (delivery.hasParent())
+        if (!delivery.hasParent())
         {
-            // the parent asks again only for what is still missing (r1 Fable F17, Sol M1: run 014 delivered 24 logs for a request of 16)
-            credit(manager, delivery.getParent(), count);
+            return;
         }
+        // the parent asks again only for what is still missing (r1 Fable F17, Sol M1: run 014 delivered 24 logs for a request of 16)
+        credit(manager, delivery.getParent(), count);
+        final ReservationLedger ledger = RsAccess.ledger(manager);
+        if (ledger == null || count <= 0 || !(manager.getColony() instanceof final Colony colony))
+        {
+            return;
+        }
+        final IRequest<?> parent = manager.getRequestForToken(delivery.getParent());
+        final IBuilding destination = colony.getServerBuildingManager().getBuilding(delivery.getRequest().getTarget().getInDimensionLocation());
+        if (parent == null || destination == null || destination instanceof BuildingWareHouse)
+        {
+            return;
+        }
+        ledger.reserveStock(destination.getID(), null, new ItemStorage(delivery.getRequest().getStack().copyWithCount(count)), count, parent.getId(), "short load",
+          ReservationReason.BUILDING_HANDOUT, RsAccess.now(manager));
+    }
+
+    /**
+     * @param manager the request manager of the request.
+     * @param request a request token.
+     * @return how many items the ledger holds for the request where they were handed to its requester (short loads, full deliveries, labourers' hand-ins) and the
+     *   requester has not taken yet. Saved with the ledger, so it outlives a reload.
+     */
+    public static int handedOutFor(@org.jetbrains.annotations.Nullable final IRequestManager manager, @NotNull final IToken<?> request)
+    {
+        final ReservationLedger ledger = manager == null ? null : RsAccess.ledger(manager);
+        if (ledger == null)
+        {
+            return 0;
+        }
+        int n = 0;
+        for (final com.minecolonies.core.colony.requestsystem.reservation.Reservation reservation : ledger.reservationsOf(request))
+        {
+            if (reservation.reason() == ReservationReason.BUILDING_HANDOUT)
+            {
+                n += reservation.amount();
+            }
+        }
+        return n;
     }
 
     /**
      * What arrived of a request in short loads (its deliveries failed short and it was handed out again), by world and dimension
-     * ({@link RsWorldScope}) and the token of the request. Held in memory only: after a reload the rest is asked for in full again (the old behaviour).
+     * ({@link RsWorldScope}) and the token of the request. Held in memory; after a reload {@link #outstanding} reads what arrived from the ledger's holds for the request instead.
      */
     private record CreditKey(String world, IToken<?> request)
     {
@@ -167,13 +209,15 @@ public final class RsCourierHooks
     /**
      * @param manager the request manager of the request.
      * @param request a request for items.
-     * @return how many items of it are still missing: what it asks for, minus what arrived of it in short loads (at least 1 while it is open).
+     * @return how many items of it are still missing: what it asks for, minus what arrived of it (the count of this session, or after a reload what the ledger
+     *   still holds for it at its requester), at least 1 while it is open.
      */
     public static int outstanding(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends IDeliverable> request)
     {
         final int count = request.getRequest().getCount();
-        final Integer arrived = CREDIT.get(new CreditKey(RsWorldScope.of(manager), request.getId()));
-        return arrived == null ? count : Math.max(1, count - arrived);
+        final Integer credited = CREDIT.get(new CreditKey(RsWorldScope.of(manager), request.getId()));
+        final int arrived = Math.max(credited == null ? 0 : credited, handedOutFor(manager, request.getId()));
+        return arrived <= 0 ? count : Math.max(1, count - arrived);
     }
 
     /**

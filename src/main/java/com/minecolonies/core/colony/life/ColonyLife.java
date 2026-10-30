@@ -143,6 +143,18 @@ public final class ColonyLife
      */
     public static int pickLine(final IColony colony, final int a, final int b, final CitizenLife.ChatTopic topic, final long now, final RandomSource random)
     {
+        return pickLine(colony, a, b, topic, now, random, line -> true);
+    }
+
+    /**
+     * As {@link #pickLine(IColony, int, int, CitizenLife.ChatTopic, long, RandomSource)}, among the openers that fit the moment only (round 6: no day lines at
+     * night); the first fitting opener when the pair used them all.
+     *
+     * @param fits which openers fit now (by number).
+     */
+    public static int pickLine(final IColony colony, final int a, final int b, final CitizenLife.ChatTopic topic, final long now, final RandomSource random,
+      final java.util.function.IntPredicate fits)
+    {
         final ColonyLife life = of(colony);
         final Map<String, Long> used = life.pairLines.computeIfAbsent(pairKey(a, b), k -> new HashMap<>());
         used.values().removeIf(at -> now - at >= CHAT_REPEAT_WINDOW);
@@ -151,6 +163,10 @@ public final class ColonyLife
         long oldestAt = Long.MAX_VALUE;
         for (int i = 1; i <= topic.lines(); i++)
         {
+            if (!fits.test(i))
+            {
+                continue;
+            }
             final Long at = used.get(topic.prefix() + i);
             if (at == null)
             {
@@ -199,6 +215,20 @@ public final class ColonyLife
         }
         life.greeters.put(spot, count + 1);
         return true;
+    }
+
+    /**
+     * Round 6: how many greeters chose a building's spot today, without claiming a place.
+     *
+     * @param colony the colony.
+     * @param spot   the building's position.
+     * @param day    the day number.
+     * @return the greeters there today.
+     */
+    public static int greetersAt(final IColony colony, final BlockPos spot, final long day)
+    {
+        final ColonyLife life = BY_COLONY.get(colony);
+        return life == null || life.greetDay != day ? 0 : life.greeters.getOrDefault(spot, 0);
     }
 
     /**

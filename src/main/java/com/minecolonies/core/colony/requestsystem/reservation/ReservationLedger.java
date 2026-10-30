@@ -762,6 +762,19 @@ public final class ReservationLedger
     }
 
     /**
+     * {@link #releaseQuiet(IToken, long)}, but the items already handed out to the requester stay held for it ({@link ReservationReason#BUILDING_HANDOUT}): a
+     * request handed out again after a short load keeps what arrived of it (round 6 teamwork).
+     *
+     * @param token the request token.
+     * @param tick  the game time.
+     * @return the amount released.
+     */
+    public int releaseQuietKeepingHandouts(@NotNull final IToken<?> token, final long tick)
+    {
+        return end(token, null, tick, LedgerEvent.Op.RELEASE, false, r -> r.reason() != ReservationReason.BUILDING_HANDOUT);
+    }
+
+    /**
      * Ends the claims of a token that a request ending in a given way no longer needs: a delivery's claims end when
      * the request completes, but items handed out to a requester stay held until the requester received them.
      *

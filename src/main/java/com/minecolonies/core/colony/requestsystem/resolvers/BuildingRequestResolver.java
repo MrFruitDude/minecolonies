@@ -201,10 +201,32 @@ public class BuildingRequestResolver extends AbstractBuildingDependentRequestRes
             {
                 name = "?";
             }
+            // (round 6: what is held for this request here already, a short load or a labourer's hand-in, is not held twice)
+            final java.util.List<ItemStack> already = new java.util.ArrayList<>();
+            for (final com.minecolonies.core.colony.requestsystem.reservation.Reservation held : ledger.reservationsOf(request.getId()))
+            {
+                if (held.reason() == ReservationReason.BUILDING_HANDOUT && held.scope().equals(building.getID()))
+                {
+                    already.add(held.key().getItemStack().copyWithCount(held.amount()));
+                }
+            }
             for (final ItemStack handedOut : deliveries)
             {
-                ledger.reserveStock(building.getID(), null, new ItemStorage(handedOut), handedOut.getCount(), request.getId(), name, ReservationReason.BUILDING_HANDOUT,
-                  RsAccess.now(manager));
+                int amount = handedOut.getCount();
+                for (final ItemStack held : already)
+                {
+                    if (amount > 0 && !held.isEmpty() && ItemStack.isSameItemSameComponents(held, handedOut))
+                    {
+                        final int used = Math.min(amount, held.getCount());
+                        held.shrink(used);
+                        amount -= used;
+                    }
+                }
+                if (amount > 0)
+                {
+                    ledger.reserveStock(building.getID(), null, new ItemStorage(handedOut), amount, request.getId(), name, ReservationReason.BUILDING_HANDOUT,
+                      RsAccess.now(manager));
+                }
             }
         }
 

@@ -31,7 +31,8 @@ public enum LifeTrait
      */
     THOUGHTFUL(0.0D, 10, 2400, 25, 15, true),
     /**
-     * Strength and dexterity: unbothered by the rain (no hurry, no walk home, a calm word instead).
+     * Strength and dexterity: unbothered by the rain in his free time (no hurry, no walk home, a calm word instead). MineColonies' own rain rule for work still
+     * applies to him as to everyone, so the trait line promises only the walk.
      */
     STEADY(0.0D, 25, 1200, 5, 30, false);
 

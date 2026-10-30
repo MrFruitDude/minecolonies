@@ -125,7 +125,16 @@ public final class WorkerHelp
     {
         final boolean idle = outOfWork(citizen);
         final long idleFor = state.outOfWorkFor(citizen.getId(), idle, now);
-        return idle && idleFor >= idleTicks() && IdleCitizenSettings.workersHelp(colony) && carriesNoLabourGoods(citizen);
+        // (round 6: goods he carries from an earlier help are no reason to stay out; the board offers him their hand-in first)
+        return idle && idleFor >= idleTicks() && IdleCitizenSettings.workersHelp(colony) && (carriesNoLabourGoods(citizen) || carriesCargo(colony, citizen));
+    }
+
+    /**
+     * @return whether the colony's labour board has goods on record that he carries for a request or a stock goal (round 6 teamwork).
+     */
+    private static boolean carriesCargo(final IColony colony, final ICitizenData citizen)
+    {
+        return colony instanceof com.minecolonies.core.colony.Colony server && server.getLabourData().cargo().of(citizen.getId()) != null;
     }
 
     /**

@@ -11,7 +11,8 @@ import java.util.UUID;
 
 /**
  * One labourer's claim on a unit of work: a lot of a good for a request, a stock goal, the idle builder's own build, or a manager's directed order. Held by the colony's {@link LabourBoard}
- * (not saved). It has a lease that every finished action renews; a claim whose lease runs out is given back.
+ * (not saved; what he carries for it is, see {@link LabourCargo}). A citizen holds one claim at a time and a claim is never shared. It has a lease that every finished
+ * action renews; a claim whose lease runs out is given back.
  */
 public final class LabourClaim
 {
@@ -46,6 +47,11 @@ public final class LabourClaim
      * Whether an employed worker with nothing to do at his hut holds the claim (round 3 agency), not a jobless labourer.
      */
     private boolean byWorker;
+
+    /**
+     * Whether the claim hands in goods the citizen carries already ({@link #cargo()}).
+     */
+    private boolean cargo;
 
     private final IToken<?> token = new StandardToken(UUID.randomUUID());
 
@@ -194,6 +200,20 @@ public final class LabourClaim
     void markWorker()
     {
         byWorker = true;
+    }
+
+    /**
+     * @return whether the claim only hands in goods the citizen already carries for it (a lot he gathered before he was interrupted, or before a reload): see
+     *   {@link LabourCargo}. It takes no labour place and plans nothing new.
+     */
+    public boolean cargo()
+    {
+        return cargo;
+    }
+
+    void markCargo()
+    {
+        cargo = true;
     }
 
     public long leaseUntil()

@@ -114,6 +114,20 @@ public final class LabourBoard
     private static final Map<String, Integer> ACTIVE = new HashMap<>();
 
     /**
+     * The colony behind each key of {@link #ACTIVE}, to drop the count of a colony that is gone (deleted or unloaded while it had claims).
+     */
+    private static final Map<String, java.lang.ref.WeakReference<Colony>> OWNERS = new HashMap<>();
+
+    /**
+     * @return whether the colony is still the colony manager's colony of its id and dimension.
+     */
+    private static boolean live(final java.lang.ref.WeakReference<Colony> ref)
+    {
+        final Colony colony = ref.get();
+        return colony != null && com.minecolonies.api.colony.IColonyManager.getInstance().getColonyByDimension(colony.getID(), colony.getDimension()) == colony;
+    }
+
+    /**
      * A request that waits for labour.
      */
     public record Candidate(IToken<?> token, BlockPos hut, IDeliverable deliverable, List<Item> targets, RequestImportance importance, long since, int count, int minimum,
@@ -335,13 +349,80 @@ public final class LabourBoard
         int n = 0;
         for (final LabourClaim claim : byCitizen.values())
         {
-            // (a worker helping out does not take a jobless labourer's place: workers have their own cap, see workerCapReached)
-            if (claim.source() == source && !claim.byWorker())
+            // (a worker helping out does not take a jobless labourer's place, nor does a hand-in of goods already carried; every claim counts against the
+            // colony's labour places, see places())
+            if (claim.source() == source && !claim.byWorker() && !claim.cargo())
             {
                 n++;
             }
         }
         return n;
+    }
+
+    /**
+     * Round 6 teamwork, one admission policy: whether a claim takes one of the colony's labour places. Every claim does (a jobless labourer's, a helping worker's, a
+     * worker's own tool, a directed order's) except the idle builder's own supply (his own job) and a hand-in of goods already carried ({@link LabourCargo}), which
+     * must never be held back.
+     */
+    static boolean takesPlace(final LabourClaim claim)
+    {
+        return claim.source() != LabourClaim.Source.SELF && !claim.cargo();
+    }
+
+    /**
+     * @return the labour places taken now: the claims that take a place, and the citizens on a directed order who hold no claim yet.
+     */
+    public int places()
+    {
+        int n = 0;
+        for (final LabourClaim claim : byCitizen.values())
+        {
+            if (takesPlace(claim))
+            {
+                n++;
+            }
+        }
+        return n + Math.max(0, directed.assigned() - claimsOf(LabourClaim.Source.DIRECTED));
+    }
+
+    /**
+     * @return the labour places of the colony: its own cap, its share of the world cap, and never more than the world cap leaves after the other colonies' claims
+     *   (with a world cap of 1 and two colonies, one claim in the whole world, whichever colony asks first).
+     */
+    public int capacity()
+    {
+        final int worldMax = LabourSettings.worldMax();
+        if (worldMax <= 0)
+        {
+            return 0;
+        }
+        int cap = LabourSettings.total(colony);
+        synchronized (ACTIVE)
+        {
+            // (the claims of a colony that is gone, deleted with live claims, no longer count)
+            ACTIVE.keySet().removeIf(k -> !k.equals(key()) && OWNERS.containsKey(k) && !live(OWNERS.get(k)));
+            OWNERS.keySet().retainAll(ACTIVE.keySet());
+            final int colonies = Math.max(1, ACTIVE.size() + (ACTIVE.containsKey(key()) ? 0 : 1));
+            int others = 0;
+            for (final Map.Entry<String, Integer> entry : ACTIVE.entrySet())
+            {
+                if (!entry.getKey().equals(key()))
+                {
+                    others += entry.getValue();
+                }
+            }
+            cap = Math.min(cap, Math.max(1, worldMax / colonies));
+            cap = Math.min(cap, Math.max(0, worldMax - others));
+        }
+        return Math.max(0, cap);
+    }
+
+    /**
+     * @return whether no labour place is free.
+     */
+    public boolean placesFull()
+    {
+        return places() >= capacity();
     }
 
     private long now()
@@ -541,14 +622,8 @@ public final class LabourBoard
     public int allowed()
     {
         final int unemployed = unemployed();
-        int cap = LabourSettings.total(colony);
-        final int worldMax = LabourSettings.worldMax();
-        synchronized (ACTIVE)
-        {
-            final int colonies = Math.max(1, ACTIVE.size() + (ACTIVE.containsKey(key()) ? 0 : 1));
-            cap = Math.min(cap, Math.max(1, worldMax / colonies));
-        }
-        if (worldMax <= 0)
+        final int cap = capacity();
+        if (cap <= 0)
         {
             return 0;
         }
@@ -558,14 +633,23 @@ public final class LabourBoard
 
     private boolean capReached()
     {
-        // (the citizens on a manager's directed order count against the same caps)
-        return claimsOf(LabourClaim.Source.REQUEST) + claimsOf(LabourClaim.Source.STOCKPILE) + Math.max(claimsOf(LabourClaim.Source.DIRECTED), directed.assigned()) >= allowed();
+        // (the citizens on a manager's directed order count against the same caps; the jobless share, and all places together: workers helping out and
+        // workers' own tools take places too)
+        return claimsOf(LabourClaim.Source.REQUEST) + claimsOf(LabourClaim.Source.STOCKPILE) + Math.max(claimsOf(LabourClaim.Source.DIRECTED), directed.assigned()) >= allowed()
+                 || placesFull();
     }
 
     private void count(final int delta)
     {
         synchronized (ACTIVE)
         {
+            final java.lang.ref.WeakReference<Colony> owner = OWNERS.get(key());
+            if (owner == null || owner.get() != colony)
+            {
+                // (a colony with the id of one that is gone starts from its own claims, not the old one's)
+                ACTIVE.remove(key());
+                OWNERS.put(key(), new java.lang.ref.WeakReference<>(colony));
+            }
             final int next = ACTIVE.getOrDefault(key(), 0) + delta;
             if (next <= 0)
             {
@@ -857,6 +941,12 @@ public final class LabourBoard
         {
             return null;
         }
+        final LabourClaim handIn = cargoClaim(citizen);
+        if (handIn != null)
+        {
+            // what he carries for a request comes first, whatever the caps: those goods are gathered already
+            return handIn;
+        }
         final long now = now();
         if (now < cooldown.getOrDefault(citizen.getId(), 0L) || now < noOffer.getOrDefault(offerKey, 0L) || capReached())
         {
@@ -925,6 +1015,12 @@ public final class LabourBoard
         {
             return null;
         }
+        final LabourClaim handIn = cargoClaim(worker);
+        if (handIn != null)
+        {
+            handIn.markWorker();
+            return handIn;
+        }
         final int offerKey = worker.getId() * 4 + (urgentOnly ? 0 : 1);
         final long now = now();
         if (now < cooldown.getOrDefault(worker.getId(), 0L) || now < noOffer.getOrDefault(offerKey, 0L) || workerCapReached(hut.getID()))
@@ -972,19 +1068,13 @@ public final class LabourBoard
 
     /**
      * @param hut the hut of a worker.
-     * @return whether no other worker may help now: one of the hut's workers helps already, or the colony's labour claims fill its labour cap.
+     * @return whether no other worker may help now: one of the hut's workers helps already, or no labour place is free ({@link #capacity}).
      */
     private boolean workerCapReached(final BlockPos hut)
     {
-        int all = 0;
         for (final LabourClaim claim : byCitizen.values())
         {
-            if (claim.source() == LabourClaim.Source.TOOL || claim.source() == LabourClaim.Source.SELF)
-            {
-                continue;
-            }
-            all++;
-            if (claim.byWorker())
+            if (claim.byWorker() && !claim.cargo())
             {
                 final ICitizenData other = colony.getCitizenManager().getCivilian(claim.citizenId());
                 if (other != null && other.getWorkBuilding() != null && hut.equals(other.getWorkBuilding().getID()))
@@ -993,7 +1083,7 @@ public final class LabourBoard
                 }
             }
         }
-        return all >= LabourSettings.total(colony);
+        return placesFull();
     }
 
     /**
@@ -1002,14 +1092,15 @@ public final class LabourBoard
      *
      * @param worker the worker.
      * @param tool   the tool he will hold (the item shown for the claim).
-     * @return the claim, or null when he holds one already.
+     * @return the claim, or null when he holds one already or no labour place is free.
      */
     @Nullable
     public LabourClaim claimForTool(final ICitizenData worker, final Item tool)
     {
         final var hut = worker.getWorkBuilding();
-        if (byCitizen.containsKey(worker.getId()) || hut == null || worker.getColony() == null || worker.getColony().getID() != colony.getID())
+        if (byCitizen.containsKey(worker.getId()) || hut == null || worker.getColony() == null || worker.getColony().getID() != colony.getID() || placesFull())
         {
+            // (his tool takes a labour place like any other claim: the colony and world caps hold for it too)
             return null;
         }
         final long now = now();
@@ -1166,9 +1257,10 @@ public final class LabourBoard
                 others += claim.amount();
             }
         }
-        final int remaining = candidate.count() - delivered.getOrDefault(candidate.token(), 0) - others;
+        final int remaining = candidate.count() - deliveredFor(candidate.token()) - others;
         if (remaining <= 0)
         {
+            // (the whole request is in other labourers' lots or in the hut already: a task takes no more labourers than it can use)
             return null;
         }
         final int lot = Math.max(1, Math.min(remaining, MAX_LOT));
@@ -1470,12 +1562,178 @@ public final class LabourBoard
         return claim;
     }
 
+    /**
+     * @return how many of the request's goods labour handed in at its hut: what this board counted, or (after a reload, when that count is gone) what the ledger
+     *   still holds there for the request.
+     */
+    private int deliveredFor(final IToken<?> request)
+    {
+        return Math.max(delivered.getOrDefault(request, 0), com.minecolonies.core.colony.requestsystem.RsCourierHooks.handedOutFor(colony.getRequestManager(), request));
+    }
+
+    // ------------------------------------------------------------------ cargo (round 6 teamwork)
+
+    /**
+     * A stock goal id for the hand-in of carried goods whose request is gone: they go to a warehouse.
+     */
+    public static final String CARGO_GOAL = "cargo:";
+
+    /**
+     * Hand-ins of carried goods that did not get there, by citizen (after {@link #CARGO_TRIES} the record is dropped and he keeps the goods, as before).
+     */
+    private final Map<Integer, Integer> cargoFailures = new HashMap<>();
+    private static final int CARGO_TRIES = 3;
+
+    private LabourCargo cargo()
+    {
+        return colony.getLabourData().cargo();
+    }
+
+    /**
+     * @return how many of the good he carries, counted as the claim counts them when there is one.
+     */
+    private static int carried(final ICitizenData citizen, final java.util.function.Predicate<ItemStack> accepts)
+    {
+        return InventoryUtils.getItemCountInItemHandler(citizen.getInventory(), accepts);
+    }
+
+    /**
+     * @param citizenId a citizen.
+     * @return what he carries goods for, or null (for the views and the tests).
+     */
+    @Nullable
+    public LabourCargo.Entry cargoOf(final int citizenId)
+    {
+        return cargo().of(citizenId);
+    }
+
+    /**
+     * The hand-in of goods the citizen carries from an earlier claim (he was called away, or the world was reloaded): a claim of exactly what he carries, for the
+     * request while it waits and has room left in it (the lots of other labourers and what is in the hut already counted), else for a warehouse. It plans nothing,
+     * takes no labour place and has no cooldown.
+     *
+     * @return the claim, or null when he carries nothing on record (the record goes) or nowhere takes it now.
+     */
+    @Nullable
+    private LabourClaim cargoClaim(final ICitizenData citizen)
+    {
+        final LabourCargo.Entry entry = cargo().of(citizen.getId());
+        if (entry == null)
+        {
+            return null;
+        }
+        final long now = now();
+        if (entry.request() != null)
+        {
+            final IToken<?> token = new com.minecolonies.api.colony.requestsystem.token.StandardToken(entry.request());
+            final Candidate candidate = stillWaiting(token) ? candidate(token) : null;
+            if (candidate != null && candidate.hut().equals(entry.destination()))
+            {
+                final ItemStack exact = candidate.exact();
+                final int held = carried(citizen, s -> exact.isEmpty() ? s.is(entry.item()) : ItemStack.isSameItemSameComponents(s, exact));
+                int others = 0;
+                for (final LabourClaim claim : byCitizen.values())
+                {
+                    if (token.equals(claim.request()))
+                    {
+                        others += claim.amount();
+                    }
+                }
+                final int lot = Math.min(Math.min(held, MAX_LOT), candidate.count() - deliveredFor(token) - others);
+                if (lot > 0)
+                {
+                    final LabourClaim claim = new LabourClaim(LabourClaim.Source.REQUEST, token, null, citizen.getId(), entry.item(), lot, candidate.hut(), now,
+                      now + LabourSettings.leaseTicks(), 0, exact);
+                    claim.markCargo();
+                    register(claim);
+                    final ReservationLedger ledger = RsFlags.reservations() ? RsAccess.ledger(colony.getRequestManager()) : null;
+                    if (ledger != null)
+                    {
+                        ledger.reserveSpace(candidate.hut(), new ItemStorage(exact.isEmpty() ? new ItemStack(entry.item()) : exact), lot, claim.token(),
+                          "labourer " + citizen.getName(), ReservationReason.LABOUR, now);
+                    }
+                    setReason(token, WaitReason.AWAITING_LABOUR);
+                    LabourStats.log("citizen {} hands in {}x {} he carried for request {}", citizen.getId(), lot, entry.item(), token);
+                    return claim;
+                }
+            }
+        }
+        final int held = carried(citizen, s -> s.is(entry.item()));
+        if (held <= 0)
+        {
+            forgetCargo(citizen.getId());
+            return null;
+        }
+        if (sites.warehouses().isEmpty())
+        {
+            return null;
+        }
+        // the request was served or is gone, or the rest of it is in other hands: the goods go to the nearest warehouse
+        final LabourClaim claim = new LabourClaim(LabourClaim.Source.STOCKPILE, null, CARGO_GOAL + entry.item(), citizen.getId(), entry.item(), held,
+          sites.warehouses().get(0).getID(), now, now + LabourSettings.leaseTicks());
+        claim.markCargo();
+        register(claim);
+        LabourStats.log("citizen {} takes {}x {} he carried to a warehouse", citizen.getId(), held, entry.item());
+        return claim;
+    }
+
+    private void forgetCargo(final int citizenId)
+    {
+        cargoFailures.remove(citizenId);
+        if (cargo().remove(citizenId))
+        {
+            colony.markDirty();
+        }
+    }
+
+    /**
+     * The claim ended: what its citizen still carries of its goods stays on record (for the hand-in the next time he is free), unless the goods were handed in, he
+     * carries none, he is gone, or the hand-ins failed too often.
+     */
+    private void cargoAfter(final LabourClaim claim, final boolean success)
+    {
+        if (claim.source() != LabourClaim.Source.REQUEST && claim.source() != LabourClaim.Source.STOCKPILE)
+        {
+            return;
+        }
+        final ICitizenData citizen = colony.getCitizenManager().getCivilian(claim.citizenId());
+        if (success || citizen == null || carried(citizen, claim::accepts) <= 0)
+        {
+            forgetCargo(claim.citizenId());
+            return;
+        }
+        if (claim.cargo() && cargoFailures.merge(claim.citizenId(), 1, Integer::sum) >= CARGO_TRIES)
+        {
+            LabourStats.log("citizen {} could not hand in what he carries {} times: he keeps it", claim.citizenId(), CARGO_TRIES);
+            forgetCargo(claim.citizenId());
+        }
+    }
+
     private void register(final LabourClaim claim)
     {
+        final LabourClaim old = byCitizen.get(claim.citizenId());
+        if (old != null && old != claim)
+        {
+            // one claim per citizen: an older one is given back first (no caller makes two, this keeps the counts right if one ever does)
+            release(old, false, false);
+        }
         byCitizen.put(claim.citizenId(), claim);
-        LabourStats.log("claim made by citizen {} for {}x {} ({})", claim.citizenId(), claim.amount(), claim.target(), claim.source());
+        LabourStats.log("claim made by citizen {} for {}x {} ({}{})", claim.citizenId(), claim.amount(), claim.target(), claim.source(), claim.cargo() ? ", cargo" : "");
         LabourStats.CLAIMS.incrementAndGet();
-        count(1);
+        if (takesPlace(claim))
+        {
+            count(1);
+        }
+        if (claim.source() == LabourClaim.Source.REQUEST || claim.source() == LabourClaim.Source.STOCKPILE)
+        {
+            // what he gathers for it stays tied to it in the save (a claim is not saved)
+            final LabourCargo.Entry kept = cargo().of(claim.citizenId());
+            final java.util.UUID request = claim.request() == null ? null : claim.request().getIdentifier() instanceof java.util.UUID id ? id : null;
+            if (cargo().put(claim.citizenId(), new LabourCargo.Entry(request, claim.target(), claim.destination(), kept != null && claim.cargo() ? kept.since() : now())))
+            {
+                colony.markDirty();
+            }
+        }
     }
 
     // ------------------------------------------------------------------ the life of a claim
@@ -1575,7 +1833,11 @@ public final class LabourBoard
             sites.run();
         }
         (success ? LabourStats.CLAIMS_OK : LabourStats.CLAIMS_FAILED).incrementAndGet();
-        count(-1);
+        if (takesPlace(claim))
+        {
+            count(-1);
+        }
+        cargoAfter(claim, success);
         final long now = now();
         final ReservationLedger ledger = RsAccess.ledger(colony.getRequestManager());
         if (ledger != null)
@@ -1717,6 +1979,14 @@ public final class LabourBoard
         {
             return;
         }
+        final ReservationLedger holds = RsFlags.reservations() ? ledger : null;
+        if (holds != null && !(colony.getServerBuildingManager().getBuilding(claim.destination()) instanceof IWareHouse))
+        {
+            // round 6 teamwork: what he put into the hut is the request's (as a courier's delivery is): another request of the hut cannot be handed it, and the
+            // rest is asked for once, also after a reload (deliveredFor)
+            holds.reserveStock(claim.destination(), null, new ItemStorage(claim.exact().isEmpty() ? new ItemStack(claim.target()) : claim.exact()), n, request,
+              "labourer", ReservationReason.BUILDING_HANDOUT, now());
+        }
         LabourStats.HANDED_IN.addAndGet(n);
         final int total = delivered.merge(request, n, Integer::sum);
         final Candidate candidate = candidate(request);
@@ -1791,6 +2061,13 @@ public final class LabourBoard
                     release(claim, false, !needs);
                     continue;
                 }
+                if (!claim.byWorker() && (claim.source() == LabourClaim.Source.REQUEST || claim.source() == LabourClaim.Source.STOCKPILE) && citizen.getJob() != null)
+                {
+                    // a jobless labourer got a job: the claim goes at once (his session ends by itself too); what he carries stays on record
+                    LabourStats.log("claim of citizen {} given back: he got a job", claim.citizenId());
+                    release(claim, false, false);
+                    continue;
+                }
                 if (frozen(claim.citizenId(), citizen, now))
                 {
                     // he stands where entities do not tick: his session cannot end by itself, so the claim goes back now; his own session still ends
@@ -1862,6 +2139,15 @@ public final class LabourBoard
             noOffer.values().removeIf(until -> until < now);
             selfSupply.sweep(now);
             shafts.sweep(byCitizen::containsKey);
+            for (final Map.Entry<Integer, LabourCargo.Entry> entry : cargo().all().entrySet())
+            {
+                // nobody left to carry it, or he carries none of it any more (and holds no claim that is still gathering it)
+                final ICitizenData citizen = colony.getCitizenManager().getCivilian(entry.getKey());
+                if (citizen == null || (!byCitizen.containsKey(entry.getKey()) && carried(citizen, st -> st.is(entry.getValue().item())) <= 0))
+                {
+                    forgetCargo(entry.getKey());
+                }
+            }
         }
     }
 }
