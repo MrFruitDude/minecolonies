@@ -409,8 +409,10 @@ public final class ForestryGameTests
 
     private static void wholeMushroom(final GameTestHelper helper)
     {
+        // The red cap hangs two blocks out from the stem: at x 22 it stays clear of the town hall's box (it reaches x 18, see wholeDarkPale), where a cap,
+        // which never decays, is no block he may cut or clear
         wholeTrees(helper, "forestry_whole_mushroom", List.of(
-          new TreeSpec("huge red mushroom", new BlockPos(20, 1, 8), false, Blocks.RED_MUSHROOM, Blocks.MYCELIUM, null, null),
+          new TreeSpec("huge red mushroom", new BlockPos(22, 1, 8), false, Blocks.RED_MUSHROOM, Blocks.MYCELIUM, null, null),
           new TreeSpec("huge brown mushroom", new BlockPos(34, 1, 24), false, Blocks.BROWN_MUSHROOM, Blocks.MYCELIUM, null, null)),
           List.of(), null, false);
     }
