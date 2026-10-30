@@ -245,4 +245,14 @@ public interface ICitizenDataView extends ICitizen
 
     @Override
     IColonyView getColony();
+
+    /**
+     * Round 5 life: the name of the citizen's trait as the server saved it, "" for none (see {@code LifeTrait.of(ICitizenDataView)}).
+     *
+     * @return the trait name.
+     */
+    default String getLifeTrait()
+    {
+        return "";
+    }
 }

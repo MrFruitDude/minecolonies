@@ -185,6 +185,11 @@ public class CitizenDataView implements ICitizenDataView
     private boolean isSick;
 
     /**
+     * Round 5 life: the trait the server saved for this citizen.
+     */
+    private String lifeTrait = "";
+
+    /**
      * Set View id.
      *
      * @param id the id to set.
@@ -434,6 +439,13 @@ public class CitizenDataView implements ICitizenDataView
             textureUUID = buf.readUUID();
         }
         this.isSick = buf.readBoolean();
+        this.lifeTrait = buf.readUtf();
+    }
+
+    @Override
+    public String getLifeTrait()
+    {
+        return lifeTrait;
     }
 
     @Override

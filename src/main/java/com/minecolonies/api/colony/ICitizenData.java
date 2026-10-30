@@ -470,4 +470,23 @@ public interface ICitizenData extends ICivilianData, IQuestGiver, IQuestParticip
      * @param token the id.
      */
     void onRequestCompleted(IToken<?> token);
+
+    /**
+     * Round 5 life: the name of the citizen's trait, picked once and saved ("" until picked; see {@code LifeTrait.of(ICitizenData)}).
+     *
+     * @return the trait name.
+     */
+    default String getLifeTrait()
+    {
+        return "";
+    }
+
+    /**
+     * Round 5 life: saves the citizen's trait.
+     *
+     * @param trait the trait name.
+     */
+    default void setLifeTrait(final String trait)
+    {
+    }
 }

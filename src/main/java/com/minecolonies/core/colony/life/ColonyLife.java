@@ -9,6 +9,7 @@ import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
 import com.minecolonies.api.eventbus.events.colony.buildings.BuildingConstructionModEvent;
 import com.minecolonies.core.entity.citizen.EntityCitizen;
 import net.minecraft.core.BlockPos;
+import net.minecraft.util.RandomSource;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
@@ -35,6 +36,16 @@ public final class ColonyLife
      */
     public static final int CHAT_FRIENDS = 3;
 
+    /**
+     * Round 5: two citizens do not use the same chat opener again within this many ticks (a day), while they have others left.
+     */
+    public static final int CHAT_REPEAT_WINDOW = 24000;
+
+    /**
+     * Round 5: at most this many citizens greet the morning at one building's spot; the others go to their hut, their home or stay where they are.
+     */
+    public static final int MAX_GREETERS_PER_SPOT = 4;
+
     private static final Map<IColony, ColonyLife> BY_COLONY = new WeakHashMap<>();
 
     /**
@@ -46,6 +57,17 @@ public final class ColonyLife
 
     private final Map<Integer, Grief>         grief       = new HashMap<>();
     private final Map<Integer, Deque<Integer>> chatFriends = new HashMap<>();
+
+    /**
+     * The chat openers each pair of citizens used (smaller id in the high half of the key), with when.
+     */
+    private final Map<Long, Map<String, Long>> pairLines = new HashMap<>();
+
+    /**
+     * The morning greeters per building spot, for {@link #greetDay} only.
+     */
+    private final Map<BlockPos, Integer> greeters = new HashMap<>();
+    private long                         greetDay = -1;
 
     private ColonyLife()
     {
@@ -107,6 +129,87 @@ public final class ColonyLife
         remember(life.chatFriends.computeIfAbsent(b, k -> new ArrayDeque<>()), a);
     }
 
+    /**
+     * Picks the opener of a topic that this pair of citizens has not used within {@link #CHAT_REPEAT_WINDOW} (at random among those), else the one used longest
+     * ago, and remembers it.
+     *
+     * @param colony the colony.
+     * @param a      one citizen.
+     * @param b      the other.
+     * @param topic  the topic.
+     * @param now    the game time.
+     * @param random the speaker's random.
+     * @return the opener's number, 1 to the topic's lines.
+     */
+    public static int pickLine(final IColony colony, final int a, final int b, final CitizenLife.ChatTopic topic, final long now, final RandomSource random)
+    {
+        final ColonyLife life = of(colony);
+        final Map<String, Long> used = life.pairLines.computeIfAbsent(pairKey(a, b), k -> new HashMap<>());
+        used.values().removeIf(at -> now - at >= CHAT_REPEAT_WINDOW);
+        final List<Integer> fresh = new ArrayList<>();
+        int oldest = 1;
+        long oldestAt = Long.MAX_VALUE;
+        for (int i = 1; i <= topic.lines(); i++)
+        {
+            final Long at = used.get(topic.prefix() + i);
+            if (at == null)
+            {
+                fresh.add(i);
+            }
+            else if (at < oldestAt)
+            {
+                oldestAt = at;
+                oldest = i;
+            }
+        }
+        final int pick = fresh.isEmpty() ? oldest : fresh.get(random.nextInt(fresh.size()));
+        used.put(topic.prefix() + pick, now);
+        if (life.pairLines.size() > 4096)
+        {
+            life.pairLines.values().removeIf(lines -> lines.values().stream().allMatch(at -> now - at >= CHAT_REPEAT_WINDOW));
+        }
+        return pick;
+    }
+
+    private static long pairKey(final int a, final int b)
+    {
+        return ((long) Math.min(a, b) << 32) | (Math.max(a, b) & 0xFFFFFFFFL);
+    }
+
+    /**
+     * A morning greeter asks for a place at a building's spot: true and counted while the spot has fewer than {@link #MAX_GREETERS_PER_SPOT} greeters today.
+     *
+     * @param colony the colony.
+     * @param spot   the building's position.
+     * @param day    the day number.
+     * @return true if he may greet there.
+     */
+    public static boolean claimGreetSpot(final IColony colony, final BlockPos spot, final long day)
+    {
+        final ColonyLife life = of(colony);
+        if (life.greetDay != day)
+        {
+            life.greetDay = day;
+            life.greeters.clear();
+        }
+        final int count = life.greeters.getOrDefault(spot, 0);
+        if (count >= MAX_GREETERS_PER_SPOT)
+        {
+            return false;
+        }
+        life.greeters.put(spot, count + 1);
+        return true;
+    }
+
+    /**
+     * @return the first name of a citizen's full name, as friends say it.
+     */
+    public static String firstName(final String name)
+    {
+        final int space = name.indexOf(' ');
+        return space > 0 ? name.substring(0, space) : name;
+    }
+
     private static void remember(final Deque<Integer> friends, final int id)
     {
         friends.remove(id);
@@ -151,6 +254,7 @@ public final class ColonyLife
         final ColonyLife life = of(colony);
         life.chatFriends.remove(dead.getId());
         life.grief.remove(dead.getId());
+        life.pairLines.keySet().removeIf(key -> (int) (key >>> 32) == dead.getId() || (int) (long) key == dead.getId());
         if (!CitizenLife.enabled())
         {
             return List.of();
@@ -163,27 +267,27 @@ public final class ColonyLife
             {
                 continue;
             }
-            life.grief.put(other.getId(), new Grief(dead.getName(), now + GRIEF_TICKS));
+            life.grief.put(other.getId(), new Grief(firstName(dead.getName()), now + GRIEF_TICKS));
             grieving.add(other.getId());
             final Optional<AbstractEntityCitizen> entity = other.getEntity();
             if (entity.isPresent() && entity.get() instanceof EntityCitizen citizen && !other.isAsleep())
             {
-                citizen.getLife().schedule(CitizenLife.GRIEF_LINE + "|n:" + dead.getName(), 20 + grieving.size() * 20, false);
+                citizen.getLife().schedule(CitizenLife.GRIEF_LINE + "|n:" + firstName(dead.getName()), 20 + grieving.size() * 20, false);
             }
         }
         return grieving;
     }
 
     /**
-     * A building was built or upgraded: the citizens nearby cheer (the nearest {@link #MAX_CHEERERS} within {@link #CHEER_RANGE} blocks, awake, not grieving), one
-     * after the other. Nobody stops working: a cheer is a line, a hop and a few sparkles.
+     * A building was built or upgraded: the citizens nearby cheer (the nearest {@link #MAX_CHEERERS} within {@link #CHEER_RANGE} blocks, awake, not grieving or
+     * mourning), one after the other. Nobody cheers while the colony is raided. Nobody stops working: a cheer is a line, a hop and a few sparkles.
      *
      * @param building the building.
      * @return how many citizens cheer.
      */
     public static int onBuildingFinished(@Nullable final IBuilding building)
     {
-        if (building == null || building.getColony() == null || !CitizenLife.enabled())
+        if (building == null || building.getColony() == null || !CitizenLife.enabled() || building.getColony().getRaiderManager().isRaided())
         {
             return 0;
         }
@@ -195,7 +299,8 @@ public final class ColonyLife
         {
             final Optional<AbstractEntityCitizen> entity = data.getEntity();
             if (entity.isPresent() && entity.get() instanceof EntityCitizen citizen && !data.isAsleep() && !citizen.isBaby()
-                  && citizen.blockPosition().distSqr(at) <= CHEER_RANGE * CHEER_RANGE && griefFor(colony, data.getId(), now) == null)
+                  && citizen.blockPosition().distSqr(at) <= CHEER_RANGE * CHEER_RANGE && griefFor(colony, data.getId(), now) == null
+                  && !data.getCitizenMournHandler().isMourning())
             {
                 near.add(citizen);
             }

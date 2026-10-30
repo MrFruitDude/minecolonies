@@ -1,5 +1,6 @@
 package com.minecolonies.core.entity.ai.minimal;
 
+import com.minecolonies.core.colony.life.CitizenLife;
 import com.ldtteam.structurize.blockentities.interfaces.IBlueprintDataProviderBE;
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.ICitizenLeisureProvider;
@@ -133,6 +134,15 @@ public class EntityAICitizenWander implements IStateAI
         return READ_A_BOOK;
     }
 
+    /**
+     * Round 5 life: the chance to sit down with a book at a library or university, per look: MineColonies' 5 percent, or the citizen's trait (a thoughtful one
+     * reads far more often) while the life extras are on.
+     */
+    private int readChance()
+    {
+        return CitizenLife.enabled() ? citizen.getLife().trait().readChance() : 5;
+    }
+
     private IState goToLeisureSite()
     {
         if (leisureSite == null)
@@ -174,7 +184,7 @@ public class EntityAICitizenWander implements IStateAI
             else if (walkTo == null && blockEntity instanceof TileEntityColonyBuilding
                 && (((TileEntityColonyBuilding) blockEntity).getBuilding() instanceof BuildingLibrary
                 || ((TileEntityColonyBuilding) blockEntity).getBuilding() instanceof BuildingUniversity)
-                  && citizen.getRandom().nextInt(100) < 5)
+                  && citizen.getRandom().nextInt(100) < readChance())
             {
                 return READ_A_BOOK;
             }

@@ -26,6 +26,7 @@ import com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler;
 import com.mojang.datafixers.util.Pair;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.network.chat.MutableComponent;
@@ -377,7 +378,9 @@ public abstract class AbstractEntityCitizen extends AbstractCivilianEntity imple
         if (!raw.equals(speechRaw))
         {
             speechRaw = raw;
-            speechLine = speechComponent(raw);
+            // round 5: quoted, gray and italic, so a line reads as speech and not as a second name tag
+            final Component line = speechComponent(raw);
+            speechLine = line == null ? null : Component.literal("\"").append(line).append("\"").withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC);
         }
         return speechLine;
     }
