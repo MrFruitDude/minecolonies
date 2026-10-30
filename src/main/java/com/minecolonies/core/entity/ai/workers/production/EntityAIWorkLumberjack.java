@@ -363,17 +363,14 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private static final long CAP_NEIGHBOUR_DEFER_TICKS = 30 * 20L;
 
     /**
-     * Forestry (round 8, r7 Fable N60): how long he walks home to search before he gives the search up for this round, in game ticks (one minute), and the
-     * gap after which a walk counts as a new one (a meal, a night between).
+     * Forestry (round 8, r7 Fable N60): how long he walks home to search before he gives the search up for this round, in game ticks (one minute).
      */
     public static final long WALK_HOME_TICKS = 60 * 20L;
-    private static final long WALK_HOME_GAP_TICKS = 5 * 20L;
 
     /**
-     * Forestry (round 8, r7 Fable N60): since when he walks home to search, when he last did, and how often he gave the walk up (tests).
+     * Forestry (round 8, r7 Fable N60): since when he walks home to search, and how often he gave the walk up (tests).
      */
     private long walkHomeSince = -1;
-    private long walkHomeLast = -1;
     private int walkHomeGivenUp = 0;
 
     /**
@@ -817,17 +814,19 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
         if (pathResult == null)
         {
-            if (!building.shouldRestrict() && outsideSearchDisc() && !walkToBuilding())
+            if (!building.shouldRestrict() && outsideSearchDisc())
             {
+                // A completed navigation attempt may still end short. The search disc, rather than that result, decides whether he is home enough to search.
+                walkToBuilding();
                 // r6 Fable N43: the search maps only the disc round the hut (radius plus a margin); from outside it (back from a meal, a bed, a flight) it finds
                 // nothing, so he walks home first. Round 8 (r7 Fable N60): not for ever; a hut he cannot get to (an island, a sealed hut) ends the search for
                 // this round as no tree found, with the usual wait, instead of leaving him searching until the stuck handler moves him
                 final long now = world.getGameTime();
-                if (walkHomeSince < 0 || now - walkHomeLast > WALK_HOME_GAP_TICKS)
+                // Walking can delay the next AI decision beyond five seconds. Sparse decisions must not restart the same walk's bound.
+                if (walkHomeSince < 0)
                 {
                     walkHomeSince = now;
                 }
-                walkHomeLast = now;
                 if (now - walkHomeSince < WALK_HOME_TICKS)
                 {
                     return getState();

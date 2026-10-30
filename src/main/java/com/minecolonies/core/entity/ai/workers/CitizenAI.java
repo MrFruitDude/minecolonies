@@ -300,7 +300,7 @@ public class CitizenAI implements IStateAI
         // Mourning
         if (citizen.getCitizenData().getCitizenMournHandler().isMourning())
         {
-            if (lastState != CitizenAIState.MOURN)
+            if (lastState != CitizenAIState.MOURN && !citizen.getCitizenData().getCitizenMournHandler().getDeceasedCitizens().isEmpty())
             {
                 citizen.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(COM_MINECOLONIES_COREMOD_ENTITY_CITIZEN_MOURNING,
                   citizen.getCitizenData().getCitizenMournHandler().getDeceasedCitizens().iterator().next()),

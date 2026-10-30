@@ -407,6 +407,9 @@ public final class AliveGameTests
             poll[0] = () -> {
                 ticks[0]++;
                 keepFed(a, b);
+                // This test checks a nearby pair's automatic chat, not the wander AI's choice of destinations.
+                pin(helper, a, new BlockPos(16, 1, 16));
+                pin(helper, b, new BlockPos(19, 1, 16));
                 final long now = helper.getLevel().getGameTime();
                 if (start[0] < 0 && (a.getLife().chatting() || b.getLife().chatting()))
                 {
@@ -2045,6 +2048,8 @@ public final class AliveGameTests
         final ICitizenData citizen = colony.getCitizenManager().spawnOrCreateCivilian(null, helper.getLevel(), List.of(anchor), true);
         helper.assertTrue(citizen != null && citizen.getEntity().isPresent() && citizen.getEntity().get() instanceof EntityCitizen,
           "could not spawn a citizen at " + anchor);
+        // The manager searches around its requested spawn point. These fixtures rely on exact distances and a citizen actually being inside a built cell.
+        citizen.getEntity().get().teleportTo(anchor.getX() + 0.5D, anchor.getY(), anchor.getZ() + 0.5D);
         citizen.setSaturation(20);
         return citizen;
     }

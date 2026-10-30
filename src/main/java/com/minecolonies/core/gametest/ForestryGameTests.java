@@ -2130,6 +2130,10 @@ public final class ForestryGameTests
         {
             resetTreeChop(helper);
         }
+        if (treeChop)
+        {
+            resetTreeChop(helper);
+        }
         final ServerLevel level = helper.getLevel();
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, name);
         final BuildingLumberjack building = hut(helper, colony, HUT, false);

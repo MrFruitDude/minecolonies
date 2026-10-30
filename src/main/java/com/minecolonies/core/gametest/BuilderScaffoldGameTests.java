@@ -660,7 +660,8 @@ final class BuilderScaffoldGameTests
     {
         final String name = "hutwalk_helper";
         final int escapes0 = com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.trapEscapes;
-        twoBuilders(helper, name, () -> shape(name, 11, 12, 11, (x, y, z) -> x == 0 || z == 0 || x == 10 || z == 10), 40_000, true, SITE,
+        // Leave a doorway in the work site. A sealed twelve-block shell can legitimately trap its helper; this test isolates the way through his hut's trapdoors.
+        twoBuilders(helper, name, () -> shape(name, 11, 12, 11, (x, y, z) -> (x == 0 || z == 0 || x == 10 || z == 10) && !(x == 0 && z == 5 && y < 3)), 40_000, true, SITE,
           live -> wallHutIn(helper, new BlockPos(16, 1, 2), HutEntry.TRAPDOORS),
           (live, blocksByHelper) -> {
               final com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure<?, ?> lead = structureAi(live.citizen);

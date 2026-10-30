@@ -705,7 +705,7 @@ public final class CitizenLife
     public boolean canJoinChat()
     {
         final IState state = citizen.getCitizenAI().getState();
-        return enabled() && !chatting() && now() >= nextChatAt - 200 && now() >= speechUntil && !citizen.isBaby() && !citizen.getCitizenSleepHandler().isAsleep() && !lineHeld() && !greetingActive()
+        return enabled() && !chatting() && pending.isEmpty() && now() >= nextChatAt - 200 && now() >= speechUntil && !citizen.isBaby() && !citizen.getCitizenSleepHandler().isAsleep() && !lineHeld() && !greetingActive()
                  && (state == CitizenAIState.IDLE || state == EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE
                        || state == EntityAICitizenLife.LifeState.SHELTER && shelteredAtHome()) && !hurriesInRain() && !raided();
     }
@@ -738,7 +738,7 @@ public final class CitizenLife
     public boolean tryStartChat()
     {
         final long now = now();
-        if (!enabled() || now < nextChatTry || now < nextChatAt || citizen.isBaby() || lineHeld() || hurriesInRain() || raided())
+        if (!enabled() || !pending.isEmpty() || now < speechUntil || now < nextChatTry || now < nextChatAt || citizen.isBaby() || lineHeld() || hurriesInRain() || raided())
         {
             return false;
         }
