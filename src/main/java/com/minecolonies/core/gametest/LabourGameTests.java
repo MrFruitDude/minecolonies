@@ -57,7 +57,7 @@ final class LabourGameTests
 
     // ------------------------------------------------------------------ scene
 
-    private static void begin()
+    static void begin()
     {
         com.minecolonies.core.colony.labour.LabourStats.debug = true;
         LabourSettings.clearOverrides();
@@ -73,7 +73,7 @@ final class LabourGameTests
     /**
      * The fixture colony, with the automatic hiring switched off: the buildings of a test have no worker, and an unemployed citizen who is hired by one is no labourer any more.
      */
-    private static RsFixture found(final GameTestHelper helper, final String name, final int racks)
+    static RsFixture found(final GameTestHelper helper, final String name, final int racks)
     {
         final RsFixture f = RsFixture.found(helper, name, racks);
         clearTrees(helper);
@@ -90,7 +90,7 @@ final class LabourGameTests
      */
     private static com.minecolonies.api.colony.labour.ILabourExclusion plotOnly;
 
-    private static void end()
+    static void end()
     {
         com.minecolonies.core.colony.labour.LabourStats.debug = false;
         LabourSettings.clearOverrides();
@@ -150,7 +150,7 @@ final class LabourGameTests
         helper.setBlock(new BlockPos(x, height + 1, z), leaves);
     }
 
-    private static int logsLeft(final GameTestHelper helper, final int x, final int z, final int height)
+    static int logsLeft(final GameTestHelper helper, final int x, final int z, final int height)
     {
         int n = 0;
         for (int y = 1; y <= height; y++)
@@ -199,7 +199,7 @@ final class LabourGameTests
         }
     }
 
-    private static void forceArea(final ServerLevel level, final BlockPos min, final BlockPos max)
+    static void forceArea(final ServerLevel level, final BlockPos min, final BlockPos max)
     {
         for (int cx = min.getX() >> 4; cx <= max.getX() >> 4; cx++)
         {
@@ -210,12 +210,12 @@ final class LabourGameTests
         }
     }
 
-    private static IToken<?> ask(final IBuilding requester, final ItemStack stack)
+    static IToken<?> ask(final IBuilding requester, final ItemStack stack)
     {
         return requester.createRequest(new Stack(stack, stack.getCount(), stack.getCount()), false);
     }
 
-    private static int inHut(final IBuilding hut, final Item item)
+    static int inHut(final IBuilding hut, final Item item)
     {
         return InventoryUtils.getItemCountInItemHandler(hut.getItemHandlerCap(), s -> s.is(item));
     }
@@ -236,7 +236,7 @@ final class LabourGameTests
     /**
      * Calls {@code check} every 20 ticks, after ticking the colonies and setting the day, until it returns true; fails with the message after {@code maxTicks}.
      */
-    private static void poll(final GameTestHelper helper, final List<Colony> colonies, final int maxTicks, final BooleanSupplier check, final Runnable onDone,
+    static void poll(final GameTestHelper helper, final List<Colony> colonies, final int maxTicks, final BooleanSupplier check, final Runnable onDone,
       final Supplier<String> failure)
     {
         final int[] elapsed = {0};
@@ -1315,7 +1315,7 @@ final class LabourGameTests
         });
     }
 
-    private static Colony foundAt(final GameTestHelper helper, final String name, final int dx)
+    static Colony foundAt(final GameTestHelper helper, final String name, final int dx)
     {
         final ServerLevel level = helper.getLevel();
         forceArea(level, helper.absolutePos(new BlockPos(dx - 8, 1, -8)), helper.absolutePos(new BlockPos(dx + 40, 1, 32)));

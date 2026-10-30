@@ -148,6 +148,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 // r4: stone shafts, labourers and stalled builders dig cobblestone in shafts they share
                 registerShafts(event);
             }
+            if (only.contains("teamwork"))
+            {
+                // round 6 teamwork: exclusive lots, carried goods across interruptions and reloads, one admission policy, short courier loads held
+                TeamworkGameTests.register(event);
+            }
             if (only.contains("emptybp"))
             {
                 EmptyBlueprintGameTests.register(event);
