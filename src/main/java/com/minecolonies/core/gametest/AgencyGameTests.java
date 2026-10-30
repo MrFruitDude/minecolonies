@@ -294,7 +294,8 @@ final class AgencyGameTests
         final RsFixture f = found(helper, "agency helper");
         final Colony colony = (Colony) f.colony;
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
-        LabourGameTests.tree(helper, 34, 20, 6);
+        // (the tree stands clear of the asking hut: builder1 with its margin covers x 24 to 42, z 18 to 34, and labour never fells a tree in a hut's box)
+        LabourGameTests.tree(helper, 44, 20, 6);
         final IBuilding asker = f.place(ModBlocks.blockHutBuilder, new BlockPos(36, 1, 24), "fundamentals/builder1.blueprint");
         helper.runAfterDelay(100, () -> {
             final ICitizenData builder = f.spawn(new BlockPos(12, 1, 8), false);
@@ -315,7 +316,7 @@ final class AgencyGameTests
                     final var session = IdleCitizenArbiter.sessionOf(builder);
                     helper.assertTrue(session != null && session.describe().getContents() instanceof TranslatableContents t
                                         && t.getKey().equals("com.minecolonies.coremod.labour.task.worker"), "the helper does not say that he helps out: " + describe(f, builder));
-                    if (logsLeft(helper, 34, 20, 6) == 6)
+                    if (logsLeft(helper, 44, 20, 6) == 6)
                     {
                         return false;
                     }
@@ -334,7 +335,7 @@ final class AgencyGameTests
                 Log.getLogger().info("[agency_worker_helps_and_returns] back at work after {} ticks: {}", after[0], describe(f, builder));
                 end(helper);
                 helper.succeed();
-            }, () -> describe(f, builder) + ", request " + f.describe(token) + ", logs left " + logsLeft(helper, 34, 20, 6));
+            }, () -> describe(f, builder) + ", request " + f.describe(token) + ", logs left " + logsLeft(helper, 44, 20, 6));
         });
     }
 
