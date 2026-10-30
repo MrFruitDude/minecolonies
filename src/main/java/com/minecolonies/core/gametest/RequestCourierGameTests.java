@@ -83,6 +83,14 @@ final class RequestCourierGameTests
           info -> new MinecoloniesGameTestInstance(info, RequestCourierGameTests::refusedBackoff),
           MinecoloniesGameTestRegistrar.isolatedColonyData(event, "rs_courier_refused_backoff"));
         event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_courier_scoped_backoff"),
+          info -> new MinecoloniesGameTestInstance(info, RequestCourierGameTests::scopedBackoff),
+          MinecoloniesGameTestRegistrar.isolatedColonyData(event, "rs_courier_scoped_backoff"));
+        event.registerTest(
+          Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_courier_watched_no_stuck_damage"),
+          info -> new MinecoloniesGameTestInstance(info, RequestCourierGameTests::watchedNoStuckDamage),
+          MinecoloniesGameTestRegistrar.isolatedColonyData(event, "rs_courier_watched_no_stuck_damage"));
+        event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_courier_watched_stuck"),
           info -> new MinecoloniesGameTestInstance(info, RequestCourierGameTests::watchedStuck),
           MinecoloniesGameTestRegistrar.isolatedColonyData(event, "rs_courier_watched_stuck"));
@@ -186,30 +194,112 @@ final class RequestCourierGameTests
      */
     static void refusedBackoff(final GameTestHelper helper)
     {
+        final String world = com.minecolonies.core.colony.requestsystem.RsWorldScope.of(helper.getLevel());
         final BlockPos hut = helper.absolutePos(new BlockPos(3, 1, 3));
         final BlockPos other = hut.east(5);
         final int colony = 987_654;
         long now = 1_000L;
-        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony, hut, now), "paused before any refusal");
-        long until = com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(colony, hut, now);
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(world, colony, hut, now), "paused before any refusal");
+        long until = com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(world, colony, hut, now);
         helper.assertTrue(until - now == com.minecolonies.core.colony.requestsystem.RefusedTargets.FIRST, "first pause " + (until - now));
-        helper.assertTrue(com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony, hut, now + 10), "not paused right after a refusal");
-        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony, other, now + 10), "another destination is paused");
-        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony + 1, hut, now + 10), "the same place of another colony is paused");
-        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony, hut, until), "still paused after the pause");
+        helper.assertTrue(com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(world, colony, hut, now + 10), "not paused right after a refusal");
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(world, colony, other, now + 10), "another destination is paused");
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(world, colony + 1, hut, now + 10), "the same place of another colony is paused");
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(world, colony, hut, until), "still paused after the pause");
         now = until;
-        until = com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(colony, hut, now);
+        until = com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(world, colony, hut, now);
         helper.assertTrue(until - now == 2 * com.minecolonies.core.colony.requestsystem.RefusedTargets.FIRST, "second pause " + (until - now) + ": no doubling");
         for (int i = 0; i < 10; i++)
         {
             now = until;
-            until = com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(colony, hut, now);
+            until = com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(world, colony, hut, now);
         }
         helper.assertTrue(until - now == com.minecolonies.core.colony.requestsystem.RefusedTargets.MAX, "pause after many refusals " + (until - now) + ": no cap");
-        com.minecolonies.core.colony.requestsystem.RefusedTargets.accepted(colony, hut);
-        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(colony, hut, now + 10)
-                            && com.minecolonies.core.colony.requestsystem.RefusedTargets.refusals(colony, hut) == 0, "a delivery that went in did not end the pause");
+        com.minecolonies.core.colony.requestsystem.RefusedTargets.accepted(world, colony, hut);
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(world, colony, hut, now + 10)
+                            && com.minecolonies.core.colony.requestsystem.RefusedTargets.refusals(world, colony, hut) == 0, "a delivery that went in did not end the pause");
         helper.succeed();
+    }
+
+    /**
+     * r2 Sol H3: refusal pauses and short-load credit belong to one world and one dimension. Equal colony ids, positions and request tokens in another
+     * dimension, or in a world opened later in the same game (its clock far behind), share nothing: no pause, no credit, no wait of millions of ticks.
+     */
+    static void scopedBackoff(final GameTestHelper helper)
+    {
+        final net.minecraft.server.level.ServerLevel level = helper.getLevel();
+        final String overworld = com.minecolonies.core.colony.requestsystem.RsWorldScope.of(net.minecraft.world.level.Level.OVERWORLD);
+        final String nether = com.minecolonies.core.colony.requestsystem.RsWorldScope.of(net.minecraft.world.level.Level.NETHER);
+        helper.assertTrue(!overworld.equals(nether), "the overworld and the nether share a key: " + overworld);
+        helper.assertTrue(com.minecolonies.core.colony.requestsystem.RsWorldScope.of(level).equals(com.minecolonies.core.colony.requestsystem.RsWorldScope.of(level.dimension())),
+          "the key of a level is not the key of its dimension");
+        final BlockPos hut = helper.absolutePos(new BlockPos(3, 1, 3));
+        final int colony = 1;
+
+        // one dimension refuses: the same colony id and place in the other is not paused
+        com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(overworld, colony, hut, 5_000L);
+        helper.assertTrue(com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(overworld, colony, hut, 5_010L), "the overworld refusal is not paused");
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(nether, colony, hut, 5_010L), "the overworld refusal pauses the nether");
+        com.minecolonies.core.colony.requestsystem.RefusedTargets.accepted(nether, colony, hut);
+        helper.assertTrue(com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(overworld, colony, hut, 5_010L), "a nether delivery ended the overworld pause");
+        com.minecolonies.core.colony.requestsystem.RefusedTargets.accepted(overworld, colony, hut);
+
+        // an old world's refusal at tick 10,000,000 and a younger world at tick 100 with the same key: a pause longer than any pause is from another clock
+        final String old = "test-old-world";
+        com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(old, colony, hut, 10_000_000L);
+        helper.assertTrue(!com.minecolonies.core.colony.requestsystem.RefusedTargets.paused(old, colony, hut, 100L), "a refusal of another clock pauses for millions of ticks");
+        helper.assertTrue(com.minecolonies.core.colony.requestsystem.RefusedTargets.refused(old, colony, hut, 100L) - 100L == com.minecolonies.core.colony.requestsystem.RefusedTargets.FIRST,
+          "a refusal after a stale one does not start at the first pause");
+        com.minecolonies.core.colony.requestsystem.RefusedTargets.accepted(old, colony, hut);
+
+        // short-load credit: the same token in two dimensions
+        final com.minecolonies.api.colony.requestsystem.token.IToken<?> token = new com.minecolonies.api.colony.requestsystem.token.StandardToken(java.util.UUID.randomUUID());
+        com.minecolonies.core.colony.requestsystem.RsCourierHooks.credit(overworld, token, 8);
+        helper.assertTrue(com.minecolonies.core.colony.requestsystem.RsCourierHooks.creditOf(overworld, token) == 8, "the credit is not kept");
+        helper.assertTrue(com.minecolonies.core.colony.requestsystem.RsCourierHooks.creditOf(nether, token) == 0, "the overworld credit counts in the nether");
+        com.minecolonies.core.colony.requestsystem.RsCourierHooks.forgetCredit(overworld, token);
+        helper.succeed();
+    }
+
+    /**
+     * r2 Sol H2: a citizen whose navigator gives up completely while a player watches is never hurt by it. A courier at 3 health, a player 3 blocks away
+     * in clear view: three complete stucks in a row (the first two wait for the watcher, the third puts him by his goal in sight) take no health. The same
+     * with nobody near hurts him (the old rule for a citizen nobody sees).
+     */
+    static void watchedNoStuckDamage(final GameTestHelper helper)
+    {
+        final RsFixture f = RsFixture.found(helper, "rs-courier-watched-hurt", 1, false);
+        final IBuilding deliveryman = f.place(ModBlocks.blockHutDeliveryman, new BlockPos(32, 1, 2), "craftsmanship/storage/deliveryman1.blueprint");
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData courier = f.spawn(new BlockPos(32, 1, 24), true);
+            helper.assertTrue(deliveryman.getModule(BuildingModules.COURIER_WORK).assignCitizen(courier), "courier not assigned to the courier hut");
+            final EntityCitizen entity = (EntityCitizen) courier.getEntity().orElseThrow();
+            final com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate nav =
+              (com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate) entity.getNavigation();
+            helper.assertTrue(nav.getStuckHandler() instanceof com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler<?>, "no stuck handler");
+            @SuppressWarnings("unchecked")
+            final com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler<com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate> handler =
+              (com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler<com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate>) nav.getStuckHandler();
+            final net.minecraft.server.level.ServerPlayer watcher = MinecoloniesGameTests.makeConnectedSurvivalPlayer(helper);
+            com.minecolonies.core.entity.pathfinding.PlayerWatch.watchForTests(watcher.getUUID());
+            watcher.teleportTo(entity.getX() + 3.0D, entity.getY(), entity.getZ());
+            entity.setHealth(3.0F);
+            final BlockPos goal = deliveryman.getPosition();
+            for (int round = 0; round < 3; round++)
+            {
+                nav.setSafeDestinationPos(goal);
+                handler.completeStuckForTests(nav);
+                helper.assertTrue(entity.isAlive() && entity.getHealth() >= 3.0F, "hurt by the stuck ladder while watched in round " + round + ": health " + entity.getHealth());
+            }
+            helper.assertTrue(handler.getWatchedDeferrals() >= com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler.WATCHED_FULL_STUCKS,
+              "the watched complete stucks did not wait: " + handler.getWatchedDeferrals());
+            watcher.discard();
+            entity.setHealth(entity.getMaxHealth());
+            nav.setSafeDestinationPos(goal);
+            handler.completeStuckForTests(nav);
+            helper.assertTrue(entity.getHealth() < entity.getMaxHealth(), "nobody watched, and the complete stuck did not hurt him (the rule for an unseen citizen changed)");
+            helper.succeed();
+        });
     }
 
     /**
