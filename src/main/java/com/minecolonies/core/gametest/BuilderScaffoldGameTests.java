@@ -2277,13 +2277,20 @@ final class BuilderScaffoldGameTests
             final var nav = (com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate) raider.getNavigation();
             @SuppressWarnings("unchecked")
             final var handler = (com.minecolonies.core.entity.pathfinding.navigation.PathingStuckHandler<com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate>) nav.getStuckHandler();
-            // a raider on its way in (RaiderWalkAI) has lost the spawn immunity to environmental damage; the fresh one here has not
+            // a raider on its way in (RaiderWalkAI) has lost the spawn immunity to environmental damage, and two seconds after his spawn the spawn
+            // invulnerability; the fresh one here has neither (r4 Fable N19: he could not show the damage)
             helper.assertTrue(raider instanceof com.minecolonies.api.entity.mobs.AbstractEntityMinecoloniesRaider, "fixture: the barbarian is no raider");
-            ((com.minecolonies.api.entity.mobs.AbstractEntityMinecoloniesRaider) raider).setTempEnvDamageImmunity(false);
+            final var walking = (com.minecolonies.api.entity.mobs.AbstractEntityMinecoloniesRaider) raider;
+            walking.setTempEnvDamageImmunity(false);
+            raider.setPermanentlyInvulnerable(false);
             raider.setHealth(raider.getMaxHealth());
+            // the complete-stuck damage is 0.4 of his health; a raider takes no environmental damage that leaves him under 20 to 60 percent (difficulty)
+            final float floor = Math.min((float) walking.getDifficulty() / 10 + 0.2f, 0.6f);
+            helper.assertTrue(1.0f - 0.4f > floor + 0.01f, "fixture: the stuck damage would leave the raider under his health floor " + floor);
             final float before = raider.getHealth();
             handler.completeStuckForTests(nav);
-            helper.assertTrue(raider.getHealth() < before, "a raider stuck in sight of a player took no stuck damage: health " + raider.getHealth() + " of " + before);
+            helper.assertTrue(raider.getHealth() < before, "a raider stuck in sight of a player took no stuck damage: health " + raider.getHealth() + " of " + before
+                                                                + ", invulnerable " + raider.isInvulnerable() + ", difficulty " + walking.getDifficulty());
         }
         finally
         {
