@@ -17,6 +17,7 @@ import com.minecolonies.core.colony.buildings.modules.ItemListModule;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack;
 import com.minecolonies.core.colony.jobs.JobLumberjack;
 import com.minecolonies.core.entity.ai.workers.crafting.AbstractEntityAICrafting;
+import com.minecolonies.core.entity.ai.workers.util.PlacedCaps;
 import com.minecolonies.core.entity.ai.workers.util.Tree;
 import com.minecolonies.core.entity.ai.workers.util.TreeClaims;
 import com.minecolonies.core.entity.ai.workers.util.TreeFootprint;
@@ -845,6 +846,16 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         if (!MineColonies.getConfig().getServer().lumberjacksUseTreeChop.get() || !Compatibility.treeChop.isEnabled() || tree.isDynamicTree() || !tree.isFootprintTree())
         {
             return;
+        }
+        if (tree.getBox() != null)
+        {
+            // TreeChop breaks leaves and caps of its own choosing: near a player's cap block he cuts the normal way, which never takes it (round 7)
+            final BlockPos min = BlockPos.containing(tree.getBox().minX, tree.getBox().minY, tree.getBox().minZ).offset(-CAPTURE_MARGIN, -CAPTURE_MARGIN, -CAPTURE_MARGIN);
+            final BlockPos max = BlockPos.containing(tree.getBox().maxX, tree.getBox().maxY, tree.getBox().maxZ).offset(CAPTURE_MARGIN, CAPTURE_MARGIN, CAPTURE_MARGIN);
+            if (PlacedCaps.anyIn(world, min, max))
+            {
+                return;
+            }
         }
         BlockPos target = null;
         for (final BlockPos pos : tree.getAllLogs())

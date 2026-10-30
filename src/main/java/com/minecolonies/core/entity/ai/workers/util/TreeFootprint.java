@@ -457,7 +457,9 @@ public final class TreeFootprint
       @NotNull final Collection<BlockPos> stems)
     {
         final BlockState state = level.getBlockState(pos);
-        return capFitsFamily(family, state) && !leafTouchesBuild(level, pos, strippedBase) && (bounds == null || inAny(List.of(bounds), pos) || nearStem(level, pos, stems));
+        // a cap a player placed is a player's decoration: the connected cap it is part of stays whole (round 7, r6 Sol H1)
+        return capFitsFamily(family, state) && !PlacedCaps.isPlaced(level, pos, state) && !leafTouchesBuild(level, pos, strippedBase)
+                 && (bounds == null || inAny(List.of(bounds), pos) || nearStem(level, pos, stems));
     }
 
     /**
@@ -1347,6 +1349,11 @@ public final class TreeFootprint
         if (!own)
         {
             return Recheck.CHANGED;
+        }
+        if (part != Part.DECORATION && PlacedCaps.isPlaced(level, pos, state))
+        {
+            // a mushroom block, stem, wart block or shroomlight a player placed is never cut (round 7, r6 Sol H1)
+            return Recheck.BUILD;
         }
         final Recheck guard = guardPosition(level, pos, colony);
         if (guard != Recheck.OK || part == Part.DECORATION)

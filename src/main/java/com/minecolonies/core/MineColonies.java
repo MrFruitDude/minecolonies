@@ -143,6 +143,7 @@ public class MineColonies
         ModHappinessFactorTypeInitializer.DEFERRED_REGISTER_HAPPINESS_FACTOR.register(modBus);
         ModHappinessFactorTypeInitializer.DEFERRED_REGISTER_HAPPINESS_FUNCTION.register(modBus);
         ModDataComponents.REGISTRY.register(modBus);
+        com.minecolonies.core.entity.ai.workers.util.PlacedCaps.ATTACHMENTS.register(modBus);
 
         ModCreativeTabs.TAB_REG.register(modBus);
 
@@ -161,6 +162,7 @@ public class MineColonies
         });
 
         forgeBus.register(EventHandler.class);
+        forgeBus.register(com.minecolonies.core.entity.ai.workers.util.PlacedCaps.class);
         // Colony Command: the emerald market (core/economy) is not registered; the colony's money is Colony Command's coins.
         forgeBus.register(QuestObjectiveEventHandler.class);
         forgeBus.register(com.minecolonies.core.colony.storage.DispatchPaths.class);

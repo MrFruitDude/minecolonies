@@ -1188,7 +1188,7 @@ public class Tree
         for (final BlockPos pos : BlockPos.betweenClosed(min, max))
         {
             final BlockState state = world.getBlockState(pos);
-            if (TreeFootprint.isCap(state) && caps.size() < CAP_SNAPSHOT_MAX && !TreeFootprint.nearStem(world, pos, stems))
+            if (TreeFootprint.isCap(state) && caps.size() < CAP_SNAPSHOT_MAX && !TreeFootprint.nearStem(world, pos, stems) && !PlacedCaps.isPlaced(world, pos, state))
             {
                 caps.put(pos.asLong(), state);
             }
@@ -1249,7 +1249,7 @@ public class Tree
      */
     public boolean mayClearCap(@NotNull final Level world, @NotNull final BlockPos pos)
     {
-        return ownsCap(pos) && capWasThere(pos, world.getBlockState(pos))
+        return ownsCap(pos) && capWasThere(pos, world.getBlockState(pos)) && !PlacedCaps.isPlaced(world, pos)
                  && TreeFootprint.capComponentIsOwn(world, pos, getBox(), family, strippedBase, getStemsAround(world));
     }
 
