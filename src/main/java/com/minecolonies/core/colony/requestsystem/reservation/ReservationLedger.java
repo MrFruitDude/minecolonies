@@ -1042,14 +1042,28 @@ public final class ReservationLedger
      */
     public int sweepStaleHandouts(final long tick, final long maxAge)
     {
+        return sweepStaleHandouts(tick, maxAge, token -> false);
+    }
+
+    /**
+     * Self-healing: drops claims on items handed out to a requester that never took them, after {@code maxAge} ticks; never while the request they are held for still
+     * waits for the rest (round 8, Sol M3: a short receipt is part of the request's progress, it does not age out while the request is open).
+     *
+     * @param tick    the game time.
+     * @param maxAge  the age in ticks after which such a claim is dropped.
+     * @param waiting whether a request still waits for its items.
+     * @return the number of claims dropped.
+     */
+    public int sweepStaleHandouts(final long tick, final long maxAge, @NotNull final Predicate<IToken<?>> waiting)
+    {
         if (!RsProbe.enabled)
         {
-            return sweepStaleHandouts0(tick, maxAge);
+            return sweepStaleHandouts0(tick, maxAge, waiting);
         }
         RsProbe.begin(RsProbe.LEDGER);
         try
         {
-            return sweepStaleHandouts0(tick, maxAge);
+            return sweepStaleHandouts0(tick, maxAge, waiting);
         }
         finally
         {
@@ -1057,13 +1071,13 @@ public final class ReservationLedger
         }
     }
 
-    private int sweepStaleHandouts0(final long tick, final long maxAge)
+    private int sweepStaleHandouts0(final long tick, final long maxAge, final Predicate<IToken<?>> waiting)
     {
         int dropped = 0;
         for (final IToken<?> token : new ArrayList<>(byToken.keySet()))
         {
             final List<Reservation> mine = byToken.get(token);
-            if (mine == null)
+            if (mine == null || waiting.test(token))
             {
                 continue;
             }

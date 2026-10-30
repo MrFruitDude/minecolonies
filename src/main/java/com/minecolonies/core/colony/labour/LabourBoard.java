@@ -446,6 +446,8 @@ public final class LabourBoard
                 }
             }
             cap = Math.min(cap, Math.max(0, worldMax - others));
+            int waitCap = cap;
+            boolean held = false;
             for (final Map.Entry<String, long[]> want : fair ? WANTS.entrySet() : java.util.Set.<Map.Entry<String, long[]>>of())
             {
                 if (want.getKey().equals(key()))
@@ -454,10 +456,51 @@ public final class LabourBoard
                 }
                 // (ties go to the colony that waited first; a colony that does not wait loses them)
                 final boolean first = mine != null && (mine[0] < want.getValue()[0] || (mine[0] == want.getValue()[0] && key().compareTo(want.getKey()) < 0));
-                cap = Math.min(cap, ACTIVE.getOrDefault(want.getKey(), 0) + (first ? 1 : 0));
+                waitCap = Math.min(waitCap, ACTIVE.getOrDefault(want.getKey(), 0) + (first ? 1 : 0));
+                held = true;
             }
+            // (round 8, N54: the wait rule never takes a colony below its equal share of the world cap, so a holder gives up only what is above it and the places
+            // move to the waiting colony in one drain, not one place per drain)
+            cap = held ? Math.max(waitCap, Math.min(cap, equalShare())) : cap;
         }
         return Math.max(0, cap);
+    }
+
+    /**
+     * Round 8 (N54): the equal share of the world cap: the world cap over the colonies that hold places or wait for one (this colony counted). Called under the
+     * lock of {@link #ACTIVE}.
+     */
+    private int equalShare()
+    {
+        final java.util.Set<String> colonies = new java.util.HashSet<>(ACTIVE.keySet());
+        colonies.addAll(WANTS.keySet());
+        colonies.add(key());
+        return LabourSettings.worldMax() / colonies.size();
+    }
+
+    /**
+     * The colony got places: it waits no more once it holds its equal share of the world cap or its own cap (round 8, N54: below it, it keeps its turn until its
+     * wait ages out, so the holder does not refill the next freed place first). Called under the lock of {@link #ACTIVE}.
+     *
+     * @param places the places the colony holds now (or will hold).
+     */
+    private void served(final int places)
+    {
+        if (places >= Math.min(equalShare(), LabourSettings.total(colony)))
+        {
+            WANTS.remove(key());
+        }
+    }
+
+    /**
+     * Round 8 (N57): whether another colony's wait for a world place holds this colony below the places the world cap leaves it (the places are shared, not used up).
+     * For the views: the words then name the sharing, not the server's limit.
+     *
+     * @return true if a waiting colony lowers this colony's places now.
+     */
+    public boolean heldForWaiting()
+    {
+        return capacity(true) < capacity(false);
     }
 
     /**
@@ -517,6 +560,39 @@ public final class LabourBoard
             return null;
         }
         return Component.translatable("com.minecolonies.coremod.labour.noplace", places(), capacity());
+    }
+
+    /**
+     * Round 8 (R7-F3): why a jobless citizen of this colony stands idle when places are free but the colony's jobless share is at work already (the town hall's
+     * share of the jobless who may labour at once). For the views, beside {@link #noPlaceReason}.
+     *
+     * @param citizen a citizen.
+     * @return the reason, or null when he holds a claim, is no jobless adult, labour is off, no place is free (see {@link #noPlaceReason}) or the share has room.
+     */
+    @Nullable
+    public Component shareReason(final ICitizenData citizen)
+    {
+        if (citizen.getJob() != null || citizen.isChild() || byCitizen.containsKey(citizen.getId()) || directed.orderOf(citizen.getId()) != null
+              || !LabourSettings.enabled(colony) || placesFull())
+        {
+            return null;
+        }
+        final int allowed = allowed();
+        final int busy = joblessLabour();
+        return busy >= allowed ? Component.translatable("com.minecolonies.coremod.labour.share", busy, allowed) : null;
+    }
+
+    /**
+     * Round 8 (R7-F5): why a jobless citizen of this colony waits for labour, for the citizen window: {@link #noPlaceReason}, else {@link #shareReason}.
+     *
+     * @param citizen a citizen.
+     * @return the reason, or null.
+     */
+    @Nullable
+    public Component labourWaitReason(final ICitizenData citizen)
+    {
+        final Component noPlace = noPlaceReason(citizen);
+        return noPlace != null ? noPlace : shareReason(citizen);
     }
 
     private long now()
@@ -725,12 +801,21 @@ public final class LabourBoard
         return Math.min(cap, Math.max(Math.min(1, unemployed), byShare));
     }
 
+    /**
+     * @return the jobless labourers of the colony now: their request and stock claims, and the citizens on a manager's directed order.
+     */
+    private int joblessLabour()
+    {
+        return claimsOf(LabourClaim.Source.REQUEST) + claimsOf(LabourClaim.Source.STOCKPILE) + Math.max(claimsOf(LabourClaim.Source.DIRECTED), directed.assigned());
+    }
+
     private boolean capReached()
     {
         // (the citizens on a manager's directed order count against the same caps; the jobless share, and all places together: workers helping out and
-        // workers' own tools take places too)
-        return claimsOf(LabourClaim.Source.REQUEST) + claimsOf(LabourClaim.Source.STOCKPILE) + Math.max(claimsOf(LabourClaim.Source.DIRECTED), directed.assigned()) >= allowed()
-                 || full();
+        // workers' own tools take places too. Round 8, Sol H1: the places are asked first, so that a colony refused a place registers its wait for one even when
+        // its jobless share is reached too, as it is whenever the world cap leaves it no place: automatic labour gets its fair turn like a directed order)
+        final boolean full = full();
+        return full || joblessLabour() >= allowed();
     }
 
     /**
@@ -1672,8 +1757,8 @@ public final class LabourBoard
         }
         synchronized (ACTIVE)
         {
-            // the colony got its places: it waits no more
-            WANTS.remove(key());
+            // the colony got its places: it waits no more (once it holds its equal share)
+            served(places() - freed + chosen.size());
         }
         return true;
     }
@@ -1785,6 +1870,60 @@ public final class LabourBoard
     }
 
     /**
+     * @return what the request still needs from this claim: what it asks for, less what is in its hut, the lots of the other claims on it and what other citizens
+     *   carry on record for it; null when the request is no labour candidate now.
+     */
+    @Nullable
+    private Integer stillNeeded(final IToken<?> token, final int citizenId)
+    {
+        final Candidate candidate = stillWaiting(token) ? candidate(token) : null;
+        if (candidate == null)
+        {
+            return null;
+        }
+        int others = 0;
+        for (final LabourClaim claim : byCitizen.values())
+        {
+            if (claim.citizenId() != citizenId && token.equals(claim.request()))
+            {
+                others += claim.amount();
+            }
+        }
+        return Math.max(0, candidate.count() - deliveredFor(token) - others - carriedOnRecordFor(token, citizenId));
+    }
+
+    /**
+     * Round 8 (N55): how many goods a helper recalled by his own work hands in for his claim: what the request still needs, his lot or more (he gathered beyond his
+     * lot), never more than that; the lot when the request is no labour candidate now.
+     *
+     * @param claim the claim.
+     * @return the amount.
+     */
+    public int handInFor(final LabourClaim claim)
+    {
+        final Integer needed = claim.request() == null ? null : stillNeeded(claim.request(), claim.citizenId());
+        return needed == null ? claim.amount() : needed;
+    }
+
+    /**
+     * Round 8 (N55, R7-F4): how many of the goods on his record a worker keeps out of his own hut's dump: what the request they are for still needs of them, none
+     * once it is served or gone (then they are his own again, his own produce included).
+     *
+     * @param citizen a citizen.
+     * @return the amount, 0 when he carries nothing on record.
+     */
+    public int cargoKeep(final ICitizenData citizen)
+    {
+        final LabourCargo.Entry entry = cargo().of(citizen.getId());
+        if (entry == null || entry.request() == null)
+        {
+            return 0;
+        }
+        final Integer needed = stillNeeded(new com.minecolonies.api.colony.requestsystem.token.StandardToken(entry.request()), citizen.getId());
+        return needed == null ? 0 : Math.min(needed, carried(citizen, s -> s.is(entry.item())));
+    }
+
+    /**
      * @param citizenId a citizen.
      * @return what he carries goods for, or null (for the views and the tests).
      */
@@ -1877,19 +2016,35 @@ public final class LabourBoard
      * The claim ended: what its citizen still carries of its goods stays on record (for the hand-in the next time he is free), unless the goods were handed in, he
      * carries none, he is gone, or the hand-ins failed too often.
      */
-    private void cargoAfter(final LabourClaim claim, final boolean success)
+    private void cargoAfter(final LabourClaim claim, final boolean success, final boolean penalize)
     {
         if (claim.source() != LabourClaim.Source.REQUEST && claim.source() != LabourClaim.Source.STOCKPILE)
         {
             return;
         }
         final ICitizenData citizen = colony.getCitizenManager().getCivilian(claim.citizenId());
-        if (success || citizen == null || carried(citizen, claim::accepts) <= 0)
+        if (citizen == null || carried(citizen, claim::accepts) <= 0)
         {
             forgetCargo(claim.citizenId());
             return;
         }
-        if (claim.cargo() && cargoFailures.merge(claim.citizenId(), 1, Integer::sum) >= CARGO_TRIES)
+        if (success)
+        {
+            // (round 8, N55: goods beyond what he handed in stay on record while the request still needs some, a recalled helper's included; once it has all it
+            // needs they are his again)
+            final Integer needed = claim.request() == null ? null : stillNeeded(claim.request(), claim.citizenId());
+            if (needed == null || needed <= 0)
+            {
+                forgetCargo(claim.citizenId());
+            }
+            else
+            {
+                cargoFailures.remove(claim.citizenId());
+            }
+            return;
+        }
+        // (round 8, Sol M2: only a hand-in that failed counts against the record, not a meal, the night, his own work or a lease run out while he was away)
+        if (claim.cargo() && penalize && cargoFailures.merge(claim.citizenId(), 1, Integer::sum) >= CARGO_TRIES)
         {
             LabourStats.log("citizen {} could not hand in what he carries {} times: he keeps it", claim.citizenId(), CARGO_TRIES);
             forgetCargo(claim.citizenId());
@@ -1912,8 +2067,8 @@ public final class LabourBoard
             syncPlaces();
             synchronized (ACTIVE)
             {
-                // the colony got a place: it waits no more
-                WANTS.remove(key());
+                // the colony got a place: it waits no more (once it holds its equal share)
+                served(places());
             }
         }
         if (claim.source() == LabourClaim.Source.REQUEST || claim.source() == LabourClaim.Source.STOCKPILE)
@@ -2029,7 +2184,7 @@ public final class LabourBoard
         {
             syncPlaces();
         }
-        cargoAfter(claim, success);
+        cargoAfter(claim, success, penalize);
         final long now = now();
         final ReservationLedger ledger = RsAccess.ledger(colony.getRequestManager());
         if (ledger != null)

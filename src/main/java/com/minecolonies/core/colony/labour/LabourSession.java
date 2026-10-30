@@ -1900,9 +1900,16 @@ public final class LabourSession implements IIdleTaskSession
             return;
         }
         final int have = countClaimed();
-        final int give = Math.min(have, claim.amount());
+        // (round 8, N55: a recalled helper hands in what the request still needs of what he carries, beyond his lot too, so that it is not gathered again)
+        final int give = Math.min(have, recalled ? board.handInFor(claim) : claim.amount());
         if (give <= 0)
         {
+            if (recalled)
+            {
+                // (the request needs nothing of it any more: his own work waits)
+                end(true);
+                return;
+            }
             go(Phase.THINK, now);
             return;
         }

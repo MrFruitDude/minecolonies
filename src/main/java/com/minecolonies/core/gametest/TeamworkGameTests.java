@@ -40,6 +40,8 @@ import java.util.List;
  * Round 6 teamwork (group {@code teamwork}, MINECOLONIES_GAMETEST_ONLY=teamwork): two workers never hold one lot, goods carried for a request stay tied to it
  * across an interruption and a save, one admission policy for every labour claim with the world cap, and what a short courier load brought is the request's own.
  * Round 7: directed orders take free places only, a worker's own tool takes none, a recalled helper's goods count for the request, the world cap is shared.
+ * Round 8: automatic labour waits for a world place like an order, a colony keeps its equal share of the world cap, carried goods keep their record through
+ * neutral interruptions and beyond the lot, a short receipt stays the request's while it waits.
  * Exact item counts before and after.
  */
 final class TeamworkGameTests
@@ -71,6 +73,18 @@ final class TeamworkGameTests
         event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "teamwork_world_cap_fair"),
           info -> new MinecoloniesGameTestInstance(info, TeamworkGameTests::worldCapShared),
           MinecoloniesGameTestRegistrar.isolatedColonyData(event, "teamwork_world_cap_fair"));
+        event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "teamwork_auto_wait"),
+          info -> new MinecoloniesGameTestInstance(info, TeamworkGameTests::automaticLabourWaits),
+          MinecoloniesGameTestRegistrar.isolatedColonyData(event, "teamwork_auto_wait"));
+        event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "teamwork_equal_share"),
+          info -> new MinecoloniesGameTestInstance(info, TeamworkGameTests::equalShareFloor),
+          MinecoloniesGameTestRegistrar.isolatedColonyData(event, "teamwork_equal_share"));
+        event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "teamwork_cargo_custody"),
+          info -> new MinecoloniesGameTestInstance(info, TeamworkGameTests::cargoCustody),
+          MinecoloniesGameTestRegistrar.isolatedColonyData(event, "teamwork_cargo_custody"));
+        event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "teamwork_receipt_waits"),
+          info -> new MinecoloniesGameTestInstance(info, TeamworkGameTests::receiptWaits),
+          MinecoloniesGameTestRegistrar.isolatedColonyData(event, "teamwork_receipt_waits"));
     }
 
     /** The second colony of the two-colony tests stands this far east of the fixture. */
@@ -478,7 +492,8 @@ final class TeamworkGameTests
         helper.assertTrue(order(late, l1, lateArea).refusal() == DirectedOrders.Refusal.CAP && late.capacity() == 0, what + ": a place past the world cap");
         // the first colony frees a place: it goes to the colony that waits
         first.directed().cancel(s2.order().id());
-        helper.assertTrue(first.places() == 1 && late.capacity() == 1 && first.capacity() == 0,
+        // (round 8, N54: the first colony keeps its equal share, 1 of 2, and takes no new place)
+        helper.assertTrue(first.places() == 1 && late.capacity() == 1 && first.capacity() == 1 && first.placesFull(),
           what + ": the freed place is not the waiting colony's: first " + first.capacity() + ", late " + late.capacity());
         final DirectedOrders.Start l = order(late, l1, lateArea);
         helper.assertTrue(l.order() != null, what + ": the waiting colony got no place: " + l.refusal());
@@ -569,6 +584,261 @@ final class TeamworkGameTests
             final int stock = f.physical(s -> s.is(Items.OAK_LOG));
             helper.assertTrue(hut == 16 && stock == 14, "after: hut " + hut + " rack " + stock + " (16 and 14 expected)");
             RsCourierHooks.forgetCredit(f.manager(), mine);
+        }
+        finally
+        {
+            RsFlags.overrideReservations(null);
+        }
+        helper.succeed();
+    }
+
+    /**
+     * Sol H1 and R7-F3: automatic labour only, no directed order. Share 0 (one jobless labours at once): the next one waits for his turn with the share reason, not
+     * the place reason. World cap 2: A's automatic claims hold both places; B's jobless citizen asks and is refused, and B waits (A is held at its equal share of
+     * 1 at once); A's freed place is B's, A's next citizen does not get it. World cap 1: the same, A is held at 0.
+     */
+    static void automaticLabourWaits(final GameTestHelper helper)
+    {
+        LabourGameTests.begin();
+        LabourSettings.override("total", 8);
+        LabourSettings.override("worldMax", 2);
+        LabourSettings.override("share", 0);
+        final RsFixture a = LabourGameTests.found(helper, "teamwork auto a", 2);
+        final Colony colonyA = (Colony) a.colony;
+        LabourGameTests.forceArea(a.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
+        helper.setBlock(new BlockPos(22, 1, 20), net.minecraft.world.level.block.Blocks.CRAFTING_TABLE.defaultBlockState());
+        LabourGameTests.tree(helper, 34, 20, 5);
+        final Colony colonyB = LabourGameTests.foundAt(helper, "teamwork auto b", DX);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData ia1 = a.spawn(new BlockPos(14, 1, 16), true);
+            final ICitizenData ia2 = a.spawn(new BlockPos(16, 1, 16), true);
+            final ICitizenData ia3 = a.spawn(new BlockPos(18, 1, 16), true);
+            final ICitizenData ib1 = spawnB(helper, colonyB, DX + 14, 16);
+            final LabourBoard ba = colonyA.getLabourBoard();
+            final LabourBoard bb = colonyB.getLabourBoard();
+            LabourGameTests.ask(a.builder, new ItemStack(Items.OAK_LOG, 4));
+            LabourGameTests.ask(a.builder, new ItemStack(Items.OAK_LOG, 4));
+            ba.invalidate();
+
+            // R7-F3: places are free, the jobless share is at work: the reason is the share
+            final LabourClaim c1 = ba.offer(ia1, false, true, false);
+            helper.assertTrue(c1 != null && ba.places() == 1, "A's first labourer got no claim: " + c1);
+            helper.assertTrue(ba.offer(ia2, false, true, false) == null, "a second labourer past a share of one at once");
+            helper.assertTrue(ba.shareReason(ia2) != null && ba.noPlaceReason(ia2) == null && ba.labourWaitReason(ia2) != null,
+              "the share wait has no share reason: share " + ba.shareReason(ia2) + ", place " + ba.noPlaceReason(ia2));
+            helper.assertTrue(ba.shareReason(ia1) == null, "a share reason for the citizen who labours");
+
+            // world cap 2: A's automatic claims take both places
+            LabourSettings.override("share", 100);
+            final LabourClaim c2 = ba.offer(ia2, false, true, false);
+            helper.assertTrue(c2 != null && ba.places() == 2, "A's second labourer got no claim: " + c2);
+            helper.assertTrue(ba.shareReason(ia3) == null && ba.noPlaceReason(ia3) != null, "the place wait shows the share reason or none");
+
+            // H1: B's automatic labour asks while A holds every place: B waits for one
+            helper.assertTrue(bb.offer(ib1, false, true, false) == null && bb.capacity() == 0, "B got a place past the world cap");
+            helper.assertTrue(ba.capacity() == 1 && ba.heldForWaiting(), "B's refused automatic labour does not wait: A's places " + ba.capacity());
+            // A frees a place: it is B's, A's next labourer does not take it
+            ba.release(c2, false, false);
+            helper.assertTrue(bb.capacity() == 1 && !bb.placesFull(), "the freed place is not B's: B " + bb.capacity());
+            helper.assertTrue(ba.offer(ia3, false, true, false) == null && ba.places() == 1 && ba.placesFull(), "A took back the place B waits for: A " + ba.places());
+
+            // world cap 1: A holds its one place, B asks and waits, the place A frees is B's
+            LabourBoard.forgetWaiting();
+            LabourSettings.override("worldMax", 1);
+            helper.assertTrue(bb.offer(ib1, false, true, false) == null && bb.capacity() == 0, "cap 1: B got a place past the world cap");
+            helper.assertTrue(ba.capacity() == 0, "cap 1: B's refused automatic labour does not wait: A " + ba.capacity());
+            ba.release(c1, false, false);
+            helper.assertTrue(bb.capacity() == 1 && ba.capacity() == 0, "cap 1: the freed place is not B's: A " + ba.capacity() + ", B " + bb.capacity());
+            helper.assertTrue(ba.offer(ia3, false, true, false) == null && ba.places() == 0, "cap 1: A took back the place B waits for");
+            LabourGameTests.end();
+            helper.succeed();
+        });
+    }
+
+    /**
+     * N54: the wait rule never takes a colony below its equal share. World cap 8: A holds all 8 places (four orders of two); B's automatic labour asks and waits.
+     * A is held at 4, not 0: every place it frees is B's until it is down to 4, and B keeps its turn after its first place, so A refills none of them. Both end
+     * with 4, after one drain of A's leases.
+     */
+    static void equalShareFloor(final GameTestHelper helper)
+    {
+        LabourGameTests.begin();
+        LabourSettings.override("total", 16);
+        LabourSettings.override("worldMax", 8);
+        LabourSettings.override("share", 100);
+        final RsFixture a = LabourGameTests.found(helper, "teamwork share a", 2);
+        final Colony colonyA = (Colony) a.colony;
+        LabourGameTests.forceArea(a.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
+        final Colony colonyB = LabourGameTests.foundAt(helper, "teamwork share b", DX);
+        helper.runAfterDelay(100, () -> {
+            final List<ICitizenData> as = new java.util.ArrayList<>();
+            for (int i = 0; i < 8; i++)
+            {
+                as.add(a.spawn(new BlockPos(10 + i, 1, 16), true));
+            }
+            final List<ICitizenData> bs = new java.util.ArrayList<>();
+            for (int i = 0; i < 4; i++)
+            {
+                bs.add(spawnB(helper, colonyB, DX + 10 + i, 16));
+            }
+            final LabourBoard ba = colonyA.getLabourBoard();
+            final LabourBoard bb = colonyB.getLabourBoard();
+            final List<DirectedOrder> ordersA = new java.util.ArrayList<>();
+            for (int i = 0; i < 4; i++)
+            {
+                final DirectedOrders.Start start = ba.directed().start(List.of(as.get(2 * i).getId(), as.get(2 * i + 1).getId()), DirectedOrder.Resource.WOOD, 4, areaA(helper), null);
+                helper.assertTrue(start.order() != null, "A's order " + i + " refused: " + start.refusal());
+                ordersA.add(start.order());
+            }
+            helper.assertTrue(ba.places() == 8, "A holds " + ba.places() + " places, not 8");
+
+            // B's automatic labour asks and waits: A is held at its equal share, not at 0
+            helper.assertTrue(bb.offer(bs.get(0), false, true, false) == null && bb.capacity() == 0, "B got a place past the world cap");
+            helper.assertTrue(ba.capacity() == 4, "A is not held at its equal share of 4: " + ba.capacity());
+
+            // A drains: each freed place is B's, A takes none back
+            ba.directed().cancel(ordersA.get(0).id());
+            helper.assertTrue(ba.places() == 6 && bb.capacity() == 2 && ba.capacity() == 4, "after one order: A " + ba.places() + " of " + ba.capacity() + ", B " + bb.capacity());
+            ba.directed().cancel(ordersA.get(1).id());
+            helper.assertTrue(ba.places() == 4 && bb.capacity() == 4 && ba.capacity() == 4, "after two orders: A " + ba.places() + " of " + ba.capacity() + ", B " + bb.capacity());
+
+            // B takes its first place and keeps its turn: A refills nothing
+            final DirectedOrders.Start b1 = order(bb, bs.get(0), areaB(helper));
+            helper.assertTrue(b1.order() != null, "B got no freed place: " + b1.refusal());
+            helper.assertTrue(ba.capacity() == 4 && order(ba, as.get(0), areaA(helper)).refusal() == DirectedOrders.Refusal.CAP, "A refilled a place B waits for: A " + ba.capacity());
+            final DirectedOrders.Start b3 = bb.directed().start(List.of(bs.get(1).getId(), bs.get(2).getId(), bs.get(3).getId()), DirectedOrder.Resource.WOOD, 4, areaB(helper), null);
+            helper.assertTrue(b3.order() != null, "B got no second to fourth place: " + b3.refusal());
+            helper.assertTrue(ba.places() == 4 && bb.places() == 4 && ba.capacity() == 4 && bb.capacity() == 4 && worldPlaces(ba, bb) == 8,
+              "not 4 each: A " + ba.places() + " of " + ba.capacity() + ", B " + bb.places() + " of " + bb.capacity());
+
+            ba.directed().cancel(ordersA.get(2).id());
+            ba.directed().cancel(ordersA.get(3).id());
+            bb.directed().cancel(b1.order().id());
+            bb.directed().cancel(b3.order().id());
+            helper.assertTrue(ba.places() == 0 && bb.places() == 0, "places left after every order ended");
+            LabourGameTests.end();
+            helper.succeed();
+        });
+    }
+
+    /**
+     * Sol M2, N55 and R7-F4: a helper carries 20 logs for a request of 24 and hands in 12. The 8 he still carries stay on record (the request needs 12 more): his
+     * own hut's dump leaves him all 8, the other helper's lot is the missing 4, his hand-in is his 8. Three neutral ends of the hand-in (a meal, the night, his own
+     * work) keep the record. Once the request is gone, nothing is kept out of his hut. Before: 20 logs on him. After: 12 in the hut, 8 on him, none made or lost.
+     */
+    static void cargoCustody(final GameTestHelper helper)
+    {
+        LabourGameTests.begin();
+        LabourSettings.override("perRequest", 2);
+        LabourSettings.override("share", 100);
+        final RsFixture f = LabourGameTests.found(helper, "teamwork custody", 2);
+        final Colony colony = (Colony) f.colony;
+        LabourGameTests.forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
+        helper.setBlock(new BlockPos(22, 1, 20), net.minecraft.world.level.block.Blocks.CRAFTING_TABLE.defaultBlockState());
+        LabourGameTests.tree(helper, 34, 20, 5);
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData carrier = f.spawn(new BlockPos(14, 1, 16), true);
+            final ICitizenData other = f.spawn(new BlockPos(18, 1, 16), true);
+            helper.assertTrue(InventoryUtils.addItemStackToItemHandlerWithResult(carrier.getInventory(), new ItemStack(Items.OAK_LOG, 20)).isEmpty(), "no room for 20 logs");
+            final IToken<?> token = LabourGameTests.ask(f.builder, new ItemStack(Items.OAK_LOG, 24));
+            final LabourBoard board = colony.getLabourBoard();
+            board.invalidate();
+            final LabourClaim claim = board.offer(carrier, false, true, false);
+            helper.assertTrue(claim != null && token.equals(claim.request()) && claim.amount() == 24, "no lot of 24: " + claim);
+            helper.assertTrue(board.handInFor(claim) == 24, "a recalled hand-in would give " + board.handInFor(claim) + ", not what the request needs");
+
+            // he hands in 12 of his 20
+            int left = 12;
+            final var bag = carrier.getInventory();
+            for (int slot = 0; slot < bag.getSlots() && left > 0; slot++)
+            {
+                if (bag.getStackInSlot(slot).is(Items.OAK_LOG))
+                {
+                    final ItemStack taken = bag.extractItem(slot, left, false);
+                    left -= taken.getCount();
+                    helper.assertTrue(InventoryUtils.addItemStackToItemHandlerWithResult(f.builder.getItemHandlerCap(), taken).isEmpty(), "the hut took no logs");
+                }
+            }
+            board.handedIn(claim, 12);
+            board.release(claim, true, false);
+
+            // N55: the 8 beyond the hand-in stay on record while the request needs 12 more; his own hut's dump keeps them out
+            final LabourCargo.Entry kept = board.cargoOf(carrier.getId());
+            helper.assertTrue(kept != null && token.getIdentifier().equals(kept.request()), "the 8 beyond the hand-in lost their record: " + kept);
+            helper.assertTrue(board.cargoKeep(carrier) == 8, "his own hut's dump would take " + (8 - board.cargoKeep(carrier)) + " of the 8");
+
+            // never gathered twice: the other helper's lot is the missing 4
+            final LabourClaim rest = board.offer(other, false, true, false);
+            helper.assertTrue(rest != null && token.equals(rest.request()) && rest.amount() == 4, "the other helper's lot is not the missing 4: " + rest);
+
+            // M2: three neutral ends of his hand-in keep the record
+            for (int i = 0; i < 3; i++)
+            {
+                final LabourClaim handIn = board.offer(carrier, false, true, false);
+                helper.assertTrue(handIn != null && handIn.cargo() && handIn.amount() == 8 && board.handInFor(handIn) == 8, "hand-in " + i + " is not his 8: " + handIn);
+                board.release(handIn, false, false);
+                helper.assertTrue(board.cargoOf(carrier.getId()) != null, "a neutral end " + (i + 1) + " of the hand-in dropped the record");
+            }
+
+            // R7-F4: once the request is gone, nothing of it is kept out of his hut
+            board.release(rest, false, false);
+            f.manager().updateRequestState(token, RequestState.CANCELLED);
+            board.invalidate();
+            helper.assertTrue(board.cargoKeep(carrier) == 0, "he keeps " + board.cargoKeep(carrier) + " logs back for a request that is gone");
+            helper.assertTrue(logs(carrier) == 8 && logs(other) == 0 && LabourGameTests.inHut(f.builder, Items.OAK_LOG) == 12,
+              "goods moved: carrier " + logs(carrier) + ", other " + logs(other) + ", hut " + LabourGameTests.inHut(f.builder, Items.OAK_LOG));
+            LabourGameTests.end();
+            helper.succeed();
+        });
+    }
+
+    /**
+     * Sol M3: 10 of 16 logs arrived in a short load. A day later the request still waits for its last 6: the 10 stay held for it (another request of the hut is not
+     * handed them, the rest is still 6). Once the request no longer waits, the old hold ages out as before.
+     */
+    @SuppressWarnings("unchecked")
+    static void receiptWaits(final GameTestHelper helper)
+    {
+        RsFlags.overrideReservations(true);
+        try
+        {
+            final RsFixture f = RsFixture.found(helper, "teamwork receipt waits", 4);
+            f.stock(0, new ItemStack(Items.OAK_LOG, 16));
+            final ReservationLedger ledger = f.ledger();
+            final IToken<?> mine = f.builder.createRequest(new Stack(new ItemStack(Items.OAK_LOG, 16), 16, 16), false);
+            final IRequest<?> request = f.request(mine);
+            helper.assertTrue(request != null && request.getChildren().size() == 1, "the request is not served by one delivery: " + f.describe(mine));
+            final IToken<?> delivery = request.getChildren().iterator().next();
+            RsCourierHooks.stockTaken(f.manager(), f.request(delivery));
+            int left = 16;
+            final var rack = f.rack(0).getInventory();
+            for (int slot = 0; slot < rack.getSlots() && left > 0; slot++)
+            {
+                left -= rack.extractItem(slot, left, false).getCount();
+            }
+            helper.assertTrue(left == 0, "the rack did not have 16 logs");
+            helper.assertTrue(InventoryUtils.addItemStackToItemHandlerWithResult(f.builder.getTileEntity().getInventory(), new ItemStack(Items.OAK_LOG, 10)).isEmpty(),
+              "the hut could not take 10 logs");
+            RsCourierHooks.arrivedPartly(f.manager(), (IRequest<? extends Delivery>) f.request(delivery), 10);
+            f.manager().updateRequestState(delivery, RequestState.FAILED);
+            helper.assertTrue(RsCourierHooks.handedOutFor(f.manager(), mine) == 10, "the 10 that arrived are not held for the request: " + ledger.reservationsOf(mine));
+
+            // a day later: the request still waits, the hold stays (the memory of the short load is gone too)
+            final var manager = (com.minecolonies.core.colony.requestsystem.management.manager.StandardRequestManager) f.manager();
+            final long maxAge = com.minecolonies.core.colony.requestsystem.management.manager.StandardRequestManager.HANDOUT_MAX_AGE;
+            final long late = helper.getLevel().getGameTime() + maxAge + 1;
+            helper.assertTrue(manager.waitsForItems(mine), "the request does not wait: " + f.describe(mine));
+            ledger.sweepStaleHandouts(late, maxAge, manager::waitsForItems);
+            RsCourierHooks.forgetCredit(f.manager(), mine);
+            helper.assertTrue(RsCourierHooks.handedOutFor(f.manager(), mine) == 10, "the hold of a waiting request aged out: " + ledger.reservationsOf(mine));
+            helper.assertTrue(RsCourierHooks.outstanding(f.manager(), (IRequest<? extends com.minecolonies.api.colony.requestsystem.requestable.IDeliverable>) f.request(mine)) == 6,
+              "a day later the rest is not 6");
+
+            // the request no longer waits: the old hold ages out
+            f.manager().updateRequestState(mine, RequestState.CANCELLED);
+            ledger.sweepStaleHandouts(late, maxAge, manager::waitsForItems);
+            helper.assertTrue(RsCourierHooks.handedOutFor(f.manager(), mine) == 0, "the hold of a cancelled request stays: " + ledger.reservationsOf(mine));
+            helper.assertTrue(LabourGameTests.inHut(f.builder, Items.OAK_LOG) == 10, "the hut has " + LabourGameTests.inHut(f.builder, Items.OAK_LOG));
         }
         finally
         {
