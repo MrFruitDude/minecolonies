@@ -372,6 +372,25 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
     public static final int WATCHED_FULL_STUCKS = 2;
 
     private int watchedFullStucks = 0;
+    private int watchedDeferrals  = 0;
+
+    /**
+     * @return how many complete stucks waited because a player watched (for tests and diagnostics).
+     */
+    public int getWatchedDeferrals()
+    {
+        return watchedDeferrals;
+    }
+
+    /**
+     * Runs the final step of the ladder now (GameTests: a trapped citizen does not have to stand still for minutes first).
+     *
+     * @param navigator the navigator of the entity.
+     */
+    public void completeStuckForTests(final NAV navigator)
+    {
+        completeStuckAction(navigator);
+    }
 
     /**
      * Final action when completly stuck before resetting stuck handler and path
@@ -389,27 +408,34 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
                     + canTeleportGoal);
         }
 
+        BlockPos tpPos = null;
         if (canTeleportGoal && desired != null && desired != BlockPos.ZERO)
         {
-            final BlockPos tpPos = BlockPosUtil.findAround(world, desired, 10, 10,
+            tpPos = BlockPosUtil.findAround(world, desired, 10, 10,
                 (posworld, pos) -> SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos.below()), pos.below()) == SurfaceType.WALKABLE
                     && SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos), pos) == SurfaceType.DROPABLE
                     && SurfaceType.getSurfaceType(posworld, posworld.getBlockState(pos.above()), pos.above()) == SurfaceType.DROPABLE);
-            if (tpPos != null && watchedFullStucks < WATCHED_FULL_STUCKS
-                  && com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(world, entity.position(), tpPos))
-            {
-                // a player watches the citizen or the spot: no jump in sight (r1 Fable F9, Sol M3). The ladder starts again (new paths, ladders, breaking);
-                // after WATCHED_FULL_STUCKS such rounds he is put there all the same, so a player who stays near cannot hold him stuck for ever
-                watchedFullStucks++;
-            }
-            else if (tpPos != null)
-            {
-                watchedFullStucks = 0;
-                entity.teleportTo(tpPos.getX() + 0.5, tpPos.getY(), tpPos.getZ() + 0.5);
-            }
+        }
+        // r2 Sol H2: a player who watches the citizen or the spot never costs him health; the stuck damage is for a citizen nobody sees
+        final boolean watched = com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(world, entity.position(), tpPos);
+        if (tpPos != null && watched && watchedFullStucks < WATCHED_FULL_STUCKS)
+        {
+            // a player watches the citizen or the spot: no jump in sight (r1 Fable F9, Sol M3), and nothing else that hurts him or the place. The ladder
+            // starts again (new paths, ladders, breaking); after WATCHED_FULL_STUCKS such rounds he is put there all the same, so a player who stays near
+            // cannot hold him stuck for ever
+            watchedFullStucks++;
+            watchedDeferrals++;
+            navigator.stop();
+            resetGlobalStuckTimers();
+            return;
+        }
+        if (tpPos != null)
+        {
+            watchedFullStucks = 0;
+            entity.teleportTo(tpPos.getX() + 0.5, tpPos.getY(), tpPos.getZ() + 0.5);
         }
 
-        if (takeDamageOnCompleteStuck)
+        if (takeDamageOnCompleteStuck && !watched)
         {
             entity.hurt(world.damageSources().source(DamageSourceKeys.STUCK_DAMAGE), entity.getMaxHealth() * damagePct);
         }
@@ -706,7 +732,8 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
         final Direction facing =
             navigator.getSafeDestination() == null ? entity.getDirection() : BlockPosUtil.getFacing(BlockPos.containing(entity.position()), navigator.getSafeDestination());
 
-        if (breakBlocksAhead(world, entity.blockPosition(), facing) && entity.getHealth() >= entity.getMaxHealth() / 3)
+        if (breakBlocksAhead(world, entity.blockPosition(), facing) && entity.getHealth() >= entity.getMaxHealth() / 3
+              && !com.minecolonies.core.entity.pathfinding.PlayerWatch.watched(world, entity.position(), (BlockPos) null))
         {
             entity.hurt(world.damageSources().source(DamageSourceKeys.STUCK_DAMAGE), (float) Math.max(0.5, entity.getHealth() / 20.0));
         }
