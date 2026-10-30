@@ -1363,7 +1363,8 @@ public final class AliveGameTests
     }
 
     /**
-     * R5-F5: two chatty housemates wait out the rain inside their home and chat there (about the rain), then go back to waiting it out.
+     * R5-F5: two chatty housemates wait out the rain inside their home and chat there (about the rain), then go back to waiting it out. They chat only where
+     * they are dry, so the fixture house (a hut block on the pad) gets a roof.
      */
     public static void shelterChat(final GameTestHelper helper)
     {
@@ -1374,6 +1375,18 @@ public final class AliveGameTests
             final IBuilding home = MinecoloniesGameTests.placeProductionBuilding(helper, colony, com.minecolonies.api.blocks.ModBlocks.blockHutHome, new BlockPos(26, 1, 20),
               "fundamentals/residence1.blueprint");
             home.setBuildingLevel(2);
+            // the fixture house is only its hut block: roof its footprint (and the one-block margin isInBuilding allows) so the housemates are dry inside, as
+            // in a built house; the walk starts out in the rain
+            final BlockPos lo = helper.relativePos(home.getCorners().getA());
+            final BlockPos hi = helper.relativePos(home.getCorners().getB());
+            for (int x = Math.max(-8, Math.min(lo.getX(), hi.getX()) - 1); x <= Math.min(39, Math.max(lo.getX(), hi.getX()) + 1); x++)
+            {
+                for (int z = Math.max(-8, Math.min(lo.getZ(), hi.getZ()) - 1); z <= Math.min(31, Math.max(lo.getZ(), hi.getZ()) + 1); z++)
+                {
+                    helper.setBlock(new BlockPos(x, 5, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                }
+            }
+            helper.assertTrue(Math.min(lo.getX(), hi.getX()) - 1 > 8, "precondition failed: the roof covers the start " + lo + " " + hi);
             final EntityCitizen[] mates = new EntityCitizen[2];
             for (int i = 0; i < 2; i++)
             {
