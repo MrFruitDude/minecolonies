@@ -183,6 +183,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerLife(event);
             }
+            if (only.contains("alive"))
+            {
+                // round 4 life and personality: chats, cheers, grief, raid relief, rain hurry, morning greeting, traits
+                registerAlive(event);
+            }
             if (only.contains("cohesion"))
             {
                 // cohesion wave 2026-10-25: the fork side of Colony Command's findings (add-on rules, ledger reasons, stock goals, roads, resolver dry run)
@@ -812,6 +817,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         registerHunger(event);
         Round13WorkGameTests.register(event);
         registerLife(event);
+        registerAlive(event);
         registerScaffoldRecipe(event);
         registerIdleHelpers(event);
         // C2 builder collaboration observability and controls (one glob: minecolonies:collab_obs_*).
@@ -1581,6 +1587,21 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
         for (final String name : Round13LifeGameTests.NAMES)
         {
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = Round13LifeGameTests.test(name);
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              isolatedColonyData(event, name));
+        }
+    }
+
+    /**
+     * Round 4 life and personality (one glob: minecolonies:alive_*).
+     */
+    private void registerAlive(final RegisterGameTestsEvent event)
+    {
+        for (final String name : AliveGameTests.NAMES)
+        {
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = AliveGameTests.test(name);
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),

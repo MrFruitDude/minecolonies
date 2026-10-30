@@ -19,7 +19,9 @@ import net.minecraft.client.renderer.entity.layers.CustomHeadLayer;
 import net.minecraft.client.renderer.entity.layers.ItemInHandLayer;
 import net.minecraft.client.renderer.entity.layers.WingsLayer;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
@@ -31,6 +33,10 @@ import org.jetbrains.annotations.NotNull;
 public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, CitizenRenderState, CitizenModel<CitizenRenderState>>
 {
     private static final double  SHADOW_SIZE   = 0.5F;
+    /**
+     * Round 4 life: players within this squared distance see what a citizen says.
+     */
+    private static final double  SPEECH_RANGE_SQ = 24 * 24;
     public static        boolean isItGhostTime = false;
     private final CitizenModel<CitizenRenderState> defaultModel;
 
@@ -165,8 +171,16 @@ public class RenderBipedCitizen extends MobRenderer<AbstractEntityCitizen, Citiz
         super.submitNameDisplay(state, poseStack, submitNodeCollector, camera);
 
         final AbstractEntityCitizen citizen = state.getCitizen();
-        if (citizen != null && citizen.getCitizenDataView() != null && citizen.getCitizenDataView().hasVisibleStatus()
-              && state.distanceToCameraSq <= 4096.0D)
+        final boolean statusShown = citizen != null && citizen.getCitizenDataView() != null && citizen.getCitizenDataView().hasVisibleStatus()
+                                      && state.distanceToCameraSq <= 4096.0D;
+        // Round 4 life: the short line the citizen says, above the status icon, for players within 24 blocks.
+        final Component speech = citizen == null ? null : citizen.getSpeechLine();
+        if (speech != null && state.distanceToCameraSq <= SPEECH_RANGE_SQ)
+        {
+            final double above = state.boundingBoxHeight + (state.isBaby ? 0.2D : 0.0D) + (statusShown ? 0.55D : 0.3D);
+            submitNodeCollector.submitNameTag(poseStack, new Vec3(0, above, 0), 0, speech, !state.isDiscrete, state.lightCoords, camera);
+        }
+        if (statusShown)
         {
             // Same placement as 1.21: above the head, facing the camera, at name-tag pixel scale.
             // Scale follows 26.3's own name tags (positive x) so the quad faces the camera instead of being culled.

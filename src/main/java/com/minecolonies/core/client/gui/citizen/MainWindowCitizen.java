@@ -8,6 +8,7 @@ import com.ldtteam.blockui.views.View;
 import com.minecolonies.api.colony.ICitizenDataView;
 import com.minecolonies.api.entity.citizen.Skill;
 import com.minecolonies.api.util.constant.Constants;
+import com.minecolonies.core.colony.life.LifeTrait;
 import com.minecolonies.core.network.messages.server.colony.citizen.AdjustSkillCitizenMessage;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -76,7 +77,13 @@ public class MainWindowCitizen extends AbstractWindowCitizen
     public void onOpened()
     {
         super.onOpened();
-        findPaneOfTypeByID(WINDOW_ID_NAME, Text.class).setText(Component.literal(citizen.getName()));
+        final Text name = findPaneOfTypeByID(WINDOW_ID_NAME, Text.class);
+        name.setText(Component.literal(citizen.getName()));
+        // round 4 life: the citizen's one trait, as a short line on the name
+        PaneBuilders.tooltipBuilder()
+          .append(Component.translatable(LifeTrait.of(citizen.getId(), citizen.getCitizenSkillHandler()).lineKey()))
+          .hoverPane(name)
+          .build();
 
         CitizenWindowUtils.createHealthBar(citizen, findPaneOfTypeByID(WINDOW_ID_HEALTHBAR, View.class));
         CitizenWindowUtils.createSaturationBar(citizen, this);

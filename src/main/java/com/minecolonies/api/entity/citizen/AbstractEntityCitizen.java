@@ -87,6 +87,17 @@ public abstract class AbstractEntityCitizen extends AbstractCivilianEntity imple
     public static final EntityDataAccessor<String>   DATA_STYLE           = SynchedEntityData.defineId(AbstractEntityCitizen.class, EntityDataSerializers.STRING);
     public static final EntityDataAccessor<String>   DATA_TEXTURE_SUFFIX  = SynchedEntityData.defineId(AbstractEntityCitizen.class, EntityDataSerializers.STRING);
     public static final EntityDataAccessor<String>   DATA_JOB             = SynchedEntityData.defineId(AbstractEntityCitizen.class, EntityDataSerializers.STRING);
+    /**
+     * Round 4 life: the short line a citizen says right now, shown above its head to every player nearby ("" for none). A lang key, optionally followed by
+     * "|t:" and a lang key or "|n:" and a plain name for its one argument.
+     */
+    public static final EntityDataAccessor<String>   DATA_SPEECH          = SynchedEntityData.defineId(AbstractEntityCitizen.class, EntityDataSerializers.STRING);
+
+    /**
+     * Client cache of the speech line: the raw value it was built from and the line.
+     */
+    private String    speechRaw  = "";
+    private Component speechLine = null;
 
     /**
      * The default model.
@@ -330,6 +341,66 @@ public abstract class AbstractEntityCitizen extends AbstractCivilianEntity imple
         builder.define(DATA_IS_CHILD, false);
         builder.define(DATA_BED_POS, new BlockPos(0, 0, 0));
         builder.define(DATA_JOB, "");
+        builder.define(DATA_SPEECH, "");
+    }
+
+    /**
+     * Round 4 life: sets the line the citizen says (server side; "" clears it).
+     *
+     * @param raw the lang key, with its argument as described at {@link #DATA_SPEECH}.
+     */
+    public void setSpeech(final String raw)
+    {
+        if (!raw.equals(entityData.get(DATA_SPEECH)))
+        {
+            entityData.set(DATA_SPEECH, raw);
+        }
+    }
+
+    /**
+     * @return the raw line the citizen says now, "" for none.
+     */
+    public String getSpeech()
+    {
+        return entityData.get(DATA_SPEECH);
+    }
+
+    /**
+     * Round 4 life: the line the citizen says now, built once per change.
+     *
+     * @return the line, null for none.
+     */
+    @Nullable
+    public Component getSpeechLine()
+    {
+        final String raw = entityData.get(DATA_SPEECH);
+        if (!raw.equals(speechRaw))
+        {
+            speechRaw = raw;
+            speechLine = speechComponent(raw);
+        }
+        return speechLine;
+    }
+
+    /**
+     * @param raw a speech value (see {@link #DATA_SPEECH}).
+     * @return its line, null for "".
+     */
+    @Nullable
+    public static Component speechComponent(final String raw)
+    {
+        if (raw == null || raw.isEmpty())
+        {
+            return null;
+        }
+        final int bar = raw.indexOf('|');
+        if (bar < 0 || raw.length() < bar + 3)
+        {
+            return Component.translatable(raw);
+        }
+        final String key = raw.substring(0, bar);
+        final String arg = raw.substring(bar + 3);
+        return Component.translatable(key, raw.charAt(bar + 1) == 't' ? Component.translatable(arg) : Component.literal(arg));
     }
 
     /**

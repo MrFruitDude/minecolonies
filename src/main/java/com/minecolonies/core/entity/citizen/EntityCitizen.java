@@ -76,6 +76,8 @@ import net.minecraft.util.ProblemReporter;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.syncher.EntityDataAccessor;
+import com.minecolonies.core.colony.life.CitizenLife;
+import com.minecolonies.core.colony.life.ColonyLife;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -231,6 +233,10 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
      * the item pickup scan of a citizen off work are skipped while nobody watches.
      */
     private boolean watchedByPlayer = true;
+    /**
+     * Round 4 life: chats, cheers, grief, the morning greeting and rain hurry of this citizen (not saved).
+     */
+    private final CitizenLife life = new CitizenLife(this);
     /**
      * Constructor for a new citizen typed entity.
      *
@@ -712,6 +718,7 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
             CitizenItemUtils.pickupItems(this);
         }
         citizenData.setLastPosition(blockPosition());
+        life.tick20();
         onLivingSoundUpdate();
         final ChunkPos currentChunk = chunkPosition();
         if ((!Objects.equals(currentChunk, lastChunk)))
@@ -1548,6 +1555,8 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
             {
                 citizenColonyHandler.getColonyOrRegister().getCitizenManager().updateCitizenMourn(citizenData, true);
             }
+            // round 4 life: friends (family, housemates, co-workers, chat partners) grieve for a while
+            ColonyLife.onCitizenDied(citizenColonyHandler.getColonyOrRegister(), citizenData);
             getCitizenColonyHandler().getColonyOrRegister().getStatisticsManager().increment(DEATH, getCitizenColonyHandler().getColonyOrRegister().getDay());
             final BlockPos gravePos;
             if (!isInvisible())
@@ -1772,6 +1781,14 @@ public class EntityCitizen extends AbstractEntityCitizen implements IThreatTable
     public ITickRateStateMachine<IState> getCitizenAI()
     {
         return citizenAI;
+    }
+
+    /**
+     * @return the round 4 life of this citizen (chats, cheers, grief, greetings).
+     */
+    public CitizenLife getLife()
+    {
+        return life;
     }
     @Override
     public boolean isSuppressingBounce()
