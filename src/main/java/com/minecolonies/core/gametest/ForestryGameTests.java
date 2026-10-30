@@ -8,6 +8,9 @@ import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.compatibility.Compatibility;
 import com.minecolonies.api.compatibility.treechop.TreeChopProxy;
 import com.minecolonies.api.crafting.ItemStorage;
+import com.minecolonies.api.entity.ai.statemachine.AITarget;
+import com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState;
+import com.minecolonies.api.entity.ai.statemachine.states.IAIState;
 import com.minecolonies.api.items.ModTags;
 import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.Log;
@@ -19,7 +22,9 @@ import com.minecolonies.core.colony.buildings.modules.settings.BoolSetting;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack;
 import com.minecolonies.core.colony.jobs.JobLumberjack;
 import com.minecolonies.core.entity.ai.workers.production.EntityAIWorkLumberjack;
+import com.minecolonies.core.entity.ai.workers.util.PlacedCaps;
 import com.minecolonies.core.entity.ai.workers.util.Tree;
+import com.minecolonies.core.entity.ai.workers.util.TreeClaims;
 import com.minecolonies.core.entity.ai.workers.util.TreeFootprint;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -50,7 +55,12 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.util.BlockSnapshot;
+import net.neoforged.neoforge.common.util.FakePlayerFactory;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
+import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -121,6 +131,10 @@ public final class ForestryGameTests
         TESTS.put("forestry_cap_added_fungus", ForestryGameTests::capAddedFungus);
         TESTS.put("forestry_joined_caps", ForestryGameTests::joinedCaps);
         TESTS.put("forestry_joined_caps_restart", ForestryGameTests::joinedCapsRestart);
+        TESTS.put("forestry_placed_cap_in_reach", ForestryGameTests::placedCapInReach);
+        TESTS.put("forestry_placed_cap_marks", ForestryGameTests::placedCapMarks);
+        TESTS.put("forestry_joined_caps_two", ForestryGameTests::joinedCapsTwo);
+        TESTS.put("forestry_far_search", ForestryGameTests::farSearch);
 
         TREECHOP_TESTS.put("forestry_treechop_fell", ForestryGameTests::treeChopFell);
         TREECHOP_TESTS.put("forestry_treechop_half_chopped", ForestryGameTests::treeChopHalfChopped);
@@ -1818,7 +1832,7 @@ public final class ForestryGameTests
                     return;
                 }
                 // a is done: a co-manager adds a block against what b still holds, out past b's reach
-                added[0] = joinedCapSpot(level, stemA, stemB);
+                added[0] = joinedCapSpot(level, stemA, stemB, false);
                 helper.assertTrue(added[0] != null, "no spot by b's cap out of its reach: " + describe(worker));
                 level.setBlockAndUpdate(added[0], Blocks.BROWN_MUSHROOM_BLOCK.defaultBlockState());
                 // the restart: b chosen afresh, through a save and a load
@@ -1826,6 +1840,271 @@ public final class ForestryGameTests
                 new Tree(level, stemB.above(1), colony).write(level.registryAccess(), saved);
                 ((JobLumberjack) worker.getJob()).setTree(Tree.read(level.registryAccess(), saved));
             }, "forestry_joined_caps_restart");
+        });
+    }
+
+    // ---------------------------------------------------------------- player-placed caps, cap neighbours, far search (improve-all r7)
+
+    /**
+     * A player places a block: set it, then the placement event a player's hand fires.
+     */
+    private static void playerPlaces(final ServerLevel level, final BlockPos abs, final BlockState state)
+    {
+        level.setBlockAndUpdate(abs, state);
+        NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(level.dimension(), level, abs), level.getBlockState(abs.below()),
+          FakePlayerFactory.getMinecraft(level)));
+    }
+
+    /**
+     * r6 Sol H1, round 7: a cap a player places inside a tree's own reach before the tree is chosen is marked, and a Forester never cuts it. Two huge brown
+     * mushrooms whose flat caps grew into one. He fells the first; a co-manager then places a brown mushroom block against the cap the second still holds,
+     * inside the second's reach, where no snapshot can tell it from a natural cap. The mark goes through a save and a load of its chunk, the second tree is
+     * chosen afresh and comes back through a save, and he fells it: the placed block stays and the second tree's snapshot never held it. The rest of that
+     * connected cap may stay with it (a cap holding a player's block stays whole).
+     */
+    private static void placedCapInReach(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry placed cap in reach");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final Grown[] pair = joinedMushrooms(helper);
+        final BlockPos stemA = pair[0].stumps().get(0);
+        final BlockPos stemB = pair[1].stumps().get(0);
+        final AABB columnA = new AABB(stemA).expandTowards(0, 16, 0);
+        final AABB columnB = new AABB(stemB).expandTowards(0, 16, 0);
+
+        helper.runAfterDelay(20, () -> {
+            final Tree treeA = new Tree(level, stemA.above(1), colony);
+            helper.assertTrue(treeA.isTree() && treeA.getSkip() == TreeFootprint.Skip.NONE && treeA.isNetherTree(),
+              "mushroom a is no cap tree: " + treeA.getSkip() + " " + treeA.getSkipDetail());
+            final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10));
+            helper.assertTrue(worker.getJob() instanceof JobLumberjack, "no lumberjack job");
+            ((JobLumberjack) worker.getJob()).setTree(treeA);
+            final BlockPos[] added = {null};
+            final String[] last = {""};
+            pump(helper, List.of(worker), 24_000, () -> {
+                final int stemsA = count(level, columnA, TreeFootprint::isTreeBlock);
+                final int stemsB = count(level, columnB, TreeFootprint::isTreeBlock);
+                last[0] = "stem a " + stemsA + ", stem b " + stemsB + ", placed cap " + (added[0] == null ? "not yet" : level.getBlockState(added[0]).getBlock()
+                            + (PlacedCaps.isPlaced(level, added[0]) ? " (marked)" : " (no mark)"));
+                helper.assertTrue(added[0] == null || level.getBlockState(added[0]).is(Blocks.BROWN_MUSHROOM_BLOCK), "the cap placed in b's reach was taken: " + last[0]);
+                return added[0] != null && stemsB == 0 && tree(worker) == null;
+            }, () -> last[0] + ", " + describe(worker), () -> {
+                if (added[0] != null || tree(worker) == treeA || count(level, columnA, TreeFootprint::isTreeBlock) > 0)
+                {
+                    return;
+                }
+                // a is done: a co-manager places a block against what b still holds, inside b's own reach
+                added[0] = joinedCapSpot(level, stemA, stemB, true);
+                helper.assertTrue(added[0] != null, "no spot by b's cap inside its reach: " + describe(worker));
+                playerPlaces(level, added[0], Blocks.BROWN_MUSHROOM_BLOCK.defaultBlockState());
+                helper.assertTrue(PlacedCaps.isPlaced(level, added[0]), "the placed cap block is not marked");
+                // the restart: the chunk's marks through a save and a load, then b chosen afresh through a save and a load
+                helper.assertTrue(PlacedCaps.saveAndLoad(level, added[0]) >= 1 && PlacedCaps.isPlaced(level, added[0]), "the mark did not come back from the save");
+                final Tree treeB = new Tree(level, stemB.above(1), colony);
+                helper.assertTrue(!treeB.getSeenCaps().contains(added[0]), "the placed cap block is in b's snapshot");
+                final CompoundTag saved = new CompoundTag();
+                treeB.write(level.registryAccess(), saved);
+                ((JobLumberjack) worker.getJob()).setTree(Tree.read(level.registryAccess(), saved));
+            }, "forestry_placed_cap_in_reach");
+        });
+    }
+
+    /**
+     * Round 7: the marks of player-placed cap blocks. A player's mushroom block, stem, wart block or shroomlight is marked; one grown, set by a command or
+     * placed by no player is not, nor is any other block. Breaking it, placing something else there, or the block going without an event (an explosion)
+     * clears the mark for good: the same block put back without a player is not marked. Marks come back from a save of their chunk.
+     */
+    private static void placedCapMarks(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final List<String> failures = new ArrayList<>();
+        final BlockPos base = helper.absolutePos(new BlockPos(40, 3, 30));
+        level.setChunkForced(base.getX() >> 4, base.getZ() >> 4, true);
+        final BlockState red = Blocks.RED_MUSHROOM_BLOCK.defaultBlockState();
+
+        final BlockPos placed = base;
+        playerPlaces(level, placed, red);
+        if (!PlacedCaps.isPlaced(level, placed))
+        {
+            failures.add("a player's red mushroom block is not marked");
+        }
+        final BlockPos natural = base.east(2);
+        level.setBlockAndUpdate(natural, red);
+        if (PlacedCaps.isPlaced(level, natural))
+        {
+            failures.add("a mushroom block set without a placement is marked");
+        }
+        final BlockPos byNobody = base.east(4);
+        level.setBlockAndUpdate(byNobody, red);
+        NeoForge.EVENT_BUS.post(new BlockEvent.EntityPlaceEvent(BlockSnapshot.create(level.dimension(), level, byNobody), level.getBlockState(byNobody.below()), null));
+        if (PlacedCaps.isPlaced(level, byNobody))
+        {
+            failures.add("a mushroom block placed by no player is marked");
+        }
+        final BlockPos stone = base.east(6);
+        playerPlaces(level, stone, Blocks.STONE.defaultBlockState());
+        level.setBlockAndUpdate(stone, red);
+        if (PlacedCaps.isPlaced(level, stone))
+        {
+            failures.add("a player's stone left a mark under a mushroom block set there later");
+        }
+
+        // broken by a player
+        NeoForge.EVENT_BUS.post(new BreakBlockEvent(level, placed, level.getBlockState(placed), FakePlayerFactory.getMinecraft(level)));
+        level.setBlockAndUpdate(placed, Blocks.AIR.defaultBlockState());
+        level.setBlockAndUpdate(placed, red);
+        if (PlacedCaps.isPlaced(level, placed))
+        {
+            failures.add("the mark outlived the player breaking the block");
+        }
+        // replaced by a player
+        final BlockPos replaced = base.south(2);
+        playerPlaces(level, replaced, Blocks.SHROOMLIGHT.defaultBlockState());
+        playerPlaces(level, replaced, Blocks.OAK_PLANKS.defaultBlockState());
+        level.setBlockAndUpdate(replaced, Blocks.SHROOMLIGHT.defaultBlockState());
+        if (PlacedCaps.isPlaced(level, replaced))
+        {
+            failures.add("the mark outlived a plank placed over the shroomlight");
+        }
+        // gone without an event (an explosion, a command)
+        final BlockPos blown = base.south(4);
+        playerPlaces(level, blown, Blocks.NETHER_WART_BLOCK.defaultBlockState());
+        level.setBlockAndUpdate(blown, Blocks.AIR.defaultBlockState());
+        if (PlacedCaps.isPlaced(level, blown))
+        {
+            failures.add("air is marked");
+        }
+        level.setBlockAndUpdate(blown, Blocks.NETHER_WART_BLOCK.defaultBlockState());
+        if (PlacedCaps.isPlaced(level, blown))
+        {
+            failures.add("a stale mark came back under a wart block set later");
+        }
+        // through a save
+        final BlockPos warped = base.south(6);
+        final BlockPos stem = base.south(6).east(1);
+        playerPlaces(level, warped, Blocks.WARPED_WART_BLOCK.defaultBlockState());
+        playerPlaces(level, stem, Blocks.MUSHROOM_STEM.defaultBlockState());
+        PlacedCaps.saveAndLoad(level, warped);
+        PlacedCaps.saveAndLoad(level, stem);
+        if (!PlacedCaps.isPlaced(level, warped) || !PlacedCaps.isPlaced(level, stem))
+        {
+            failures.add("marks lost in a save: warped wart " + PlacedCaps.isPlaced(level, warped) + ", stem " + PlacedCaps.isPlaced(level, stem));
+        }
+        if (PlacedCaps.isPlaced(level, natural) || PlacedCaps.isPlaced(level, placed))
+        {
+            failures.add("a save brought back a mark that was not there");
+        }
+        Log.getLogger().info("[forestry_placed_cap_marks] failures {}", failures);
+        helper.assertTrue(failures.isEmpty(), "placed cap marks: " + failures);
+        helper.succeed();
+    }
+
+    /**
+     * r6 Fable N44: two Foresters, two huge brown mushrooms whose flat caps grew into one. The first works mushroom a; the second finds b while a's stem
+     * stands and leaves it for now (each snapshot would leave the shared band to the other stem, so it would float for good). Once a is down, b is chosen
+     * with the band in its snapshot: both go, no cap is left and neither is given up.
+     */
+    private static void joinedCapsTwo(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry joined caps two");
+        final BuildingLumberjack first = hut(helper, colony, HUT, false);
+        final BuildingLumberjack second = hut(helper, colony, new BlockPos(46, 1, 28), false);
+        final Grown[] pair = joinedMushrooms(helper);
+        final AABB both = pair[0].box().minmax(pair[1].box()).inflate(TreeFootprint.LeafSweep.CAP_BOUNDS, 0, TreeFootprint.LeafSweep.CAP_BOUNDS);
+        final BlockPos stemA = pair[0].stumps().get(0);
+        final BlockPos stemB = pair[1].stumps().get(0);
+        final AABB columnA = new AABB(stemA).expandTowards(0, 16, 0);
+
+        helper.runAfterDelay(20, () -> {
+            final Tree treeA = new Tree(level, stemA.above(1), colony);
+            helper.assertTrue(treeA.isTree() && treeA.getSkip() == TreeFootprint.Skip.NONE && treeA.isNetherTree(),
+              "mushroom a is no cap tree: " + treeA.getSkip() + " " + treeA.getSkipDetail());
+            final ICitizenData a = forester(helper, colony, first, new BlockPos(14, 1, 10));
+            helper.assertTrue(a.getJob() instanceof JobLumberjack, "no lumberjack job");
+            ((JobLumberjack) a.getJob()).setTree(treeA);
+            // he holds a from the start, as if his own search had chosen it
+            final List<BlockPos> logsA = new ArrayList<>(treeA.getAllLogs());
+            logsA.add(treeA.getLocation());
+            helper.assertTrue(TreeClaims.claim(level, logsA, colony.getID(), a.getId()) != null, "mushroom a could not be claimed");
+            final ICitizenData b = forester(helper, colony, second, new BlockPos(42, 1, 20));
+            final String[] last = {""};
+            pump(helper, List.of(a, b), 24_000, () -> {
+                final int stems = count(level, both, TreeFootprint::isTreeBlock);
+                final int caps = count(level, both, TreeFootprint::isCap);
+                final EntityAIWorkLumberjack aiA = ai(a);
+                final EntityAIWorkLumberjack aiB = ai(b);
+                final int deferred = (aiA == null ? 0 : aiA.getCapTreesDeferred()) + (aiB == null ? 0 : aiB.getCapTreesDeferred());
+                final int givenUp = (aiA == null ? 0 : aiA.getTreesGivenUp()) + (aiB == null ? 0 : aiB.getTreesGivenUp());
+                last[0] = "stems " + stems + ", caps left " + caps + ", cap trees deferred " + deferred + ", given up " + givenUp;
+                helper.assertTrue(givenUp == 0, "a mushroom was given up: " + last[0]);
+                if (stems == 0 && tree(a) == null && tree(b) == null)
+                {
+                    helper.assertTrue(deferred > 0, "the second Forester never found b while a was worked: " + last[0]);
+                    helper.assertTrue(caps == 0, "the joined cap was left: " + last[0]);
+                    Log.getLogger().info("[forestry_joined_caps_two] {}", last[0]);
+                    return true;
+                }
+                return false;
+            }, () -> last[0] + ", A " + describe(a) + ", B " + describe(b), () -> {
+                final Tree tb = tree(b);
+                if (tb != null && tb.getAllLogs().contains(stemB) && count(level, columnA, TreeFootprint::isTreeBlock) > 0)
+                {
+                    throw helper.assertionException("the second Forester chose b while a's stem stood: " + describe(b));
+                }
+            }, "forestry_joined_caps_two");
+        });
+    }
+
+    /**
+     * r6 Fable N43: a Forester who searches from outside the disc round his hut (back from a meal, a bed, a flight) walks home first and finds the tree
+     * by the hut. An oak near a level 1 hut; he stands past the search radius plus its margin and is put to searching: he picks the oak, from the disc.
+     */
+    private static void farSearch(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry far search");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final Grown oak = grow(helper, new TreeSpec("oak", new BlockPos(16, 1, 18), false, Blocks.OAK_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.OAK, null), 61L);
+
+        helper.runAfterDelay(20, () -> {
+            final ICitizenData worker = forester(helper, colony, building, new BlockPos(58, 1, 38), new ItemStack(Items.OAK_SAPLING, 4));
+            final EntityAIWorkLumberjack[] searching = {null};
+            final BlockPos hut = building.getPosition();
+            final double[] chosenAt = {-1};
+            final String[] last = {""};
+            pump(helper, List.of(worker), 2_400, () -> {
+                final Tree tree = tree(worker);
+                last[0] = "searching " + (searching[0] != null) + ", tree " + (tree == null ? "none" : tree.getLocation().toShortString())
+                            + (chosenAt[0] < 0 ? "" : ", chosen " + Math.round(chosenAt[0]) + " blocks from the hut");
+                return tree != null && oak.box().inflate(1).contains(Vec3.atCenterOf(tree.getLocation()));
+            }, () -> last[0] + ", " + describe(worker), () -> {
+                final EntityAIWorkLumberjack ai = ai(worker);
+                if (ai == null)
+                {
+                    return;
+                }
+                if (searching[0] == null)
+                {
+                    final IAIState state = ai.getState();
+                    if (state == AIWorkerState.START_WORKING || state == AIWorkerState.LUMBERJACK_START_WORKING)
+                    {
+                        final BlockPos at = worker.getEntity().get().blockPosition();
+                        final double away = Math.sqrt(Math.pow(at.getX() - hut.getX(), 2) + Math.pow(at.getZ() - hut.getZ(), 2));
+                        helper.assertTrue(away > ai.getSearchRadius() + 8, "fixture: he starts only " + Math.round(away) + " blocks from the hut");
+                        // back from far away, he resumes his search
+                        ai.getStateAI().transitionToNext(new AITarget<>(AIWorkerState.IDLE, AIWorkerState.LUMBERJACK_SEARCHING_TREE, 1));
+                        searching[0] = ai;
+                    }
+                }
+                if (chosenAt[0] < 0 && tree(worker) != null)
+                {
+                    final BlockPos at = worker.getEntity().get().blockPosition();
+                    chosenAt[0] = Math.sqrt(Math.pow(at.getX() - hut.getX(), 2) + Math.pow(at.getZ() - hut.getZ(), 2));
+                    helper.assertTrue(chosenAt[0] <= ai.getSearchRadius() + 8, "he chose the tree from outside the disc, " + Math.round(chosenAt[0]) + " blocks from the hut");
+                }
+            }, "forestry_far_search");
         });
     }
 
@@ -1849,15 +2128,16 @@ public final class ForestryGameTests
     }
 
     /**
-     * An air block next to (faces, edges, corners) a cap left after a was felled, out of b's reach and touching nothing but caps and air: where a player
-     * adds a block to the cap b still holds. The nearest to a's stem.
+     * An air block next to (faces, edges, corners) a cap left after a was felled, out of b's reach (or inside it) and touching nothing but caps and air:
+     * where a player adds a block to the cap b still holds. The nearest to a's stem.
      */
-    private static BlockPos joinedCapSpot(final ServerLevel level, final BlockPos stemA, final BlockPos stemB)
+    private static BlockPos joinedCapSpot(final ServerLevel level, final BlockPos stemA, final BlockPos stemB, final boolean insideReach)
     {
         BlockPos best = null;
         for (final BlockPos pos : BlockPos.betweenClosed(stemA.offset(-4, 2, -4), stemB.offset(0, 16, 4)))
         {
-            if (!level.getBlockState(pos).isAir() || Math.max(Math.abs(pos.getX() - stemB.getX()), Math.abs(pos.getZ() - stemB.getZ())) <= TreeFootprint.LeafSweep.CAP_BOUNDS
+            final boolean inReach = Math.max(Math.abs(pos.getX() - stemB.getX()), Math.abs(pos.getZ() - stemB.getZ())) <= TreeFootprint.LeafSweep.CAP_BOUNDS;
+            if (!level.getBlockState(pos).isAir() || inReach != insideReach
                   || (best != null && pos.distManhattan(stemA) >= best.distManhattan(stemA)))
             {
                 continue;

@@ -5,14 +5,18 @@ import com.minecolonies.api.util.constant.Constants;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.piston.PistonStructureResolver;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.storage.TagValueInput;
+import net.minecraft.world.level.storage.TagValueOutput;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.neoforged.bus.api.EventPriority;
@@ -49,34 +53,69 @@ public final class PlacedCaps
      * The marked positions of one chunk.
      */
     public static final Supplier<AttachmentType<Marks>> PLACED_CAPS = ATTACHMENTS.register("placed_caps", () -> AttachmentType.builder(Marks::new)
-      .serialize(new IAttachmentSerializer<Marks>()
-      {
-          @Override
-          public Marks read(final IAttachmentHolder holder, final ValueInput input)
-          {
-              final Marks marks = new Marks();
-              input.getIntArray("pos").ifPresent(packed -> {
-                  for (final int local : packed)
-                  {
-                      marks.set.add(local);
-                  }
-              });
-              return marks;
-          }
-
-          @Override
-          public boolean write(final Marks marks, final ValueOutput output)
-          {
-              final int[] packed = marks.toArray();
-              if (packed.length == 0)
-              {
-                  return false;
-              }
-              output.putIntArray("pos", packed);
-              return true;
-          }
-      })
+      .serialize(Serializer.INSTANCE)
       .build());
+
+    /**
+     * Writes a chunk's marks with its save and reads them back on load.
+     */
+    private static final class Serializer implements IAttachmentSerializer<Marks>
+    {
+        private static final Serializer INSTANCE = new Serializer();
+
+        @Override
+        public Marks read(final IAttachmentHolder holder, final ValueInput input)
+        {
+            final Marks marks = new Marks();
+            input.getIntArray("pos").ifPresent(packed -> {
+                for (final int local : packed)
+                {
+                    marks.set.add(local);
+                }
+            });
+            return marks;
+        }
+
+        @Override
+        public boolean write(final Marks marks, final ValueOutput output)
+        {
+            final int[] packed = marks.toArray();
+            if (packed.length == 0)
+            {
+                return false;
+            }
+            output.putIntArray("pos", packed);
+            return true;
+        }
+    }
+
+    /**
+     * A save and a load of one chunk's marks through the serializer the chunk save uses: the marks are dropped from the chunk and read back from what was
+     * written (tests: the marks outlive a restart).
+     *
+     * @param level the level.
+     * @param pos   a block of the chunk.
+     * @return the number of marks read back.
+     */
+    public static int saveAndLoad(@NotNull final Level level, @NotNull final BlockPos pos)
+    {
+        final LevelChunk chunk = level.getChunkAt(pos);
+        final Marks marks = chunk.getExistingDataOrNull(PLACED_CAPS.get());
+        chunk.removeData(PLACED_CAPS.get());
+        if (marks == null)
+        {
+            return 0;
+        }
+        final TagValueOutput output = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, level.registryAccess());
+        if (!Serializer.INSTANCE.write(marks, output))
+        {
+            return 0;
+        }
+        final CompoundTag saved = output.buildResult();
+        final Marks loaded = Serializer.INSTANCE.read(chunk, TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), saved));
+        chunk.setData(PLACED_CAPS.get(), loaded);
+        return loaded.toArray().length;
+    }
 
     private PlacedCaps()
     {

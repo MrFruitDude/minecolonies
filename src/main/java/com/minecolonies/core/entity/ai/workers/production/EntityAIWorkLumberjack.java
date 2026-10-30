@@ -349,6 +349,11 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      * Forestry (r6 Fable N44): how long a cap tree waits while another Forester works the joined cap next to it, in game ticks (thirty seconds).
      */
     private static final long CAP_NEIGHBOUR_DEFER_TICKS = 30 * 20L;
+
+    /**
+     * Cap trees he left for now because the joined cap next to them was worked (r6 Fable N44; tests).
+     */
+    private int capTreesDeferred = 0;
     @Nullable
     private Tree searchedTree;
     @Nullable
@@ -455,6 +460,14 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     public int getChangedTreesLeft()
     {
         return changedTreesLeft;
+    }
+
+    /**
+     * @return cap trees he left for now because another Forester worked the joined cap next to them.
+     */
+    public int getCapTreesDeferred()
+    {
+        return capTreesDeferred;
     }
 
     /**
@@ -848,6 +861,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 // r6 Fable N44: another Forester works a stem whose cap may join this one; his snapshot leaves the shared band to this tree's stem and this
                 // snapshot would leave it to his, so it would float for good. Wait until his stem is down, then this snapshot takes the band
                 TreeClaims.block(world, tree.getAllLogs(), colonyId, CAP_NEIGHBOUR_DEFER_TICKS);
+                capTreesDeferred++;
                 Log.getLogger().debug("Forester {} leaves the cap tree at {} for now: the joined cap next to it is worked", citizenId, tree.getLocation());
             }
             else if (tree.isTree() && tree.getAllLogs().stream().noneMatch(pos -> TreeClaims.isTakenByOther(world, pos, colonyId, citizenId))
