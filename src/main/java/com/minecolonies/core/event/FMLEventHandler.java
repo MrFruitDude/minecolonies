@@ -87,6 +87,7 @@ public class FMLEventHandler
     public static void onServerAboutToStart(@NotNull final ServerAboutToStartEvent event)
     {
         IColonyManager.getInstance().getRecipeManager().reset();
+        com.minecolonies.core.colony.requestsystem.RsWorldScope.serverStarting();
     }
 
     @SubscribeEvent
@@ -95,5 +96,6 @@ public class FMLEventHandler
         Pathfinding.shutdown();
         DataPackSyncEventHandler.ServerEvents.reset();
         AiCounters.clearAll();
+        com.minecolonies.core.colony.requestsystem.RsWorldScope.serverStopping();
     }
 }

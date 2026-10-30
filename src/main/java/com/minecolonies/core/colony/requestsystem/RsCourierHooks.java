@@ -63,7 +63,7 @@ public final class RsCourierHooks
         RsStats.deliveriesArrived++;
         if (delivery.hasParent())
         {
-            forgetCredit(delivery.getParent());
+            forgetCredit(manager, delivery.getParent());
         }
         final ReservationLedger ledger = RsAccess.ledger(manager);
         if (ledger == null)
@@ -117,23 +117,40 @@ public final class RsCourierHooks
         if (delivery.hasParent())
         {
             // the parent asks again only for what is still missing (r1 Fable F17, Sol M1: run 014 delivered 24 logs for a request of 16)
-            credit(delivery.getParent(), count);
+            credit(manager, delivery.getParent(), count);
         }
     }
 
     /**
-     * What arrived of a request in short loads (its deliveries failed short and it was handed out again), by the token of the request. Held in
-     * memory only: after a reload the rest is asked for in full again (the old behaviour).
+     * What arrived of a request in short loads (its deliveries failed short and it was handed out again), by world and dimension
+     * ({@link RsWorldScope}) and the token of the request. Held in memory only: after a reload the rest is asked for in full again (the old behaviour).
      */
-    private static final java.util.Map<IToken<?>, Integer> CREDIT = new java.util.concurrent.ConcurrentHashMap<>();
+    private record CreditKey(String world, IToken<?> request)
+    {
+    }
+
+    private static final java.util.Map<CreditKey, Integer> CREDIT = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * Part of a request arrived in a short load.
      *
+     * @param manager the request manager of the request.
      * @param request the token of the request (the parent of the short delivery).
      * @param count   how many of its items arrived.
      */
-    public static void credit(@NotNull final IToken<?> request, final int count)
+    public static void credit(@NotNull final IRequestManager manager, @NotNull final IToken<?> request, final int count)
+    {
+        credit(RsWorldScope.of(manager), request, count);
+    }
+
+    /**
+     * Part of a request arrived in a short load (pure: the world key is given).
+     *
+     * @param world   the world and dimension key ({@link RsWorldScope}).
+     * @param request the token of the request.
+     * @param count   how many of its items arrived.
+     */
+    public static void credit(@NotNull final String world, @NotNull final IToken<?> request, final int count)
     {
         if (count <= 0)
         {
@@ -144,44 +161,71 @@ public final class RsCourierHooks
             // requests that were cancelled or finished another way: forget the oldest guesses rather than grow for ever
             CREDIT.clear();
         }
-        CREDIT.merge(request, count, Integer::sum);
+        CREDIT.merge(new CreditKey(world, request), count, Integer::sum);
     }
 
     /**
+     * @param manager the request manager of the request.
      * @param request a request for items.
      * @return how many items of it are still missing: what it asks for, minus what arrived of it in short loads (at least 1 while it is open).
      */
-    public static int outstanding(@NotNull final IRequest<? extends IDeliverable> request)
+    public static int outstanding(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends IDeliverable> request)
     {
         final int count = request.getRequest().getCount();
-        final Integer arrived = CREDIT.get(request.getId());
+        final Integer arrived = CREDIT.get(new CreditKey(RsWorldScope.of(manager), request.getId()));
         return arrived == null ? count : Math.max(1, count - arrived);
     }
 
     /**
+     * @param manager the request manager of the request.
      * @param request a request for items.
      * @return the least that is worth a delivery: the minimum of the request, but no more than is still missing.
      */
-    public static int outstandingMinimum(@NotNull final IRequest<? extends IDeliverable> request)
+    public static int outstandingMinimum(@NotNull final IRequestManager manager, @NotNull final IRequest<? extends IDeliverable> request)
     {
-        return Math.min(request.getRequest().getMinimumCount(), outstanding(request));
+        return Math.min(request.getRequest().getMinimumCount(), outstanding(manager, request));
     }
 
     /**
      * The request is done (its rest arrived in full, or it is gone): its short-load count is forgotten.
      *
+     * @param manager the request manager of the request.
      * @param request the token of the request.
      */
-    public static void forgetCredit(@NotNull final IToken<?> request)
+    public static void forgetCredit(@NotNull final IRequestManager manager, @NotNull final IToken<?> request)
     {
-        CREDIT.remove(request);
+        CREDIT.remove(new CreditKey(RsWorldScope.of(manager), request));
     }
 
     /**
      * @return what arrived of the request in short loads (for the tests).
      */
-    public static int creditOf(@NotNull final IToken<?> request)
+    public static int creditOf(@NotNull final IRequestManager manager, @NotNull final IToken<?> request)
     {
-        return CREDIT.getOrDefault(request, 0);
+        return creditOf(RsWorldScope.of(manager), request);
+    }
+
+    /**
+     * @return what arrived of the request in short loads in the given world and dimension (for the tests).
+     */
+    public static int creditOf(@NotNull final String world, @NotNull final IToken<?> request)
+    {
+        return CREDIT.getOrDefault(new CreditKey(world, request), 0);
+    }
+
+    /**
+     * Forget the short-load count of a request in the given world and dimension (for the tests).
+     */
+    public static void forgetCredit(@NotNull final String world, @NotNull final IToken<?> request)
+    {
+        CREDIT.remove(new CreditKey(world, request));
+    }
+
+    /**
+     * Forget all short-load credit (a server starts or stops).
+     */
+    static void clearCredit()
+    {
+        CREDIT.clear();
     }
 }

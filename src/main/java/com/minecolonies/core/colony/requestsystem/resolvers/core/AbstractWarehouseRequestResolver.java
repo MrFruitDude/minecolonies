@@ -219,13 +219,13 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
                     if (building.getBuildingType() == ModBuildings.wareHouse.get() && building != wareHouse)
                     {
                         totalCount += getWarehouseInternalCount((BuildingWareHouse) building, requestToCheck);
-                        if (totalCount >= RsCourierHooks.outstanding(requestToCheck))
+                        if (totalCount >= RsCourierHooks.outstanding(manager, requestToCheck))
                         {
                             return true;
                         }
                     }
                 }
-                return totalCount >= RsCourierHooks.outstandingMinimum(requestToCheck);
+                return totalCount >= RsCourierHooks.outstandingMinimum(manager, requestToCheck);
             }
             catch (Exception e)
             {
@@ -287,7 +287,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         {
             return networkAttempt(colony, manager, request);
         }
-        final int totalRequested = RsCourierHooks.outstanding(request);
+        final int totalRequested = RsCourierHooks.outstanding(manager, request);
         int totalAvailable = 0;
         final Map<ItemStorage, Integer> storages = new HashMap<>();
 
@@ -341,7 +341,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             return null;
         }
 
-        if (totalAvailable >= totalRequested || totalAvailable >= RsCourierHooks.outstandingMinimum(request))
+        if (totalAvailable >= totalRequested || totalAvailable >= RsCourierHooks.outstandingMinimum(manager, request))
         {
             // Resolved from stock: the request manager asks for the follow-up next, before anything else runs.
             lastMatched = matched(wareHouse, request, raw);
@@ -394,7 +394,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         }
 
         List<IRequest<?>> deliveries = Lists.newArrayList();
-        int remainingCount = RsCourierHooks.outstanding(completedRequest);
+        int remainingCount = RsCourierHooks.outstanding(manager, completedRequest);
 
         final Map<ItemStorage, Integer> storages = new HashMap<>();
 
@@ -509,7 +509,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             return;
         }
         final int keep = request.getRequest() instanceof INonExhaustiveDeliverable ne ? ne.getLeftOver() : 0;
-        int remaining = RsCourierHooks.outstanding(request);
+        int remaining = RsCourierHooks.outstanding(manager, request);
         final Map<ItemStorage, Integer> kept = new HashMap<>();
         final String name = describe(manager, request);
         final Set<BlockPos> chain = ReservationLedger.requesterChain(manager, request);
@@ -561,7 +561,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         {
             return false;
         }
-        return plan.total() >= RsCourierHooks.outstanding(request) || plan.total() >= RsCourierHooks.outstandingMinimum(request);
+        return plan.total() >= RsCourierHooks.outstanding(manager, request) || plan.total() >= RsCourierHooks.outstandingMinimum(manager, request);
     }
 
     /**
@@ -587,7 +587,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             if (!all)
             {
                 covered += availableOf(unreserved(ledger, raw, candidate.warehouse().getID(), counts(manager, request)), keep);
-                if (covered >= RsCourierHooks.outstanding(request))
+                if (covered >= RsCourierHooks.outstanding(manager, request))
                 {
                     break;
                 }
@@ -740,7 +740,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
             totalAvailable += availableOf(inv, keep);
             readable.addAll(inv);
         }
-        final int totalRequested = RsCourierHooks.outstanding(request);
+        final int totalRequested = RsCourierHooks.outstanding(manager, request);
 
         if (ledger != null && totalAvailable > 0 && !destinationHasRoom(manager, request, readable, totalAvailable))
         {
@@ -753,7 +753,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         }
 
         final ColonyStorage storage = ColonyStorage.of(colony);
-        if (totalAvailable >= totalRequested || totalAvailable >= RsCourierHooks.outstandingMinimum(request))
+        if (totalAvailable >= totalRequested || totalAvailable >= RsCourierHooks.outstandingMinimum(manager, request))
         {
             lastNetworkMatched = new NetworkMatched(request.getId(), reads, storage.version(), WarehouseRackIndex.loadEpoch(), colony.getWorld().getGameTime());
             pendingRemainder = planRemainder(colony, manager, request, ledger, totalAvailable, totalRequested);
@@ -839,7 +839,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         final String name = describe(manager, request);
         final long now = RsAccess.now(manager);
         final Set<BlockPos> chain = ReservationLedger.requesterChain(manager, request);
-        for (final Allocation allocation : allocate(matched.reads(), ledger, RsCourierHooks.outstanding(request), keep, ReservationLedger.countsAgainst(chain)))
+        for (final Allocation allocation : allocate(matched.reads(), ledger, RsCourierHooks.outstanding(manager, request), keep, ReservationLedger.countsAgainst(chain)))
         {
             ledger.reserveStock(allocation.warehouse(), allocation.rack(), new ItemStorage(allocation.stack()), allocation.count(), request.getId(), name,
               ReservationReason.WAREHOUSE_DELIVERY, now);
@@ -882,7 +882,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
 
         final List<IRequest<?>> deliveries = Lists.newArrayList();
         final String requesterName = ledger == null ? "" : describe(manager, completedRequest);
-        for (final Allocation allocation : allocate(reads, ledger, RsCourierHooks.outstanding(completedRequest), keep, ReservationLedger.countsAgainst(chain)))
+        for (final Allocation allocation : allocate(reads, ledger, RsCourierHooks.outstanding(manager, completedRequest), keep, ReservationLedger.countsAgainst(chain)))
         {
             final ItemStack matchingStack = allocation.stack().copy();
             matchingStack.setCount(allocation.count());
@@ -1037,7 +1037,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         }
         final ItemStack sample = stacks.get(0).getA();
         final int room = DestinationRoom.roomFor(destination, sample) - ledger.reservedSpace(destinationPos, request.getRequest()::matches);
-        return room >= Math.max(1, Math.min(RsCourierHooks.outstandingMinimum(request), totalAvailable));
+        return room >= Math.max(1, Math.min(RsCourierHooks.outstandingMinimum(manager, request), totalAvailable));
     }
 
     private static String describe(@NotNull final IRequestManager manager, @NotNull final IRequest<?> request)

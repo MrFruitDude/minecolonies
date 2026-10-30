@@ -683,12 +683,12 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
         if (!success)
         {
             // the destination refused (full): couriers leave it be for a while instead of coming straight back with the same load
-            final long until = RefusedTargets.refused(colonyId, targetBuilding.getPosition(), world.getGameTime());
+            final long until = RefusedTargets.refused(world, colonyId, targetBuilding.getPosition());
             Log.getLogger().info("{}: {} refused the delivery (full), couriers come back after tick {}", worker.getName().getString(), targetBuilding.getPosition().toShortString(), until);
         }
         else if (!inserted.isEmpty())
         {
-            RefusedTargets.accepted(colonyId, targetBuilding.getPosition());
+            RefusedTargets.accepted(world, colonyId, targetBuilding.getPosition());
         }
         final Set<IToken<?>> undelivered = undeliveredRequests(deliveries, notDelivered);
         final Map<ItemStorage, Integer> left = new HashMap<>(inserted);
@@ -779,7 +779,7 @@ public class EntityAIWorkDeliveryman extends AbstractEntityAIInteract<JobDeliver
 
         final BlockPos refusedAt = ((Delivery) currentTask.getRequest()).getTarget().getInDimensionLocation();
         final int colonyId = worker.getCitizenColonyHandler().getColonyOrRegister().getID();
-        if (!job.hasOngoingDeliveries() && RefusedTargets.paused(colonyId, refusedAt, world.getGameTime()))
+        if (!job.hasOngoingDeliveries() && RefusedTargets.paused(world, colonyId, refusedAt))
         {
             // its destination refused a delivery a short while ago (full): no new trip yet with the same load. The other tasks first, or a wait
             if (!job.sendToBack(currentTask.getId()))
