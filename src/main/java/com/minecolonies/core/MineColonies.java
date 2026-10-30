@@ -251,6 +251,8 @@ public class MineColonies
 
         event.enqueueWork(ModLootConditions::init);
         event.enqueueWork(ModTags::init);
+        // round 4 life: citizens near a finished building cheer
+        event.enqueueWork(com.minecolonies.core.colony.life.ColonyLife::subscribe);
     }
 
     /**

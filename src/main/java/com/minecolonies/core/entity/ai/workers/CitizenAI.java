@@ -24,6 +24,7 @@ import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
 import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.core.colony.idle.IdleCitizenArbiter;
+import com.minecolonies.core.colony.life.CitizenLife;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
 import com.minecolonies.core.colony.jobs.AbstractJobGuard;
 import com.minecolonies.core.colony.jobs.JobPupil;
@@ -109,6 +110,8 @@ public class CitizenAI implements IStateAI
 
         minimalAI.add(new EntityAICitizenAvoidEntity(citizen, Monster.class, (float) DISTANCE_OF_ENTITY_AVOID, LATER_RUN_SPEED_AVOID, INITIAL_RUN_SPEED_AVOID));
         minimalAI.add(new EntityAIEatTask(citizen));
+        // round 4 life: chats, the morning greeting and rain shelter come before the wander AI's own free-time steps
+        minimalAI.add(new EntityAICitizenLife(citizen));
         minimalAI.add(new EntityAICitizenWander(citizen, DEFAULT_SPEED));
         minimalAI.add(new EntityAISickTask(citizen));
         minimalAI.add(new EntityAISleep(citizen));
@@ -232,7 +235,7 @@ public class CitizenAI implements IStateAI
         // Sleeping (D5: a sleeper wakes up to MAX_WAKE_DELAY ticks after dawn, spread by citizen id, so the town does not set off all at once)
         final Level level = CompatibilityUtils.getWorldFromCitizen(citizen);
         if (!WorldUtil.isPastTime(level, WorkerSettings.nightStartFor(citizen.getCitizenData().getJob() != null) - 2000)
-              || (lastState == CitizenAIState.SLEEP && stillSleepingAfterDawn(level.getOverworldClockTime() % 24000, citizen.getCivilianID())))
+              || (lastState == CitizenAIState.SLEEP && level.getOverworldClockTime() % 24000 < wakeDelayOf(citizen)))
         {
             if (lastState == CitizenAIState.SLEEP)
             {
@@ -316,6 +319,13 @@ public class CitizenAI implements IStateAI
             return CitizenAIState.IDLE;
         }
 
+        // Round 4 life: once a morning a citizen who just woke greets the others at the town hall or his hut first, at most CitizenLife.MORNING_BUDGET ticks
+        if (citizen.getLife().greetingHolds(lastState == CitizenAIState.SLEEP || lastState == CitizenAIState.IDLE || lastState == CitizenAIState.EATING))
+        {
+            want(LEISURE);
+            return CitizenAIState.IDLE;
+        }
+
         // An unemployed citizen with a task of the idle citizen arbiter (after the needs above: they end it), or a worker helping out while his hut has nothing for
         // him (round 3 agency; the arbiter ends it when his own work is back)
         if ((citizen.getCitizenJobHandler().getColonyJob() == null && IdleCitizenArbiter.hasSession(citizen.getCitizenData()))
@@ -387,6 +397,18 @@ public class CitizenAI implements IStateAI
     public static int wakeDelay(final int citizenId)
     {
         return Math.floorMod(citizenId * 7919, MAX_WAKE_DELAY + 1);
+    }
+
+    /**
+     * D5 and round 4 life: the extra sleep of this citizen after dawn, by its trait when the life extras are on (a brisk citizen is up first, a thoughtful one
+     * last), else by id. Never beyond {@link #MAX_WAKE_DELAY}.
+     *
+     * @param citizen the citizen.
+     * @return 0 to {@link #MAX_WAKE_DELAY} ticks.
+     */
+    public static int wakeDelayOf(final EntityCitizen citizen)
+    {
+        return CitizenLife.enabled() ? citizen.getLife().trait().wakeDelay(citizen.getCivilianID()) : wakeDelay(citizen.getCivilianID());
     }
 
     /**
