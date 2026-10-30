@@ -17,7 +17,6 @@ import com.minecolonies.core.colony.buildings.modules.ItemListModule;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack;
 import com.minecolonies.core.colony.jobs.JobLumberjack;
 import com.minecolonies.core.entity.ai.workers.crafting.AbstractEntityAICrafting;
-import com.minecolonies.core.entity.ai.workers.util.FelledCapTrees;
 import com.minecolonies.core.entity.ai.workers.util.Tree;
 import com.minecolonies.core.entity.ai.workers.util.TreeClaims;
 import com.minecolonies.core.entity.ai.workers.util.TreeFootprint;
@@ -164,10 +163,6 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      */
     private static final long PLANT_WALK_TICKS = 30 * 20L;
 
-    /**
-     * Forestry: the sweep takes caps at most this far from the tree's box (a cap further out is no part of his tree).
-     */
-    private static final int SWEEP_CAP_MARGIN = 4;
     /**
      * Time in ticks to wait before placing a sapling. Is used to collect falling saplings from the ground.
      */
@@ -352,6 +347,17 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      */
     @Nullable
     private BlockPos pickedWorkFrom;
+    /**
+     * The tree whose last failed path search ran into a leaf or cap he may not clear (r5 Fable N35): walled by leaves only then, not because the planner
+     * once probed such a leaf somewhere around it.
+     */
+    @Nullable
+    private Tree leafWallTree;
+    /**
+     * The path to the tree whose result is counted already.
+     */
+    @Nullable
+    private PathResult<?> judgedPath;
 
     /**
      * Forestry: the idle planting spot he walks to, and since when.
@@ -372,6 +378,10 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private final Map<String, Integer> sweepRefusals = new java.util.TreeMap<>();
     private String sweepNote = "";
     private String walkNoteAtGiveUp = "";
+    /**
+     * Forestry: the last tree search in one line, how many nodes it mapped and what it found (r5 Fable N24: the tests print it on failure).
+     */
+    private String searchNote = "";
 
     /**
      * Forestry: blocks of chosen trees left alone because they changed since the choice, and trees given up for that before the first cut (tests).
@@ -466,6 +476,14 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     public String getSweepNote()
     {
         return sweepNote;
+    }
+
+    /**
+     * @return the last tree search in one line: nodes mapped and the tree found, if any (tests).
+     */
+    public String getSearchNote()
+    {
+        return searchNote;
     }
 
     /**
@@ -750,6 +768,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
         if (pathResult.isDone())
         {
+            searchNote = "nodes " + pathResult.searchedNodes + ", tree " + (pathResult.treeLocation == null ? "none" : pathResult.treeLocation.toShortString());
             return setNewTree(building);
         }
 
@@ -793,11 +812,11 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 }
                 Log.getLogger().debug("Forester {} leaves the tree at {} standing: {} ({})", citizenId, tree.getLocation(), tree.getSkip(), tree.getSkipDetail());
             }
-            else if (tree.isTree() && tree.getAllLogs().stream().noneMatch(pos -> TreeClaims.isTakenByOther(world, pos, colonyId, citizenId)))
+            else if (tree.isTree() && tree.getAllLogs().stream().noneMatch(pos -> TreeClaims.isTakenByOther(world, pos, colonyId, citizenId))
+                       && claimTree(tree))
             {
                 job.setTree(tree);
                 tree.findLogs(world, building.getColony());
-                claim = TreeClaims.claim(world, tree.getAllLogs().isEmpty() ? List.of(tree.getLocation()) : tree.getAllLogs(), colonyId, citizenId);
                 building.removeSkippedTree(tree.getLocation());
                 chooseChopPath(tree);
                 searchedTree = tree;
@@ -922,7 +941,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             return false;
         }
         if (recheck == TreeFootprint.Recheck.OK && part == TreeFootprint.Part.LEAF && TreeFootprint.isCap(world.getBlockState(pos))
-              && !TreeFootprint.capComponentIsOwn(world, pos, tree.getBox(), tree.getFamily(), tree.isStrippedBase(), building.getColony().getID()))
+              && !TreeFootprint.capComponentIsOwn(world, pos, tree.getBox(), tree.getFamily(), tree.isStrippedBase(), tree.getStemsAround(world)))
         {
             // a cap joined to a player's decoration (built after the tree was chosen): it stays whole, the tree goes on
             Log.getLogger().debug("Forester {} leaves the cap at {}: it is joined to a decoration", worker.getCitizenData().getId(), pos.toShortString());
@@ -964,6 +983,32 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     }
 
     /**
+     * Forestry: claim a tree for him alone (its logs and its base), dropping his old claim.
+     *
+     * @param tree the tree.
+     * @return false if another Forester holds it or it is blocked.
+     */
+    private boolean claimTree(@NotNull final Tree tree)
+    {
+        final List<BlockPos> logs = new ArrayList<>(tree.getAllLogs());
+        logs.add(tree.getLocation());
+        TreeClaims.release(claim);
+        claim = TreeClaims.claim(world, logs, building.getColony().getID(), worker.getCitizenData().getId());
+        return claim != null;
+    }
+
+    /**
+     * He leaves the job or dies: his tree is free at once for another Forester.
+     */
+    @Override
+    public void onRemoval()
+    {
+        super.onRemoval();
+        TreeClaims.release(claim);
+        claim = null;
+    }
+
+    /**
      * Forestry: let go of the current tree (done or given up).
      */
     private void finishTree()
@@ -982,6 +1027,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         searchedTree = null;
         walkRetriedTree = null;
         pickedWorkFrom = null;
+        leafWallTree = null;
         startTreeClock();
     }
 
@@ -1034,7 +1080,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     {
         final BlockPos location = tree.getLocation();
         // the real reason (r3 Fable N18): what stood in his way, else whether he got there at all
-        final boolean guardRefused = !reachedTree && leafGuard != null && leafGuardTree == tree && leafGuard.refused();
+        final boolean guardRefused = !reachedTree && leafWallTree == tree;
         final String note = leavesInTheWay || (lastRefusal == null && guardRefused)
                               ? "Left the tree at " + location.toShortString() + ": the only way to it goes through leaves next to a build, a hut or other land"
                               : lastRefusal != null ? "Left the tree at " + location.toShortString() + ": " + lastRefusal + " is in the way and may not be cleared"
@@ -1131,14 +1177,14 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             return START_WORKING;
         }
 
-        // Forestry: hold the claim on this tree while working on it (after a reload the claim is made again)
-        if (claim == null)
+        // Forestry: hold the claim on this tree while working on it: renewed while he works it, made again after a reload or a time away; a tree another
+        // Forester took meanwhile is his no more (r5 Sol M5)
+        if ((claim == null || !claim.renew(world)) && !claimTree(job.getTree()))
         {
-            final List<BlockPos> logs = new ArrayList<>(job.getTree().getAllLogs());
-            logs.add(job.getTree().getLocation());
-            claim = TreeClaims.claim(world, logs, building.getColony().getID(), worker.getCitizenData().getId());
+            Log.getLogger().debug("Forester {} leaves the tree at {}: another Forester works it", worker.getCitizenData().getId(), job.getTree().getLocation());
+            finishTree();
+            return START_WORKING;
         }
-        claim.refresh();
 
         // Forestry: the give-up clock runs only while he is at the tree work
         final long now = world.getGameTime();
@@ -1176,8 +1222,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         if (treeWork && now - treeProgressAt > TREE_GIVE_UP_TICKS)
         {
             final Tree tree = job.getTree();
-            final boolean guardRefused = leafGuard != null && leafGuardTree == tree && leafGuard.refused();
-            if (!reachedTree && lastRefusal == null && !guardRefused && tree == searchedTree && walkRetriedTree != tree)
+            if (!reachedTree && lastRefusal == null && leafWallTree != tree && tree == searchedTree && walkRetriedTree != tree)
             {
                 // r4 Fable N24: his own search just found a way to this tree; two minutes without getting there and nothing in his way is a walk that went
                 // wrong (a search cut short on a busy server, a spot the navigator backs off from), not proof it cannot be reached: once more from
@@ -1203,7 +1248,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         {
             if (!walkToTree(job.getTree().getStumpLocations().isEmpty() ? job.getTree().getLocation() : job.getTree().getStumpLocations().get(0)))
             {
-                if (failedTreePaths >= FAILED_PATHS_GIVE_UP && leafGuard != null && leafGuard.refused())
+                if (failedTreePaths >= FAILED_PATHS_GIVE_UP && leafWallTree == job.getTree())
                 {
                     // no way to it but through leaves he may not clear: skip it now, with that reason, instead of standing at it for two minutes
                     return giveUpTree(job.getTree(), true);
@@ -1386,15 +1431,9 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                     removed.add(log);
                 }
             }
-            final int colonyId = building.getColony().getID();
-            sweep = new TreeFootprint.LeafSweep(world, removed, tree.getBox(), tree.isNetherTree(), tree.getFamily(), tree.isStrippedBase(), colonyId,
-              tree.isNetherTree() ? tree.capEdge(world) : List.of());
+            sweep = new TreeFootprint.LeafSweep(world, removed, tree.getBox(), tree.isNetherTree(), tree.getFamily(), tree.isStrippedBase(),
+              tree.isNetherTree() ? tree.getSeenCaps() : List.of());
             sweepRefusals.clear();
-            if (tree.isNetherTree() && !removed.isEmpty() && tree.getBox() != null)
-            {
-                // a cap this one shares with a neighbour still standing goes when the neighbour is felled (r3 Fable N12), and only the caps he saw (r4 Sol H1)
-                FelledCapTrees.felled(world, colonyId, tree.getBox(), tree.getFamily(), tree.getCapsAtChoice());
-            }
         }
         final List<BlockPos> batch = sweep.next(LEAF_BATCH);
         if (!batch.isEmpty())
@@ -1438,8 +1477,8 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
 
     /**
      * Forestry: the sweep's block, checked as a direct cut is: still a natural leaf or a cap, outside other colonies' land, touching no player's block
-     * (a torch, a fence; a placed leaf is kept by itself, never swept), a cap outside hut boxes and only near the tree (a cap far out is somebody's, even
-     * when it touches the canopy). A doomed leaf in a hut's box goes: it would decay there anyway.
+     * (a torch, a fence; a placed leaf is kept by itself, never swept), a cap outside hut boxes and only one he saw there, as it is, when he chose the
+     * tree. A doomed leaf in a hut's box goes: it would decay there anyway.
      *
      * @param tree the felled tree.
      * @param pos  the leaf or cap.
@@ -1460,21 +1499,11 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             sweepRefusals.merge("recheck " + recheck, 1, Integer::sum);
             return false;
         }
-        if (TreeFootprint.isCap(world.getBlockState(pos)))
+        if (TreeFootprint.isCap(world.getBlockState(pos)) && !tree.capWasThere(pos, world.getBlockState(pos)))
         {
-            // a cap added since he chose the tree is a player's (r3 Sol H1); a cap of a joined neighbour his colony felled lately is in reach too (r3 Fable
-            // N12, r4 Fable N33)
-            final AABB box = tree.getBox();
-            if (box == null || !tree.capWasThere(pos, world.getBlockState(pos)))
-            {
-                sweepRefusals.merge("not seen", 1, Integer::sum);
-                return false;
-            }
-            if (!TreeFootprint.inAny(FelledCapTrees.capBounds(world, building.getColony().getID(), box, tree.getFamily(), SWEEP_CAP_MARGIN), pos))
-            {
-                sweepRefusals.merge("out of reach", 1, Integer::sum);
-                return false;
-            }
+            // he takes only the caps he saw when he chose the tree, as they were (r3 Sol H1, r5 decision)
+            sweepRefusals.merge("not seen", 1, Integer::sum);
+            return false;
         }
         return true;
     }
@@ -2014,23 +2043,34 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             closeSince = -1;
         }
 
-        final boolean leafWall = leafGuard != null && leafGuardTree == job.getTree() && leafGuard.refused();
-        if ((pathToTree == null || !pathToTree.isInProgress()) && triedWorkSpots.size() < MAX_WORK_SPOTS && !leafWall
+        if (pathToTree != null && !pathToTree.isInProgress() && pathToTree != judgedPath)
+        {
+            // each finished search counts once; a tree is walled by leaves only when a search that failed ran into a leaf he may not clear (r5 Fable N35)
+            judgedPath = pathToTree;
+            if (pathToTree.failedToReachDestination())
+            {
+                failedTreePaths++;
+                leafWallTree = leafGuard != null && leafGuardTree == job.getTree() && leafGuard.refused() ? job.getTree() : null;
+            }
+            else if (pathToTree.isPathReachingDestination())
+            {
+                failedTreePaths = 0;
+                leafWallTree = null;
+            }
+        }
+
+        if ((pathToTree == null || !pathToTree.isInProgress()) && triedWorkSpots.size() < MAX_WORK_SPOTS
               && ((MinecoloniesAdvancedPathNavigate) worker.getNavigation()).isDestinationUnreachable(workFrom))
         {
             // r4 Fable N24: the navigator backs off from this spot (two searches to it failed); standing through the back-off runs the give-up clock out on
-            // a tree he may reach from another side. He tries another spot around the stump. Not when a leaf he may not clear stands in his way: that tree
-            // is given up with its reason, and another spot behind the leaves could lie within his working range from outside them (r5: he cut a walled
-            // oak through the stone from the tunnel mouth)
+            // a tree he may reach from another side. He tries another spot around the stump, also when leaves he may not clear blocked the way to this
+            // one (r5 Fable N35: one refused route says nothing of the other sides). A picked spot counts only once his path reaches it, so a spot behind
+            // a leaf wall never puts him to work from outside it (r5: he cut a walled oak through the stone from the tunnel mouth)
             triedWorkSpots.add(workFrom);
             final BlockPos other = otherWorkSpot(workAt);
             if (other != null)
             {
                 Log.getLogger().debug("Forester {} walks to {} instead of {}: no way found there", worker.getCitizenData().getId(), other.toShortString(), workFrom.toShortString());
-                if (pathToTree != null && pathToTree.failedToReachDestination())
-                {
-                    failedTreePaths++;
-                }
                 // the give-up clock runs on: another spot is no progress
                 workFrom = other;
                 pickedWorkFrom = other;
@@ -2043,14 +2083,6 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
 
         if (pathToTree == null || !pathToTree.isInProgress())
         {
-            if (pathToTree != null && pathToTree.failedToReachDestination())
-            {
-                failedTreePaths++;
-            }
-            else if (pathToTree != null && pathToTree.isPathReachingDestination())
-            {
-                failedTreePaths = 0;
-            }
             final Tree tree = job.getTree();
             if (tree != null && (leafGuard == null || leafGuardTree != tree || world.getGameTime() - leafGuard.madeAt() > LEAF_GUARD_TICKS))
             {
@@ -2062,6 +2094,10 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 leafGuardTree = tree;
             }
             final com.minecolonies.core.entity.ai.workers.util.LeafPassGuard guard = tree == null ? null : leafGuard;
+            if (guard != null)
+            {
+                guard.newSearch();
+            }
             pathToTree = ((MinecoloniesAdvancedPathNavigate) worker.getNavigation()).setPathJob(new PathJobMoveToWithPassable(world,
               PathfindingUtils.prepareStart(worker),
               workFrom,

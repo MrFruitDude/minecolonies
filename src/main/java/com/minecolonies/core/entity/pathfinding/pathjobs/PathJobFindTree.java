@@ -6,6 +6,7 @@ import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.api.entity.citizen.AbstractCivilianEntity;
 import com.minecolonies.api.items.ModTags;
 import com.minecolonies.api.util.BlockPosUtil;
+import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.entity.ai.workers.util.Tree;
 import com.minecolonies.core.entity.pathfinding.MNode;
 import com.minecolonies.core.entity.pathfinding.SurfaceType;
@@ -52,6 +53,11 @@ public class PathJobFindTree extends AbstractPathJob implements ISearchPathJob
      * Forestry: trees farther than this from the hut (horizontally) are ignored; 0 for no limit.
      */
     private int homeRadius = 0;
+
+    /**
+     * Forestry: the search walks at most this far past the radius (round a pond or a wall to a tree inside it).
+     */
+    private static final int HOME_MARGIN = 8;
 
     /**
      * Forestry: the level of the tree claims and the asking Forester, so trees of another Forester (or blocked next to a build) are skipped.
@@ -117,6 +123,14 @@ public class PathJobFindTree extends AbstractPathJob implements ISearchPathJob
     {
         this(world, start, home, homeRadius * 2, treesToCut, dyntreesize, colony, entity);
         this.homeRadius = aroundHome ? homeRadius : 0;
+        if (aroundHome)
+        {
+            // r5 Fable N24: the search spreads from the hut nearest first, so a tree at the edge of the radius is reached only once the whole disc around
+            // the hut (two levels of it: steps, the hut's floors, canopies) is mapped. The plain budget ran out first, so the last tree of a row was never
+            // offered; the walk stays in the disc and the budget covers it
+            final double disc = Math.PI * (homeRadius + HOME_MARGIN) * (homeRadius + HOME_MARGIN);
+            this.maxNodes = Math.max(maxNodes, (int) (Math.min(3 * MAX_NODES, 2 * disc) * MineColonies.getConfig().getServer().pathNodeLimitMultiplier.get()));
+        }
     }
 
     /**
@@ -244,6 +258,17 @@ public class PathJobFindTree extends AbstractPathJob implements ISearchPathJob
     @Override
     protected boolean isPassable(@NotNull final BlockState block, final int x, final int y, final int z, final MNode parent, final boolean head)
     {
+        if (homeRadius > 0 && searchTowards != null)
+        {
+            // no tree past the radius is his, so no node past it (and a little) is worth mapping
+            final long dx = x - searchTowards.getX();
+            final long dz = z - searchTowards.getZ();
+            final long limit = homeRadius + HOME_MARGIN;
+            if (dx * dx + dz * dz > limit * limit)
+            {
+                return false;
+            }
+        }
         return super.isPassable(block, x, y, z, parent, head) || isLeafLike(block);
     }
 

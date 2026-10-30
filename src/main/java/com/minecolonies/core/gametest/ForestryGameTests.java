@@ -22,6 +22,7 @@ import com.minecolonies.core.entity.ai.workers.production.EntityAIWorkLumberjack
 import com.minecolonies.core.entity.ai.workers.util.Tree;
 import com.minecolonies.core.entity.ai.workers.util.TreeFootprint;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -119,6 +120,7 @@ public final class ForestryGameTests
         TESTS.put("forestry_same_wood_beam", ForestryGameTests::sameWoodBeam);
         TESTS.put("forestry_cap_added_fungus", ForestryGameTests::capAddedFungus);
         TESTS.put("forestry_joined_caps", ForestryGameTests::joinedCaps);
+        TESTS.put("forestry_joined_caps_restart", ForestryGameTests::joinedCapsRestart);
 
         TREECHOP_TESTS.put("forestry_treechop_fell", ForestryGameTests::treeChopFell);
         TREECHOP_TESTS.put("forestry_treechop_half_chopped", ForestryGameTests::treeChopHalfChopped);
@@ -247,7 +249,8 @@ public final class ForestryGameTests
                  + ", at " + worker.getEntity().map(e -> e.blockPosition().toShortString()).orElse("?") + ", inventory " + inventory
                  + ", given up " + (ai == null ? "?" : ai.getTreesGivenUp() + " (" + ai.getGiveUpNote() + ")")
                  + (ai == null || ai.getWalkNoteAtGiveUp().isEmpty() ? "" : ", walk at give-up: " + ai.getWalkNoteAtGiveUp())
-                 + (ai == null || ai.getSweepNote().isEmpty() ? "" : ", last cap sweep: " + ai.getSweepNote());
+                 + (ai == null || ai.getSweepNote().isEmpty() ? "" : ", last cap sweep: " + ai.getSweepNote())
+                 + (ai == null || ai.getSearchNote().isEmpty() ? "" : ", last search: " + ai.getSearchNote());
     }
 
     /**
@@ -1740,26 +1743,19 @@ public final class ForestryGameTests
     }
 
     /**
-     * r3 Fable N12: two huge brown mushrooms seven blocks apart, their flat caps grown into one. He fells both; the joined cap goes with the second, none of
-     * it is left floating, and he gives neither up (the planner never walks him at a cap the clearing refuses).
+     * r3 Fable N12, r5 decision: two huge brown mushrooms seven blocks apart, their flat caps grown into one. He fells both and gives neither up (the
+     * planner never walks him at a cap the clearing refuses). Each tree takes only the caps in its own snapshot: the part of the joined cap the other stem
+     * still held when a tree was chosen goes with the other tree, or is left floating (accepted, counted in the line).
      */
     private static void joinedCaps(final GameTestHelper helper)
     {
         final ServerLevel level = helper.getLevel();
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry joined caps");
         final BuildingLumberjack building = hut(helper, colony, HUT, false);
-        // the same seed grows the same height, so the caps meet on one level
-        final Grown a = grow(helper, new TreeSpec("brown mushroom a", new BlockPos(20, 1, 20), false, Blocks.BROWN_MUSHROOM, Blocks.MYCELIUM, null, null), 5L);
-        final Grown b = grow(helper, new TreeSpec("brown mushroom b", new BlockPos(27, 1, 20), false, Blocks.BROWN_MUSHROOM, Blocks.MYCELIUM, null, null), 5L);
-        final AABB both = a.box().minmax(b.box());
-        final BlockPos stemA = a.stumps().get(0);
-        final BlockPos stemB = b.stumps().get(0);
-        boolean joined = false;
-        for (int y = 3; y <= 14 && !joined; y++)
-        {
-            joined = level.getBlockState(stemA.offset(3, y, 0)).is(Blocks.BROWN_MUSHROOM_BLOCK) && level.getBlockState(stemB.offset(-3, y, 0)).is(Blocks.BROWN_MUSHROOM_BLOCK);
-        }
-        helper.assertTrue(joined, "fixture: the two caps do not meet");
+        final Grown[] pair = joinedMushrooms(helper);
+        final AABB both = pair[0].box().minmax(pair[1].box());
+        final BlockPos stemA = pair[0].stumps().get(0);
+        final BlockPos stemB = pair[1].stumps().get(0);
 
         helper.runAfterDelay(20, () -> {
             final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10));
@@ -1771,12 +1767,118 @@ public final class ForestryGameTests
                 final double mid = (stemA.getX() + stemB.getX() + 1) / 2.0D;
                 final int capsByA = count(level, new AABB(both.minX, both.minY, both.minZ, mid, both.maxY, both.maxZ), TreeFootprint::isCap);
                 final EntityAIWorkLumberjack ai = ai(worker);
-                last[0] = "stems " + stems + ", caps " + caps + " (" + capsByA + " on a's side), given up " + (ai == null ? "?" : ai.getTreesGivenUp() + " (" + ai.getGiveUpNote() + ")")
-                            + (ai == null ? "" : ", last cap sweep: " + ai.getSweepNote());
+                last[0] = "stems " + stems + ", caps left " + caps + " (" + capsByA + " on a's side), given up " + (ai == null ? "?" : ai.getTreesGivenUp() + " ("
+                            + ai.getGiveUpNote() + ")") + (ai == null ? "" : ", last cap sweep: " + ai.getSweepNote());
                 helper.assertTrue(ai == null || ai.getTreesGivenUp() == 0, "he gave a mushroom up: " + last[0]);
-                return stems == 0 && caps == 0 && tree(worker) == null;
+                if (stems == 0 && tree(worker) == null)
+                {
+                    Log.getLogger().info("[forestry_joined_caps] {}", last[0]);
+                    return true;
+                }
+                return false;
             }, () -> last[0] + ", " + describe(worker), null, "forestry_joined_caps");
         });
+    }
+
+    /**
+     * r5 Sol H1 and decision: nothing forgotten on a restart lets him take a player's cap. Two huge brown mushrooms whose flat caps grew into one. He fells
+     * the first; the part of the joined cap the second stem holds stays with it. A co-manager then puts a brown mushroom block against that part, out of
+     * the second stem's reach, and the server restarts: the second tree is chosen afresh and comes back through a save. He fells the second stem; the added
+     * block stays. Natural cap joined to it may be left floating (accepted).
+     */
+    private static void joinedCapsRestart(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry joined caps restart");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final Grown[] pair = joinedMushrooms(helper);
+        final BlockPos stemA = pair[0].stumps().get(0);
+        final BlockPos stemB = pair[1].stumps().get(0);
+        final AABB columnA = new AABB(stemA).expandTowards(0, 16, 0);
+        final AABB columnB = new AABB(stemB).expandTowards(0, 16, 0);
+
+        helper.runAfterDelay(20, () -> {
+            final Tree treeA = new Tree(level, stemA.above(1), colony);
+            helper.assertTrue(treeA.isTree() && treeA.getSkip() == TreeFootprint.Skip.NONE && treeA.isNetherTree(),
+              "mushroom a is no cap tree: " + treeA.getSkip() + " " + treeA.getSkipDetail());
+            final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10));
+            helper.assertTrue(worker.getJob() instanceof JobLumberjack, "no lumberjack job");
+            ((JobLumberjack) worker.getJob()).setTree(treeA);
+            final BlockPos[] added = {null};
+            final String[] last = {""};
+            pump(helper, List.of(worker), 24_000, () -> {
+                final int stemsA = count(level, columnA, TreeFootprint::isTreeBlock);
+                final int stemsB = count(level, columnB, TreeFootprint::isTreeBlock);
+                last[0] = "stem a " + stemsA + ", stem b " + stemsB + ", added cap " + (added[0] == null ? "not yet" : level.getBlockState(added[0]).getBlock());
+                helper.assertTrue(added[0] == null || level.getBlockState(added[0]).is(Blocks.BROWN_MUSHROOM_BLOCK), "the cap added before the restart was taken: " + last[0]);
+                return added[0] != null && stemsB == 0 && tree(worker) == null;
+            }, () -> last[0] + ", " + describe(worker), () -> {
+                if (added[0] != null || tree(worker) == treeA || count(level, columnA, TreeFootprint::isTreeBlock) > 0)
+                {
+                    return;
+                }
+                // a is done: a co-manager adds a block against what b still holds, out past b's reach
+                added[0] = joinedCapSpot(level, stemA, stemB);
+                helper.assertTrue(added[0] != null, "no spot by b's cap out of its reach: " + describe(worker));
+                level.setBlockAndUpdate(added[0], Blocks.BROWN_MUSHROOM_BLOCK.defaultBlockState());
+                // the restart: b chosen afresh, through a save and a load
+                final CompoundTag saved = new CompoundTag();
+                new Tree(level, stemB.above(1), colony).write(level.registryAccess(), saved);
+                ((JobLumberjack) worker.getJob()).setTree(Tree.read(level.registryAccess(), saved));
+            }, "forestry_joined_caps_restart");
+        });
+    }
+
+    /**
+     * Two huge brown mushrooms seven blocks apart from one seed: the same height, so their flat caps meet on one level.
+     */
+    private static Grown[] joinedMushrooms(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final Grown a = grow(helper, new TreeSpec("brown mushroom a", new BlockPos(20, 1, 20), false, Blocks.BROWN_MUSHROOM, Blocks.MYCELIUM, null, null), 5L);
+        final Grown b = grow(helper, new TreeSpec("brown mushroom b", new BlockPos(27, 1, 20), false, Blocks.BROWN_MUSHROOM, Blocks.MYCELIUM, null, null), 5L);
+        final BlockPos stemA = a.stumps().get(0);
+        final BlockPos stemB = b.stumps().get(0);
+        boolean joined = false;
+        for (int y = 3; y <= 14 && !joined; y++)
+        {
+            joined = level.getBlockState(stemA.offset(3, y, 0)).is(Blocks.BROWN_MUSHROOM_BLOCK) && level.getBlockState(stemB.offset(-3, y, 0)).is(Blocks.BROWN_MUSHROOM_BLOCK);
+        }
+        helper.assertTrue(joined, "fixture: the two caps do not meet");
+        return new Grown[] {a, b};
+    }
+
+    /**
+     * An air block next to (faces, edges, corners) a cap left after a was felled, out of b's reach and touching nothing but caps and air: where a player
+     * adds a block to the cap b still holds. The nearest to a's stem.
+     */
+    private static BlockPos joinedCapSpot(final ServerLevel level, final BlockPos stemA, final BlockPos stemB)
+    {
+        BlockPos best = null;
+        for (final BlockPos pos : BlockPos.betweenClosed(stemA.offset(-4, 2, -4), stemB.offset(0, 16, 4)))
+        {
+            if (!level.getBlockState(pos).isAir() || Math.max(Math.abs(pos.getX() - stemB.getX()), Math.abs(pos.getZ() - stemB.getZ())) <= TreeFootprint.LeafSweep.CAP_BOUNDS
+                  || (best != null && pos.distManhattan(stemA) >= best.distManhattan(stemA)))
+            {
+                continue;
+            }
+            boolean nearCap = false;
+            for (final BlockPos near : BlockPos.betweenClosed(pos.offset(-1, -1, -1), pos.offset(1, 1, 1)))
+            {
+                nearCap |= TreeFootprint.isCap(level.getBlockState(near));
+            }
+            boolean clean = true;
+            for (final Direction dir : Direction.values())
+            {
+                final BlockState state = level.getBlockState(pos.relative(dir));
+                clean &= state.isAir() || TreeFootprint.isCap(state);
+            }
+            if (nearCap && clean)
+            {
+                best = pos.immutable();
+            }
+        }
+        return best;
     }
 
     /**

@@ -79,7 +79,7 @@ public final class LeafPassGuard
         }
         if (tree.isNetherTree())
         {
-            guard.judgeCaps(level, tree, colony.getID());
+            guard.judgeCaps(level, tree);
         }
         for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
         {
@@ -122,11 +122,20 @@ public final class LeafPassGuard
     }
 
     /**
-     * @return true if the planner met a leaf or cap it would have gone through but he may not clear.
+     * @return true if the planner met a leaf or cap it would have gone through but he may not clear, since the last {@link #newSearch}.
      */
     public boolean refused()
     {
         return refused;
+    }
+
+    /**
+     * A new path search starts with this guard: what the last one ran into is forgotten (r5 Fable N35, a refusal belongs to one search). Server thread,
+     * while no search reads the guard.
+     */
+    public void newSearch()
+    {
+        refused = false;
     }
 
     /**
@@ -160,7 +169,7 @@ public final class LeafPassGuard
     /**
      * Judge each cap within reach of the tree's stems once, one flood per connected cap. Server thread.
      */
-    private void judgeCaps(@NotNull final Level level, @NotNull final Tree tree, final int colony)
+    private void judgeCaps(@NotNull final Level level, @NotNull final Tree tree)
     {
         final Set<Long> judged = new HashSet<>();
         for (final BlockPos log : logs)
@@ -172,7 +181,7 @@ public final class LeafPassGuard
                 {
                     continue;
                 }
-                final TreeFootprint.CapComponent component = TreeFootprint.capComponent(level, near, tree.getBox(), family, tree.isStrippedBase(), colony);
+                final TreeFootprint.CapComponent component = TreeFootprint.capComponent(level, near, tree.getBox(), family, tree.isStrippedBase(), tree.getStemsAround(level));
                 for (final BlockPos cell : component.cells())
                 {
                     judged.add(cell.asLong());

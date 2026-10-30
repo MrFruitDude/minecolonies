@@ -14,8 +14,10 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Per-level tree claims, so two Foresters never pick the same tree. A claim covers every log of the tree as the Forester saw it and expires on its own
- * (two minutes, refreshed while he works), so a lost claim never blocks a tree for long. A blocked claim marks a tree that touches a player build: no
+ * Per-level tree claims, so two Foresters never work the same tree. A claim covers every log of the tree as the Forester saw it and is exclusive: it is
+ * made only where no live claim of another Forester or block lies (r5 Sol M5). It is renewed while he works the tree, and only while it still holds every
+ * log; it expires on its own when he is away (two minutes) and is dropped when he leaves the job or dies. After a reload he claims his saved tree again,
+ * and leaves it if another Forester took it meanwhile. A blocked claim marks a tree that touches a player build: no
  * Forester of any colony picks it until the claim expires and the tree is checked again. Claims belong to one loaded level (another world opened in the
  * same game starts with none) and run on its game time (a paused game does not let them expire).
  * <p>
@@ -54,15 +56,18 @@ public final class TreeClaims
      */
     public static final class Claim
     {
-        private final Level              level;
+        /**
+         * The level's claims (no reference to the level itself: the weak key stays weak).
+         */
+        private final Map<Long, Claim>   map;
         private final int                colonyId;
         private final int                citizenId;
         private final List<Long>         positions;
         private volatile long            expiresAt;
 
-        private Claim(final Level level, final int colonyId, final int citizenId, final List<Long> positions, final long expiresAt)
+        private Claim(final Map<Long, Claim> map, final int colonyId, final int citizenId, final List<Long> positions, final long expiresAt)
         {
-            this.level = level;
+            this.map = map;
             this.colonyId = colonyId;
             this.citizenId = citizenId;
             this.positions = positions;
@@ -83,30 +88,63 @@ public final class TreeClaims
         }
 
         /**
-         * Keep the claim alive while the Forester works on the tree.
+         * Keep the claim alive while the Forester works on the tree: only while it is live and still holds every log (no block or other claim took one).
+         *
+         * @param level the level.
+         * @return false if the claim is lost: he must claim the tree again, or leave it.
          */
-        public void refresh()
+        public boolean renew(@NotNull final Level level)
         {
-            if (!isBlocked())
+            if (isBlocked())
             {
-                expiresAt = level.getGameTime() + WORK_CLAIM_TICKS;
+                return false;
+            }
+            synchronized (map)
+            {
+                final long now = level.getGameTime();
+                if (expired(now))
+                {
+                    return false;
+                }
+                for (final Long pos : positions)
+                {
+                    if (map.get(pos) != this)
+                    {
+                        return false;
+                    }
+                }
+                expiresAt = now + WORK_CLAIM_TICKS;
+                return true;
             }
         }
     }
 
     /**
-     * Claim a tree for one Forester.
+     * Claim a tree for one Forester, if no other Forester holds any of its logs and none is blocked.
      *
      * @param level     the level.
      * @param logs      the logs of the tree.
      * @param colonyId  his colony.
      * @param citizenId his citizen id.
-     * @return the claim.
+     * @return the claim, or null if the tree is taken or blocked.
      */
-    @NotNull
+    @Nullable
     public static Claim claim(@NotNull final Level level, @NotNull final Collection<BlockPos> logs, final int colonyId, final int citizenId)
     {
-        return put(level, logs, colonyId, citizenId, WORK_CLAIM_TICKS);
+        final Map<Long, Claim> map = CLAIMS.computeIfAbsent(level, k -> new ConcurrentHashMap<>());
+        synchronized (map)
+        {
+            final long now = level.getGameTime();
+            for (final BlockPos pos : logs)
+            {
+                final Claim held = map.get(pos.asLong());
+                if (held != null && !held.expired(now) && (held.isBlocked() || held.colonyId != colonyId || held.citizenId != citizenId))
+                {
+                    return null;
+                }
+            }
+            return put(level, logs, colonyId, citizenId, WORK_CLAIM_TICKS);
+        }
     }
 
     /**
@@ -145,25 +183,31 @@ public final class TreeClaims
         return BLOCKED_CLAIM_TICKS << Math.min(Math.max(0, giveUps - 1), 3);
     }
 
+    /**
+     * A block takes every log, whoever held it (a tree next to a build is nobody's to work).
+     */
     private static Claim put(final Level level, final Collection<BlockPos> logs, final int colonyId, final int citizenId, final long ttl)
     {
         final Map<Long, Claim> map = CLAIMS.computeIfAbsent(level, k -> new ConcurrentHashMap<>());
-        final long now = level.getGameTime();
-        if (map.size() > SWEEP_SIZE)
+        synchronized (map)
         {
-            map.values().removeIf(c -> c.expired(now));
+            final long now = level.getGameTime();
+            if (map.size() > SWEEP_SIZE)
+            {
+                map.values().removeIf(c -> c.expired(now));
+            }
+            final List<Long> positions = new ArrayList<>(logs.size());
+            for (final BlockPos pos : logs)
+            {
+                positions.add(pos.asLong());
+            }
+            final Claim claim = new Claim(map, colonyId, citizenId, positions, now + ttl);
+            for (final Long pos : positions)
+            {
+                map.put(pos, claim);
+            }
+            return claim;
         }
-        final List<Long> positions = new ArrayList<>(logs.size());
-        for (final BlockPos pos : logs)
-        {
-            positions.add(pos.asLong());
-        }
-        final Claim claim = new Claim(level, colonyId, citizenId, positions, now + ttl);
-        for (final Long pos : positions)
-        {
-            map.put(pos, claim);
-        }
-        return claim;
     }
 
     /**
@@ -177,12 +221,11 @@ public final class TreeClaims
         {
             return;
         }
-        final Map<Long, Claim> map = CLAIMS.get(claim.level);
-        if (map != null)
+        synchronized (claim.map)
         {
             for (final Long pos : claim.positions)
             {
-                map.remove(pos, claim);
+                claim.map.remove(pos, claim);
             }
         }
     }

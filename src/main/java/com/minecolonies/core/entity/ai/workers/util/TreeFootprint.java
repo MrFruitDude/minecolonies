@@ -54,7 +54,8 @@ import java.util.function.Predicate;
  * colony claims. Such a tree is not cut at all.</li>
  * <li>Leaf sweep: after the logs are gone, only leaves vanilla would decay anyway (not persistent, {@code DISTANCE} 7) are broken, found by a flood from the
  * leaves that touched the removed logs. Leaves held by a neighbour tree and placed leaves stay by construction. Mushroom caps, wart blocks and
- * shroomlight (no {@code DISTANCE}) go when their connected cap touches no remaining stem.</li>
+ * shroomlight (no {@code DISTANCE}) go only if they are in the snapshot taken when he chose the tree, as they were then, and out of reach of every stem
+ * still standing.</li>
  * </ul>
  */
 public final class TreeFootprint
@@ -389,17 +390,88 @@ public final class TreeFootprint
     }
 
     /**
-     * Whether the connected cap (faces, edges and corners) a cap belongs to is all the tree's own: every block of it a cap of the tree's kind, within
-     * {@link LeafSweep#CAP_BOUNDS} of the box of the tree's logs or of a stem of its kind his colony felled here lately (two caps grown into one, r3 Fable N12), and
-     * touching no player's block. A cap joined to a player's decoration (wart blocks or shroomlights built against the canopy, a cap of another kind) is
-     * kept whole, by the direct cut, the clearing and the sweep alike (r2 Sol H1).
+     * The standing stems of a family around a box, other than some: the stems whose caps may reach into the tree's (r5 decision: a cap in reach of
+     * another stem is no cap of this tree alone).
+     *
+     * @param level   the level.
+     * @param box     the box of the tree's logs.
+     * @param family  the tree's family.
+     * @param exclude the logs that are not another stem (the tree's own).
+     * @return the stems, at most {@link #LEAF_BUDGET}; empty when the area is too big to look at.
+     */
+    @NotNull
+    public static List<BlockPos> stemsAround(@NotNull final Level level, @NotNull final AABB box, @NotNull final String family, @NotNull final Collection<BlockPos> exclude)
+    {
+        final List<BlockPos> out = new ArrayList<>();
+        final AABB around = box.inflate(2 * LeafSweep.CAP_BOUNDS);
+        if (around.getXsize() * around.getYsize() * around.getZsize() > LeafSweep.SCAN_VOLUME)
+        {
+            return out;
+        }
+        final Set<BlockPos> own = exclude instanceof Set<BlockPos> set ? set : new HashSet<>(exclude);
+        for (final BlockPos pos : BlockPos.betweenClosed(BlockPos.containing(around.minX, around.minY, around.minZ),
+          BlockPos.containing(around.maxX - 1, around.maxY - 1, around.maxZ - 1)))
+        {
+            final BlockState state = level.getBlockState(pos);
+            if (isTreeBlock(state) && !own.contains(pos) && sameFamily(family, family(level, pos, state, true)))
+            {
+                out.add(pos.immutable());
+                if (out.size() >= LEAF_BUDGET)
+                {
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * @param level the level.
+     * @param pos   a cap.
+     * @param stems stems around (see {@link #stemsAround}).
+     * @return true if one of them still stands within {@link LeafSweep#CAP_BOUNDS} of the cap: its cap may reach there.
+     */
+    public static boolean nearStem(@NotNull final Level level, @NotNull final BlockPos pos, @NotNull final Collection<BlockPos> stems)
+    {
+        for (final BlockPos stem : stems)
+        {
+            if (Math.abs(stem.getX() - pos.getX()) <= LeafSweep.CAP_BOUNDS && Math.abs(stem.getY() - pos.getY()) <= LeafSweep.CAP_BOUNDS
+                  && Math.abs(stem.getZ() - pos.getZ()) <= LeafSweep.CAP_BOUNDS && isTreeBlock(level.getBlockState(stem)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a cap block may be part of the tree's natural cap and not of a player's work: a cap of the tree's kind, touching no player's block, within
+     * {@link LeafSweep#CAP_BOUNDS} of the tree's logs or of another standing stem (two caps grown into one).
+     */
+    private static boolean naturalCap(
+      @NotNull final Level level,
+      @NotNull final BlockPos pos,
+      @Nullable final AABB bounds,
+      @NotNull final String family,
+      final boolean strippedBase,
+      @NotNull final Collection<BlockPos> stems)
+    {
+        final BlockState state = level.getBlockState(pos);
+        return capFitsFamily(family, state) && !leafTouchesBuild(level, pos, strippedBase) && (bounds == null || inAny(List.of(bounds), pos) || nearStem(level, pos, stems));
+    }
+
+    /**
+     * Whether the connected cap (faces, edges and corners) a cap belongs to is natural: every block of it a cap of the tree's kind, within
+     * {@link LeafSweep#CAP_BOUNDS} of the tree's logs or of another standing stem of its kind, and touching no player's block. A cap joined to a player's
+     * decoration (wart blocks or shroomlights built against the canopy, out past every stem's reach; a cap of another kind) is kept whole, by the direct
+     * cut, the clearing and the sweep alike (r2 Sol H1). Which blocks of a natural cap he takes is the tree's snapshot's business ({@link Tree#capWasThere}).
      *
      * @param level        the level.
      * @param seed         a cap.
      * @param logBox       the box of the tree's logs, or null if unknown.
      * @param family       the tree's family.
      * @param strippedBase true if the tree itself is stripped.
-     * @param colony       the Forester's colony (only its own felled stems widen the bounds, r4 Fable N33).
+     * @param stems        the other stems around (see {@link #stemsAround}).
      * @return true if he may take it as the tree's cap.
      */
     public static boolean capComponentIsOwn(
@@ -408,16 +480,16 @@ public final class TreeFootprint
       @Nullable final AABB logBox,
       @NotNull final String family,
       final boolean strippedBase,
-      final int colony)
+      @NotNull final Collection<BlockPos> stems)
     {
-        return capComponent(level, seed, logBox, family, strippedBase, colony).own();
+        return capComponent(level, seed, logBox, family, strippedBase, stems).own();
     }
 
     /**
-     * A connected cap and whether it is all the tree's own (see {@link #capComponentIsOwn}).
+     * A connected cap and whether it is natural (see {@link #capComponentIsOwn}).
      *
      * @param cells its blocks (all of them, or those up to {@link #LEAF_BUDGET}).
-     * @param own   true if he may take it as the tree's cap.
+     * @param own   true if he may take its blocks he saw as the tree's caps.
      */
     public record CapComponent(Set<BlockPos> cells, boolean own)
     {
@@ -431,7 +503,7 @@ public final class TreeFootprint
      * @param logBox       the box of the tree's logs, or null if unknown.
      * @param family       the tree's family.
      * @param strippedBase true if the tree itself is stripped.
-     * @param colony       the Forester's colony (only its own felled stems widen the bounds, r4 Fable N33).
+     * @param stems        the other stems around (see {@link #stemsAround}).
      * @return the cap and the verdict.
      */
     @NotNull
@@ -441,9 +513,9 @@ public final class TreeFootprint
       @Nullable final AABB logBox,
       @NotNull final String family,
       final boolean strippedBase,
-      final int colony)
+      @NotNull final Collection<BlockPos> stems)
     {
-        final List<AABB> bounds = logBox == null ? null : FelledCapTrees.capBounds(level, colony, logBox, family, LeafSweep.CAP_BOUNDS);
+        final AABB bounds = logBox == null ? null : logBox.inflate(LeafSweep.CAP_BOUNDS);
         final Set<BlockPos> seen = new HashSet<>();
         final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
         queue.add(seed.immutable());
@@ -452,8 +524,7 @@ public final class TreeFootprint
         while (!queue.isEmpty())
         {
             final BlockPos pos = queue.poll();
-            final BlockState state = level.getBlockState(pos);
-            if (own && (!capFitsFamily(family, state) || !inAny(bounds, pos) || leafTouchesBuild(level, pos, strippedBase)))
+            if (own && !naturalCap(level, pos, bounds, family, strippedBase, stems))
             {
                 own = false;
             }
@@ -1506,11 +1577,6 @@ public final class TreeFootprint
         private static final int ROUND_INTERVAL = 10;
 
         /**
-         * Caps {@link TreeFootprint#CAP_REACH} from a removed stem seed the sweep of a mushroom or fungus of at most {@link #CAP_SEED_LOGS} stems.
-         */
-        private static final int CAP_SEED_LOGS = 128;
-
-        /**
          * Doomed leaves this far around the tree's box are swept too, when the area is at most {@link #SCAN_VOLUME} blocks.
          */
         private static final int LEAF_REACH  = LeavesBlock.DECAY_DISTANCE - 1;
@@ -1567,7 +1633,7 @@ public final class TreeFootprint
         @NotNull
         public String capNote()
         {
-            return "seeds " + seedCount + " (cap edge " + edgeSeeds + "), caps queued " + capsQueued + ", held " + capsHeld + ", foreign " + capsKept + ", over budget "
+            return "seeds " + seedCount + " (seen caps " + capSeeds + "), caps queued " + capsQueued + ", held " + capsHeld + ", foreign " + capsKept + ", over budget "
                      + capsOverBudget + ", rounds " + rounds;
         }
 
@@ -1575,13 +1641,14 @@ public final class TreeFootprint
         private final String              family;
         private final boolean             strippedBase;
         @Nullable
-        private final List<AABB>          capBounds;
+        private final AABB                capBounds;
+        private final List<BlockPos>      stems;
         private       int                 capsKept = 0;
         private       int                 capsHeld = 0;
         private       int                 capsQueued = 0;
         private       int                 capsOverBudget = 0;
         private       int                 seedCount = 0;
-        private       int                 edgeSeeds = 0;
+        private       int                 capSeeds = 0;
         private final Set<BlockPos>       removedLogs;
         private final ArrayDeque<BlockPos> toBreak = new ArrayDeque<>();
         private final Set<BlockPos>       capsSeen = new HashSet<>();
@@ -1600,9 +1667,7 @@ public final class TreeFootprint
          * @param capTree     true for a huge mushroom or fungus, whose cap may hang away from the stem.
          * @param family      the tree's family: a cap of another kind is no cap of this tree.
          * @param strippedBase true if the tree itself is stripped.
-         * @param colony      the Forester's colony (only its own felled stems widen the cap bounds).
-         * @param capEdge     caps next to the caps of this tree he already took (r4 Fable N12): the rest of a joined cap, which may lie far from the stems
-         *                    once the part that linked it to them is gone.
+         * @param seenCaps    the caps he saw when he chose the tree (its snapshot): the sweep starts from those still there, wherever a joined cap left them.
          */
         public LeafSweep(
           @NotNull final Level level,
@@ -1611,14 +1676,15 @@ public final class TreeFootprint
           final boolean capTree,
           @NotNull final String family,
           final boolean strippedBase,
-          final int colony,
-          @NotNull final Collection<BlockPos> capEdge)
+          @NotNull final Collection<BlockPos> seenCaps)
         {
             this.level = level;
             this.family = family;
             this.strippedBase = strippedBase;
-            this.capBounds = box == null ? null : FelledCapTrees.capBounds(level, colony, box, family, CAP_BOUNDS);
+            this.capBounds = box == null ? null : box.inflate(CAP_BOUNDS);
             this.removedLogs = new HashSet<>(removedLogs);
+            // every standing stem of the kind, a log of his own he had to leave too: a cap in its reach stays with it
+            this.stems = capTree && box != null ? stemsAround(level, box, family, this.removedLogs) : List.of();
             this.nextRound = level.getGameTime() + ROUND_INTERVAL;
             for (final BlockPos log : this.removedLogs)
             {
@@ -1629,20 +1695,6 @@ public final class TreeFootprint
                     if (isDecayingLeaves(state) || isCap(state))
                     {
                         seeds.add(near);
-                    }
-                }
-            }
-            if (capTree && this.removedLogs.size() <= CAP_SEED_LOGS)
-            {
-                // The side of a huge red mushroom's cap hangs two blocks out from the stem and meets its top only at the edges
-                for (final BlockPos log : this.removedLogs)
-                {
-                    for (final BlockPos near : BlockPos.betweenClosed(log.offset(-CAP_REACH, -CAP_REACH, -CAP_REACH), log.offset(CAP_REACH, CAP_REACH, CAP_REACH)))
-                    {
-                        if (isCap(level.getBlockState(near)))
-                        {
-                            seeds.add(near.immutable());
-                        }
                     }
                 }
             }
@@ -1676,11 +1728,13 @@ public final class TreeFootprint
             }
             if (capTree)
             {
-                for (final BlockPos pos : capEdge)
+                // The side of a huge red mushroom's cap meets its top only at the edges, and a joined cap may hang far from the stems: start from every
+                // cap he saw that is still there
+                for (final BlockPos pos : seenCaps)
                 {
                     if (isCap(level.getBlockState(pos)) && seeds.add(pos.immutable()))
                     {
-                        edgeSeeds++;
+                        capSeeds++;
                     }
                 }
             }
@@ -1799,9 +1853,10 @@ public final class TreeFootprint
         }
 
         /**
-         * A connected cap (mushroom cap, wart blocks, shroomlight) goes when it touches no remaining stem or log, and when it is all the tree's own: every
-         * block of it a cap of the tree's kind, within {@link #CAP_BOUNDS} of the tree's box, and touching no player's block. A cap that is joined to a
-         * player's decoration (wart blocks and shroomlights built against the canopy, a cap of another kind) stays whole (r2 Sol H1).
+         * A connected cap (mushroom cap, wart blocks, shroomlight) is natural when every block of it is a cap of the tree's kind, within {@link #CAP_BOUNDS}
+         * of the tree's box or of another standing stem, and touching no player's block; one joined to a player's decoration stays whole (r2 Sol H1). Of a
+         * natural cap, the blocks out of every standing stem's reach go (whether he saw them is checked as each goes); those another stem still holds stay
+         * with it.
          */
         private int sweepCaps(final BlockPos seed)
         {
@@ -1813,7 +1868,6 @@ public final class TreeFootprint
             final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
             queue.add(seed);
             capsSeen.add(seed);
-            boolean held = false;
             boolean foreign = false;
             while (!queue.isEmpty())
             {
@@ -1821,7 +1875,7 @@ public final class TreeFootprint
                 component.add(pos);
                 if (!foreign)
                 {
-                    foreign = !capFitsFamily(family, level.getBlockState(pos)) || !inAny(capBounds, pos) || leafTouchesBuild(level, pos, strippedBase);
+                    foreign = !naturalCap(level, pos, capBounds, family, strippedBase, stems);
                 }
                 if (component.size() > LEAF_BUDGET)
                 {
@@ -1829,44 +1883,36 @@ public final class TreeFootprint
                     return 0;
                 }
                 // Through faces, edges and corners: a cap's side and top touch only at the edges
-                for (int dx = -1; dx <= 1; dx++)
+                for (final BlockPos near : BlockPos.betweenClosed(pos.offset(-1, -1, -1), pos.offset(1, 1, 1)))
                 {
-                    for (int dy = -1; dy <= 1; dy++)
+                    if (!capsSeen.contains(near) && isCap(level.getBlockState(near)))
                     {
-                        for (int dz = -1; dz <= 1; dz++)
-                        {
-                            final BlockPos near = pos.offset(dx, dy, dz);
-                            if ((dx == 0 && dy == 0 && dz == 0) || capsSeen.contains(near))
-                            {
-                                continue;
-                            }
-                            final BlockState state = level.getBlockState(near);
-                            if (isCap(state))
-                            {
-                                capsSeen.add(near);
-                                queue.add(near);
-                            }
-                            else if (!removedLogs.contains(near) && isTreeBlock(state))
-                            {
-                                held = true;
-                            }
-                        }
+                        final BlockPos found = near.immutable();
+                        capsSeen.add(found);
+                        queue.add(found);
                     }
                 }
-            }
-            if (held)
-            {
-                capsHeld += component.size();
-                return 0;
             }
             if (foreign)
             {
                 capsKept += component.size();
                 return 0;
             }
-            capsQueued += component.size();
-            toBreak.addAll(component);
-            return component.size();
+            int queued = 0;
+            for (final BlockPos pos : component)
+            {
+                if (nearStem(level, pos, stems))
+                {
+                    capsHeld++;
+                }
+                else
+                {
+                    toBreak.add(pos);
+                    queued++;
+                }
+            }
+            capsQueued += queued;
+            return queued;
         }
     }
 }
