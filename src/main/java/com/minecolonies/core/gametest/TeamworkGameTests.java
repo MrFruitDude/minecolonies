@@ -73,6 +73,24 @@ final class TeamworkGameTests
           MinecoloniesGameTestRegistrar.isolatedColonyData(event, "teamwork_world_cap_fair"));
     }
 
+    /**
+     * Round 8 (R7-F1): runs a test step and clears the labour overrides and waiting colonies whatever happens, so a step that fails leaves nothing behind for the
+     * tests after it.
+     */
+    private static Runnable cleaned(final Runnable step)
+    {
+        return () -> {
+            try
+            {
+                step.run();
+            }
+            finally
+            {
+                LabourGameTests.end();
+            }
+        };
+    }
+
     /** The second colony of the two-colony tests stands this far east of the fixture. */
     private static final int DX = 240;
 
@@ -223,7 +241,7 @@ final class TeamworkGameTests
         final Colony colonyA = (Colony) a.colony;
         LabourGameTests.forceArea(a.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         final Colony colonyB = LabourGameTests.foundAt(helper, "teamwork cap b", DX);
-        helper.runAfterDelay(100, () -> {
+        helper.runAfterDelay(100, cleaned(() -> {
             final ICitizenData ia1 = a.spawn(new BlockPos(14, 1, 16), true);
             final ICitizenData ia2 = a.spawn(new BlockPos(16, 1, 16), true);
             final ICitizenData ib1 = spawnB(helper, colonyB, DX + 14, 16);
@@ -264,7 +282,7 @@ final class TeamworkGameTests
             helper.assertTrue(ba.places() == 0 && bb.places() == 0, "places left after every order ended");
             LabourGameTests.end();
             helper.succeed();
-        });
+        }));
     }
 
     /**
@@ -282,7 +300,7 @@ final class TeamworkGameTests
         final Colony colonyA = (Colony) a.colony;
         LabourGameTests.forceArea(a.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         final Colony colonyB = LabourGameTests.foundAt(helper, "teamwork directed b", DX);
-        helper.runAfterDelay(100, () -> {
+        helper.runAfterDelay(100, cleaned(() -> {
             final ICitizenData ia1 = a.spawn(new BlockPos(14, 1, 16), true);
             final ICitizenData ia2 = a.spawn(new BlockPos(16, 1, 16), true);
             final ICitizenData ib1 = spawnB(helper, colonyB, DX + 14, 16);
@@ -324,7 +342,7 @@ final class TeamworkGameTests
             helper.assertTrue(ba.places() == 0 && bb.places() == 0, "places left after every order ended: A " + ba.places() + ", B " + bb.places());
             LabourGameTests.end();
             helper.succeed();
-        });
+        }));
     }
 
     /**
@@ -339,7 +357,7 @@ final class TeamworkGameTests
         final RsFixture f = LabourGameTests.found(helper, "teamwork own tool", 2);
         final Colony colony = (Colony) f.colony;
         LabourGameTests.forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
-        helper.runAfterDelay(100, () -> {
+        helper.runAfterDelay(100, cleaned(() -> {
             final ICitizenData idle = f.spawn(new BlockPos(14, 1, 16), true);
             final ICitizenData other = f.spawn(new BlockPos(16, 1, 16), true);
             final ICitizenData worker = f.spawn(new BlockPos(18, 1, 16), true);
@@ -363,7 +381,7 @@ final class TeamworkGameTests
             helper.assertTrue(board.places() == 0 && board.noPlaceReason(other) == null, "places left: " + board.places());
             LabourGameTests.end();
             helper.succeed();
-        });
+        }));
     }
 
     /**
@@ -381,7 +399,7 @@ final class TeamworkGameTests
         LabourGameTests.forceArea(f.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         helper.setBlock(new BlockPos(22, 1, 20), net.minecraft.world.level.block.Blocks.CRAFTING_TABLE.defaultBlockState());
         LabourGameTests.tree(helper, 34, 20, 5);
-        helper.runAfterDelay(100, () -> {
+        helper.runAfterDelay(100, cleaned(() -> {
             final ICitizenData first = f.spawn(new BlockPos(14, 1, 16), true);
             final ICitizenData second = f.spawn(new BlockPos(18, 1, 16), true);
             helper.assertTrue(InventoryUtils.addItemStackToItemHandlerWithResult(first.getInventory(), new ItemStack(Items.OAK_LOG, 5)).isEmpty(), "no room for 5 logs");
@@ -416,7 +434,7 @@ final class TeamworkGameTests
             board.release(handIn, false, false);
             LabourGameTests.end();
             helper.succeed();
-        });
+        }));
     }
 
     /**
@@ -435,7 +453,7 @@ final class TeamworkGameTests
         final Colony colonyA = (Colony) a.colony;
         LabourGameTests.forceArea(a.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
         final Colony colonyB = LabourGameTests.foundAt(helper, "teamwork fair b", DX);
-        helper.runAfterDelay(100, () -> {
+        helper.runAfterDelay(100, cleaned(() -> {
             final ICitizenData ia1 = a.spawn(new BlockPos(14, 1, 16), true);
             final ICitizenData ia2 = a.spawn(new BlockPos(16, 1, 16), true);
             final ICitizenData ib1 = spawnB(helper, colonyB, DX + 14, 16);
@@ -463,7 +481,7 @@ final class TeamworkGameTests
             helper.assertTrue(ba.places() == 0 && bb.places() == 0, "places left after every order ended");
             LabourGameTests.end();
             helper.succeed();
-        });
+        }));
     }
 
     /**

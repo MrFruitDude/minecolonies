@@ -67,6 +67,29 @@ public final class AliveGameTests
 
     public static Consumer<GameTestHelper> test(final String name)
     {
+        final Consumer<GameTestHelper> body = byName(name);
+        return helper -> {
+            isolate();
+            body.accept(helper);
+        };
+    }
+
+    /**
+     * Round 8 (R7-F1): puts back the shared state a test before may have left when it failed before its own clean-up: the life setting on (several tests turn it
+     * off for a moment), no labour overrides, waiting colonies, labour debug or idle settings of a labour test (teamwork_world_cap_fair failed in run 053
+     * before its clean-up).
+     */
+    private static void isolate()
+    {
+        MineColonies.getConfig().getServer().citizenLifeExtras.set(true);
+        com.minecolonies.core.colony.labour.LabourSettings.clearOverrides();
+        com.minecolonies.core.colony.labour.LabourBoard.forgetWaiting();
+        com.minecolonies.core.colony.labour.LabourStats.debug = false;
+        com.minecolonies.core.colony.idle.IdleCitizenSettings.overrideForTests(null, null, null);
+    }
+
+    private static Consumer<GameTestHelper> byName(final String name)
+    {
         return switch (name)
         {
             case "alive_rules" -> AliveGameTests::rules;
@@ -1950,9 +1973,12 @@ public final class AliveGameTests
     private static String lifeGates(final EntityCitizen c)
     {
         final CitizenLife life = c.getLife();
+        // round 8 (R7-F1): also whether the setting is on, the entity is alive and still the citizen's entity (a replaced entity has a fresh life), and the time
+        final boolean current = c.getCitizenData() != null && c.getCitizenData().getEntity().orElse(null) == c;
         return c.getCivilianID() + " " + c.getCitizenAI().getState() + " joins " + life.canJoinChat() + " chatting " + life.chatting() + " says '" + c.getSpeech()
                  + "' held " + life.lineHeld() + " greets " + life.greetingActive() + " rain " + c.level().isRaining() + "/" + life.hurriesInRain() + " grief "
-                 + life.grief() + " mourns " + life.mourning();
+                 + life.grief() + " mourns " + life.mourning() + " on " + CitizenLife.enabled() + " alive " + c.isAlive() + " current " + current + " day "
+                 + c.level().getOverworldClockTime() % 24000L;
     }
 
     private static void keepFed(final EntityCitizen... citizens)
