@@ -10,6 +10,7 @@ import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.entity.ai.minimal.EntityAICitizenLife;
 import com.minecolonies.core.entity.ai.minimal.EntityAICitizenWander;
+import com.minecolonies.core.entity.ai.workers.CitizenAI;
 import com.minecolonies.core.entity.citizen.EntityCitizen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
@@ -121,6 +122,12 @@ public final class CitizenLife
      * of his hold for the first one up, then greets him (or gives up without a word). Inside {@link #MORNING_BUDGET}, with time left for the line and its linger.
      */
     public static final int GREET_WAIT = MORNING_BUDGET - GREET_LINGER - 40;
+
+    /**
+     * Round 8 (R7-F2, N56): a greeter waits only for a sleeper due to wake this many ticks before the end of {@link #GREET_WAIT}: a sleeper's AI gets up a few
+     * ticks after its look at the clock, and the greeter looks once a second.
+     */
+    public static final int WAKE_SLACK = 20;
 
     /**
      * Round 6: when rain or a raid starts, each citizen says his line this many ticks after the start at most (by id, and a little chance), so a crowd does not
@@ -996,9 +1003,10 @@ public final class CitizenLife
                                      && greetsOn(citizen.getCivilianID(), day, trait());
             gatherSpot = greets ? chooseGatherSpot(colony, day) : null;
             // round 7 (R6-F3, N48): nobody awake to hear him yet, but a neighbour sleeps close by: he waits a little for the first one up (a brisk first riser
-            // too), within the hold
-            greetWaiting = greets && gatherSpot == null && sleeperNear(citizen.blockPosition());
+            // too), within the hold. Round 8 (R7-F2, N56): only for a neighbour due to wake inside the wait; else he goes on with his day at once
+            greetWaiting = greets && gatherSpot == null && sleeperDue(citizen.blockPosition(), GREET_WAIT - WAKE_SLACK);
             greetingDone = gatherSpot == null && !greetWaiting;
+            greetSkipped = greets && greetingDone;
         }
         if (greetWaiting && now() - greetingStart >= GREET_WAIT)
         {
@@ -1048,7 +1056,8 @@ public final class CitizenLife
 
     /**
      * Round 7 (R6-F3, N48): once a second while the greeter waits: the first neighbour up within {@link #GREET_HEAR_RANGE} blocks of him is greeted where he
-     * stands, else a spot with a listener is taken as at the first look; after {@link #GREET_WAIT} ticks, in a raid or asleep he gives up without a word.
+     * stands, else a spot with a listener is taken as at the first look; after {@link #GREET_WAIT} ticks, in a raid or asleep he gives up without a word. Round
+     * 8: also as soon as no neighbour is due to wake before the wait ends.
      */
     private void awaitListener(@Nullable final IColony colony, final boolean stop)
     {
@@ -1069,17 +1078,30 @@ public final class CitizenLife
             gatherSpot = spot;
             greetWaiting = false;
         }
+        else if (!sleeperDue(here, (int) (GREET_WAIT - (now() - greetingStart))))
+        {
+            skipGreeting();
+        }
     }
 
     /**
-     * Round 7: whether a citizen of the colony (not this one) sleeps within {@link #GREET_HEAR_RANGE} blocks of a place, to be greeted when he wakes.
+     * Round 7: whether a citizen of the colony (not this one) sleeps within {@link #GREET_HEAR_RANGE} blocks of a place, to be greeted when he wakes. Round 8
+     * (R7-F2, N56): only one his own AI gets up within the given ticks ({@link CitizenAI#wakesWithin}), at his wake time and the pace of his looks at the clock.
+     *
+     * @param at     the place.
+     * @param within how far ahead, in ticks.
      */
-    private boolean sleeperNear(final BlockPos at)
+    private boolean sleeperDue(final BlockPos at, final int within)
     {
+        if (within <= 0)
+        {
+            return false;
+        }
         final int colonyId = citizen.getCitizenColonyHandler().getColonyId();
         return !citizen.level().getEntitiesOfClass(EntityCitizen.class, new net.minecraft.world.phys.AABB(at).inflate(GREET_HEAR_RANGE),
           other -> other != citizen && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == colonyId && other.getCitizenSleepHandler().isAsleep()
-                     && other.blockPosition().distSqr(at) <= GREET_HEAR_RANGE * GREET_HEAR_RANGE).isEmpty();
+                     && other.blockPosition().distSqr(at) <= GREET_HEAR_RANGE * GREET_HEAR_RANGE && other.getDecisionAI() != null
+                     && other.getDecisionAI().wakesWithin(within)).isEmpty();
     }
 
     /**

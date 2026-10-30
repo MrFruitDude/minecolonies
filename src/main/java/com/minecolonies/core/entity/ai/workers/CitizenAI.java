@@ -66,6 +66,11 @@ public class CitizenAI implements IStateAI
     private IState lastState = CitizenAIState.IDLE;
 
     /**
+     * Round 8 (R7-F2, N56): the game time of a sleeper's next look at the clock, for {@link #wakesWithin}.
+     */
+    private long nextSleepCheck = Long.MIN_VALUE;
+
+    /**
      * List of small AI's added
      */
     private List<IStateAI> minimalAI = new ArrayList<>();
@@ -100,6 +105,11 @@ public class CitizenAI implements IStateAI
      * D5: the longest extra sleep after dawn, in ticks, spread over the citizens by id.
      */
     public static final int MAX_WAKE_DELAY = 600;
+
+    /**
+     * The longest gap between two looks of a sleeper at the clock, in ticks.
+     */
+    public static final int SLEEP_CHECK_TICKS = 20 * 15;
 
     public CitizenAI(final EntityCitizen citizen)
     {
@@ -240,7 +250,10 @@ public class CitizenAI implements IStateAI
             if (lastState == CitizenAIState.SLEEP)
             {
                 want(SLEEP);
-                citizen.getCitizenAI().setCurrentDelay(20 * 15);
+                // round 8 (R7-F2, N56): the next look comes at the wake time when it is close, so a sleeper gets up at his own time, not up to 15 s later
+                final int delay = sleepCheckDelay(level.getOverworldClockTime() % 24000, wakeDelayOf(citizen));
+                citizen.getCitizenAI().setCurrentDelay(delay);
+                nextSleepCheck = citizen.level().getGameTime() + delay;
                 return CitizenAIState.SLEEP;
             }
 
@@ -409,6 +422,49 @@ public class CitizenAI implements IStateAI
     public static int wakeDelayOf(final EntityCitizen citizen)
     {
         return CitizenLife.enabled() ? citizen.getLife().trait().wakeDelay(citizen.getCivilianID()) : wakeDelay(citizen.getCivilianID());
+    }
+
+    /**
+     * Round 8 (R7-F2, N56): the wait before a sleeper's next look at the clock: {@link #SLEEP_CHECK_TICKS}, or less when his wake time comes sooner (at least the
+     * AI's own 10 ticks).
+     *
+     * @param dayTime   the time of the day, 0 is dawn.
+     * @param wakeDelay the citizen's wake delay ({@link #wakeDelayOf}).
+     * @return the ticks to the next look.
+     */
+    public static int sleepCheckDelay(final long dayTime, final int wakeDelay)
+    {
+        return (int) Math.max(10, Math.min(SLEEP_CHECK_TICKS, Math.floorMod(wakeDelay - dayTime, 24000L)));
+    }
+
+    /**
+     * Round 8 (R7-F2, N56): whether this citizen, asleep, gets up within the given ticks. The same steps as his AI: from his next look on, one look after each
+     * {@link #sleepCheckDelay}, and he gets up at the first look past his wake delay once the night is over. False when he is not asleep in his sleep state.
+     *
+     * @param ticks how far ahead, in ticks.
+     * @return true if he wakes in time.
+     */
+    public boolean wakesWithin(final int ticks)
+    {
+        if (lastState != CitizenAIState.SLEEP || !citizen.getCitizenSleepHandler().isAsleep() || citizen.getCitizenData() == null)
+        {
+            return false;
+        }
+        final Level level = CompatibilityUtils.getWorldFromCitizen(citizen);
+        final long now = level.getGameTime();
+        final long dayNow = level.getOverworldClockTime() % 24000;
+        final int wake = wakeDelayOf(citizen);
+        final int nightFrom = WorkerSettings.nightStartFor(citizen.getCitizenData().getJob() != null) - 2000;
+        for (long at = Math.max(now, nextSleepCheck); at - now <= ticks; )
+        {
+            final long day = (dayNow + at - now) % 24000;
+            if (day <= nightFrom && day >= wake)
+            {
+                return true;
+            }
+            at += sleepCheckDelay(day, wake);
+        }
+        return false;
     }
 
     /**
