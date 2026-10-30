@@ -346,6 +346,13 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private boolean outOfWorkSpots = false;
 
     /**
+     * Forestry (r7): since when a leaf wall stands between him and this tree, or -1. The other stand spots get at most {@link #LEAF_WALL_SPOTS_TICKS}
+     * (each one waits out the navigator's back-off), so the leaf wall still ends the tree well inside the two minute give-up clock.
+     */
+    private long leafWallSince = -1;
+    private static final long LEAF_WALL_SPOTS_TICKS = 60 * 20L;
+
+    /**
      * Forestry (r6 Fable N44): how long a cap tree waits while another Forester works the joined cap next to it, in game ticks (thirty seconds).
      */
     private static final long CAP_NEIGHBOUR_DEFER_TICKS = 30 * 20L;
@@ -1105,6 +1112,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         workFrom = null;
         triedWorkSpots.clear();
         outOfWorkSpots = false;
+        leafWallSince = -1;
         searchedTree = null;
         walkRetriedTree = null;
         pickedWorkFrom = null;
@@ -1330,10 +1338,11 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         {
             if (!walkToTree(job.getTree().getStumpLocations().isEmpty() ? job.getTree().getLocation() : job.getTree().getStumpLocations().get(0)))
             {
-                if (failedTreePaths >= FAILED_PATHS_GIVE_UP && leafWallTree == job.getTree() && outOfWorkSpots)
+                if (failedTreePaths >= FAILED_PATHS_GIVE_UP && leafWallTree == job.getTree()
+                      && (outOfWorkSpots || (leafWallSince >= 0 && world.getGameTime() - leafWallSince >= LEAF_WALL_SPOTS_TICKS)))
                 {
-                    // no way to it but through leaves he may not clear, from any spot round the stump (r6 Fable N49: not after the second of four): skip it
-                    // now, with that reason, instead of standing at it for two minutes
+                    // no way to it but through leaves he may not clear, from any spot round the stump (r6 Fable N49: not after the second of four), or the
+                    // other spots had their minute (r7: each waits out the back-off): skip it now, with that reason, instead of standing at it for two minutes
                     return giveUpTree(job.getTree(), true);
                 }
                 if (checkIfStuck())
@@ -2134,11 +2143,16 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             {
                 failedTreePaths++;
                 leafWallTree = leafGuard != null && leafGuardTree == job.getTree() && leafGuard.refused() ? job.getTree() : null;
+                if (leafWallTree != null && leafWallSince < 0)
+                {
+                    leafWallSince = world.getGameTime();
+                }
             }
             else if (pathToTree.isPathReachingDestination())
             {
                 failedTreePaths = 0;
                 leafWallTree = null;
+                leafWallSince = -1;
             }
         }
 
