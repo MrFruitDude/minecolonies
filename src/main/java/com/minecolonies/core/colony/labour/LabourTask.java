@@ -69,6 +69,15 @@ public final class LabourTask implements IIdleCitizenTask
         return priority;
     }
 
+    /**
+     * The request tasks also take a worker who has nothing to do at his hut (round 3 agency); the stock goals are the jobless citizens' own.
+     */
+    @Override
+    public boolean acceptsWorkers()
+    {
+        return requests;
+    }
+
     @Nullable
     @Override
     public IIdleTaskSession tryStart(final IColony colony, final ICitizenData citizen)
@@ -84,6 +93,12 @@ public final class LabourTask implements IIdleCitizenTask
             return null;
         }
         final LabourBoard board = serverColony.getLabourBoard();
+        if (citizen.getJob() != null)
+        {
+            // round 3 agency: a worker with nothing to do at his hut (the arbiter checked it) helps with a hut's request, never with the stock goals
+            final LabourClaim claim = requests ? board.offerToWorker(citizen, urgentOnly) : null;
+            return claim == null ? null : new LabourSession(id, serverColony, citizen, board, claim);
+        }
         final LabourClaim claim = board.offer(citizen, urgentOnly, requests, stockpile);
         return claim == null ? null : new LabourSession(id, serverColony, citizen, board, claim);
     }

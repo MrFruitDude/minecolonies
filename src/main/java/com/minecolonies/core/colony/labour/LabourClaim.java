@@ -35,8 +35,17 @@ public final class LabourClaim
         /**
          * A manager's directed gathering order ({@link DirectedOrder}).
          */
-        DIRECTED
+        DIRECTED,
+        /**
+         * A worker who waits for a basic tool gets it himself (from storage, or made from the colony's materials): see {@link LabourBoard#claimForTool}.
+         */
+        TOOL
     }
+
+    /**
+     * Whether an employed worker with nothing to do at his hut holds the claim (round 3 agency), not a jobless labourer.
+     */
+    private boolean byWorker;
 
     private final IToken<?> token = new StandardToken(UUID.randomUUID());
 
@@ -172,6 +181,19 @@ public final class LabourClaim
     public boolean accepts(final ItemStack stack)
     {
         return !stack.isEmpty() && (exact.isEmpty() ? stack.is(target) : ItemStack.isSameItemSameComponents(stack, exact));
+    }
+
+    /**
+     * @return whether an employed worker helping out holds the claim.
+     */
+    public boolean byWorker()
+    {
+        return byWorker;
+    }
+
+    void markWorker()
+    {
+        byWorker = true;
     }
 
     public long leaseUntil()

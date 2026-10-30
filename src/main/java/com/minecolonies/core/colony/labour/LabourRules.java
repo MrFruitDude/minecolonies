@@ -246,6 +246,7 @@ public final class LabourRules
             case SHAFT_TOOL -> stack.is(ItemTags.PICKAXES) && stack.is(SHAFT_PICKAXES);
             case "axe" -> stack.is(ItemTags.AXES);
             case "shovel" -> stack.is(ItemTags.SHOVELS);
+            case "hoe" -> stack.is(ItemTags.HOES);
             default -> false;
         };
     }
@@ -259,6 +260,7 @@ public final class LabourRules
         {
             case "axe" -> Items.WOODEN_AXE;
             case "shovel" -> Items.WOODEN_SHOVEL;
+            case "hoe" -> Items.WOODEN_HOE;
             default -> Items.WOODEN_PICKAXE;
         };
     }

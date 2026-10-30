@@ -36,4 +36,13 @@ public interface IIdleCitizenTask
      */
     @Nullable
     IIdleTaskSession tryStart(IColony colony, ICitizenData citizen);
+
+    /**
+     * @return whether the task is also offered an employed worker who has had nothing to do at his hut for a while (round 3 agency; then {@link #tryStart} gets a
+     *   citizen with a job). False by default: helping a builder, directed orders and the like are for citizens without a job.
+     */
+    default boolean acceptsWorkers()
+    {
+        return false;
+    }
 }

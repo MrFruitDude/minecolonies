@@ -261,6 +261,14 @@ public class InteractionValidatorInitializer
           citizen -> citizen.getJob() != null && ((AbstractEntityAIBasic<?, ?>) citizen.getJob().getWorkerAI()).getExceptionTimer() > 1);
 
         // the notices of a stuck or shut-in worker hold while he is (r1 Opus R1-F4): once he is free they go, and the alert of the HUD with them
+        InteractionValidatorRegistry.registerStandardPredicate(Component.translatableEscape(com.minecolonies.core.colony.idle.WorkerHelp.HELPING_NOTICE),
+          com.minecolonies.core.colony.idle.WorkerHelp::isHelping);
+        InteractionValidatorRegistry.registerStandardPredicate(Component.translatableEscape(AbstractEntityAIBasic.TOOL_FETCH_NOTICE),
+          citizen -> citizen.getJob() != null && citizen.getJob().getWorkerAI() instanceof AbstractEntityAIBasic<?, ?> ai && ai.toolSelfHelp() == AbstractEntityAIBasic.ToolSelfHelp.FETCH);
+        InteractionValidatorRegistry.registerStandardPredicate(Component.translatableEscape(AbstractEntityAIBasic.TOOL_MAKE_NOTICE),
+          citizen -> citizen.getJob() != null && citizen.getJob().getWorkerAI() instanceof AbstractEntityAIBasic<?, ?> ai && ai.toolSelfHelp() == AbstractEntityAIBasic.ToolSelfHelp.MAKE);
+        InteractionValidatorRegistry.registerStandardPredicate(Component.translatableEscape(AbstractEntityAIBasic.TOOL_NONE_NOTICE),
+          citizen -> citizen.getJob() != null && citizen.getJob().getWorkerAI() instanceof AbstractEntityAIBasic<?, ?> ai && ai.toolSelfHelp() == AbstractEntityAIBasic.ToolSelfHelp.NOTHING);
         InteractionValidatorRegistry.registerStandardPredicate(Component.translatableEscape(AbstractEntityAIBasic.STUCK_NOTICE),
           citizen -> citizen.getJob() != null && citizen.getJob().getWorkerAI() instanceof AbstractEntityAIBasic<?, ?> ai && ai.stuckReason() != null);
         InteractionValidatorRegistry.registerStandardPredicate(Component.translatableEscape(com.minecolonies.core.entity.ai.workers.AbstractEntityAIStructure.SHUT_IN_NOTICE),
