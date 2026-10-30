@@ -17,6 +17,7 @@ import com.minecolonies.core.colony.buildings.modules.ItemListModule;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack;
 import com.minecolonies.core.colony.jobs.JobLumberjack;
 import com.minecolonies.core.entity.ai.workers.crafting.AbstractEntityAICrafting;
+import com.minecolonies.core.entity.ai.workers.util.FelledCapTrees;
 import com.minecolonies.core.entity.ai.workers.util.Tree;
 import com.minecolonies.core.entity.ai.workers.util.TreeClaims;
 import com.minecolonies.core.entity.ai.workers.util.TreeFootprint;
@@ -322,6 +323,12 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     @Nullable
     private Tree leafGuardTree;
     private int  failedTreePaths = 0;
+
+    /**
+     * Forestry: what last stood in his way at the tree that he may not clear or cut (a cap, a leaf), for the give-up note (r3 Fable N18). Null if nothing.
+     */
+    @Nullable
+    private String lastRefusal;
 
     /**
      * Path searches in a row that find no way to the tree, past leaves he may not clear, before he gives it up at once.
@@ -873,10 +880,19 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
         final TreeFootprint.Recheck recheck = TreeFootprint.recheck(world, pos, part, tree.getFamily(), tree.isStrippedBase(), building.getColony());
         if (recheck == TreeFootprint.Recheck.OK && part == TreeFootprint.Part.LEAF && TreeFootprint.isCap(world.getBlockState(pos))
+              && !tree.capWasThere(pos, world.getBlockState(pos)))
+        {
+            // a wart block or shroomlight put there after he chose the tree (r3 Sol H1)
+            Log.getLogger().debug("Forester {} leaves the cap at {}: it was added after he chose the tree", worker.getCitizenData().getId(), pos.toShortString());
+            lastRefusal = "a cap block added after the tree was chosen";
+            return false;
+        }
+        if (recheck == TreeFootprint.Recheck.OK && part == TreeFootprint.Part.LEAF && TreeFootprint.isCap(world.getBlockState(pos))
               && !TreeFootprint.capComponentIsOwn(world, pos, tree.getBox(), tree.getFamily(), tree.isStrippedBase()))
         {
             // a cap joined to a player's decoration (built after the tree was chosen): it stays whole, the tree goes on
             Log.getLogger().debug("Forester {} leaves the cap at {}: it is joined to a decoration", worker.getCitizenData().getId(), pos.toShortString());
+            lastRefusal = "a cap joined to a decoration or another tree";
             return false;
         }
         if (recheck == TreeFootprint.Recheck.OK)
@@ -949,6 +965,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private void noteTreeProgress()
     {
         treeProgressAt = world.getGameTime();
+        lastRefusal = null;
     }
 
     /**
@@ -969,9 +986,14 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private IAIState giveUpTree(@NotNull final Tree tree, final boolean leavesInTheWay)
     {
         final BlockPos location = tree.getLocation();
-        final String note = leavesInTheWay ? "Left the tree at " + location.toShortString() + ": the only way to it goes through leaves next to a build, a hut or other land"
+        // the real reason (r3 Fable N18): what stood in his way, else whether he got there at all
+        final boolean guardRefused = !reachedTree && leafGuard != null && leafGuardTree == tree && leafGuard.refused();
+        final String note = leavesInTheWay || (lastRefusal == null && guardRefused)
+                              ? "Left the tree at " + location.toShortString() + ": the only way to it goes through leaves next to a build, a hut or other land"
+                              : lastRefusal != null ? "Left the tree at " + location.toShortString() + ": " + lastRefusal + " is in the way and may not be cleared"
                               : reachedTree ? "Left the tree at " + location.toShortString() + ": nothing of it came off for two minutes"
                               : "Left the tree at " + location.toShortString() + ": could not get to it for two minutes";
+        lastRefusal = null;
         final List<BlockPos> logs = new ArrayList<>(tree.getAllLogs());
         logs.add(location);
         Log.getLogger().debug("Forester {} gives up: {}", worker.getCitizenData().getId(), note);
@@ -1297,6 +1319,11 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 }
             }
             sweep = new TreeFootprint.LeafSweep(world, removed, tree.getBox(), tree.isNetherTree(), tree.getFamily(), tree.isStrippedBase());
+            if (tree.isNetherTree() && !removed.isEmpty() && tree.getBox() != null)
+            {
+                // a cap this one shares with a neighbour still standing goes when the neighbour is felled (r3 Fable N12)
+                FelledCapTrees.felled(world, tree.getBox(), tree.getFamily());
+            }
         }
         final List<BlockPos> batch = sweep.next(LEAF_BATCH);
         if (!batch.isEmpty())
@@ -1357,8 +1384,10 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
         if (TreeFootprint.isCap(world.getBlockState(pos)))
         {
+            // a cap added since he chose the tree is a player's (r3 Sol H1); a cap of a joined neighbour felled lately is in reach too (r3 Fable N12)
             final AABB box = tree.getBox();
-            return box != null && box.inflate(SWEEP_CAP_MARGIN).contains(Vec3.atCenterOf(pos));
+            return box != null && tree.capWasThere(pos, world.getBlockState(pos))
+                     && TreeFootprint.inAny(FelledCapTrees.capBounds(world, box, tree.getFamily(), SWEEP_CAP_MARGIN), pos);
         }
         return true;
     }
@@ -2071,18 +2100,25 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private boolean isClearableObstruction(@NotNull final BlockPos pos)
     {
         final BlockState state = world.getBlockState(pos);
-        final boolean natural = TreeFootprint.isDecayingLeaves(state)
+        final boolean leaf = TreeFootprint.isDecayingLeaves(state);
+        final boolean natural = leaf
                                   ? !state.getValue(LeavesBlock.PERSISTENT)
-                                  : TreeFootprint.isCap(state) && job.getTree() != null && job.getTree().ownsCap(pos)
-                                      && TreeFootprint.capComponentIsOwn(world, pos, job.getTree().getBox(), job.getTree().getFamily(), job.getTree().isStrippedBase());
-        if (!natural || TreeFootprint.guardPosition(world, pos, building.getColony()) != TreeFootprint.Recheck.OK)
+                                  : TreeFootprint.isCap(state) && job.getTree() != null && job.getTree().mayClearCap(world, pos);
+        if (!natural)
         {
+            lastRefusal = leaf ? "a placed leaf" : TreeFootprint.isCap(state) ? "a cap joined to a decoration or another tree" : lastRefusal;
+            return false;
+        }
+        if (TreeFootprint.guardPosition(world, pos, building.getColony()) != TreeFootprint.Recheck.OK)
+        {
+            lastRefusal = leaf ? "a leaf in a hut or on other land" : "a cap in a hut or on other land";
             return false;
         }
         for (final Direction dir : Direction.values())
         {
             if (TreeFootprint.isBuildSignal(world.getBlockState(pos.relative(dir)), false))
             {
+                lastRefusal = leaf ? "a leaf next to a build" : "a cap next to a build";
                 return false;
             }
         }

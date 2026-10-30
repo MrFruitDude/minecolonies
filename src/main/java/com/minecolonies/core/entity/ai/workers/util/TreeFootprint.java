@@ -390,8 +390,9 @@ public final class TreeFootprint
 
     /**
      * Whether the connected cap (faces, edges and corners) a cap belongs to is all the tree's own: every block of it a cap of the tree's kind, within
-     * {@link LeafSweep#CAP_BOUNDS} of the box of the tree's logs, and touching no player's block. A cap joined to a player's decoration (wart blocks or
-     * shroomlights built against the canopy, a cap of another kind) is kept whole, by the direct cut, the clearing and the sweep alike (r2 Sol H1).
+     * {@link LeafSweep#CAP_BOUNDS} of the box of the tree's logs or of a stem of its kind felled here lately (two caps grown into one, r3 Fable N12), and
+     * touching no player's block. A cap joined to a player's decoration (wart blocks or shroomlights built against the canopy, a cap of another kind) is
+     * kept whole, by the direct cut, the clearing and the sweep alike (r2 Sol H1).
      *
      * @param level        the level.
      * @param seed         a cap.
@@ -407,22 +408,54 @@ public final class TreeFootprint
       @NotNull final String family,
       final boolean strippedBase)
     {
-        final AABB bounds = logBox == null ? null : logBox.inflate(LeafSweep.CAP_BOUNDS);
+        return capComponent(level, seed, logBox, family, strippedBase).own();
+    }
+
+    /**
+     * A connected cap and whether it is all the tree's own (see {@link #capComponentIsOwn}).
+     *
+     * @param cells its blocks (all of them, or those up to {@link #LEAF_BUDGET}).
+     * @param own   true if he may take it as the tree's cap.
+     */
+    public record CapComponent(Set<BlockPos> cells, boolean own)
+    {
+    }
+
+    /**
+     * The connected cap a cap belongs to, followed whole so a caller can judge each of its blocks once.
+     *
+     * @param level        the level.
+     * @param seed         a cap.
+     * @param logBox       the box of the tree's logs, or null if unknown.
+     * @param family       the tree's family.
+     * @param strippedBase true if the tree itself is stripped.
+     * @return the cap and the verdict.
+     */
+    @NotNull
+    public static CapComponent capComponent(
+      @NotNull final Level level,
+      @NotNull final BlockPos seed,
+      @Nullable final AABB logBox,
+      @NotNull final String family,
+      final boolean strippedBase)
+    {
+        final List<AABB> bounds = logBox == null ? null : FelledCapTrees.capBounds(level, logBox, family, LeafSweep.CAP_BOUNDS);
         final Set<BlockPos> seen = new HashSet<>();
         final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
         queue.add(seed.immutable());
         seen.add(seed.immutable());
+        boolean own = true;
         while (!queue.isEmpty())
         {
             final BlockPos pos = queue.poll();
             final BlockState state = level.getBlockState(pos);
-            if (!capFitsFamily(family, state) || (bounds != null && !bounds.contains(net.minecraft.world.phys.Vec3.atCenterOf(pos))) || leafTouchesBuild(level, pos, strippedBase))
+            if (own && (!capFitsFamily(family, state) || !inAny(bounds, pos) || leafTouchesBuild(level, pos, strippedBase)))
             {
-                return false;
+                own = false;
             }
             if (seen.size() > LEAF_BUDGET)
             {
-                return false;
+                return new CapComponent(seen, false);
             }
             for (final BlockPos near : BlockPos.betweenClosed(pos.offset(-1, -1, -1), pos.offset(1, 1, 1)))
             {
@@ -434,7 +467,29 @@ public final class TreeFootprint
                 }
             }
         }
-        return true;
+        return new CapComponent(seen, own);
+    }
+
+    /**
+     * @param boxes boxes, or null for no bound.
+     * @param pos   a position.
+     * @return true if it lies in one of them.
+     */
+    public static boolean inAny(@Nullable final List<AABB> boxes, @NotNull final BlockPos pos)
+    {
+        if (boxes == null)
+        {
+            return true;
+        }
+        final net.minecraft.world.phys.Vec3 center = net.minecraft.world.phys.Vec3.atCenterOf(pos);
+        for (final AABB box : boxes)
+        {
+            if (box.contains(center))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1506,7 +1561,7 @@ public final class TreeFootprint
         private final String              family;
         private final boolean             strippedBase;
         @Nullable
-        private final AABB                capBounds;
+        private final List<AABB>          capBounds;
         private       int                 capsKept = 0;
         private final Set<BlockPos>       removedLogs;
         private final ArrayDeque<BlockPos> toBreak = new ArrayDeque<>();
@@ -1538,7 +1593,7 @@ public final class TreeFootprint
             this.level = level;
             this.family = family;
             this.strippedBase = strippedBase;
-            this.capBounds = box == null ? null : box.inflate(CAP_BOUNDS);
+            this.capBounds = box == null ? null : FelledCapTrees.capBounds(level, box, family, CAP_BOUNDS);
             this.removedLogs = new HashSet<>(removedLogs);
             this.nextRound = level.getGameTime() + ROUND_INTERVAL;
             for (final BlockPos log : this.removedLogs)
@@ -1731,8 +1786,7 @@ public final class TreeFootprint
                 component.add(pos);
                 if (!foreign)
                 {
-                    foreign = !capFitsFamily(family, level.getBlockState(pos)) || (capBounds != null && !capBounds.contains(net.minecraft.world.phys.Vec3.atCenterOf(pos)))
-                                || leafTouchesBuild(level, pos, strippedBase);
+                    foreign = !capFitsFamily(family, level.getBlockState(pos)) || !inAny(capBounds, pos) || leafTouchesBuild(level, pos, strippedBase);
                 }
                 if (component.size() > LEAF_BUDGET)
                 {

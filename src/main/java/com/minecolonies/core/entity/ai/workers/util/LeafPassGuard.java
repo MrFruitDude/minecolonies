@@ -40,6 +40,11 @@ public final class LeafPassGuard
     private final List<int[]>    boxes          = new ArrayList<>();
     private final Set<Long>      foreignChunks  = new HashSet<>();
     private final Set<Long>      treeBlocks     = new HashSet<>();
+    /**
+     * The caps he may clear, judged on the server thread by the clearing's own rule ({@link Tree#mayClearCap}, r3 Fable N12): a cap joined to a decoration
+     * or reaching past his tree is a wall to the planner too.
+     */
+    private final Set<Long>      clearableCaps  = new HashSet<>();
     private final List<BlockPos> logs;
     private final boolean        netherTree;
     private final String         family;
@@ -71,6 +76,10 @@ public final class LeafPassGuard
         for (final BlockPos log : tree.getAllLogs())
         {
             guard.treeBlocks.add(log.asLong());
+        }
+        if (tree.isNetherTree())
+        {
+            guard.judgeCaps(level, tree);
         }
         for (final IBuilding building : colony.getServerBuildingManager().getBuildings().values())
         {
@@ -133,7 +142,8 @@ public final class LeafPassGuard
     public boolean passable(@NotNull final LevelReader world, @NotNull final BlockState state, final int x, final int y, final int z)
     {
         final boolean leaf = TreeFootprint.isDecayingLeaves(state) && !state.getValue(LeavesBlock.PERSISTENT);
-        final boolean cap = !leaf && state.is(ModTags.hugeMushroomBlocks) && ownsCap(x, y, z) && TreeFootprint.capFitsFamily(family, state);
+        final boolean cap = !leaf && state.is(ModTags.hugeMushroomBlocks) && ownsCap(x, y, z) && TreeFootprint.capFitsFamily(family, state)
+                              && clearableCaps.contains(BlockPos.asLong(x, y, z));
         if (!leaf && !cap)
         {
             refused |= TreeFootprint.isCap(state);
@@ -145,6 +155,39 @@ public final class LeafPassGuard
             return false;
         }
         return true;
+    }
+
+    /**
+     * Judge each cap within reach of the tree's stems once, one flood per connected cap. Server thread.
+     */
+    private void judgeCaps(@NotNull final Level level, @NotNull final Tree tree)
+    {
+        final Set<Long> judged = new HashSet<>();
+        for (final BlockPos log : logs)
+        {
+            for (final BlockPos near : BlockPos.betweenClosed(log.offset(-TreeFootprint.CAP_REACH, -TreeFootprint.CAP_REACH, -TreeFootprint.CAP_REACH),
+              log.offset(TreeFootprint.CAP_REACH, TreeFootprint.CAP_REACH, TreeFootprint.CAP_REACH)))
+            {
+                if (judged.contains(near.asLong()) || !TreeFootprint.isCap(level.getBlockState(near)))
+                {
+                    continue;
+                }
+                final TreeFootprint.CapComponent component = TreeFootprint.capComponent(level, near, tree.getBox(), family, tree.isStrippedBase());
+                for (final BlockPos cell : component.cells())
+                {
+                    judged.add(cell.asLong());
+                    if (component.own() && tree.capWasThere(cell, level.getBlockState(cell)))
+                    {
+                        clearableCaps.add(cell.asLong());
+                    }
+                }
+                judged.add(near.asLong());
+            }
+            if (judged.size() > TreeFootprint.LEAF_BUDGET * 4)
+            {
+                break;
+            }
+        }
     }
 
     private boolean inBox(final int x, final int y, final int z)

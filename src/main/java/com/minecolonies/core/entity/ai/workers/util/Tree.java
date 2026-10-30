@@ -16,6 +16,7 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.Identifier;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
@@ -40,9 +41,12 @@ import net.neoforged.neoforge.common.Tags;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 import static com.minecolonies.api.items.ModTags.fungi;
 import static com.minecolonies.api.util.constant.NbtTagConstants.*;
@@ -164,6 +168,14 @@ public class Tree
     private boolean started = false;
 
     /**
+     * Forestry: every cap around a mushroom or fungus when it was chosen, by position, with its block (r3 Sol H1). A cap that is not here, or is another
+     * block now (a wart block or shroomlight a player added or swapped in during the felling), is somebody's: he never cuts, clears or sweeps it. Null
+     * when unknown (not a cap tree, or a save from before).
+     */
+    @Nullable
+    private Map<Long, Block> capsAtChoice;
+
+    /**
      * Private constructor of the tree. Used by the equals and createFromNBt method.
      */
     private Tree()
@@ -254,6 +266,10 @@ public class Tree
         final ItemStack fromNear = nearLeaf == null ? null : calcSaplingForPos(world, nearLeaf, false);
         sapling = fromNear != null ? fromNear : calcSapling(world);
         netherTree = sapling.is(Tags.Items.MUSHROOMS) || sapling.is(fungi);
+        if (netherTree)
+        {
+            capsAtChoice = snapshotCaps(world);
+        }
         stumpLocations = new ArrayList<>();
         if (sapling.is(Items.MANGROVE_PROPAGULE))
         {
@@ -336,8 +352,15 @@ public class Tree
         // a cap joined to a player's decoration is no cap of this tree (r2 Sol H1): the whole connected cap stays
         final net.minecraft.world.phys.AABB logBox = boxMin == null || boxMax == null ? null : net.minecraft.world.phys.AABB.encapsulatingFullBlocks(boxMin, boxMax);
         final java.util.Map<BlockPos, Boolean> capOwned = new java.util.HashMap<>();
-        own.removeIf(pos -> TreeFootprint.isCap(world.getBlockState(pos))
-                              && !capOwned.computeIfAbsent(pos, p -> TreeFootprint.capComponentIsOwn(world, p, logBox, family, strippedBase)));
+        own.removeIf(pos -> TreeFootprint.isCap(world.getBlockState(pos)) && !capOwned.computeIfAbsent(pos, p -> {
+            // one flood per connected cap, not per block of it
+            final TreeFootprint.CapComponent component = TreeFootprint.capComponent(world, p, logBox, family, strippedBase);
+            for (final BlockPos cell : component.cells())
+            {
+                capOwned.putIfAbsent(cell, component.own());
+            }
+            return component.own();
+        }));
         // farthest first: pollLast takes from the end
         own.sort((c1, c2) -> (int) (c1.distSqr(location) - c2.distSqr(location)));
         return own;
@@ -791,6 +814,24 @@ public class Tree
         {
             tree.allLogs.add(BlockPosUtil.readFromListNBT(allLogsBin, i));
         }
+        if (compound.contains(TAG_CAPS))
+        {
+            final CompoundTag caps = compound.getCompoundOrEmpty(TAG_CAPS);
+            tree.capsAtChoice = new HashMap<>();
+            for (final String key : caps.keySet())
+            {
+                final Identifier id = Identifier.tryParse(key);
+                final Block block = id == null ? null : BuiltInRegistries.BLOCK.getValue(id);
+                if (block == null || block == Blocks.AIR)
+                {
+                    continue;
+                }
+                for (final long pos : caps.getLongArray(key).orElse(new long[0]))
+                {
+                    tree.capsAtChoice.put(pos, block);
+                }
+            }
+        }
 
         return tree;
     }
@@ -1052,6 +1093,7 @@ public class Tree
     private static final String TAG_STRIPPED_BASE = "forestryStrippedBase";
     private static final String TAG_STARTED       = "forestryStarted";
     private static final String TAG_ALL_LOGS      = "forestryAllLogs";
+    private static final String TAG_CAPS          = "forestryCaps";
 
     /**
      * @return true once a block of the tree was broken.
@@ -1093,6 +1135,89 @@ public class Tree
     public boolean ownsBlock(@NotNull final BlockPos pos)
     {
         return allLogs.contains(pos) || woodBlocks.contains(pos) || leaves.contains(pos) || decorations.contains(pos);
+    }
+
+    /**
+     * The caps of the tree when it is chosen: those within {@link TreeFootprint.LeafSweep#CAP_BOUNDS} of its stems first, then every cap joined to them, at
+     * most {@link #CAP_SNAPSHOT_MAX}.
+     */
+    private static final int CAP_SNAPSHOT_MAX = 4 * TreeFootprint.LEAF_BUDGET;
+
+    @Nullable
+    private Map<Long, Block> snapshotCaps(@NotNull final Level world)
+    {
+        if (boxMin == null || boxMax == null)
+        {
+            return null;
+        }
+        final int reach = TreeFootprint.LeafSweep.CAP_BOUNDS;
+        final BlockPos min = boxMin.offset(-reach, -reach, -reach);
+        final BlockPos max = boxMax.offset(reach, reach, reach);
+        if ((long) (max.getX() - min.getX() + 1) * (max.getY() - min.getY() + 1) * (max.getZ() - min.getZ() + 1) > 65536)
+        {
+            return null;
+        }
+        final Map<Long, Block> caps = new HashMap<>();
+        final ArrayDeque<BlockPos> queue = new ArrayDeque<>();
+        for (final BlockPos pos : BlockPos.betweenClosed(min, max))
+        {
+            final BlockState state = world.getBlockState(pos);
+            if (TreeFootprint.isCap(state) && caps.size() < CAP_SNAPSHOT_MAX)
+            {
+                caps.put(pos.asLong(), state.getBlock());
+                queue.add(pos.immutable());
+            }
+        }
+        // a cap grown into this one from a neighbour reaches further out
+        while (!queue.isEmpty() && caps.size() < CAP_SNAPSHOT_MAX)
+        {
+            final BlockPos pos = queue.poll();
+            for (final BlockPos near : BlockPos.betweenClosed(pos.offset(-1, -1, -1), pos.offset(1, 1, 1)))
+            {
+                if (!caps.containsKey(near.asLong()))
+                {
+                    final BlockState state = world.getBlockState(near);
+                    if (TreeFootprint.isCap(state))
+                    {
+                        caps.put(near.asLong(), state.getBlock());
+                        queue.add(near.immutable());
+                    }
+                }
+            }
+        }
+        return caps;
+    }
+
+    /**
+     * Forestry: whether a cap was there, as it is now, when the tree was chosen (r3 Sol H1). Like a log, each cap is checked again right before it goes:
+     * a wart block or shroomlight added or swapped in since is a player's.
+     *
+     * @param pos   the cap.
+     * @param state what is there now.
+     * @return true if it is as he saw it, or if he saw none (not a cap tree, an older save).
+     */
+    public boolean capWasThere(@NotNull final BlockPos pos, @NotNull final BlockState state)
+    {
+        if (capsAtChoice == null)
+        {
+            return true;
+        }
+        final Block seen = capsAtChoice.get(pos.asLong());
+        return seen != null && state.is(seen);
+    }
+
+    /**
+     * Forestry: whether he may clear a cap of this tree in his way or take it: one of the tree's caps, as he saw it, in a connected cap that is all the
+     * tree's own. The path planner asks the same (r3 Fable N12).
+     *
+     * @param world the level.
+     * @param pos   the cap.
+     * @return true if he may break it.
+     */
+    public boolean mayClearCap(@NotNull final Level world, @NotNull final BlockPos pos)
+    {
+        return ownsCap(pos) && capWasThere(pos, world.getBlockState(pos))
+                 && TreeFootprint.capComponentIsOwn(world, pos, getBox(), family, strippedBase);
     }
 
     /**
@@ -1432,6 +1557,16 @@ public class Tree
             BlockPosUtil.writeToListNBT(allLogsBin, pos);
         }
         compound.put(TAG_ALL_LOGS, allLogsBin);
+        if (capsAtChoice != null)
+        {
+            // per block kind, the positions of its caps
+            final Map<Block, List<Long>> byBlock = new HashMap<>();
+            capsAtChoice.forEach((pos, block) -> byBlock.computeIfAbsent(block, b -> new ArrayList<>()).add(pos));
+            final CompoundTag caps = new CompoundTag();
+            byBlock.forEach((block, positions) -> caps.putLongArray(BuiltInRegistries.BLOCK.getKey(block).toString(),
+              positions.stream().mapToLong(Long::longValue).toArray()));
+            compound.put(TAG_CAPS, caps);
+        }
     }
 
     /**
