@@ -40,7 +40,7 @@ public final class AliveGameTests
 {
     public static final String[] NAMES = {"alive_rules", "alive_chat", "alive_chat_yields", "alive_morning", "alive_building_cheer", "alive_grief", "alive_raid_relief",
       "alive_rain_hurry", "alive_rain_where", "alive_traits_stable", "alive_chat_pairs", "alive_calm_pace", "alive_morning_crowd", "alive_shelter_inside",
-      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait"};
+      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn"};
 
     /**
      * Tests whose citizens must stand in the rain: they run without the barrier ceiling of the GameTest frame, which stops the rain (vanilla's isRainingAt
@@ -86,6 +86,7 @@ public final class AliveGameTests
             case "alive_shelter_chat" -> AliveGameTests::shelterChat;
             case "alive_chorus" -> AliveGameTests::chorus;
             case "alive_lines_wait" -> AliveGameTests::linesWait;
+            case "alive_morning_dawn" -> AliveGameTests::morningDawn;
             default -> AliveGameTests::rainHurry;
         };
     }
@@ -1376,17 +1377,34 @@ public final class AliveGameTests
               "fundamentals/residence1.blueprint");
             home.setBuildingLevel(2);
             // the fixture house is only its hut block: roof its footprint (and the one-block margin isInBuilding allows) so the housemates are dry inside, as
-            // in a built house; the walk starts out in the rain
-            final BlockPos lo = helper.relativePos(home.getCorners().getA());
-            final BlockPos hi = helper.relativePos(home.getCorners().getB());
-            for (int x = Math.max(-8, Math.min(lo.getX(), hi.getX()) - 1); x <= Math.min(39, Math.max(lo.getX(), hi.getX()) + 1); x++)
+            // in a built house. Round 7 (N51, R6-F2): the roof is laid in world coordinates (helper.relativePos mirrors x and z here, so the round 6 roof was
+            // never placed) and clipped to the test plot; the housemates start outside it, in the rain, and walk in
+            final net.minecraft.server.level.ServerLevel level = helper.getLevel();
+            final BlockPos plotA = helper.absolutePos(new BlockPos(-8, 0, -8));
+            final BlockPos plotB = helper.absolutePos(new BlockPos(39, 0, 31));
+            final BlockPos cA = home.getCorners().getA();
+            final BlockPos cB = home.getCorners().getB();
+            final int roofY = home.getPosition().getY() + 4;
+            final int x0 = Math.max(Math.min(plotA.getX(), plotB.getX()), Math.min(cA.getX(), cB.getX()) - 1);
+            final int x1 = Math.min(Math.max(plotA.getX(), plotB.getX()), Math.max(cA.getX(), cB.getX()) + 1);
+            final int z0 = Math.max(Math.min(plotA.getZ(), plotB.getZ()), Math.min(cA.getZ(), cB.getZ()) - 1);
+            final int z1 = Math.min(Math.max(plotA.getZ(), plotB.getZ()), Math.max(cA.getZ(), cB.getZ()) + 1);
+            helper.assertTrue(x0 <= x1 && z0 <= z1, "precondition failed: the house " + cA + " " + cB + " is off the plot " + plotA + " " + plotB);
+            for (int x = x0; x <= x1; x++)
             {
-                for (int z = Math.max(-8, Math.min(lo.getZ(), hi.getZ()) - 1); z <= Math.min(31, Math.max(lo.getZ(), hi.getZ()) + 1); z++)
+                for (int z = z0; z <= z1; z++)
                 {
-                    helper.setBlock(new BlockPos(x, 5, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                    level.setBlock(new BlockPos(x, roofY, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
                 }
             }
-            helper.assertTrue(Math.min(lo.getX(), hi.getX()) - 1 > 8, "precondition failed: the roof covers the start " + lo + " " + hi);
+            final BlockPos inside = EntityAICitizenLife.insideSpot(home, 0);
+            helper.assertTrue(home.isInBuilding(inside) && !level.canSeeSky(inside.above()), "precondition failed: the house is not roofed at " + inside);
+            for (int i = 0; i < 2; i++)
+            {
+                final BlockPos start = helper.absolutePos(new BlockPos(6 + i * 2, 1, 24));
+                helper.assertTrue(!home.isInBuilding(start) && level.canSeeSky(start.above()), "precondition failed: the roof covers the start " + start + " roof x "
+                                                                                              + x0 + ".." + x1 + " z " + z0 + ".." + z1);
+            }
             final EntityCitizen[] mates = new EntityCitizen[2];
             for (int i = 0; i < 2; i++)
             {
@@ -1402,13 +1420,43 @@ public final class AliveGameTests
             }
             final EntityCitizen a = mates[0];
             final EntityCitizen b = mates[1];
+            // round 7 (R6-F4): a chatty guest who does not live here stands dry inside the house; nobody sheltering there chats with him
+            final ICitizenData guestData = spawn(helper, colony, new BlockPos(10, 1, 24));
+            if (guestData.getHomeBuilding() != null)
+            {
+                guestData.getHomeBuilding().getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).removeCitizen(guestData);
+            }
+            helper.assertTrue(guestData.getHomeBuilding() == null, "precondition failed: the guest has a home");
+            final EntityCitizen guest = entity(guestData);
+            makeTrait(guest, LifeTrait.CHATTY);
+            BlockPos guestSpot = null;
+            for (final BlockPos at : new BlockPos[] {inside.offset(2, 0, 0), inside.offset(-2, 0, 0), inside.offset(0, 0, 2), inside.offset(0, 0, -2), inside.offset(1, 0, 1)})
+            {
+                if (guestSpot == null && at.getX() >= x0 && at.getX() <= x1 && at.getZ() >= z0 && at.getZ() <= z1 && !level.canSeeSky(at.above()))
+                {
+                    guestSpot = at;
+                }
+            }
+            helper.assertTrue(guestSpot != null, "precondition failed: no dry spot for the guest by " + inside);
+            final BlockPos guestAt = guestSpot;
             rain(helper, true);
             final long t0 = helper.getLevel().getGameTime();
             final String[] opener = {""};
             final long[] chatEnd = {-1};
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
-                keepFed(a, b);
+                keepFed(a, b, guest);
+                if (guestData.getHomeBuilding() != null)
+                {
+                    // the colony may give the homeless guest a free bed; he stays a guest
+                    guestData.getHomeBuilding().getFirstModuleOccurance(com.minecolonies.core.colony.buildings.modules.LivingBuildingModule.class).removeCitizen(guestData);
+                }
+                guest.getNavigation().stop();
+                if (!guest.blockPosition().equals(guestAt))
+                {
+                    guest.teleportTo(guestAt.getX() + 0.5D, guestAt.getY(), guestAt.getZ() + 0.5D);
+                }
+                helper.assertTrue(!guest.getLife().chatting(), "a sheltering housemate chats with a guest: " + guest.getSpeech());
                 final long now = helper.getLevel().getGameTime();
                 if (opener[0].isEmpty())
                 {
@@ -1438,6 +1486,111 @@ public final class AliveGameTests
                     rain(helper, false);
                     helper.fail("no chat in the shelter: states " + a.getCitizenAI().getState() + " / " + b.getCitizenAI().getState() + " at " + a.blockPosition() + " "
                                   + b.blockPosition() + " inside " + a.getLife().shelteredAtHome() + "/" + b.getLife().shelteredAtHome());
+                    return;
+                }
+                helper.runAfterDelay(1, () -> poll[0].run());
+            };
+            helper.runAfterDelay(1, () -> poll[0].run());
+        });
+    }
+
+    /**
+     * Round 7 (R6-F3, N48): a dawn with neighbours waking at different times. A brisk first riser with only sleepers around him waits within his hold and
+     * greets the first one up, never before; a greeter whose only neighbour sleeps through the wait gives up without a word and is not held past
+     * {@link CitizenLife#GREET_WAIT}.
+     */
+    public static void morningDawn(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-morning-dawn");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            final BlockPos greeterAt = new BlockPos(10, 1, 10);
+            final EntityCitizen greeter = entity(spawn(helper, colony, greeterAt));
+            makeTrait(greeter, LifeTrait.BRISK);
+            final BlockPos lateAt = new BlockPos(36, 1, 29);
+            final EntityCitizen late = entity(spawn(helper, colony, lateAt));
+            makeTrait(late, LifeTrait.BRISK);
+            // neighbours of the first riser wake one after the other; the late greeter's only neighbour sleeps through the test
+            final BlockPos[] sleeperAt = {new BlockPos(12, 1, 10), new BlockPos(10, 1, 13), new BlockPos(13, 1, 12), new BlockPos(34, 1, 28)};
+            final int[] wakeAfter = {40, 100, Integer.MAX_VALUE, Integer.MAX_VALUE};
+            final EntityCitizen[] sleepers = new EntityCitizen[sleeperAt.length];
+            for (int i = 0; i < sleepers.length; i++)
+            {
+                sleepers[i] = entity(spawn(helper, colony, sleeperAt[i]));
+                makeTrait(sleepers[i], LifeTrait.THOUGHTFUL);
+            }
+            final Runnable holdSleep = () -> {
+                for (int i = 0; i < sleepers.length; i++)
+                {
+                    if (sleepers[i].getCitizenData().isAsleep())
+                    {
+                        // a sleeper's AI would wake him at its next look in daylight; it rests until the test wakes him
+                        sleepers[i].getCitizenAI().setCurrentDelay(20);
+                        pin(helper, sleepers[i], sleeperAt[i]);
+                    }
+                }
+            };
+            for (final EntityCitizen sleeper : sleepers)
+            {
+                sleeper.getCitizenData().setAsleep(true);
+            }
+            holdSleep.run();
+            final ServerLevel level = helper.getLevel();
+            long day = level.getOverworldClockTime() / 24000L + 1;
+            for (int guard = 0; guard < 1000 && !(CitizenLife.greetsOn(greeter.getCivilianID(), day, LifeTrait.BRISK)
+                                                   && CitizenLife.greetsOn(late.getCivilianID(), day, LifeTrait.BRISK)); guard++)
+            {
+                day++;
+            }
+            helper.assertTrue(CitizenLife.greetsOn(greeter.getCivilianID(), day, LifeTrait.BRISK) && CitizenLife.greetsOn(late.getCivilianID(), day, LifeTrait.BRISK),
+              "precondition failed: no morning where both greet");
+            setClock(helper, day * 24000L + 100L);
+            for (final EntityCitizen c : new EntityCitizen[] {greeter, late})
+            {
+                helper.assertTrue(!c.getLife().someoneToGreet(c.blockPosition()), "precondition failed: someone is awake by " + c.getCivilianID());
+                helper.assertTrue(c.getLife().greetingHolds(true) && c.getLife().gatherSpot() == null && c.getLife().awaitingListener(),
+                  "a first riser among sleepers does not wait: holds " + c.getLife().greetingHolds(true) + " spot " + c.getLife().gatherSpot());
+            }
+            final long t0 = level.getGameTime();
+            final long[] greetedAt = {-1};
+            final long[] lateHeld = {0};
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                final long now = level.getGameTime();
+                keepFed(greeter, late);
+                keepFed(sleepers);
+                for (int i = 0; i < sleepers.length; i++)
+                {
+                    if (sleepers[i].getCitizenData().isAsleep() && now - t0 >= wakeAfter[i])
+                    {
+                        sleepers[i].getCitizenSleepHandler().onWakeUp();
+                    }
+                }
+                holdSleep.run();
+                if (greetedAt[0] < 0 && greeter.getSpeech().contains(".morning"))
+                {
+                    greetedAt[0] = now;
+                    helper.assertTrue(now - t0 >= wakeAfter[0], "the first riser greeted before anyone woke, at " + (now - t0));
+                    helper.assertTrue(greeter.getLife().someoneToGreet(greeter.blockPosition()), "the first riser greets with nobody awake near");
+                }
+                if (greeter.getLife().greetingHolds(true))
+                {
+                    helper.assertTrue(now - greeter.getLife().greetingStart() <= CitizenLife.MORNING_BUDGET, "the greeting held work past the budget");
+                }
+                helper.assertTrue(!late.getSpeech().contains(".morning"), "the late greeter greeted a sleeper: '" + late.getSpeech() + "'");
+                helper.assertTrue(late.getLife().gatherSpot() == null, "the late greeter walks off to greet: " + late.getLife().gatherSpot());
+                if (late.getLife().greetingHolds(true))
+                {
+                    lateHeld[0] = now - late.getLife().greetingStart();
+                    helper.assertTrue(lateHeld[0] <= CitizenLife.GREET_WAIT, "the late greeter waited " + lateHeld[0] + " ticks");
+                }
+                if (now - t0 > CitizenLife.MORNING_BUDGET + 60)
+                {
+                    helper.assertTrue(greetedAt[0] >= 0, "the first riser never greeted: state " + greeter.getCitizenAI().getState() + " waiting "
+                                                         + greeter.getLife().awaitingListener() + " skipped " + greeter.getLife().greetSkipped());
+                    helper.assertTrue(late.getLife().greetSkipped() && !late.getLife().greetingHolds(true), "the late greeter's wait did not end");
+                    Log.getLogger().info("ALIVE RESULT morning_dawn greeted_after={} late_held={}", greetedAt[0] - t0, lateHeld[0]);
+                    helper.succeed();
                     return;
                 }
                 helper.runAfterDelay(1, () -> poll[0].run());
