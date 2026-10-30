@@ -429,6 +429,8 @@ final class TeamworkGameTests
         LabourGameTests.begin();
         LabourSettings.override("total", 8);
         LabourSettings.override("worldMax", 2);
+        // (both jobless citizens of a colony may labour at once: the default share lets one of two, and the world cap is what is tested)
+        LabourSettings.override("share", 100);
         final RsFixture a = LabourGameTests.found(helper, "teamwork fair a", 2);
         final Colony colonyA = (Colony) a.colony;
         LabourGameTests.forceArea(a.level, helper.absolutePos(new BlockPos(-8, 1, -8)), helper.absolutePos(new BlockPos(48, 1, 32)));
