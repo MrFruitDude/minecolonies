@@ -4192,6 +4192,7 @@
   "com.minecolonies.coremod.entity.citizen.toollater": "I could not get the tool or its materials from the warehouse just now. I try again in a minute.",
   "com.minecolonies.coremod.entity.citizen.toolheld": "I am still on another errand for the colony. I fetch my tool in a minute.",
   "com.minecolonies.coremod.labour.noplace": "Waits for a free labour place (%1$s of %2$s taken)",
+  "com.minecolonies.coremod.labour.share": "Waits for a turn to labour: %1$s at work of the %2$s jobless who may labour at once (raise Share of the jobless at the town hall)",
   "com.minecolonies.coremod.labour.task.worker": "Helps out while the hut has no work: %s",
   "com.minecolonies.coremod.labour.task.toolfetch": "Fetches a %s from storage",
   "com.minecolonies.coremod.labour.task.toolmake": "Makes a %s from stored materials"

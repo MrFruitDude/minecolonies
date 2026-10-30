@@ -156,7 +156,7 @@ public class StandardRequestManager implements IStandardRequestManager
     /**
      * Game ticks after which items handed out to a requester that never took them are no longer held for it: 20 minutes.
      */
-    private static final long HANDOUT_MAX_AGE = 24_000L;
+    public static final long HANDOUT_MAX_AGE = 24_000L;
 
     /**
      * Ticks after which a claim of a helping builder that nobody renewed or ended is dropped (a helper gathers for 1800 ticks at most).
@@ -947,6 +947,27 @@ public class StandardRequestManager implements IStandardRequestManager
     }
 
     /**
+     * Round 8 (Sol M3): whether a request is still open: it exists and is not resolved, finished, cancelled or failed. What arrived of it in short loads is held for
+     * it while it waits for the rest.
+     *
+     * @param token a request token.
+     * @return true if it still waits.
+     */
+    public boolean waitsForItems(final IToken<?> token)
+    {
+        final IRequest<?> request = getRequestIdentitiesDataStore().getIdentities().get(token);
+        if (request == null)
+        {
+            return false;
+        }
+        return switch (request.getState())
+        {
+            case CREATED, REPORTED, ASSIGNING, ASSIGNED, IN_PROGRESS -> true;
+            default -> false;
+        };
+    }
+
+    /**
      * RS1 self-healing: drops promises whose request is gone or finished, and handouts nobody collected.
      *
      * @return the number of promises dropped.
@@ -958,7 +979,7 @@ public class StandardRequestManager implements IStandardRequestManager
             final IRequest<?> request = getRequestIdentitiesDataStore().getIdentities().get(token);
             return request != null && request.getState() != RequestState.CANCELLED && request.getState() != RequestState.FAILED;
         }, now);
-        dropped += reservationLedger.sweepStaleHandouts(now, HANDOUT_MAX_AGE);
+        dropped += reservationLedger.sweepStaleHandouts(now, HANDOUT_MAX_AGE, this::waitsForItems);
         dropped += reservationLedger.sweepStaleAssists(now, ASSIST_MAX_AGE);
         dropped += reservationLedger.sweepStaleLabour(token -> com.minecolonies.core.colony.labour.LabourBoard.isLive(colony, token), now, 400L);
         if (dropped > 0)

@@ -255,4 +255,15 @@ public interface ICitizenDataView extends ICitizen
     {
         return "";
     }
+
+    /**
+     * Round 8 (R7-F5): why the jobless citizen waits for labour as the server saw it: every labour place taken, or the colony's jobless share at work already.
+     *
+     * @return the reason, or null when he does not wait for labour.
+     */
+    @Nullable
+    default Component getLabourWait()
+    {
+        return null;
+    }
 }

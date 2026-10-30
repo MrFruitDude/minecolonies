@@ -1199,6 +1199,10 @@ public class CitizenData implements ICitizenData
         }
         buf.writeBoolean(citizenDiseaseHandler.isSick());
         buf.writeUtf(LifeTrait.of(this).name());
+        // (round 8, R7-F5: why a jobless citizen waits for labour, for the citizen window; a visitor is no citizen of the colony and gets none)
+        final Component labourWait = colony instanceof Colony owner && job == null && !isChild && owner.getCitizenManager().getCivilian(id) == this
+                                       ? owner.getLabourBoard().labourWaitReason(this) : null;
+        net.minecraft.network.chat.ComponentSerialization.OPTIONAL_STREAM_CODEC.encode(buf, java.util.Optional.ofNullable(labourWait));
     }
 
     @Override

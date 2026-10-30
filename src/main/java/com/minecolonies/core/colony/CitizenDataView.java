@@ -190,6 +190,12 @@ public class CitizenDataView implements ICitizenDataView
     private String lifeTrait = "";
 
     /**
+     * Round 8 (R7-F5): why the jobless citizen waits for labour (no free place, or the colony's jobless share at work), null when he does not.
+     */
+    @Nullable
+    private Component labourWait;
+
+    /**
      * Set View id.
      *
      * @param id the id to set.
@@ -440,6 +446,14 @@ public class CitizenDataView implements ICitizenDataView
         }
         this.isSick = buf.readBoolean();
         this.lifeTrait = buf.readUtf();
+        this.labourWait = net.minecraft.network.chat.ComponentSerialization.OPTIONAL_STREAM_CODEC.decode(buf).orElse(null);
+    }
+
+    @Override
+    @Nullable
+    public Component getLabourWait()
+    {
+        return labourWait;
     }
 
     @Override

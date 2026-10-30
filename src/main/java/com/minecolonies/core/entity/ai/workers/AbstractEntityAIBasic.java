@@ -2601,6 +2601,8 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         final InventoryCitizen inventory = worker.getInventoryCitizen();
         final int totalSize = inventory.getSlots();
         final net.minecraft.world.item.Item cargoItem = carriedCargoItem();
+        // (round 8, N55 and R7-F4: he keeps what the request still needs of the goods on his record, never more: the rest, his own produce of the item included, goes in)
+        int cargoKeep = cargoItem == null ? 0 : ((com.minecolonies.core.colony.Colony) building.getColony()).getLabourBoard().cargoKeep(worker.getCitizenData());
         for (; slotAt >= 0 && slotAt < totalSize; slotAt++)
         {
             final ItemStack stackToDump = inventory.getStackInSlot(slotAt);
@@ -2630,12 +2632,20 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             {
                 continue;
             }
-            if (!dumpAnyway && cargoItem != null && stackToDump.is(cargoItem))
+            int kept = 0;
+            if (cargoKeep > 0 && stackToDump.is(cargoItem))
             {
-                // (round 7, N45: goods he carries for another hut's request stay with him; his next idle minute hands them in there, never into his own hut)
-                continue;
+                // (round 7, N45: goods he carries for another hut's request stay with him; his next idle minute hands them in there, never into his own hut, not even
+                // by the random dump of a nearly full bag, round 8, N55)
+                kept = Math.min(cargoKeep, stackToDump.getCount());
+                cargoKeep -= kept;
+                if (kept >= stackToDump.getCount())
+                {
+                    continue;
+                }
             }
-            final int amount = dumpAnyway ? stackToDump.getCount() : buildingWorker.buildingRequiresCertainAmountOfItem(stackToDump, alreadyKept, true, job.getJobRegistryEntry());
+            final int amount = Math.min(stackToDump.getCount() - kept,
+              dumpAnyway ? stackToDump.getCount() : buildingWorker.buildingRequiresCertainAmountOfItem(stackToDump, alreadyKept, true, job.getJobRegistryEntry()));
             if (amount <= 0)
             {
                 continue;
