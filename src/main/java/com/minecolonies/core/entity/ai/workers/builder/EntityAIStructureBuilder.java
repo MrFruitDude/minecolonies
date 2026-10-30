@@ -399,6 +399,17 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     private long nextOrderWithoutHutUntil = 0;
 
     /**
+     * Round 6: the walk back to his hut after his last order is part of his work, for at most this many ticks after the order (the grace included): until he
+     * is there his AI does not go idle. Idle, a free-time step (a chat stops both partners) halted the walk half way and left him out at the site.
+     */
+    private static final int WALK_HOME_TICKS = NEXT_ORDER_GRACE + 600;
+
+    /**
+     * The game time until which the builder is on his walk back to the hut after an order (0: not walking back).
+     */
+    private long walkHomeUntil = 0;
+
+    /**
      * How many times a builder went from one finished order to the next one without the walk to his hut (for the tests).
      */
     public static final java.util.concurrent.atomic.AtomicInteger hutWalksSkipped = new java.util.concurrent.atomic.AtomicInteger();
@@ -408,6 +419,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     {
         final IAIState state = super.completeBuild();
         nextOrderWithoutHutUntil = world.getGameTime() + NEXT_ORDER_GRACE;
+        walkHomeUntil = world.getGameTime() + WALK_HOME_TICKS;
         return state;
     }
 
@@ -508,6 +520,7 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         {
             return getState();
         }
+        walkHomeUntil = 0;
 
         if (checkForWorkOrder())
         {
@@ -1842,8 +1855,9 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
         // a builder who helps or still has materials to bring back keeps his work AI running (the citizen AI ticks it only if he cannot idle)
         // (and one who fetches his own materials: his job AI must run to end the session, whatever ticks first after his order is gone)
         // (and one who just finished an order and waits a moment for the next one: going idle would reset his AI and send him to his hut first)
+        // (and one on his walk back to the hut after his last order, round 6: idle, a chat or another free-time step would stop it half way)
         return supply == null && !building.hasWorkOrder() && !building.hasCarry() && assistOrder == null && world.getGameTime() > nextOrderWithoutHutUntil
-                 && building.getColony().getWorkManager().getAssistedOrder(building.getID()) == null;
+                 && world.getGameTime() > walkHomeUntil && building.getColony().getWorkManager().getAssistedOrder(building.getID()) == null;
     }
 
     @Override
