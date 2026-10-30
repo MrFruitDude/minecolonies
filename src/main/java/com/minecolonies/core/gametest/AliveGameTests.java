@@ -1531,83 +1531,91 @@ public final class AliveGameTests
                 sleepers[i] = entity(spawn(helper, colony, sleeperAt[i]));
                 makeTrait(sleepers[i], LifeTrait.THOUGHTFUL);
             }
+            // a sleeper's AI would wake him at its next look in daylight: it is frozen (tick rate 0) until the test wakes him. A fresh transition may still run
+            // once on a frozen machine, so the sleepers are put to bed only once those have run, not on the tick they spawn
+            final int aiRate = sleepers[0].getCitizenAI().getTickRate();
+            for (final EntityCitizen sleeper : sleepers)
+            {
+                sleeper.getCitizenAI().setTickRate(0);
+            }
             final Runnable holdSleep = () -> {
                 for (int i = 0; i < sleepers.length; i++)
                 {
                     if (sleepers[i].getCitizenData().isAsleep())
                     {
-                        // a sleeper's AI would wake him at its next look in daylight; it rests until the test wakes him
-                        sleepers[i].getCitizenAI().setCurrentDelay(20);
                         pin(helper, sleepers[i], sleeperAt[i]);
                     }
                 }
             };
-            for (final EntityCitizen sleeper : sleepers)
-            {
-                sleeper.getCitizenData().setAsleep(true);
-            }
-            holdSleep.run();
-            final ServerLevel level = helper.getLevel();
-            long day = level.getOverworldClockTime() / 24000L + 1;
-            for (int guard = 0; guard < 1000 && !(CitizenLife.greetsOn(greeter.getCivilianID(), day, LifeTrait.BRISK)
-                                                   && CitizenLife.greetsOn(late.getCivilianID(), day, LifeTrait.BRISK)); guard++)
-            {
-                day++;
-            }
-            helper.assertTrue(CitizenLife.greetsOn(greeter.getCivilianID(), day, LifeTrait.BRISK) && CitizenLife.greetsOn(late.getCivilianID(), day, LifeTrait.BRISK),
-              "precondition failed: no morning where both greet");
-            setClock(helper, day * 24000L + 100L);
-            for (final EntityCitizen c : new EntityCitizen[] {greeter, late})
-            {
-                helper.assertTrue(!c.getLife().someoneToGreet(c.blockPosition()), "precondition failed: someone is awake by " + c.getCivilianID());
-                helper.assertTrue(c.getLife().greetingHolds(true) && c.getLife().gatherSpot() == null && c.getLife().awaitingListener(),
-                  "a first riser among sleepers does not wait: holds " + c.getLife().greetingHolds(true) + " spot " + c.getLife().gatherSpot());
-            }
-            final long t0 = level.getGameTime();
-            final long[] greetedAt = {-1};
-            final long[] lateHeld = {0};
-            final Runnable[] poll = new Runnable[1];
-            poll[0] = () -> {
-                final long now = level.getGameTime();
-                keepFed(greeter, late);
-                keepFed(sleepers);
-                for (int i = 0; i < sleepers.length; i++)
+            helper.runAfterDelay(40, () -> {
+                for (final EntityCitizen sleeper : sleepers)
                 {
-                    if (sleepers[i].getCitizenData().isAsleep() && now - t0 >= wakeAfter[i])
-                    {
-                        sleepers[i].getCitizenSleepHandler().onWakeUp();
-                    }
+                    sleeper.getCitizenData().setAsleep(true);
                 }
                 holdSleep.run();
-                if (greetedAt[0] < 0 && greeter.getSpeech().contains(".morning"))
+                final ServerLevel level = helper.getLevel();
+                long day = level.getOverworldClockTime() / 24000L + 1;
+                for (int guard = 0; guard < 1000 && !(CitizenLife.greetsOn(greeter.getCivilianID(), day, LifeTrait.BRISK)
+                                                       && CitizenLife.greetsOn(late.getCivilianID(), day, LifeTrait.BRISK)); guard++)
                 {
-                    greetedAt[0] = now;
-                    helper.assertTrue(now - t0 >= wakeAfter[0], "the first riser greeted before anyone woke, at " + (now - t0));
-                    helper.assertTrue(greeter.getLife().someoneToGreet(greeter.blockPosition()), "the first riser greets with nobody awake near");
+                    day++;
                 }
-                if (greeter.getLife().greetingHolds(true))
+                helper.assertTrue(CitizenLife.greetsOn(greeter.getCivilianID(), day, LifeTrait.BRISK) && CitizenLife.greetsOn(late.getCivilianID(), day, LifeTrait.BRISK),
+                  "precondition failed: no morning where both greet");
+                setClock(helper, day * 24000L + 100L);
+                for (final EntityCitizen c : new EntityCitizen[] {greeter, late})
                 {
-                    helper.assertTrue(now - greeter.getLife().greetingStart() <= CitizenLife.MORNING_BUDGET, "the greeting held work past the budget");
+                    helper.assertTrue(!c.getLife().someoneToGreet(c.blockPosition()), "precondition failed: someone is awake by " + c.getCivilianID());
+                    helper.assertTrue(c.getLife().greetingHolds(true) && c.getLife().gatherSpot() == null && c.getLife().awaitingListener(),
+                      "a first riser among sleepers does not wait: holds " + c.getLife().greetingHolds(true) + " spot " + c.getLife().gatherSpot());
                 }
-                helper.assertTrue(!late.getSpeech().contains(".morning"), "the late greeter greeted a sleeper: '" + late.getSpeech() + "'");
-                helper.assertTrue(late.getLife().gatherSpot() == null, "the late greeter walks off to greet: " + late.getLife().gatherSpot());
-                if (late.getLife().greetingHolds(true))
-                {
-                    lateHeld[0] = now - late.getLife().greetingStart();
-                    helper.assertTrue(lateHeld[0] <= CitizenLife.GREET_WAIT, "the late greeter waited " + lateHeld[0] + " ticks");
-                }
-                if (now - t0 > CitizenLife.MORNING_BUDGET + 60)
-                {
-                    helper.assertTrue(greetedAt[0] >= 0, "the first riser never greeted: state " + greeter.getCitizenAI().getState() + " waiting "
-                                                         + greeter.getLife().awaitingListener() + " skipped " + greeter.getLife().greetSkipped());
-                    helper.assertTrue(late.getLife().greetSkipped() && !late.getLife().greetingHolds(true), "the late greeter's wait did not end");
-                    Log.getLogger().info("ALIVE RESULT morning_dawn greeted_after={} late_held={}", greetedAt[0] - t0, lateHeld[0]);
-                    helper.succeed();
-                    return;
-                }
+                final long t0 = level.getGameTime();
+                final long[] greetedAt = {-1};
+                final long[] lateHeld = {0};
+                final Runnable[] poll = new Runnable[1];
+                poll[0] = () -> {
+                    final long now = level.getGameTime();
+                    keepFed(greeter, late);
+                    keepFed(sleepers);
+                    for (int i = 0; i < sleepers.length; i++)
+                    {
+                        if (sleepers[i].getCitizenData().isAsleep() && now - t0 >= wakeAfter[i])
+                        {
+                            sleepers[i].getCitizenSleepHandler().onWakeUp();
+                            sleepers[i].getCitizenAI().setTickRate(aiRate);
+                        }
+                    }
+                    holdSleep.run();
+                    if (greetedAt[0] < 0 && greeter.getSpeech().contains(".morning"))
+                    {
+                        greetedAt[0] = now;
+                        helper.assertTrue(now - t0 >= wakeAfter[0], "the first riser greeted before anyone woke, at " + (now - t0));
+                        helper.assertTrue(greeter.getLife().someoneToGreet(greeter.blockPosition()), "the first riser greets with nobody awake near");
+                    }
+                    if (greeter.getLife().greetingHolds(true))
+                    {
+                        helper.assertTrue(now - greeter.getLife().greetingStart() <= CitizenLife.MORNING_BUDGET, "the greeting held work past the budget");
+                    }
+                    helper.assertTrue(!late.getSpeech().contains(".morning"), "the late greeter greeted a sleeper: '" + late.getSpeech() + "'");
+                    helper.assertTrue(late.getLife().gatherSpot() == null, "the late greeter walks off to greet: " + late.getLife().gatherSpot());
+                    if (late.getLife().greetingHolds(true))
+                    {
+                        lateHeld[0] = now - late.getLife().greetingStart();
+                        helper.assertTrue(lateHeld[0] <= CitizenLife.GREET_WAIT, "the late greeter waited " + lateHeld[0] + " ticks");
+                    }
+                    if (now - t0 > CitizenLife.MORNING_BUDGET + 60)
+                    {
+                        helper.assertTrue(greetedAt[0] >= 0, "the first riser never greeted: state " + greeter.getCitizenAI().getState() + " waiting "
+                                                             + greeter.getLife().awaitingListener() + " skipped " + greeter.getLife().greetSkipped());
+                        helper.assertTrue(late.getLife().greetSkipped() && !late.getLife().greetingHolds(true), "the late greeter's wait did not end");
+                        Log.getLogger().info("ALIVE RESULT morning_dawn greeted_after={} late_held={}", greetedAt[0] - t0, lateHeld[0]);
+                        helper.succeed();
+                        return;
+                    }
+                    helper.runAfterDelay(1, () -> poll[0].run());
+                };
                 helper.runAfterDelay(1, () -> poll[0].run());
-            };
-            helper.runAfterDelay(1, () -> poll[0].run());
+            });
         });
     }
 
