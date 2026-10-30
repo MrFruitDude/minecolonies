@@ -288,7 +288,15 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
     @Override
     public boolean canLendAHand()
     {
-        return (getState() == IDLE || getState() == START_WORKING) && currentRequest == null && job.getTaskQueue().isEmpty() && job.getCurrentTask() == null && worker.getCitizenData() != null
+        return (getState() == IDLE || getState() == START_WORKING) && noCraftingWork();
+    }
+
+    /**
+     * @return true if no crafting request or task waits for him and it is not his free time.
+     */
+    protected boolean noCraftingWork()
+    {
+        return currentRequest == null && job.getTaskQueue().isEmpty() && job.getCurrentTask() == null && worker.getCitizenData() != null
                  && worker.getCitizenData().getLeisureTime() <= 0;
     }
 

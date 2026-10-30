@@ -467,6 +467,17 @@ public class EntityAIWorkPlanter extends AbstractEntityAICrafting<JobPlanter, Bu
         return true;
     }
 
+    /**
+     * r4 Fable N25: a planter with no field to work is idle at the citizen level and his worker AI stops in whatever state it was in (often PREPARING), so the
+     * crafter's rule (IDLE or START_WORKING only) let him help on some days and not on others. He may lend a hand whenever he could go idle and no
+     * crafting work waits for him.
+     */
+    @Override
+    public boolean canLendAHand()
+    {
+        return canGoIdle() && noCraftingWork();
+    }
+
     @Override
     public boolean canGoIdle()
     {
