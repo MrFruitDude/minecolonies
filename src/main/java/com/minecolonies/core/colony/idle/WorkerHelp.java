@@ -4,6 +4,7 @@ import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.idle.IIdleTaskSession;
 import com.minecolonies.core.colony.jobs.AbstractJobGuard;
+import com.minecolonies.core.colony.labour.LabourRules;
 import com.minecolonies.core.colony.labour.LabourSession;
 import com.minecolonies.core.entity.ai.workers.AbstractEntityAIBasic;
 import net.minecraft.world.item.ItemStack;
@@ -12,9 +13,10 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Round 3 agency (r0 F7): a worker with nothing to do at his hut lends a hand. The rules in one place:
  * <ul>
- *   <li>he has a job whose AI says it may go idle ({@link AbstractEntityAIBasic#canGoIdle()}: no field to work, no order to build), and has said so for
- *   {@link #idleTicks()} ticks without a break;</li>
- *   <li>he carries nothing but his equipment (tools, armour): what he would gather or bring for somebody else is never mixed with his own work's goods;</li>
+ *   <li>he has a job whose AI says he has nothing to do ({@link AbstractEntityAIBasic#canLendAHand()}: no field to work, no order to build, no crafting task),
+ *   and has said so for {@link #idleTicks()} ticks without a break;</li>
+ *   <li>he carries none of the goods labour uses ({@link #carriesNoLabourGoods}): his tools, seeds or food stay his, and what he gathers or brings for somebody
+ *   else is never mixed with his own work's goods;</li>
  *   <li>guards never help: they guard;</li>
  *   <li>the colony setting {@link IdleCitizenSettings#workersHelp} is on.</li>
  * </ul>
@@ -69,7 +71,7 @@ public final class WorkerHelp
         }
         try
         {
-            return citizen.getJob().getWorkerAI() instanceof AbstractEntityAIBasic<?, ?> ai && ai.building != null && ai.canGoIdle();
+            return citizen.getJob().getWorkerAI() instanceof AbstractEntityAIBasic<?, ?> ai && ai.building != null && ai.canLendAHand();
         }
         catch (final RuntimeException e)
         {
@@ -78,21 +80,36 @@ public final class WorkerHelp
     }
 
     /**
+     * Whether he carries none of the goods labour gathers, makes or uses (r3 Fable N16): his equipment (things that wear out) and the goods of his own work
+     * that labour never touches (a farmer's seeds and crops, a cook's food) stay with him and are never planned with, delivered or stashed; logs, planks,
+     * stone and the like would be mixed with the help, so he helps only without them.
+     *
      * @param citizen a citizen.
-     * @return whether he carries only equipment (tools, weapons, armour: things that wear out), or nothing.
+     * @return true if he may help with what he carries.
      */
-    public static boolean carriesOnlyEquipment(final ICitizenData citizen)
+    public static boolean carriesNoLabourGoods(final ICitizenData citizen)
     {
         final var inventory = citizen.getInventory();
         for (int slot = 0; slot < inventory.getSlots(); slot++)
         {
             final ItemStack stack = inventory.getStackInSlot(slot);
-            if (!stack.isEmpty() && !stack.isDamageableItem())
+            if (!stack.isEmpty() && !stack.isDamageableItem() && labourGood(stack))
             {
                 return false;
             }
         }
         return true;
+    }
+
+    /**
+     * @param stack a stack.
+     * @return whether labour gathers, makes, smelts, cuts or crafts with it (what a helping session would count as its goods).
+     */
+    public static boolean labourGood(final ItemStack stack)
+    {
+        final net.minecraft.world.item.Item item = stack.getItem();
+        return LabourRules.craftable(item) || LabourRules.looseItem(stack) || LabourRules.stripResult(item) || LabourRules.shaftFind(stack) || LabourRules.cutterInput(item)
+                 || LabourRules.smeltable(item, com.minecolonies.api.colony.labour.LabourModes.SmeltMode.IRON) || stack.is(LabourRules.BASIC_WOOD);
     }
 
     /**
@@ -108,7 +125,7 @@ public final class WorkerHelp
     {
         final boolean idle = outOfWork(citizen);
         final long idleFor = state.outOfWorkFor(citizen.getId(), idle, now);
-        return idle && idleFor >= idleTicks() && IdleCitizenSettings.workersHelp(colony) && carriesOnlyEquipment(citizen);
+        return idle && idleFor >= idleTicks() && IdleCitizenSettings.workersHelp(colony) && carriesNoLabourGoods(citizen);
     }
 
     /**

@@ -269,6 +269,8 @@ public class InteractionValidatorInitializer
           citizen -> citizen.getJob() != null && citizen.getJob().getWorkerAI() instanceof AbstractEntityAIBasic<?, ?> ai && ai.toolSelfHelp() == AbstractEntityAIBasic.ToolSelfHelp.MAKE);
         InteractionValidatorRegistry.registerStandardPredicate(Component.translatableEscape(AbstractEntityAIBasic.TOOL_NONE_NOTICE),
           citizen -> citizen.getJob() != null && citizen.getJob().getWorkerAI() instanceof AbstractEntityAIBasic<?, ?> ai && ai.toolSelfHelp() == AbstractEntityAIBasic.ToolSelfHelp.NOTHING);
+        InteractionValidatorRegistry.registerStandardPredicate(Component.translatableEscape(AbstractEntityAIBasic.TOOL_LATER_NOTICE),
+          citizen -> citizen.getJob() != null && citizen.getJob().getWorkerAI() instanceof AbstractEntityAIBasic<?, ?> ai && ai.toolSelfHelp() == AbstractEntityAIBasic.ToolSelfHelp.RETRY);
         InteractionValidatorRegistry.registerStandardPredicate(Component.translatableEscape(AbstractEntityAIBasic.STUCK_NOTICE),
           citizen -> citizen.getJob() != null && citizen.getJob().getWorkerAI() instanceof AbstractEntityAIBasic<?, ?> ai && ai.stuckReason() != null);
         InteractionValidatorRegistry.registerStandardPredicate(Component.translatableEscape(AbstractEntityAIBasic.BLOCK_NOTICE),

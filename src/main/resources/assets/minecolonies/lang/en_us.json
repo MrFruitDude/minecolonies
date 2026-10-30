@@ -4070,11 +4070,12 @@
   "com.minecolonies.coremod.labour.hut_owed": "This hut was placed on credit and still owes its hut item. Store one in the warehouse or let labour make it first.",
   "com.minecolonies.coremod.labour.hut_owed.line": "Owes its hut item",
   "com.minecolonies.coremod.gui.townhall.workershelp": "Workers take initiative:",
-  "com.minecolonies.coremod.gui.townhall.workershelp.tooltip": "A worker whose hut has had nothing to do for a minute helps a nearby hut that asked for basic goods, and goes back as soon as there is work again. A worker who waited a minute for a basic tool that nobody brings fetches one from a warehouse, or makes a wooden or stone one from the materials in a warehouse.",
+  "com.minecolonies.coremod.gui.townhall.workershelp.tooltip": "A builder, farmer, planter or crafter (sawmill, stonemason, blacksmith, chef and the like) whose hut has had nothing to do for a minute helps a nearby hut that asked for basic goods, and goes back as soon as there is work again. Guards, Foresters, miners, couriers and cooks keep to their own work, and a worker carrying logs, planks or stone does not help until they are put away. Any worker who waited a minute for a basic tool that nobody brings fetches one from a warehouse, or makes a wooden or stone one from the materials in a warehouse.",
   "com.minecolonies.coremod.entity.citizen.workerhelps": "Nothing to do at my hut right now, so I help a hut nearby that asked for goods. I go back when my own work is there again.",
   "com.minecolonies.coremod.entity.citizen.toolfetch": "Nobody brought me the tool I need, so I fetch one from a warehouse myself.",
   "com.minecolonies.coremod.entity.citizen.toolmake": "No tool for me in storage: I make a simple one from the materials in a warehouse.",
   "com.minecolonies.coremod.entity.citizen.toolnone": "I still need a tool. None is in storage, and there is nothing there to make one from (it takes wood or stone in a warehouse and a crafting table). Please put a tool or the materials in a warehouse.",
+  "com.minecolonies.coremod.entity.citizen.toollater": "I could not get the tool or its materials from the warehouse just now. I try again in a minute.",
   "com.minecolonies.coremod.labour.task.worker": "Helps out while the hut has no work: %s",
   "com.minecolonies.coremod.labour.task.toolfetch": "Fetches a %s from storage",
   "com.minecolonies.coremod.labour.task.toolmake": "Makes a %s from stored materials"

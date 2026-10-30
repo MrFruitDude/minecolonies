@@ -1733,6 +1733,11 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     public static final String TOOL_NONE_NOTICE = "com.minecolonies.coremod.entity.citizen.toolnone";
 
     /**
+     * What a worker says when the tool he went for in a warehouse was not there for him after all (taken meanwhile, no way there): he tries again soon.
+     */
+    public static final String TOOL_LATER_NOTICE = "com.minecolonies.coremod.entity.citizen.toollater";
+
+    /**
      * How long a worker waits for a basic tool before he gets it himself: one minute.
      */
     public static final long TOOL_WAIT_TICKS = 1200L;
@@ -1741,6 +1746,11 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
      * After an attempt that found nothing, how long before he tries again: five minutes.
      */
     public static final long TOOL_RETRY_TICKS = 6000L;
+
+    /**
+     * After an attempt that could not get a tool that is there (r3 Fable N21), how long before he tries again: one minute.
+     */
+    public static final long TOOL_RETRY_SOON_TICKS = 1200L;
 
     private static volatile Long toolWaitOverride;
 
@@ -1766,7 +1776,11 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         NONE,
         FETCH,
         MAKE,
-        NOTHING
+        NOTHING,
+        /**
+         * He could not get a tool or materials that are there (taken meanwhile, no way to the warehouse): he tries again soon.
+         */
+        RETRY
     }
 
     /**
@@ -1797,7 +1811,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
      */
     public ToolSelfHelp toolSelfHelp()
     {
-        if (toolSelfHelp == ToolSelfHelp.NOTHING && (world.getGameTime() >= toolHelpRetryAt || toolWaits.isEmpty()))
+        if ((toolSelfHelp == ToolSelfHelp.NOTHING || toolSelfHelp == ToolSelfHelp.RETRY) && (world.getGameTime() >= toolHelpRetryAt || toolWaits.isEmpty()))
         {
             return ToolSelfHelp.NONE;
         }
@@ -1915,11 +1929,15 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
                 // something else of his AI took over (an inventory dump, a restart): the session ends without blame, he tries again later
                 endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.NEEDS, false, false);
             }
+            else if (!initiativeAllowed())
+            {
+                // the player turned initiative off (r3 Sol H2): the help stops now, what he carries stays with him
+                endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.SETTING_OFF, false, false);
+            }
             return false;
         }
         if (toolWaits.isEmpty() || worker.getCitizenData() == null || !(building.getColony() instanceof com.minecolonies.core.colony.Colony colony)
-              || !com.minecolonies.core.colony.idle.IdleCitizenSettings.workersHelp(colony) || !com.minecolonies.core.colony.labour.LabourSettings.worldEnabled()
-              || !(world instanceof ServerLevel level) || !com.minecolonies.core.colony.labour.LabourSites.simulated(level, worker.blockPosition()))
+              || !initiativeAllowed() || !(world instanceof ServerLevel level) || !com.minecolonies.core.colony.labour.LabourSites.simulated(level, worker.blockPosition()))
         {
             return false;
         }
@@ -1949,6 +1967,16 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     }
 
     /**
+     * @return whether the colony lets its workers take initiative ("Workers take initiative" in the town hall, and labour on in the world). Asked before every
+     * step of a tool help, so turning it off stops a help under way before anything more is taken or used (r3 Sol H2).
+     */
+    private boolean initiativeAllowed()
+    {
+        return building.getColony() instanceof com.minecolonies.core.colony.Colony colony && com.minecolonies.core.colony.idle.IdleCitizenSettings.workersHelp(colony)
+                 && com.minecolonies.core.colony.labour.LabourSettings.worldEnabled();
+    }
+
+    /**
      * One step of getting the tool: the first step makes the claim and starts the labour tool session (storage first, else made from storage), then the session runs
      * until he holds a fitting tool or it cannot go on.
      */
@@ -1957,6 +1985,12 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         if (!(building.getColony() instanceof com.minecolonies.core.colony.Colony colony) || toolHelpType == null || worker.getCitizenData() == null)
         {
             endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, false);
+            return IDLE;
+        }
+        if (!initiativeAllowed())
+        {
+            // turned off since the last step: nothing more is withdrawn or crafted, his inventory stays as it is
+            endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.SETTING_OFF, false, false);
             return IDLE;
         }
         final var board = colony.getLabourBoard();
@@ -1973,14 +2007,25 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
                 cancelToolRequests(toolHelpType);
             }
             final Item stocked = com.minecolonies.core.colony.labour.LabourSession.stockedTool(board, fits);
-            final var claim = board.claimForTool(worker.getCitizenData(), stocked != null ? stocked : make != null ? make : net.minecraft.world.item.Items.WOODEN_PICKAXE);
-            if (kind == null || claim == null || (stocked == null && make == null))
+            if (stocked == null && (make == null || !com.minecolonies.core.colony.labour.LabourSession.canMakeFromStock(colony, board, worker.getCitizenData(), make)))
+            {
+                // no tool and nothing to make one from: one notice that says so, no "I make one" first (r3 Fable N17)
+                endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, true);
+                return IDLE;
+            }
+            final var claim = board.claimForTool(worker.getCitizenData(), stocked != null ? stocked : make);
+            if (kind == null || claim == null)
             {
                 if (claim != null)
                 {
                     board.release(claim, false, false);
                 }
-                endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, true);
+                endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, kind == null);
+                if (claim == null)
+                {
+                    // the labour board takes no more claims now: no proof of nothing, he tries again soon
+                    toolRetrySoon();
+                }
                 return IDLE;
             }
             toolSession = com.minecolonies.core.colony.labour.LabourSession.forWorkerTool(colony, worker.getCitizenData(), board, claim, kind, fits, make);
@@ -1999,10 +2044,29 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         if (toolSession.isEnded())
         {
             final boolean got = InventoryUtils.isEquipmentInItemHandler(worker.getInventoryCitizen(), toolHelpType, toolHelpMin, building.getMaxEquipmentLevel());
-            endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, got, !got);
+            // "nothing to make one from" only when the planner found nothing; a withdraw that failed or an action that got nowhere is no such proof (r3 Fable N21)
+            final boolean later = !got && (toolSession.fetchFailed() || toolSession.lastWhy() == null);
+            endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, got, !got && !later);
+            if (later)
+            {
+                toolRetrySoon();
+            }
             return IDLE;
         }
         return ToolSelfHelpState.TOOL_SELF_HELP;
+    }
+
+    /**
+     * He could not get a tool or materials that are there: he says so and tries again in a minute.
+     */
+    private void toolRetrySoon()
+    {
+        toolHelpRetryAt = world.getGameTime() + TOOL_RETRY_SOON_TICKS;
+        toolSelfHelp = ToolSelfHelp.RETRY;
+        if (worker.getCitizenData() != null)
+        {
+            worker.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(TOOL_LATER_NOTICE), ChatPriority.CHITCHAT));
+        }
     }
 
     private void cancelToolRequests(final EquipmentTypeEntry toolType)
@@ -3194,5 +3258,17 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     public boolean canGoIdle()
     {
         return false;
+    }
+
+    /**
+     * Round 4 agency (r3 Fable N16): whether the worker has nothing to do at his hut now and may lend a hand elsewhere when the colony lets workers take
+     * initiative. By default when his AI may go idle (a builder without an order, a farmer or planter without a field to work); a crafter with no task says
+     * so itself. Asked once a second by the idle citizen arbiter, without running the AI.
+     *
+     * @return true if he may help another hut.
+     */
+    public boolean canLendAHand()
+    {
+        return canGoIdle();
     }
 }

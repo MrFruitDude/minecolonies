@@ -969,6 +969,15 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     }
 
     /**
+     * A Forester's idle spells are short waits between trees, not a hut without work: he does not lend a hand like a crafter.
+     */
+    @Override
+    public boolean canLendAHand()
+    {
+        return false;
+    }
+
+    /**
      * Forestry: give the current tree up, because he could not get to it or nothing of it came off for too long. No Forester picks it again for a while;
      * the hut counts it with the reason.
      *

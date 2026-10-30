@@ -46,14 +46,21 @@ import java.util.function.Supplier;
  *   the moment his hut gets an order;</li>
  *   <li>{@code agency_tool_from_storage}: a Forester without an axe that nobody brings fetches the stone axe out of the warehouse himself;</li>
  *   <li>{@code agency_tool_made_from_materials}: storage has no axe but planks: the Forester makes a wooden axe at the crafting table from them;</li>
- *   <li>{@code agency_no_tool_without_materials}: no axe, no materials: nothing is made, no tree is felled for it, and the Forester says what is missing.</li>
+ *   <li>{@code agency_no_tool_without_materials}: no axe, no materials: nothing is made, no tree is felled for it, and the Forester says what is missing at
+ *   once, without first saying he makes one;</li>
+ *   <li>{@code agency_tool_help_stops_when_off} (round 4, r3 Sol H2): "Workers take initiative" turned off during the help stops it before anything more is
+ *   taken or used; turned on again, he makes the tool, and no plank goes missing;</li>
+ *   <li>{@code agency_tool_fetch_fails_retries} (round 4, r3 Fable N21): the axe he goes for is taken before he gets there: he says he could not get it now
+ *   (not that the colony has nothing) and tries again soon, and fetches it once it is back;</li>
+ *   <li>{@code agency_crafter_helps} (round 4, r3 Fable N16): an idle sawmill worker carrying seeds and a hoe helps a nearby hut (logs in his pockets keep him
+ *   home), keeps his seeds, and leaves the help the moment his hut has a task.</li>
  * </ul>
  * Real colonies, real citizens with their AI; the colonies are ticked by the test.
  */
 final class AgencyGameTests
 {
     static final String[] NAMES = {"agency_rain_research", "agency_worker_helps_and_returns", "agency_tool_from_storage", "agency_tool_made_from_materials",
-      "agency_no_tool_without_materials"};
+      "agency_no_tool_without_materials", "agency_tool_help_stops_when_off", "agency_tool_fetch_fails_retries", "agency_crafter_helps"};
 
     private AgencyGameTests()
     {
@@ -67,6 +74,9 @@ final class AgencyGameTests
             case "agency_worker_helps_and_returns" -> AgencyGameTests::workerHelpsAndReturns;
             case "agency_tool_from_storage" -> AgencyGameTests::toolFromStorage;
             case "agency_tool_made_from_materials" -> AgencyGameTests::toolMadeFromMaterials;
+            case "agency_tool_help_stops_when_off" -> AgencyGameTests::toolHelpStopsWhenOff;
+            case "agency_tool_fetch_fails_retries" -> AgencyGameTests::toolFetchFailsRetries;
+            case "agency_crafter_helps" -> AgencyGameTests::crafterHelps;
             default -> AgencyGameTests::noToolWithoutMaterials;
         };
     }
@@ -91,6 +101,7 @@ final class AgencyGameTests
     private static void end(final GameTestHelper helper)
     {
         LabourSettings.clearOverrides();
+        IdleCitizenSettings.overrideForTests(null, null, null);
         IdleCitizenSettings.overrideWorkersHelpForTests(null);
         WorkerHelp.overrideIdleTicksForTests(null);
         AbstractEntityAIBasic.overrideToolWaitForTests(null);
@@ -166,6 +177,43 @@ final class AgencyGameTests
             }
         }
         return n;
+    }
+
+    /**
+     * @return every labour claim of the colony with its citizen (to name who cut what).
+     */
+    private static String claims(final RsFixture f)
+    {
+        final Colony colony = (Colony) f.colony;
+        final StringBuilder out = new StringBuilder();
+        for (final ICitizenData citizen : colony.getCitizenManager().getCitizens())
+        {
+            final LabourClaim claim = colony.getLabourBoard().claimOf(citizen.getId());
+            out.append(citizen.getName()).append(citizen.getJob() == null ? " (jobless)" : "").append(": ").append(claim == null ? "none" : claim.source() + " " + claim.target())
+              .append("; ");
+        }
+        return out.toString();
+    }
+
+    /**
+     * @return planks counted twice plus sticks plus eight per wooden axe, in the warehouse, the worker's pockets and his hut: 2 planks make 4 sticks, an axe takes
+     * 3 planks and 2 sticks, so the sum stays the same however the planks are used.
+     */
+    private static int plankWorth(final RsFixture f, final ICitizenData worker)
+    {
+        final IBuilding hut = worker.getWorkBuilding();
+        final java.util.function.ToIntFunction<java.util.function.Predicate<ItemStack>> all = p -> f.physical(p) + InventoryUtils.getItemCountInItemHandler(worker.getInventory(), p)
+                                                                                                       + (hut == null ? 0 : InventoryUtils.getItemCountInItemHandler(hut.getItemHandlerCap(), p));
+        return 2 * all.applyAsInt(s -> s.is(Items.OAK_PLANKS)) + all.applyAsInt(s -> s.is(Items.STICK)) + 8 * all.applyAsInt(s -> s.is(Items.WOODEN_AXE));
+    }
+
+    /**
+     * @return whether the crafter's 16 seeds are all with him or in his own hut (a dump of his own), none in the asking hut or the warehouse.
+     */
+    private static boolean seedsHis(final RsFixture f, final ICitizenData crafter, final IBuilding hut, final IBuilding asker)
+    {
+        return carried(crafter, Items.WHEAT_SEEDS) + inHut(hut, Items.WHEAT_SEEDS) == 16 && inHut(asker, Items.WHEAT_SEEDS) == 0
+                 && f.physical(s -> s.is(Items.WHEAT_SEEDS)) == 0;
     }
 
     private static AbstractEntityAIBasic<?, ?> ai(final ICitizenData citizen)
@@ -398,11 +446,16 @@ final class AgencyGameTests
 
     /**
      * No axe and no materials in storage, a natural tree in reach and a crafting table: nothing is made, the tree stands, and the Forester says what is missing (and
-     * holds no labour claim while he waits).
+     * holds no labour claim while he waits). He says it at once: no "I make one" first (r3 Fable N17).
+     * <p>
+     * Round 4 (r3 Fable N14): the jobless labour of the colony is off here. A colony that grows a citizen during the test (run 029: a newcomer appeared) has a
+     * free labourer, and he takes the axe request the Forester's AI makes again and fells the tree for it, which is ordinary labour, not the self-help. With
+     * nobody else to do it, a felled log can only be the self-help's.
      */
     public static void noToolWithoutMaterials(final GameTestHelper helper)
     {
         begin();
+        IdleCitizenSettings.overrideForTests(false, null, null);
         final RsFixture f = found(helper, "agency tool none");
         final Colony colony = (Colony) f.colony;
         helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
@@ -415,7 +468,8 @@ final class AgencyGameTests
                 ticks[0] += 20;
                 final var ai = ai(worker);
                 helper.assertTrue(carried(worker, Items.WOODEN_AXE) == 0 && carried(worker, Items.STONE_AXE) == 0, "an axe came out of nothing: " + describe(f, worker));
-                helper.assertTrue(logsLeft(helper, 34, 20, 5) == 5, "a log was cut for the axe");
+                helper.assertTrue(logsLeft(helper, 34, 20, 5) == 5, "a log was cut for the axe: " + describe(f, worker) + "; claims " + claims(f));
+                helper.assertTrue(ai == null || ai.toolSelfHelp() != AbstractEntityAIBasic.ToolSelfHelp.MAKE, "he says he makes an axe with nothing to make it from");
                 if (since[0] < 0 && ai != null && ai.toolSelfHelp() == AbstractEntityAIBasic.ToolSelfHelp.NOTHING)
                 {
                     since[0] = ticks[0];
@@ -431,6 +485,194 @@ final class AgencyGameTests
                 end(helper);
                 helper.succeed();
             }, () -> describe(f, worker));
+        });
+    }
+
+    // ------------------------------------------------------------------ round 4: opt-out, failed fetch, more helpers
+
+    /**
+     * r3 Sol H2: planks in the warehouse, no axe. Once he has taken planks out for his axe, the player turns "Workers take initiative" off: the help stops at
+     * once (no session, no claim), nothing more leaves the warehouse and nothing is crafted while it is off. Turned on again, he makes the axe; not a plank went
+     * missing on the way and he holds no second request for it.
+     */
+    public static void toolHelpStopsWhenOff(final GameTestHelper helper)
+    {
+        begin();
+        // (nobody else: a newcomer labouring on the axe request would move the planks too)
+        IdleCitizenSettings.overrideForTests(false, null, null);
+        final RsFixture f = found(helper, "agency tool off");
+        final Colony colony = (Colony) f.colony;
+        helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
+        f.stock(0, new ItemStack(Items.OAK_PLANKS, 16));
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData worker = forester(helper, f);
+            final int worth = plankWorth(f, worker);
+            helper.assertTrue(worth == 32, "fixture: plank worth " + worth);
+            final int[] offAt = {-1};
+            final int[] ticks = {0};
+            final int[] warehouseAtOff = {0};
+            final boolean[] on = {false};
+            poll(helper, colony, 12000, () -> {
+                ticks[0] += 20;
+                final var ai = ai(worker);
+                if (offAt[0] < 0)
+                {
+                    if (ai != null && ai.isGettingOwnTool() && carried(worker, Items.OAK_PLANKS) > 0 && carried(worker, Items.WOODEN_AXE) == 0)
+                    {
+                        IdleCitizenSettings.overrideWorkersHelpForTests(false);
+                        offAt[0] = ticks[0];
+                        warehouseAtOff[0] = f.physical(s -> s.is(Items.OAK_PLANKS));
+                        Log.getLogger().info("[agency_tool_help_stops_when_off] turned off: {}", describe(f, worker));
+                    }
+                    return false;
+                }
+                if (!on[0])
+                {
+                    helper.assertTrue(ai == null || !ai.isGettingOwnTool(), "the tool help goes on with initiative off: " + describe(f, worker));
+                    helper.assertTrue(colony.getLabourBoard().claimOf(worker.getId()) == null, "a claim is held with initiative off: " + describe(f, worker));
+                    helper.assertTrue(f.physical(s -> s.is(Items.OAK_PLANKS)) == warehouseAtOff[0], "planks left the warehouse with initiative off: "
+                                                                                                        + f.physical(s -> s.is(Items.OAK_PLANKS)) + " of " + warehouseAtOff[0]);
+                    helper.assertTrue(carried(worker, Items.WOODEN_AXE) == 0, "the axe was made with initiative off");
+                    helper.assertTrue(plankWorth(f, worker) == 32, "planks went missing when the help stopped: worth " + plankWorth(f, worker));
+                    if (ticks[0] - offAt[0] >= 400)
+                    {
+                        IdleCitizenSettings.overrideWorkersHelpForTests(true);
+                        on[0] = true;
+                    }
+                    return false;
+                }
+                return carried(worker, Items.WOODEN_AXE) == 1;
+            }, () -> {
+                helper.assertTrue(plankWorth(f, worker) == 32, "planks went missing on the way to the axe: worth " + plankWorth(f, worker));
+                final IBuilding hut = worker.getWorkBuilding();
+                helper.assertTrue(hut == null || hut.getOpenRequestsOfTypeFiltered(worker, com.google.common.reflect.TypeToken.of(com.minecolonies.api.colony.requestsystem.requestable.Tool.class),
+                  r -> true).isEmpty(), "a tool request is left open after he made the axe");
+                end(helper);
+                helper.succeed();
+            }, () -> describe(f, worker) + ", planks in the warehouse " + f.physical(s -> s.is(Items.OAK_PLANKS)) + ", worth " + plankWorth(f, worker));
+        });
+    }
+
+    /**
+     * r3 Fable N21: a stone axe in the warehouse. He sets out to fetch it; before he gets there the axe is taken out. He does not claim the colony has nothing
+     * to make one from: he says he could not get it now and tries again soon. The axe is put back, and he fetches it.
+     */
+    public static void toolFetchFailsRetries(final GameTestHelper helper)
+    {
+        begin();
+        IdleCitizenSettings.overrideForTests(false, null, null);
+        final RsFixture f = found(helper, "agency tool retry");
+        final Colony colony = (Colony) f.colony;
+        f.stock(0, new ItemStack(Items.STONE_AXE));
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData worker = forester(helper, f);
+            final boolean[] taken = {false};
+            final boolean[] retry = {false};
+            poll(helper, colony, 9000, () -> {
+                final var ai = ai(worker);
+                final var help = ai == null ? AbstractEntityAIBasic.ToolSelfHelp.NONE : ai.toolSelfHelp();
+                if (!taken[0])
+                {
+                    if (help == AbstractEntityAIBasic.ToolSelfHelp.FETCH && carried(worker, Items.STONE_AXE) == 0)
+                    {
+                        // somebody takes the axe out while he walks there
+                        final var rack = f.rack(0).getInventory();
+                        for (int slot = 0; slot < rack.getSlots(); slot++)
+                        {
+                            if (rack.getStackInSlot(slot).is(Items.STONE_AXE))
+                            {
+                                rack.extractItem(slot, 1, false);
+                            }
+                        }
+                        helper.assertTrue(f.physical(s -> s.is(Items.STONE_AXE)) == 0, "fixture: the axe is still in the warehouse");
+                        taken[0] = true;
+                    }
+                    return false;
+                }
+                helper.assertTrue(help != AbstractEntityAIBasic.ToolSelfHelp.NOTHING || retry[0], "a failed fetch says there is nothing to make a tool from: " + describe(f, worker));
+                if (!retry[0])
+                {
+                    if (help == AbstractEntityAIBasic.ToolSelfHelp.RETRY)
+                    {
+                        retry[0] = true;
+                        f.stock(0, new ItemStack(Items.STONE_AXE));
+                    }
+                    return false;
+                }
+                return carried(worker, Items.STONE_AXE) == 1;
+            }, () -> {
+                helper.assertTrue(com.minecolonies.api.colony.interactionhandling.InteractionValidatorRegistry.getStandardInteractionValidatorPredicate(
+                  net.minecraft.network.chat.Component.translatableEscape(AbstractEntityAIBasic.TOOL_LATER_NOTICE)) != null, "no validator for the could-not-get-it notice");
+                end(helper);
+                helper.succeed();
+            }, () -> describe(f, worker) + ", stone axes in the warehouse " + f.physical(s -> s.is(Items.STONE_AXE)) + ", taken " + taken[0] + ", retry " + retry[0]);
+        });
+    }
+
+    /**
+     * r3 Fable N16: not only builders help. A sawmill worker with no task carries seeds and a stone hoe of his own: he still helps another hut that asked for a
+     * wooden pickaxe (his claim says he is a helper), and his seeds stay with him through it. Oak logs in his pockets keep him home until they are gone. A task
+     * for his own hut ends the help at once.
+     */
+    public static void crafterHelps(final GameTestHelper helper)
+    {
+        begin();
+        final RsFixture f = found(helper, "agency crafter helps");
+        final Colony colony = (Colony) f.colony;
+        helper.setBlock(new BlockPos(22, 1, 20), Blocks.CRAFTING_TABLE.defaultBlockState());
+        LabourGameTests.tree(helper, 44, 20, 6);
+        final IBuilding asker = f.place(ModBlocks.blockHutBuilder, new BlockPos(36, 1, 24), "fundamentals/builder1.blueprint");
+        final IBuilding sawmill = f.place(ModBlocks.blockHutSawmill, new BlockPos(8, 1, 24), "craftsmanship/carpentry/sawmill1.blueprint");
+        helper.runAfterDelay(100, () -> {
+            final ICitizenData crafter = f.spawn(new BlockPos(12, 1, 18), false);
+            helper.assertTrue(sawmill.getModule(BuildingModules.SAWMILL_WORK).assignCitizen(crafter), "sawmill worker not assigned");
+            for (int slot = 0; slot < crafter.getInventory().getSlots(); slot++)
+            {
+                crafter.getInventory().setStackInSlot(slot, ItemStack.EMPTY);
+            }
+            crafter.getInventory().setStackInSlot(0, new ItemStack(Items.WHEAT_SEEDS, 16));
+            crafter.getInventory().setStackInSlot(1, new ItemStack(Items.STONE_HOE));
+            crafter.getInventory().setStackInSlot(2, new ItemStack(Items.OAK_LOG, 4));
+            helper.assertTrue(!WorkerHelp.carriesNoLabourGoods(crafter), "logs in his pockets do not keep him home");
+            final IToken<?> token = asker.createRequest(new Stack(new ItemStack(Items.WOODEN_PICKAXE), 1, 1), false);
+            final int[] ticks = {0};
+            final boolean[] logsGone = {false};
+            poll(helper, colony, 9000, () -> {
+                ticks[0] += 20;
+                final LabourClaim claim = colony.getLabourBoard().claimOf(crafter.getId());
+                if (!logsGone[0])
+                {
+                    helper.assertTrue(carried(crafter, Items.OAK_LOG) == 0 || (claim == null && !WorkerHelp.isHelping(crafter)),
+                      "he helps with logs of his own in his pockets: " + describe(f, crafter));
+                    if (ticks[0] >= 400 || carried(crafter, Items.OAK_LOG) == 0)
+                    {
+                        crafter.getInventory().setStackInSlot(2, ItemStack.EMPTY);
+                        helper.assertTrue(WorkerHelp.carriesNoLabourGoods(crafter), "seeds and a hoe keep him home");
+                        logsGone[0] = true;
+                    }
+                    return false;
+                }
+                if (claim == null || !WorkerHelp.isHelping(crafter))
+                {
+                    return false;
+                }
+                helper.assertTrue(claim.byWorker() && claim.destination().equals(asker.getID()) && token.equals(claim.request()),
+                  "the crafter's claim is not the asking hut's request: " + claim.destination() + " " + claim.request());
+                helper.assertTrue(seedsHis(f, crafter, sawmill, asker), "his seeds went into the help: " + describe(f, crafter));
+                // a task for his own hut: the help ends at once (a token in his queue; taken out again before his crafting AI runs on it)
+                final var job = (com.minecolonies.core.colony.jobs.AbstractJobCrafter<?, ?>) crafter.getJob();
+                job.addRequest(token);
+                IdleCitizenArbiter.tick(colony);
+                final boolean ended = IdleCitizenArbiter.sessionOf(crafter) == null && colony.getLabourBoard().claimOf(crafter.getId()) == null;
+                job.onTaskDeletion(token);
+                helper.assertTrue(ended, "a task for his own hut did not end the help: " + describe(f, crafter));
+                helper.assertTrue(seedsHis(f, crafter, sawmill, asker), "his seeds were handed in when the help ended: " + describe(f, crafter));
+                return true;
+            }, () -> {
+                Log.getLogger().info("[agency_crafter_helps] helped and stopped: {}", describe(f, crafter));
+                end(helper);
+                helper.succeed();
+            }, () -> describe(f, crafter) + ", request " + f.describe(token) + ", logs left " + logsLeft(helper, 44, 20, 6));
         });
     }
 }

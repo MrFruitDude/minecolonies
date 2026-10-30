@@ -131,6 +131,11 @@ public final class LabourSession implements IIdleTaskSession
     private final String toolKind;
     @Nullable
     private LabourPlanner.Why lastWhy;
+    /**
+     * A tool he went to take out of a warehouse was not there for him in the end (taken or reserved meanwhile, no way to the warehouse in time, r3 Fable
+     * N21): no proof that the colony has nothing.
+     */
+    private boolean fetchFailed;
     // in tool mode, the order and its area: the only raw goods he takes for the tool are the area's own natural trees
     private final int                  orderId;
     @Nullable
@@ -249,6 +254,29 @@ public final class LabourSession implements IIdleTaskSession
     public LabourPlanner.Why lastWhy()
     {
         return lastWhy;
+    }
+
+    /**
+     * @return whether a warehouse withdraw of the session failed (the stock was gone or reserved, or he found no way there in time).
+     */
+    public boolean fetchFailed()
+    {
+        return fetchFailed;
+    }
+
+    /**
+     * Whether the basic tool can be made from what the warehouses and his pockets hold, without gathering anything (r3 Fable N17): asked before he says he
+     * makes one.
+     *
+     * @param colony  the colony.
+     * @param board   its labour board.
+     * @param citizen the worker.
+     * @param make    the tool.
+     * @return true if the planner finds a way.
+     */
+    public static boolean canMakeFromStock(final Colony colony, final LabourBoard board, final ICitizenData citizen, final Item make)
+    {
+        return !(LabourPlanner.next(LabourPlanner.fromStock(new LabourEnv(colony, board, true)), make, 1, inventoryOf(citizen)) instanceof LabourPlanner.Blocked<Item>);
     }
 
     /**
@@ -540,6 +568,7 @@ public final class LabourSession implements IIdleTaskSession
         {
             // the action does not get anywhere (no path, a target nobody reaches): drop its target and think again
             strikes++;
+            fetchFailed |= phase == Phase.WITHDRAW;
             cleanup();
             if (strikes >= 3)
             {
@@ -1426,6 +1455,7 @@ public final class LabourSession implements IIdleTaskSession
         }
         if (best == null || bestAvailable < w.amount())
         {
+            fetchFailed = true;
             failed(LabourPlanner.Why.COVERED);
             end(false);
             return;

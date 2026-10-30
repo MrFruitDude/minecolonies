@@ -282,6 +282,17 @@ public abstract class AbstractEntityAICrafting<J extends AbstractJobCrafter<?, J
     }
 
     /**
+     * Round 4 agency (r3 Fable N16): a crafter with no task in his queue, standing idle at his hut and not on leisure, may help another hut; a new task ends
+     * the help at once.
+     */
+    @Override
+    public boolean canLendAHand()
+    {
+        return (getState() == IDLE || getState() == START_WORKING) && currentRequest == null && job.getTaskQueue().isEmpty() && job.getCurrentTask() == null && worker.getCitizenData() != null
+                 && worker.getCitizenData().getLeisureTime() <= 0;
+    }
+
+    /**
      * If the crafter should go in idle mode or not.
      * @return true if so.
      */
