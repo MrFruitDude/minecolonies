@@ -625,7 +625,10 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             final BlockPos target = blockToMine != null ? blockToMine : worldPos;
             if (reachTarget != null && cannotReachAtAll(target))
             {
-                final boolean watched = retryBlocks.contains(target) && PlayerWatch.watched(world, worker.position(), target);
+                // a player watches: the block is kept for later, WATCHED_KEEPS times; then he jumps to the spot that reaches it in sight all the same, as the
+                // walk and shut-in ladders do after their bounded wait (r2 Fable N2: watching must not leave a hole in the building)
+                final boolean watched = retryBlocks.contains(target)
+                                          && keepForWatcher(keptWhileWatched.getOrDefault(target, 0), () -> PlayerWatch.watched(world, worker.position(), target));
                 if (retryBlocks.contains(target) && !watched && reachTeleported.add(target.immutable()) && teleportToReach(target))
                 {
                     // the second round (the first one gave the block up for later): no tower came, and the block is out of reach from everywhere he can walk to - but
@@ -635,12 +638,13 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
                     return getState();
                 }
                 Log.getLogger().debug("{} gives up {}: no place to reach it from", worker.getName().getString(), target);
-                if (watched && keptWhileWatched.merge(target.immutable(), 1, Integer::sum) <= WATCHED_KEEPS)
+                if (watched)
                 {
-                    // the second round, and a player watches: no jump onto the spot that reaches it, but the block is not left out for good either (r1 Fable
-                    // F16a: watching made a hole in the building). It comes again, and the worker says why he leaves it for now
+                    // the second round, and a player watches: no jump onto the spot that reaches it yet, but the block is not left out for good either (r1
+                    // Fable F16a: watching made a hole in the building). It comes again, and the worker says why he leaves it for now
+                    keptWhileWatched.merge(target.immutable(), 1, Integer::sum);
                     keepWhileWatched.add(target.immutable());
-                    setStuckReason("cannot get to " + target.toShortString() + " (a player is near: no jump, leaves it for later)");
+                    setStuckReason("cannot get to " + target.toShortString() + " (a player is near: no jump yet, leaves it for later)", BLOCK_NOTICE);
                 }
                 deferBlock(target, false);
                 escalateStuck(target);
@@ -1179,13 +1183,13 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
                         break;
                     }
                     final BlockPos out = outSpot(target);
-                    if (!shutIn && PlayerWatch.watched(world, worker.position(), out))
+                    if (!shutIn && keepForWatcher(keptWhileWatched.getOrDefault(target, 0), () -> PlayerWatch.watched(world, worker.position(), out)))
                     {
                         // a player watches the worker or the spot he would be put on: no jump. He walks on (a new path), says why he stands, and the ladder
                         // goes on to DEFER: the block waits for later (it comes again at the end of the stage), the worker moves on
                         Log.getLogger().debug("{} would be put out for {}, but a player watches: walks on", worker.getName().getString(), target);
                         resetWalkTarget();
-                        setStuckReason("cannot get to " + target.toShortString() + " (a player is near: no jump, leaves it for later)");
+                        setStuckReason("cannot get to " + target.toShortString() + " (a player is near: no jump yet, leaves it for later)", BLOCK_NOTICE);
                     }
                     else if (out != null)
                     {
@@ -1712,7 +1716,9 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
             trapWatchedWaits++;
             resetWalkTarget();
             forgetWalkable();
-            setStuckReason("shut in at " + worker.blockPosition().toShortString() + " by the walls of this building (a player is near: no jump yet)");
+            final String denial = shutInEscapeDenial();
+            setStuckReason("shut in at " + worker.blockPosition().toShortString() + " by the walls of this building (a player is near: no jump yet"
+                             + (denial == null ? "" : "; no scaffolding tower: " + denial) + ")");
             return;
         }
         trapWatchedWaits = 0;
@@ -1744,6 +1750,15 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
     protected boolean tryShutInEscape()
     {
         return false;
+    }
+
+    /**
+     * @return why the last {@link #tryShutInEscape()} found no tower (for the stuck reason), or null.
+     */
+    @Nullable
+    protected String shutInEscapeDenial()
+    {
+        return null;
     }
 
     /**
@@ -2253,6 +2268,19 @@ public abstract class AbstractEntityAIStructure<J extends AbstractJobStructure<?
      * How often a block of the second round is kept for a watching player before it is left out as any other (a player who stays for ever).
      */
     public static final int WATCHED_KEEPS = 3;
+
+    /**
+     * The one rule for a block he cannot reach while a player watches (r2 Fable N2): he keeps it for later, no jump in sight, {@link #WATCHED_KEEPS}
+     * times; after that he is put by it in sight all the same, as the walk and shut-in ladders do after their bounded wait. Watching never leaves a hole.
+     *
+     * @param keptSoFar how often the block was kept for a watcher already.
+     * @param watched   whether a player watches (asked only while the block may still be kept).
+     * @return true to keep the block for later without a jump.
+     */
+    public static boolean keepForWatcher(final int keptSoFar, final java.util.function.BooleanSupplier watched)
+    {
+        return keptSoFar < WATCHED_KEEPS && watched.getAsBoolean();
+    }
 
     /**
      * Blocks that the worker was put on a spot for (once for each block in a structure).

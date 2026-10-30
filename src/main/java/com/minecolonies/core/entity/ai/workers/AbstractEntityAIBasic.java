@@ -1350,6 +1350,38 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     public static final String STUCK_NOTICE = "com.minecolonies.coremod.gui.chat.stuck";
 
     /**
+     * The notice of a worker at his site who cannot reach one block (r2 Opus R2-F4): he works on, the block waits.
+     */
+    public static final String BLOCK_NOTICE = "com.minecolonies.coremod.gui.chat.stuck.block";
+
+    /**
+     * One stuck notice per episode (r2 Opus R2-F4): a new reason within this many ticks of the last one belongs to the same episode and brings no new
+     * notice (a watched builder who meets one unreachable block after another, placing others in between).
+     */
+    public static final long STUCK_NOTICE_GAP = 2400L;
+
+    private long   stuckLastAt     = Long.MIN_VALUE / 2;
+    private int    stuckNotices    = 0;
+
+    /**
+     * @param now         the game time.
+     * @param lastStuckAt when the worker last had a stuck reason.
+     * @return true if a stuck reason now starts a new episode (and brings up a notice): he was free for {@link #STUCK_NOTICE_GAP} ticks or more.
+     */
+    public static boolean newStuckEpisode(final long now, final long lastStuckAt)
+    {
+        return now - lastStuckAt > STUCK_NOTICE_GAP;
+    }
+
+    /**
+     * @return how many stuck notices this worker brought up (for the tests).
+     */
+    public final int stuckNoticeCount()
+    {
+        return stuckNotices;
+    }
+
+    /**
      * @return why the worker is stuck at the moment (he cannot get on and says so, the status of his job is STUCK), or null.
      */
     @Nullable
@@ -1377,9 +1409,21 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
      */
     protected final void setStuckReason(final String reason, final boolean notice)
     {
+        setStuckReason(reason, notice ? STUCK_NOTICE : null);
+    }
+
+    /**
+     * @param noticeKey the notice he brings up ({@link #STUCK_NOTICE}, {@link #BLOCK_NOTICE}), or null for none. Only the first reason of an episode
+     *                  brings it up ({@link #STUCK_NOTICE_GAP}).
+     */
+    protected final void setStuckReason(final String reason, @Nullable final String noticeKey)
+    {
         final boolean fresh = stuckReason == null;
+        final long now = world.getGameTime();
+        final boolean newEpisode = newStuckEpisode(now, stuckLastAt);
         stuckReason = reason;
-        stuckReasonAt = world.getGameTime();
+        stuckReasonAt = now;
+        stuckLastAt = now;
         if (worker.getCitizenData() == null)
         {
             return;
@@ -1390,9 +1434,10 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         {
             Log.getLogger().info("{} is stuck: {}", worker.getName().getString(), reason);
         }
-        if (fresh && notice)
+        if (fresh && newEpisode && noticeKey != null)
         {
-            worker.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(STUCK_NOTICE), ChatPriority.PENDING));
+            stuckNotices++;
+            worker.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(noticeKey), ChatPriority.PENDING));
         }
     }
 

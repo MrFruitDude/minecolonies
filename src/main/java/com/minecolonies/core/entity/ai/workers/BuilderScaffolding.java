@@ -239,9 +239,61 @@ public final class BuilderScaffolding
 
     // ------------------------------------------------------------------ the world as the planner sees it
 
+    /**
+     * Whether scaffolding may go on this land: the builder's own colony's land, or land no colony claims, inside the world border. Never another
+     * colony's land, not even as a way out of a hole (r2 Sol H4): MineColonies keeps a colony's land for its own people.
+     *
+     * @param level    the world.
+     * @param pos      the cell.
+     * @param colonyId the builder's colony.
+     * @return true if he may put scaffolding there.
+     */
+    public static boolean mayBuildOn(final net.minecraft.world.level.Level level, final BlockPos pos, final int colonyId)
+    {
+        if (!level.getWorldBorder().isWithinBounds(pos))
+        {
+            return false;
+        }
+        final com.minecolonies.api.colony.claim.IChunkClaimData claim = com.minecolonies.api.colony.IColonyManager.getInstance()
+          .getClaimData(level.dimension(), net.minecraft.world.level.ChunkPos.containing(pos));
+        final int owner = claim == null ? 0 : claim.getOwningColony();
+        return owner == 0 || owner == colonyId;
+    }
+
+    /**
+     * Whether scaffolding may take the place of a block that gives way (air, grass, snow, water): never a planted thing (a flower, a sapling, a crop) or a
+     * block with data.
+     *
+     * @param state what is in the cell.
+     * @return true if it may be replaced.
+     */
+    public static boolean mayReplace(final BlockState state)
+    {
+        return state.isAir() || !(state.is(net.minecraft.tags.BlockTags.FLOWERS) || state.is(net.minecraft.tags.BlockTags.SAPLINGS)
+                                    || state.is(net.minecraft.tags.BlockTags.CROPS) || state.hasBlockEntity());
+    }
+
+    /**
+     * Why the last escape plan found no way out with scaffolding, or null: words for the stuck reason.
+     */
+    @Nullable
+    private String escapeDenial = null;
+
+    /**
+     * @return why the last escape found no tower ("only through another colony's land"), or null.
+     */
+    @Nullable
+    public String escapeDenial()
+    {
+        return escapeDenial;
+    }
+
     private final class WorldGrid implements ScaffoldPlanner.Grid
     {
         private final ScaffoldLedger ledger;
+        private final Map<Long, Boolean> landChecked = new HashMap<>();
+        private int landRefused   = 0;
+        private int plantsRefused = 0;
 
         private WorldGrid(final ScaffoldLedger ledger)
         {
@@ -265,7 +317,22 @@ public final class BuilderScaffolding
                 // never in lava, and never a bridge right over it
                 return false;
             }
-            return state.isAir() || (state.canBeReplaced() && state.getCollisionShape(ai.world, pos).isEmpty());
+            if (!(state.isAir() || (state.canBeReplaced() && state.getCollisionShape(ai.world, pos).isEmpty())))
+            {
+                return false;
+            }
+            if (!mayReplace(state))
+            {
+                plantsRefused++;
+                return false;
+            }
+            final long chunk = net.minecraft.world.level.ChunkPos.pack(pos);
+            final boolean land = landChecked.computeIfAbsent(chunk, c -> mayBuildOn(ai.world, pos, ai.building.getColony().getID()));
+            if (!land)
+            {
+                landRefused++;
+            }
+            return land;
         }
 
         @Override
@@ -611,10 +678,14 @@ public final class BuilderScaffolding
                 rims.add(spot);
             }
         }
-        final ScaffoldPlanner.Plan found = rims.isEmpty() ? null : ScaffoldPlanner.planEscape(new WorldGrid(order.getScaffolds()), rims, WorkerSettings.scaffoldStock());
+        final WorldGrid grid = new WorldGrid(order.getScaffolds());
+        final ScaffoldPlanner.Plan found = rims.isEmpty() ? null : ScaffoldPlanner.planEscape(grid, rims, WorkerSettings.scaffoldStock());
+        escapeDenial = found != null ? null
+                         : grid.landRefused > 0 ? "the only places for a tower are on another colony's land"
+                         : grid.plantsRefused > 0 ? "the only places for a tower are on planted flowers or crops" : null;
         if (found == null)
         {
-            log("no way out of the hole at " + here + " with scaffolding (rims=" + rims.size() + ")");
+            log("no way out of the hole at " + here + " with scaffolding (rims=" + rims.size() + ", other land " + grid.landRefused + ", plants " + grid.plantsRefused + ")");
             escapeDeniedUntil = now + 1000;
             return false;
         }

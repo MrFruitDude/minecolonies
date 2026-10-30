@@ -1523,6 +1523,12 @@ public class EntityAIStructureBuilder extends AbstractEntityAIStructureWithWorkO
     }
 
     @Override
+    protected String shutInEscapeDenial()
+    {
+        return scaffold.escapeDenial();
+    }
+
+    @Override
     protected boolean tryScaffold(final BlockPos target)
     {
         return usesPhysicalReach() && scaffold.start(target);
