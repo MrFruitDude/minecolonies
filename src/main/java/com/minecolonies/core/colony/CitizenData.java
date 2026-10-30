@@ -35,6 +35,7 @@ import com.minecolonies.api.util.constant.Suppression;
 import com.minecolonies.core.MineColonies;
 import com.minecolonies.core.colony.buildings.modules.LivingBuildingModule;
 import com.minecolonies.core.colony.interactionhandling.QuestDeliveryInteraction;
+import com.minecolonies.core.colony.life.LifeTrait;
 import com.minecolonies.core.colony.interactionhandling.QuestDialogueInteraction;
 import com.minecolonies.core.colony.interactionhandling.ServerCitizenInteraction;
 import com.minecolonies.core.colony.interactionhandling.StandardInteraction;
@@ -351,6 +352,16 @@ public class CitizenData implements ICitizenData
      * Citizen leisure time in ticks.
      */
     private int leisureTime;
+
+    /**
+     * Round 5 life: the save key of the trait.
+     */
+    private static final String TAG_LIFE_TRAIT = "lifetrait";
+
+    /**
+     * Round 5 life: the citizen's trait, picked once from his skills and kept for life ("" until picked).
+     */
+    private String lifeTrait = "";
 
     /**
      * Create a CitizenData given an ID. Used as a super-constructor or during loading.
@@ -1187,6 +1198,23 @@ public class CitizenData implements ICitizenData
             buf.writeUUID(textureUUID);
         }
         buf.writeBoolean(citizenDiseaseHandler.isSick());
+        buf.writeUtf(LifeTrait.of(this).name());
+    }
+
+    @Override
+    public String getLifeTrait()
+    {
+        return lifeTrait;
+    }
+
+    @Override
+    public void setLifeTrait(final String trait)
+    {
+        if (!trait.equals(lifeTrait))
+        {
+            lifeTrait = trait;
+            markDirty(0);
+        }
     }
 
     @Override
@@ -1421,6 +1449,10 @@ public class CitizenData implements ICitizenData
         nbtTagCompound.putInt(TAG_PARTNER, partner);
         nbtTagCompound.putBoolean(TAG_ACTIVE, this.isWorking);
         nbtTagCompound.putInt(TAG_LEISURE, this.leisureTime);
+        if (!lifeTrait.isEmpty())
+        {
+            nbtTagCompound.putString(TAG_LIFE_TRAIT, lifeTrait);
+        }
 
         @NotNull final ListTag avQuestNBT = new ListTag();
         for (final Identifier quest : availableQuests)
@@ -1600,6 +1632,7 @@ public class CitizenData implements ICitizenData
         partner = nbtTagCompound.getIntOr(TAG_PARTNER, 0);
         this.isWorking = nbtTagCompound.getBooleanOr(TAG_ACTIVE, false);
         this.leisureTime = nbtTagCompound.getIntOr(TAG_LEISURE, 0);
+        this.lifeTrait = nbtTagCompound.getStringOr(TAG_LIFE_TRAIT, "");
 
         @NotNull final ListTag availQuestNbt = nbtTagCompound.getListOrEmpty(TAG_AV_QUESTS);
         for (int i = 0; i < availQuestNbt.size(); i++)

@@ -79,9 +79,9 @@ public class MainWindowCitizen extends AbstractWindowCitizen
         super.onOpened();
         final Text name = findPaneOfTypeByID(WINDOW_ID_NAME, Text.class);
         name.setText(Component.literal(citizen.getName()));
-        // round 4 life: the citizen's one trait, as a short line on the name
+        // round 4 life: the citizen's one trait (saved by the server since round 5), as a short line on the name
         PaneBuilders.tooltipBuilder()
-          .append(Component.translatable(LifeTrait.of(citizen.getId(), citizen.getCitizenSkillHandler()).lineKey()))
+          .append(Component.translatable(LifeTrait.of(citizen).lineKey()))
           .hoverPane(name)
           .build();
 

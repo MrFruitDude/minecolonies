@@ -9,9 +9,14 @@ import com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.TickingT
 import com.minecolonies.core.colony.life.CitizenLife;
 import com.minecolonies.core.entity.citizen.EntityCitizen;
 import com.minecolonies.core.entity.pathfinding.navigation.EntityNavigationUtils;
+import com.ldtteam.structurize.api.util.Tuple;
+import com.minecolonies.api.util.constant.SchematicTagConstants;
+import com.minecolonies.core.colony.buildings.modules.BuildingModules;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.component.SwingAnimation;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -44,8 +49,9 @@ public class EntityAICitizenLife implements IStateAI
      */
     private IState afterChat = CitizenAIState.IDLE;
 
-    private long arrivedAt    = -1;
-    private long shelterSince = -1;
+    private long     lineAt       = -1;
+    private long     shelterSince = -1;
+    private BlockPos shelterSpot  = null;
 
     public EntityAICitizenLife(final EntityCitizen citizen)
     {
@@ -65,7 +71,8 @@ public class EntityAICitizenLife implements IStateAI
 
     private boolean wantsChat()
     {
-        return life.chatting() || life.tryStartChat();
+        // a citizen who would rather get out of the rain or is off to greet the morning does not stop for a chat
+        return life.chatting() || (!life.greetingActive() && !life.wantsShelter() && life.tryStartChat());
     }
 
     private IState enterChat(final IState from)
@@ -82,29 +89,35 @@ public class EntityAICitizenLife implements IStateAI
 
     private IState startGathering()
     {
-        arrivedAt = -1;
+        lineAt = -1;
         return LifeState.MORNING_GATHER;
     }
 
     /**
-     * The morning greeting: walk to the spot, greet the nearest citizen (or the town), linger a little, then free the citizen for work. Bounded by
+     * The morning greeting: walk to the spot and greet the nearest citizen (or the town) on arrival, close to the spot, or at the latest
+     * {@link CitizenLife#GREET_LINGER} ticks before the budget ends, so the line is always said; linger a little, then free the citizen for work. Bounded by
      * {@link CitizenLife#MORNING_BUDGET}.
      */
     private IState gather()
     {
-        if (!life.greetingActive() || life.gatherSpot() == null)
+        final BlockPos spot = life.gatherSpot();
+        if (!life.greetingActive() || spot == null)
         {
             life.finishGreeting();
             return CitizenAIState.IDLE;
         }
         final long now = citizen.level().getGameTime();
-        if (arrivedAt < 0)
+        if (lineAt < 0)
         {
-            if (!EntityNavigationUtils.walkToPos(citizen, life.gatherSpot(), 4, true))
+            final boolean arrived = EntityNavigationUtils.walkToPos(citizen, spot, 3, true);
+            final boolean close = citizen.blockPosition().distSqr(spot) <= CitizenLife.GREET_TALK_RANGE * CitizenLife.GREET_TALK_RANGE;
+            final boolean late = now - life.greetingStart() >= CitizenLife.MORNING_BUDGET - CitizenLife.GREET_LINGER - 20;
+            if (!arrived && !close && !late)
             {
                 return LifeState.MORNING_GATHER;
             }
-            arrivedAt = now;
+            lineAt = now;
+            citizen.getNavigation().stop();
             final List<EntityCitizen> near = citizen.level().getEntitiesOfClass(EntityCitizen.class, citizen.getBoundingBox().inflate(8),
               other -> other != citizen && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == citizen.getCitizenColonyHandler().getColonyId());
             EntityCitizen nearest = null;
@@ -122,7 +135,7 @@ public class EntityAICitizenLife implements IStateAI
             citizen.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, false);
             life.say(life.morningLine());
         }
-        if (now - arrivedAt >= CitizenLife.GREET_LINGER)
+        if (now - lineAt >= CitizenLife.GREET_LINGER)
         {
             life.finishGreeting();
             return CitizenAIState.IDLE;
@@ -133,23 +146,36 @@ public class EntityAICitizenLife implements IStateAI
     private IState startShelter()
     {
         shelterSince = citizen.level().getGameTime();
+        shelterSpot = null;
         return LifeState.SHELTER;
     }
 
     /**
-     * Out of the rain: walk home, then stay inside while it rains. Gives up after {@link #SHELTER_WALK_TICKS} on the way.
+     * Out of the rain: walk home and into the house (a stand or sit spot of the home's blueprint, else a bed, else the middle of the house), not just to its
+     * door, then stay inside while it rains there. Gives up after {@link #SHELTER_WALK_TICKS} on the way.
      */
     private IState shelter()
     {
         final ICitizenData data = citizen.getCitizenData();
         final IBuilding home = data == null ? null : data.getHomeBuilding();
-        if (!CitizenLife.enabled() || home == null || !citizen.level().isRaining())
+        if (!CitizenLife.enabled() || home == null || !CitizenLife.rainsAt(citizen.level(), home.getPosition()))
         {
             life.shelterBackOff();
             return CitizenAIState.IDLE;
         }
-        if (home.isInBuilding(citizen.blockPosition()))
+        final boolean inside = home.isInBuilding(citizen.blockPosition());
+        if (inside && !citizen.level().canSeeSky(citizen.blockPosition().above()))
         {
+            citizen.getNavigation().stop();
+            return LifeState.SHELTER;
+        }
+        if (shelterSpot == null)
+        {
+            shelterSpot = insideSpot(home, citizen.getCivilianID());
+        }
+        if (EntityNavigationUtils.walkToPosInBuilding(citizen, shelterSpot, home, 2) && inside)
+        {
+            // at his place inside the walls, even where the sky is open (a courtyard): he stays
             citizen.getNavigation().stop();
             return LifeState.SHELTER;
         }
@@ -158,7 +184,45 @@ public class EntityAICitizenLife implements IStateAI
             life.shelterBackOff();
             return CitizenAIState.IDLE;
         }
-        EntityNavigationUtils.walkToBuilding(citizen, home);
         return LifeState.SHELTER;
+    }
+
+    /**
+     * A place inside a house to wait out the rain: a stand or sit spot of its blueprint, else one of its beds, else its middle at the hut block's height; picked
+     * by citizen id so housemates spread.
+     *
+     * @param home      the house.
+     * @param citizenId the citizen id.
+     * @return the place, always within the house's corners.
+     */
+    public static BlockPos insideSpot(final IBuilding home, final int citizenId)
+    {
+        final List<BlockPos> spots = new ArrayList<>();
+        for (final String tag : new String[] {SchematicTagConstants.TAG_STAND_IN, SchematicTagConstants.TAG_SIT_IN})
+        {
+            for (final BlockPos pos : home.getLocationsFromTag(tag))
+            {
+                if (home.isInBuilding(pos))
+                {
+                    spots.add(pos);
+                }
+            }
+        }
+        if (spots.isEmpty() && home.hasModule(BuildingModules.BED))
+        {
+            for (final BlockPos pos : home.getModule(BuildingModules.BED).getRegisteredBlocks())
+            {
+                if (home.isInBuilding(pos))
+                {
+                    spots.add(pos);
+                }
+            }
+        }
+        if (!spots.isEmpty())
+        {
+            return spots.get(Math.floorMod(citizenId, spots.size()));
+        }
+        final Tuple<BlockPos, BlockPos> corners = home.getCorners();
+        return new BlockPos((corners.getA().getX() + corners.getB().getX()) / 2, home.getPosition().getY(), (corners.getA().getZ() + corners.getB().getZ()) / 2);
     }
 }
