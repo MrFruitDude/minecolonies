@@ -405,8 +405,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         final Set<BlockPos> chain = ledger == null ? Set.of() : ReservationLedger.requesterChain(manager, completedRequest);
         if (ledger != null)
         {
-            // The hold the attempt put on this request turns into one hold per delivery below.
-            ledger.releaseQuiet(completedRequest.getId(), RsAccess.now(manager));
+            // The hold the attempt put on this request turns into one hold per delivery below (what arrived of it in short loads stays held for it).
+            ledger.releaseQuietKeepingHandouts(completedRequest.getId(), RsAccess.now(manager));
         }
         final List<Tuple<ItemStack, BlockPos>> targetStacks = unreserved(ledger, matchingStacksForFollowup(wareHouse, completedRequest), wareHouse.getBuilding().getID(),
           ReservationLedger.countsAgainst(chain));
@@ -859,8 +859,8 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         final Set<BlockPos> chain = ledger == null ? Set.of() : ReservationLedger.requesterChain(manager, completedRequest);
         if (ledger != null)
         {
-            // The hold the attempt put on this request turns into one hold per delivery below.
-            ledger.releaseQuiet(completedRequest.getId(), RsAccess.now(manager));
+            // The hold the attempt put on this request turns into one hold per delivery below (what arrived of it in short loads stays held for it).
+            ledger.releaseQuietKeepingHandouts(completedRequest.getId(), RsAccess.now(manager));
         }
         final int keep = completedRequest.getRequest() instanceof final INonExhaustiveDeliverable nonExhaustive ? nonExhaustive.getLeftOver() : 0;
         final ColonyStorage storage = ColonyStorage.of(colony);
@@ -932,7 +932,7 @@ public abstract class AbstractWarehouseRequestResolver extends AbstractRequestRe
         {
             for (final Reservation reservation : ledger.reservationsOf(token))
             {
-                if (reservation.kind() == ReservationKind.STOCK)
+                if (reservation.kind() == ReservationKind.STOCK && reservation.reason() != ReservationReason.BUILDING_HANDOUT)
                 {
                     held.merge(new HoldKey(reservation.scope(), reservation.key()), reservation.amount(), Integer::sum);
                 }
