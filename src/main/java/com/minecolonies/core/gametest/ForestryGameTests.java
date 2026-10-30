@@ -2119,10 +2119,9 @@ public final class ForestryGameTests
     // ---------------------------------------------------------------- marks at the cut, builder marks, stale marks, bounded walk home (improve-all r8)
 
     /**
-     * r7 Sol H2: every cut checks the marks when it is made, not only when the tree is chosen. A huge red mushroom; he finds it himself (so the TreeChop
-     * lane chooses TreeChop for it), and right after the choice a co-manager puts a red mushroom block of the same state in place of an outer natural one of
-     * its cap: no snapshot can tell it from the natural block, only its mark can. He fells the mushroom; the placed block stays. In the TreeChop lane TreeChop
-     * was chosen for it and he turned to the normal cut at the chop (TreeChop breaks caps of its own choosing).
+     * Every cut checks placement marks at break time. The normal lane replaces a natural mushroom cap with the same state, which only its mark distinguishes.
+     * The TreeChop lane uses an oak (its shipped mushroom tags are absent), then replaces an outer leaf with a marked cap after TreeChop is chosen.
+     * In both lanes the tree is felled and the placed cap stays; the TreeChop lane must also observe the break-time refusal and fallback.
      */
     private static void placedCapAfterChoice(final GameTestHelper helper, final String name, final boolean treeChop)
     {
@@ -2130,15 +2129,14 @@ public final class ForestryGameTests
         {
             resetTreeChop(helper);
         }
-        if (treeChop)
-        {
-            resetTreeChop(helper);
-        }
         final ServerLevel level = helper.getLevel();
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, name);
         final BuildingLumberjack building = hut(helper, colony, HUT, false);
-        final Grown mushroom = grow(helper, new TreeSpec("huge red mushroom", new BlockPos(22, 1, 8), false, Blocks.RED_MUSHROOM, Blocks.MYCELIUM, null, null), 11L);
+        final Grown mushroom = grow(helper, treeChop
+          ? new TreeSpec("oak", new BlockPos(22, 1, 8), false, Blocks.OAK_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.OAK, null)
+          : new TreeSpec("huge red mushroom", new BlockPos(22, 1, 8), false, Blocks.RED_MUSHROOM, Blocks.MYCELIUM, null, null), 11L);
         final BlockPos stem = mushroom.stumps().get(0);
+        helper.assertTrue(!treeChop || Compatibility.treeChop.isChoppable(level, stem), "fixture: TreeChop does not accept the oak stem");
 
         helper.runAfterDelay(20, () -> {
             final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10));
@@ -2167,24 +2165,24 @@ public final class ForestryGameTests
                 }
                 // he chose the mushroom: a co-manager puts the same block in place of a natural one at the edge of its cap
                 treeChopChosen[0] = ai.usesTreeChop();
-                placed[0] = outerCap(level, mushroom.box(), stem);
+                placed[0] = outerCap(level, mushroom.box(), stem, treeChop);
                 helper.assertTrue(placed[0] != null, "no natural cap block at the edge of the mushroom: " + describe(worker));
-                playerPlaces(level, placed[0], level.getBlockState(placed[0]));
+                playerPlaces(level, placed[0], treeChop ? Blocks.RED_MUSHROOM_BLOCK.defaultBlockState() : level.getBlockState(placed[0]));
                 helper.assertTrue(PlacedCaps.isPlaced(level, placed[0]), "the cap block put in place of the natural one is not marked");
             }, name);
         });
     }
 
     /**
-     * The red mushroom block of a cap farthest out from the stem (the lowest of those), touching no stem.
+     * The outer cap block (or oak leaf for TreeChop) farthest from the stem, touching no stem.
      */
-    private static BlockPos outerCap(final ServerLevel level, final AABB box, final BlockPos stem)
+    private static BlockPos outerCap(final ServerLevel level, final AABB box, final BlockPos stem, final boolean leaves)
     {
         BlockPos best = null;
         int bestReach = -1;
         for (final BlockPos pos : BlockPos.betweenClosed(BlockPos.containing(box.minX, box.minY, box.minZ), BlockPos.containing(box.maxX - 1, box.maxY - 1, box.maxZ - 1)))
         {
-            if (!level.getBlockState(pos).is(Blocks.RED_MUSHROOM_BLOCK))
+            if (!(leaves ? level.getBlockState(pos).is(BlockTags.LEAVES) : level.getBlockState(pos).is(Blocks.RED_MUSHROOM_BLOCK)))
             {
                 continue;
             }
