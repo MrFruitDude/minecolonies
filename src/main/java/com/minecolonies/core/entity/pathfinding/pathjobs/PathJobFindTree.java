@@ -57,7 +57,7 @@ public class PathJobFindTree extends AbstractPathJob implements ISearchPathJob
     /**
      * Forestry: the search walks at most this far past the radius (round a pond or a wall to a tree inside it).
      */
-    private static final int HOME_MARGIN = 8;
+    public static final int HOME_MARGIN = 8;
 
     /**
      * Forestry: the level of the tree claims and the asking Forester, so trees of another Forester (or blocked next to a build) are skipped.
