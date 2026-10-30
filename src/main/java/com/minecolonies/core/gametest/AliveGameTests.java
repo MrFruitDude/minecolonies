@@ -228,9 +228,9 @@ public final class AliveGameTests
                     }
                 }
                 helper.assertTrue(ticks[0] < 2400, "no chat started in 2400 ticks " + log);
-                helper.runAfterDelay(1, poll[0]);
+                helper.runAfterDelay(1, () -> poll[0].run());
             };
-            helper.runAfterDelay(1, poll[0]);
+            helper.runAfterDelay(1, () -> poll[0].run());
         });
     }
 
@@ -282,9 +282,9 @@ public final class AliveGameTests
                                           + c.getCitizenAI().getState() + "/" + d.getCitizenAI().getState() + " lines '" + c.getSpeech() + "' '" + d.getSpeech() + "'");
                             return;
                         }
-                        helper.runAfterDelay(1, poll[0]);
+                        helper.runAfterDelay(1, () -> poll[0].run());
                     };
-                    helper.runAfterDelay(1, poll[0]);
+                    helper.runAfterDelay(1, () -> poll[0].run());
                 });
             });
         });
@@ -333,9 +333,9 @@ public final class AliveGameTests
                     helper.succeed();
                     return;
                 }
-                helper.runAfterDelay(1, poll[0]);
+                helper.runAfterDelay(1, () -> poll[0].run());
             };
-            helper.runAfterDelay(1, poll[0]);
+            helper.runAfterDelay(1, () -> poll[0].run());
         });
     }
 
@@ -396,9 +396,9 @@ public final class AliveGameTests
                     return;
                 }
                 helper.assertTrue(helper.getLevel().getGameTime() - t0 < 160, "only " + count2 + " cheered aloud in 160 ticks");
-                helper.runAfterDelay(1, poll[0]);
+                helper.runAfterDelay(1, () -> poll[0].run());
             };
-            helper.runAfterDelay(1, poll[0]);
+            helper.runAfterDelay(1, () -> poll[0].run());
         });
     }
 
@@ -488,9 +488,9 @@ public final class AliveGameTests
                         helper.assertTrue(now - over[0] <= 140, "no relief within 140 ticks: " + relief[0] + "/" + relief[1]);
                     }
                     helper.assertTrue(now - t0 < 1000, "raid never ended");
-                    helper.runAfterDelay(1, poll[0]);
+                    helper.runAfterDelay(1, () -> poll[0].run());
                 };
-                helper.runAfterDelay(1, poll[0]);
+                helper.runAfterDelay(1, () -> poll[0].run());
             });
         });
     }
@@ -539,9 +539,9 @@ public final class AliveGameTests
                     helper.fail("no hurry in the rain: raining " + helper.getLevel().isRaining() + " pace " + bare.getLife().appliedPace() + " line '" + bare.getSpeech() + "'");
                     return;
                 }
-                helper.runAfterDelay(1, poll[0]);
+                helper.runAfterDelay(1, () -> poll[0].run());
             };
-            helper.runAfterDelay(1, poll[0]);
+            helper.runAfterDelay(1, () -> poll[0].run());
         });
     }
 
