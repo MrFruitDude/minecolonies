@@ -1738,6 +1738,11 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     public static final String TOOL_LATER_NOTICE = "com.minecolonies.coremod.entity.citizen.toollater";
 
     /**
+     * What a worker says when he cannot go for his tool yet because he is still on another errand for the colony (round 7, R6-F1: not the warehouse's fault).
+     */
+    public static final String TOOL_HELD_NOTICE = "com.minecolonies.coremod.entity.citizen.toolheld";
+
+    /**
      * How long a worker waits for a basic tool before he gets it himself: one minute.
      */
     public static final long TOOL_WAIT_TICKS = 1200L;
@@ -2000,33 +2005,53 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
             final String kind = labourToolKind(toolHelpType);
             final Predicate<ItemStack> fits = fitsHut(toolHelpType, toolHelpMin);
             final Item make = basicToolFor(toolHelpType, toolHelpMin);
-            final boolean courier = hasCourier(colony);
-            if (!courier)
+            if (kind == null)
             {
-                // (no courier: what a warehouse holds for his request would never come; the request goes, so its reservation frees the tool for him)
-                cancelToolRequests(toolHelpType);
+                endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, true);
+                return IDLE;
             }
-            final Item stocked = com.minecolonies.core.colony.labour.LabourSession.stockedTool(board, fits);
-            if (stocked == null && (make == null || !com.minecolonies.core.colony.labour.LabourSession.canMakeFromStock(colony, board, worker.getCitizenData(), make)))
+            Item stocked = com.minecolonies.core.colony.labour.LabourSession.stockedTool(board, fits);
+            final boolean courier = hasCourier(colony);
+            boolean canMake = make != null && com.minecolonies.core.colony.labour.LabourSession.canMakeFromStock(colony, board, worker.getCitizenData(), make);
+            if (courier && stocked == null && !canMake)
             {
                 // no tool and nothing to make one from: one notice that says so, no "I make one" first (r3 Fable N17)
                 endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, true);
                 return IDLE;
             }
-            final var claim = board.claimForTool(worker.getCitizenData(), stocked != null ? stocked : make);
-            if (kind == null || claim == null)
+            // his own tool takes no labour place (round 7, R6-F1/N46): the claim is refused only while he holds another one
+            var claim = board.claimForTool(worker.getCitizenData(), stocked != null ? stocked : make != null ? make : net.minecraft.world.item.Items.WOODEN_PICKAXE);
+            if (claim == null)
             {
-                if (claim != null)
+                endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, false);
+                toolRetrySoon(TOOL_HELD_NOTICE);
+                return IDLE;
+            }
+            if (!courier)
+            {
+                // (no courier: what a warehouse holds for his request would never come; now that he goes himself the request goes, so its reservation frees the tool
+                // for him. Only after the claim: a refused claim leaves his request in the list)
+                cancelToolRequests(toolHelpType);
+                stocked = com.minecolonies.core.colony.labour.LabourSession.stockedTool(board, fits);
+                canMake = canMake || (make != null && com.minecolonies.core.colony.labour.LabourSession.canMakeFromStock(colony, board, worker.getCitizenData(), make));
+                if (stocked == null && !canMake)
                 {
                     board.release(claim, false, false);
+                    endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, true);
+                    return IDLE;
                 }
-                endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, kind == null);
-                if (claim == null)
+                if (stocked != null && claim.target() != stocked)
                 {
-                    // the labour board takes no more claims now: no proof of nothing, he tries again soon
-                    toolRetrySoon();
+                    // (the tool freed by his request is what he fetches: the claim shows it)
+                    board.release(claim, false, false);
+                    claim = board.claimForTool(worker.getCitizenData(), stocked);
+                    if (claim == null)
+                    {
+                        endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, false);
+                        toolRetrySoon(TOOL_LATER_NOTICE);
+                        return IDLE;
+                    }
                 }
-                return IDLE;
             }
             toolSession = com.minecolonies.core.colony.labour.LabourSession.forWorkerTool(colony, worker.getCitizenData(), board, claim, kind, fits, make);
             toolSelfHelp = stocked != null ? ToolSelfHelp.FETCH : ToolSelfHelp.MAKE;
@@ -2061,11 +2086,21 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
      */
     private void toolRetrySoon()
     {
+        toolRetrySoon(TOOL_LATER_NOTICE);
+    }
+
+    /**
+     * He tries again in a minute and says why.
+     *
+     * @param notice the lang key of what he says.
+     */
+    private void toolRetrySoon(final String notice)
+    {
         toolHelpRetryAt = world.getGameTime() + TOOL_RETRY_SOON_TICKS;
         toolSelfHelp = ToolSelfHelp.RETRY;
         if (worker.getCitizenData() != null)
         {
-            worker.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(TOOL_LATER_NOTICE), ChatPriority.CHITCHAT));
+            worker.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(notice), ChatPriority.CHITCHAT));
         }
     }
 
@@ -2531,6 +2566,22 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
     }
 
     /**
+     * Round 7 teamwork (N45): the item he carries for another hut's request, from the labour cargo record (a helper recalled by his own work before he handed it in).
+     *
+     * @return the item, or null when he carries nothing on record for another hut.
+     */
+    @Nullable
+    private net.minecraft.world.item.Item carriedCargoItem()
+    {
+        if (building == null || worker.getCitizenData() == null || !(building.getColony() instanceof com.minecolonies.core.colony.Colony colony))
+        {
+            return null;
+        }
+        final com.minecolonies.core.colony.labour.LabourCargo.Entry entry = colony.getLabourBoard().cargoOf(worker.getCitizenData().getId());
+        return entry == null || entry.destination().equals(building.getPosition()) ? null : entry.item();
+    }
+
+    /**
      * W1: dumps every slot into the building in one call once the worker is there (it was one slot per 20 ticks). B7: only slots inside the
      * inventory are read. A stack the building cannot take stays in its slot.
      *
@@ -2549,6 +2600,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
         @Nullable final IBuilding buildingWorker = building;
         final InventoryCitizen inventory = worker.getInventoryCitizen();
         final int totalSize = inventory.getSlots();
+        final net.minecraft.world.item.Item cargoItem = carriedCargoItem();
         for (; slotAt >= 0 && slotAt < totalSize; slotAt++)
         {
             final ItemStack stackToDump = inventory.getStackInSlot(slotAt);
@@ -2576,6 +2628,11 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
 
             if (buildingWorker == null)
             {
+                continue;
+            }
+            if (!dumpAnyway && cargoItem != null && stackToDump.is(cargoItem))
+            {
+                // (round 7, N45: goods he carries for another hut's request stay with him; his next idle minute hands them in there, never into his own hut)
                 continue;
             }
             final int amount = dumpAnyway ? stackToDump.getCount() : buildingWorker.buildingRequiresCertainAmountOfItem(stackToDump, alreadyKept, true, job.getJobRegistryEntry());

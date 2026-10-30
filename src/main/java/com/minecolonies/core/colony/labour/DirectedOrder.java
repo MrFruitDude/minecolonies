@@ -65,7 +65,9 @@ public final class DirectedOrder
         /** Labour was switched off. */
         LABOUR_OFF,
         /** A specialist of the colony now makes the resource. */
-        COVERED
+        COVERED,
+        /** Every labour place of the colony or the world is taken (another colony took them, the caps were lowered, or after a reload). */
+        NO_PLACE
     }
 
     /** The area in world x/z, inclusive. */
