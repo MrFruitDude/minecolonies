@@ -43,6 +43,12 @@ public final class AliveGameTests
       "alive_no_cheer"};
 
     /**
+     * Tests whose citizens must stand in the rain: they run without the barrier ceiling of the GameTest frame, which stops the rain (vanilla's isRainingAt
+     * reads the MOTION_BLOCKING heightmap) while it lets the sky light through.
+     */
+    public static final java.util.Set<String> NEEDS_SKY = java.util.Set.of("alive_rain_hurry", "alive_rain_where", "alive_shelter_inside");
+
+    /**
      * A life moment must give way within this many ticks: the AI decides every 10 ticks, a life step runs every 20, the setting is read once a second.
      */
     private static final int YIELD_TICKS = 60;

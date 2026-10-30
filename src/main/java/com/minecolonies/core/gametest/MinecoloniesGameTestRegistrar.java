@@ -1605,8 +1605,18 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),
-              isolatedColonyData(event, name));
+              AliveGameTests.NEEDS_SKY.contains(name) ? withSkyAccess(isolatedColonyData(event, name)) : isolatedColonyData(event, name));
         }
+    }
+
+    /**
+     * The same test data without the barrier ceiling the GameTest frame puts over a test: barriers let the sky light through but stop the rain (the
+     * MOTION_BLOCKING heightmap), so no rain falls on a citizen under them.
+     */
+    private static TestData<Holder<TestEnvironmentDefinition<?>>> withSkyAccess(final TestData<Holder<TestEnvironmentDefinition<?>>> data)
+    {
+        return new TestData<>(data.environment(), data.dimension(), data.structure(), data.maxTicks(), data.setupTicks(), data.required(), data.rotation(),
+          data.manualOnly(), data.maxAttempts(), data.requiredSuccesses(), true, data.padding());
     }
 
     private static int repeatCount()
