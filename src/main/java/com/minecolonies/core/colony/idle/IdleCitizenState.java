@@ -26,6 +26,30 @@ public final class IdleCitizenState
      */
     private final Map<Integer, Long> cooldowns = new HashMap<>();
 
+    /**
+     * Since when an employed worker has had nothing to do at his hut, by citizen id (see {@link WorkerHelp}).
+     */
+    private final Map<Integer, Long> outOfWorkSince = new HashMap<>();
+
+    /**
+     * Keeps the clock of a worker without work: started the first time he is seen without work, dropped as soon as he has work again.
+     *
+     * @param citizenId the citizen.
+     * @param outOfWork whether he has nothing to do now.
+     * @param now       the game time.
+     * @return how long he has been without work, 0 when he has work.
+     */
+    long outOfWorkFor(final int citizenId, final boolean outOfWork, final long now)
+    {
+        if (!outOfWork)
+        {
+            outOfWorkSince.remove(citizenId);
+            return 0L;
+        }
+        final long since = outOfWorkSince.computeIfAbsent(citizenId, k -> now);
+        return since > now ? 0L : now - since;
+    }
+
     @Nullable
     public IIdleTaskSession session(final int citizenId)
     {

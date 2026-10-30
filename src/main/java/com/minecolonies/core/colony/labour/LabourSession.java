@@ -136,6 +136,12 @@ public final class LabourSession implements IIdleTaskSession
     @Nullable
     private final DirectedOrder.Area   area;
     private final java.util.Set<BlockPos> leftTrees = new java.util.HashSet<>();
+    // round 3 agency, a worker's own tool: which tools fit his hut (null for a directed order's tool), and the basic one to make when storage has none (null: none may be
+    // made); what he makes comes only from what he holds and what the warehouses hold, nothing is gathered in the world
+    @Nullable
+    private java.util.function.Predicate<ItemStack> toolFits;
+    @Nullable
+    private Item toolMake;
 
     public LabourSession(final String taskId, final Colony colony, final ICitizenData citizen, final LabourBoard board, final LabourClaim claim)
     {
@@ -170,6 +176,53 @@ public final class LabourSession implements IIdleTaskSession
       final int orderId, final DirectedOrder.Area area)
     {
         return new LabourSession(DirectedTask.ID, colony, citizen, board, claim, toolKind, orderId, area);
+    }
+
+    /**
+     * Round 3 agency: a session that gets a worker blocked on a basic tool one for himself, on a {@link LabourClaim.Source#TOOL} claim: a free one out of a warehouse
+     * that fits his hut first (reserved through the ledger), else the basic tool {@code make} crafted the labour way at a table from what he holds and what the
+     * warehouses hold. Nothing is gathered, felled or dug: without the materials in storage the plan is blocked and nothing is made. It keeps what it gets, hands
+     * nothing in; the worker's AI drives it ({@link #tick}) and stops it ({@link #stop}).
+     *
+     * @param toolKind the labour tool kind ({@code axe}, {@code pickaxe}, {@code shovel}, {@code hoe}).
+     * @param fits     which tools fit his hut (kind and level).
+     * @param make     the basic tool to make, or null when none may be made.
+     */
+    public static LabourSession forWorkerTool(final Colony colony, final ICitizenData citizen, final LabourBoard board, final LabourClaim claim, final String toolKind,
+      final java.util.function.Predicate<ItemStack> fits, @Nullable final Item make)
+    {
+        final LabourSession session = new LabourSession("worker_tool", colony, citizen, board, claim, toolKind, -1, null);
+        session.toolFits = fits;
+        session.toolMake = make;
+        return session;
+    }
+
+    /**
+     * @return whether he holds the tool the session is for.
+     */
+    private boolean holdsTool()
+    {
+        if (toolFits == null)
+        {
+            return DirectedOrders.carries(citizen, toolKind);
+        }
+        final var inventory = citizen.getInventory();
+        for (int slot = 0; slot < inventory.getSlots(); slot++)
+        {
+            if (toolFits.test(inventory.getStackInSlot(slot)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return whether an employed worker helping out holds the session (round 3 agency).
+     */
+    public boolean byWorker()
+    {
+        return claim.byWorker();
     }
 
     /**
@@ -227,6 +280,14 @@ public final class LabourSession implements IIdleTaskSession
     public boolean isEnded()
     {
         return ended;
+    }
+
+    /**
+     * @return whether the session is taking something out of a warehouse now.
+     */
+    public boolean withdrawing()
+    {
+        return phase == Phase.WITHDRAW;
     }
 
     /**
@@ -308,6 +369,15 @@ public final class LabourSession implements IIdleTaskSession
         if (claim.source() == LabourClaim.Source.SELF)
         {
             return Component.translatable("com.minecolonies.coremod.labour.task.builder", claim.amount(), what);
+        }
+        if (claim.source() == LabourClaim.Source.TOOL)
+        {
+            return Component.translatable(phase == Phase.WITHDRAW ? "com.minecolonies.coremod.labour.task.toolfetch" : "com.minecolonies.coremod.labour.task.toolmake", what);
+        }
+        if (claim.byWorker())
+        {
+            // round 3 agency: the worker's hut has nothing for now, so he helps a hut that asked
+            return Component.translatable("com.minecolonies.coremod.labour.task.worker", Component.translatable(key, claim.amount(), what));
         }
         return Component.translatable(key, claim.amount(), what);
     }
@@ -445,7 +515,8 @@ public final class LabourSession implements IIdleTaskSession
     public void tick()
     {
         final AbstractEntityCitizen worker = citizen.getEntity().orElse(null);
-        if (worker == null || worker.level().isClientSide() || ended || (claim.source() != LabourClaim.Source.SELF && citizen.getJob() != null)
+        if (worker == null || worker.level().isClientSide() || ended
+              || (claim.source() != LabourClaim.Source.SELF && claim.source() != LabourClaim.Source.TOOL && !claim.byWorker() && citizen.getJob() != null)
               || !(worker.level() instanceof ServerLevel level))
         {
             return;
@@ -557,7 +628,7 @@ public final class LabourSession implements IIdleTaskSession
      */
     private void thinkTool(final long now)
     {
-        if (DirectedOrders.carries(citizen, toolKind))
+        if (holdsTool())
         {
             end(true);
             return;
@@ -567,13 +638,21 @@ public final class LabourSession implements IIdleTaskSession
             end(false);
             return;
         }
-        final Item stocked = stockedTool(board, toolKind);
+        final Item stocked = toolFits != null ? stockedTool(board, toolFits) : stockedTool(board, toolKind);
         if (stocked != null)
         {
             perform(new LabourPlanner.Withdraw<>(stocked, 1), now);
             return;
         }
-        final LabourPlanner.Result<Item> result = LabourPlanner.next(toolEnv(colony, board, orderId, area), LabourRules.toolItem(toolKind), 1, inventoryOf(citizen));
+        if (toolFits != null && toolMake == null)
+        {
+            lastWhy = LabourPlanner.Why.NO_RECIPE;
+            end(false);
+            return;
+        }
+        final LabourPlanner.Result<Item> result = toolFits != null
+                                                    ? LabourPlanner.next(LabourPlanner.fromStock(new LabourEnv(colony, board, true)), toolMake, 1, inventoryOf(citizen))
+                                                    : LabourPlanner.next(toolEnv(colony, board, orderId, area), LabourRules.toolItem(toolKind), 1, inventoryOf(citizen));
         if (result instanceof LabourPlanner.Done<Item>)
         {
             end(true);
@@ -594,6 +673,16 @@ public final class LabourSession implements IIdleTaskSession
     @Nullable
     public static Item stockedTool(final LabourBoard board, final String toolKind)
     {
+        return stockedTool(board, stack -> LabourRules.isTool(toolKind, stack.getItem()));
+    }
+
+    /**
+     * @param fits which tools are wanted.
+     * @return the item of a wanted tool that lies in a warehouse free of reservations, or null.
+     */
+    @Nullable
+    public static Item stockedTool(final LabourBoard board, final java.util.function.Predicate<ItemStack> fits)
+    {
         final ReservationLedger ledger = RsAccess.ledger(board.colony().getRequestManager());
         for (final IWareHouse wareHouse : board.sites().warehouses())
         {
@@ -601,7 +690,7 @@ public final class LabourSession implements IIdleTaskSession
             for (int slot = 0; handler != null && slot < handler.getSlots(); slot++)
             {
                 final ItemStack stack = handler.getStackInSlot(slot);
-                if (stack.isEmpty() || !LabourRules.isTool(toolKind, stack.getItem()))
+                if (stack.isEmpty() || !fits.test(stack))
                 {
                     continue;
                 }
@@ -1315,7 +1404,7 @@ public final class LabourSession implements IIdleTaskSession
 
     private void withdraw(final AbstractEntityCitizen worker, final long now)
     {
-        if (toolKind != null && DirectedOrders.carries(citizen, toolKind))
+        if (toolKind != null && holdsTool())
         {
             end(true);
             return;
@@ -1755,8 +1844,10 @@ public final class LabourSession implements IIdleTaskSession
             final ItemStack stack = inventory.getStackInSlot(slot);
             if (!stack.isEmpty() && (LabourRules.craftable(stack.getItem()) || LabourRules.looseItem(stack) || LabourRules.stripResult(stack.getItem()) || claim.accepts(stack)
                                        || LabourRules.smeltable(stack.getItem(), com.minecolonies.api.colony.labour.LabourModes.SmeltMode.IRON) || LabourRules.shaftFind(stack))
-                  && !LabourRules.isTool("pickaxe", stack.getItem()) && !LabourRules.isTool("axe", stack.getItem()) && !LabourRules.isTool("shovel", stack.getItem()))
+                  && !LabourRules.isTool("pickaxe", stack.getItem()) && !LabourRules.isTool("axe", stack.getItem()) && !LabourRules.isTool("shovel", stack.getItem())
+                  && !(claim.byWorker() && stack.isDamageableItem()))
             {
+                // (a worker helping out keeps his own equipment, a hoe or a rod included)
                 surplus.add(stack);
             }
         }

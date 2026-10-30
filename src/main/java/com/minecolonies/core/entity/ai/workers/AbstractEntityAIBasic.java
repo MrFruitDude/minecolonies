@@ -253,6 +253,11 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
           new AIEventTarget(AIBlockingEventType.STATE_BLOCKING, this::inventoryNeedsDump, INVENTORY_FULL, 100),
           new AITarget(INVENTORY_FULL, this::dumpInventory, 20),
           /*
+           * Round 3 agency: a worker who waited too long for a basic tool gets it himself (before he goes back to waiting for items).
+           */
+          new AIEventTarget(AIBlockingEventType.AI_BLOCKING, this::wantsToolSelfHelp, ToolSelfHelpState.TOOL_SELF_HELP, 40),
+          new AITarget(ToolSelfHelpState.TOOL_SELF_HELP, this::toolSelfHelpStep, 10),
+          /*
             Check if any items are needed.
             If yes, transition to NEEDS_ITEM.
             and wait for new items.
@@ -294,7 +299,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
      */
     protected boolean checkIfNeedsItem()
     {
-        return getState() != INVENTORY_FULL &&
+        return getState() != INVENTORY_FULL && toolSession == null && !toolHelpPending &&
                  (this.building.hasOpenSyncRequest(worker.getCitizenData())
                     || this.building.hasCitizenCompletedRequestsToPickup(worker.getCitizenData()));
     }
@@ -1701,11 +1706,366 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
                 final Tool request = new Tool(toolType, minimalLevel, building.getMaxEquipmentLevel() < minimalLevel ? minimalLevel : building.getMaxEquipmentLevel());
                 worker.getCitizenData().createRequest(request);
             }
+            noteToolWait(toolType, minimalLevel);
             delay = 0;
             return true;
         }
 
+        toolWaits.remove(toolType);
         return false;
+    }
+
+    // ------------------------------------------------------------------ round 3 agency: a worker gets his own basic tool
+
+    /**
+     * What a worker says while he fetches his tool from the colony's storage himself.
+     */
+    public static final String TOOL_FETCH_NOTICE = "com.minecolonies.coremod.entity.citizen.toolfetch";
+
+    /**
+     * What a worker says while he makes a simple tool from the colony's materials.
+     */
+    public static final String TOOL_MAKE_NOTICE = "com.minecolonies.coremod.entity.citizen.toolmake";
+
+    /**
+     * What a worker says when storage has no tool for him and no materials to make one.
+     */
+    public static final String TOOL_NONE_NOTICE = "com.minecolonies.coremod.entity.citizen.toolnone";
+
+    /**
+     * How long a worker waits for a basic tool before he gets it himself: one minute.
+     */
+    public static final long TOOL_WAIT_TICKS = 1200L;
+
+    /**
+     * After an attempt that found nothing, how long before he tries again: five minutes.
+     */
+    public static final long TOOL_RETRY_TICKS = 6000L;
+
+    private static volatile Long toolWaitOverride;
+
+    /**
+     * Only for tests: how long a worker waits for a tool before he gets it himself (null: {@link #TOOL_WAIT_TICKS}).
+     */
+    public static void overrideToolWaitForTests(@Nullable final Long ticks)
+    {
+        toolWaitOverride = ticks;
+    }
+
+    private static long toolWaitTicks()
+    {
+        final Long override = toolWaitOverride;
+        return override != null ? Math.max(0L, override) : TOOL_WAIT_TICKS;
+    }
+
+    /**
+     * What the worker does about a missing tool: nothing yet, fetches it, makes it, or found neither a tool nor the materials (until his next try).
+     */
+    public enum ToolSelfHelp
+    {
+        NONE,
+        FETCH,
+        MAKE,
+        NOTHING
+    }
+
+    /**
+     * The tools he waits for, with since when (game time) and the lowest level he asked for.
+     */
+    private final java.util.Map<EquipmentTypeEntry, long[]> toolWaits = new java.util.HashMap<>();
+
+    @Nullable
+    private com.minecolonies.core.colony.labour.LabourSession toolSession;
+    @Nullable
+    private EquipmentTypeEntry toolHelpType;
+    private int              toolHelpMin;
+    private boolean          toolHelpPending;
+    private long             toolHelpRetryAt = Long.MIN_VALUE;
+    private ToolSelfHelp     toolSelfHelp    = ToolSelfHelp.NONE;
+
+    private void noteToolWait(final EquipmentTypeEntry toolType, final int minimalLevel)
+    {
+        final long[] wait = toolWaits.get(toolType);
+        if (wait == null || wait[1] != minimalLevel)
+        {
+            toolWaits.put(toolType, new long[] {world.getGameTime(), minimalLevel});
+        }
+    }
+
+    /**
+     * @return what the worker does about a missing tool now (read by the interaction validators and the views).
+     */
+    public ToolSelfHelp toolSelfHelp()
+    {
+        if (toolSelfHelp == ToolSelfHelp.NOTHING && (world.getGameTime() >= toolHelpRetryAt || toolWaits.isEmpty()))
+        {
+            return ToolSelfHelp.NONE;
+        }
+        return toolSelfHelp;
+    }
+
+    /**
+     * @param toolType a tool type.
+     * @return the labour kind of the tool type ({@code axe}, {@code pickaxe}, {@code shovel}, {@code hoe}), or null when labour cannot get one.
+     */
+    @Nullable
+    public static String labourToolKind(final EquipmentTypeEntry toolType)
+    {
+        if (toolType == ModEquipmentTypes.axe.get())
+        {
+            return "axe";
+        }
+        if (toolType == ModEquipmentTypes.pickaxe.get())
+        {
+            return "pickaxe";
+        }
+        if (toolType == ModEquipmentTypes.shovel.get())
+        {
+            return "shovel";
+        }
+        if (toolType == ModEquipmentTypes.hoe.get())
+        {
+            return "hoe";
+        }
+        return null;
+    }
+
+    /**
+     * @return the cheapest basic tool (wood, then stone) labour may make that fits the type and the hut's levels, or null.
+     */
+    @Nullable
+    private Item basicToolFor(final EquipmentTypeEntry toolType, final int minimalLevel)
+    {
+        final String kind = labourToolKind(toolType);
+        if (kind == null)
+        {
+            return null;
+        }
+        final Item[] candidates = switch (kind)
+        {
+            case "axe" -> new Item[] {net.minecraft.world.item.Items.WOODEN_AXE, net.minecraft.world.item.Items.STONE_AXE};
+            case "shovel" -> new Item[] {net.minecraft.world.item.Items.WOODEN_SHOVEL, net.minecraft.world.item.Items.STONE_SHOVEL};
+            case "hoe" -> new Item[] {net.minecraft.world.item.Items.WOODEN_HOE, net.minecraft.world.item.Items.STONE_HOE};
+            default -> new Item[] {net.minecraft.world.item.Items.WOODEN_PICKAXE, net.minecraft.world.item.Items.STONE_PICKAXE};
+        };
+        for (final Item item : candidates)
+        {
+            if (com.minecolonies.core.colony.labour.LabourRules.craftable(item)
+                  && ItemStackUtils.hasEquipmentLevel(new ItemStack(item), toolType, minimalLevel, building.getMaxEquipmentLevel()))
+            {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private Predicate<ItemStack> fitsHut(final EquipmentTypeEntry toolType, final int minimalLevel)
+    {
+        final int max = building.getMaxEquipmentLevel();
+        return stack -> ItemStackUtils.hasEquipmentLevel(stack, toolType, minimalLevel, max);
+    }
+
+    /**
+     * @return whether a colony has a courier who could bring the tool.
+     */
+    private static boolean hasCourier(final IColony colony)
+    {
+        for (final ICitizenData citizen : colony.getCitizenManager().getCitizens())
+        {
+            if (citizen.getJob() instanceof JobDeliveryman)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return whether nobody is going to bring the worker a tool of the type: his request for it waits at the player or the retrying resolver (no building serves it),
+     *   or the colony has no courier to bring what a building holds for it. False while a tool for him lies in his hut to be picked up.
+     */
+    private boolean toolUnserved(final com.minecolonies.core.colony.Colony colony, final EquipmentTypeEntry toolType)
+    {
+        if (!building.getCompletedRequestsOfTypeFiltered(worker.getCitizenData(), TypeToken.of(Tool.class), r -> r.getRequest().getEquipmentType().equals(toolType)).isEmpty())
+        {
+            return false;
+        }
+        final boolean courier = hasCourier(colony);
+        for (final IRequest<? extends Tool> request : building.getOpenRequestsOfTypeFiltered(worker.getCitizenData(), TypeToken.of(Tool.class),
+          r -> r.getRequest().getEquipmentType().equals(toolType)))
+        {
+            if (courier && !colony.getLabourBoard().stillWaiting(request.getId()))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Whether the worker has waited long enough for a basic tool that nobody brings him (checked every 40 ticks): then he gets it himself. Also ends a tool session
+     * that another state of his AI interrupted.
+     */
+    private boolean wantsToolSelfHelp()
+    {
+        if (toolSession != null || toolHelpPending)
+        {
+            if (getState() != ToolSelfHelpState.TOOL_SELF_HELP)
+            {
+                // something else of his AI took over (an inventory dump, a restart): the session ends without blame, he tries again later
+                endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.NEEDS, false, false);
+            }
+            return false;
+        }
+        if (toolWaits.isEmpty() || worker.getCitizenData() == null || !(building.getColony() instanceof com.minecolonies.core.colony.Colony colony)
+              || !com.minecolonies.core.colony.idle.IdleCitizenSettings.workersHelp(colony) || !com.minecolonies.core.colony.labour.LabourSettings.worldEnabled()
+              || !(world instanceof ServerLevel level) || !com.minecolonies.core.colony.labour.LabourSites.simulated(level, worker.blockPosition()))
+        {
+            return false;
+        }
+        final long now = world.getGameTime();
+        if (now < toolHelpRetryAt)
+        {
+            return false;
+        }
+        for (final java.util.Map.Entry<EquipmentTypeEntry, long[]> wait : new ArrayList<>(toolWaits.entrySet()))
+        {
+            final EquipmentTypeEntry type = wait.getKey();
+            final int min = (int) wait.getValue()[1];
+            if (InventoryUtils.isEquipmentInItemHandler(worker.getInventoryCitizen(), type, min, building.getMaxEquipmentLevel()))
+            {
+                toolWaits.remove(type);
+                continue;
+            }
+            if (now - wait.getValue()[0] >= toolWaitTicks() && labourToolKind(type) != null && toolUnserved(colony, type))
+            {
+                toolHelpType = type;
+                toolHelpMin = min;
+                toolHelpPending = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * One step of getting the tool: the first step makes the claim and starts the labour tool session (storage first, else made from storage), then the session runs
+     * until he holds a fitting tool or it cannot go on.
+     */
+    private IAIState toolSelfHelpStep()
+    {
+        if (!(building.getColony() instanceof com.minecolonies.core.colony.Colony colony) || toolHelpType == null || worker.getCitizenData() == null)
+        {
+            endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, false);
+            return IDLE;
+        }
+        final var board = colony.getLabourBoard();
+        if (toolSession == null)
+        {
+            toolHelpPending = false;
+            final String kind = labourToolKind(toolHelpType);
+            final Predicate<ItemStack> fits = fitsHut(toolHelpType, toolHelpMin);
+            final Item make = basicToolFor(toolHelpType, toolHelpMin);
+            final boolean courier = hasCourier(colony);
+            if (!courier)
+            {
+                // (no courier: what a warehouse holds for his request would never come; the request goes, so its reservation frees the tool for him)
+                cancelToolRequests(toolHelpType);
+            }
+            final Item stocked = com.minecolonies.core.colony.labour.LabourSession.stockedTool(board, fits);
+            final var claim = board.claimForTool(worker.getCitizenData(), stocked != null ? stocked : make != null ? make : net.minecraft.world.item.Items.WOODEN_PICKAXE);
+            if (kind == null || claim == null || (stocked == null && make == null))
+            {
+                if (claim != null)
+                {
+                    board.release(claim, false, false);
+                }
+                endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, false, true);
+                return IDLE;
+            }
+            toolSession = com.minecolonies.core.colony.labour.LabourSession.forWorkerTool(colony, worker.getCitizenData(), board, claim, kind, fits, make);
+            toolSelfHelp = stocked != null ? ToolSelfHelp.FETCH : ToolSelfHelp.MAKE;
+            worker.getCitizenData().setJobStatus(JobStatus.WORKING);
+            worker.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(stocked != null ? TOOL_FETCH_NOTICE : TOOL_MAKE_NOTICE),
+              ChatPriority.CHITCHAT));
+            Log.getLogger().info("{} stops waiting for a {} and acts: {}", worker.getName().getString(), kind, toolSelfHelp);
+        }
+        if (!board.alive(toolSession.claim()))
+        {
+            endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.NEEDS, false, false);
+            return IDLE;
+        }
+        toolSession.tick();
+        if (toolSession.isEnded())
+        {
+            final boolean got = InventoryUtils.isEquipmentInItemHandler(worker.getInventoryCitizen(), toolHelpType, toolHelpMin, building.getMaxEquipmentLevel());
+            endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.TASK_INVALID, got, !got);
+            return IDLE;
+        }
+        return ToolSelfHelpState.TOOL_SELF_HELP;
+    }
+
+    private void cancelToolRequests(final EquipmentTypeEntry toolType)
+    {
+        for (final IRequest<? extends Tool> request : building.getOpenRequestsOfTypeFiltered(worker.getCitizenData(), TypeToken.of(Tool.class),
+          r -> r.getRequest().getEquipmentType().equals(toolType)))
+        {
+            worker.getCitizenColonyHandler().getColonyOrRegister().getRequestManager().updateRequestState(request.getId(), RequestState.CANCELLED);
+        }
+    }
+
+    /**
+     * Ends the tool help.
+     *
+     * @param reason  why (for the session).
+     * @param got     whether he holds a fitting tool now: his open requests for it go, his wait ends.
+     * @param nothing whether he found neither a tool nor the materials: he says so and tries again after {@link #TOOL_RETRY_TICKS}.
+     */
+    private void endToolSelfHelp(final com.minecolonies.api.colony.idle.IdleStopReason reason, final boolean got, final boolean nothing)
+    {
+        if (toolSession != null)
+        {
+            toolSession.stop(reason);
+            toolSession = null;
+        }
+        toolHelpPending = false;
+        if (got && toolHelpType != null)
+        {
+            cancelToolRequests(toolHelpType);
+            toolWaits.remove(toolHelpType);
+        }
+        toolSelfHelp = ToolSelfHelp.NONE;
+        if (nothing)
+        {
+            toolHelpRetryAt = world.getGameTime() + TOOL_RETRY_TICKS;
+            toolSelfHelp = ToolSelfHelp.NOTHING;
+            if (worker.getCitizenData() != null)
+            {
+                worker.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(TOOL_NONE_NOTICE), ChatPriority.PENDING));
+            }
+        }
+        toolHelpType = got ? null : toolHelpType;
+    }
+
+    /**
+     * @return whether a tool help session runs now (tests and views).
+     */
+    public boolean isGettingOwnTool()
+    {
+        return toolSession != null;
+    }
+
+    /**
+     * Back from a meal, sleep or sickness (the citizen AI resets the job's AI): a tool session that was under way ends without blame.
+     */
+    @Override
+    public void resetAI()
+    {
+        if (toolSession != null || toolHelpPending)
+        {
+            endToolSelfHelp(com.minecolonies.api.colony.idle.IdleStopReason.NEEDS, false, false);
+        }
+        super.resetAI();
     }
 
     /**
@@ -2824,7 +3184,7 @@ public abstract class AbstractEntityAIBasic<J extends AbstractJob<?, J>, B exten
      */
     public boolean canTakeLeisure()
     {
-        return canBeInterrupted();
+        return toolSession == null && canBeInterrupted();
     }
 
     /**

@@ -122,6 +122,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerLabour(event);
             }
+            if (only.contains("agency"))
+            {
+                // round 3 agency: one rain rule, workers who help out, workers who get their own basic tool
+                registerAgency(event);
+            }
             if (only.contains("directed"))
             {
                 registerDirected(event);
@@ -1367,6 +1372,26 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 continue;
             }
             final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = DirectedLabourGameTests.test(name);
+            event.registerTest(
+              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+              info -> new MinecoloniesGameTestInstance(info, test),
+              longIsolatedColonyData(event, name, 20_000));
+        }
+    }
+
+    /**
+     * Round 3 agency (AgencyGameTests): one rain rule, workers who help out and go back, workers who get their own basic tool. Run on their own with
+     * {@code MINECOLONIES_GAMETEST_ONLY=agency}.
+     */
+    private void registerAgency(final RegisterGameTestsEvent event)
+    {
+        for (final String name : AgencyGameTests.NAMES)
+        {
+            if (skipped(name))
+            {
+                continue;
+            }
+            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = AgencyGameTests.test(name);
             event.registerTest(
               Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
               info -> new MinecoloniesGameTestInstance(info, test),

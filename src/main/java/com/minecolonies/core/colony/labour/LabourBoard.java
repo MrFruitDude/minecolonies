@@ -335,7 +335,8 @@ public final class LabourBoard
         int n = 0;
         for (final LabourClaim claim : byCitizen.values())
         {
-            if (claim.source() == source)
+            // (a worker helping out does not take a jobless labourer's place: workers have their own cap, see workerCapReached)
+            if (claim.source() == source && !claim.byWorker())
             {
                 n++;
             }
@@ -898,6 +899,123 @@ public final class LabourBoard
         }
         noOffer.put(offerKey, now + NO_OFFER_WAIT);
         return null;
+    }
+
+    /**
+     * How far from his own hut a worker helps out: a hut that asked within this many blocks.
+     */
+    public static final int WORKER_HELP_RANGE = 64;
+
+    /**
+     * Round 3 agency: offers an employed worker who has nothing to do at his hut a request of another hut nearby that no building serves (the stock goals stay with the
+     * jobless). The same rules as for a labourer (his own colony's requests only, the claims per request, the back-off), and: never a request of his own hut (that is
+     * his own work), never one for something he carries (his own tools), at most one worker per hut at once, and all labour claims together stay under the colony's
+     * labour cap.
+     *
+     * @param worker     the worker (see {@link com.minecolonies.core.colony.idle.WorkerHelp}).
+     * @param urgentOnly only requests a worker is blocked on (a builder's).
+     * @return the claim, or null for nothing.
+     */
+    @Nullable
+    public LabourClaim offerToWorker(final ICitizenData worker, final boolean urgentOnly)
+    {
+        final var hut = worker.getWorkBuilding();
+        if (!LabourSettings.enabled(colony) || worker.getJob() == null || hut == null || worker.getColony() == null || worker.getColony().getID() != colony.getID()
+              || byCitizen.containsKey(worker.getId()) || directed.orderOf(worker.getId()) != null)
+        {
+            return null;
+        }
+        final int offerKey = worker.getId() * 4 + (urgentOnly ? 0 : 1);
+        final long now = now();
+        if (now < cooldown.getOrDefault(worker.getId(), 0L) || now < noOffer.getOrDefault(offerKey, 0L) || workerCapReached(hut.getID()))
+        {
+            return null;
+        }
+        final Map<Item, Integer> inventory = LabourSession.inventoryOf(worker);
+        final LabourEnv env = new LabourEnv(colony, this, true);
+        final long range = (long) WORKER_HELP_RANGE * WORKER_HELP_RANGE;
+        int tries = 0;
+        for (final Candidate candidate : candidates())
+        {
+            if ((urgentOnly && candidate.importance() != RequestImportance.URGENT) || candidate.importance() == RequestImportance.BACKGROUND
+                  || candidate.hut().equals(hut.getID()) || candidate.hut().distSqr(hut.getID()) > range)
+            {
+                continue;
+            }
+            if (now < notBefore.getOrDefault(candidate.token(), 0L) || claimsOn(candidate.token()) >= LabourSettings.perRequest(colony) || !stillWaiting(candidate.token()))
+            {
+                continue;
+            }
+            boolean his = false;
+            for (final Item target : candidate.targets())
+            {
+                his |= inventory.getOrDefault(target, 0) > 0;
+            }
+            if (his)
+            {
+                continue;
+            }
+            if (tries++ >= 4)
+            {
+                break;
+            }
+            final LabourClaim claim = tryClaim(worker, candidate, LabourClaim.Source.REQUEST, env, inventory, now);
+            if (claim != null)
+            {
+                claim.markWorker();
+                return claim;
+            }
+        }
+        noOffer.put(offerKey, now + NO_OFFER_WAIT);
+        return null;
+    }
+
+    /**
+     * @param hut the hut of a worker.
+     * @return whether no other worker may help now: one of the hut's workers helps already, or the colony's labour claims fill its labour cap.
+     */
+    private boolean workerCapReached(final BlockPos hut)
+    {
+        int all = 0;
+        for (final LabourClaim claim : byCitizen.values())
+        {
+            if (claim.source() == LabourClaim.Source.TOOL || claim.source() == LabourClaim.Source.SELF)
+            {
+                continue;
+            }
+            all++;
+            if (claim.byWorker())
+            {
+                final ICitizenData other = colony.getCitizenManager().getCivilian(claim.citizenId());
+                if (other != null && other.getWorkBuilding() != null && hut.equals(other.getWorkBuilding().getID()))
+                {
+                    return true;
+                }
+            }
+        }
+        return all >= LabourSettings.total(colony);
+    }
+
+    /**
+     * Round 3 agency: a claim for a worker who waits for a basic tool and gets it himself ({@link LabourSession#forWorkerTool}). It serves no request (the worker's own
+     * tool request is withdrawn by his AI) and holds no ledger entry until he takes something out of a warehouse.
+     *
+     * @param worker the worker.
+     * @param tool   the tool he will hold (the item shown for the claim).
+     * @return the claim, or null when he holds one already.
+     */
+    @Nullable
+    public LabourClaim claimForTool(final ICitizenData worker, final Item tool)
+    {
+        final var hut = worker.getWorkBuilding();
+        if (byCitizen.containsKey(worker.getId()) || hut == null || worker.getColony() == null || worker.getColony().getID() != colony.getID())
+        {
+            return null;
+        }
+        final long now = now();
+        final LabourClaim claim = new LabourClaim(LabourClaim.Source.TOOL, null, null, worker.getId(), tool, 1, hut.getID(), now, now + LabourSettings.leaseTicks());
+        register(claim);
+        return claim;
     }
 
     /**

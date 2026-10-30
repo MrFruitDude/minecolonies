@@ -9,6 +9,7 @@ import com.minecolonies.core.colony.buildings.workerbuildings.BuildingTownHall;
  * <ul>
  *   <li>the colony setting {@link BuildingTownHall#IDLE_HELPERS} (town hall, default on) switches it all off for one colony;</li>
  *   <li>the colony setting {@link BuildingTownHall#IDLE_HELPERS_PER_BUILDER} (default 2) is the most idle citizens that help one builder;</li>
+ *   <li>the colony setting {@link BuildingTownHall#WORKERS_HELP} (default on): workers with nothing to do help out, workers without a basic tool get one themselves;</li>
  *   <li>the server config {@code builders.collaborationIdleHelperSpeed} (default 0.6) is the pace of an idle helper compared with the builder he helps.</li>
  * </ul>
  * Game tests override them.
@@ -112,6 +113,38 @@ public final class IdleCitizenSettings
         catch (final RuntimeException | NoClassDefFoundError e)
         {
             return DEFAULT_HELPER_SPEED;
+        }
+    }
+
+    private static volatile Boolean workersHelpOverride;
+
+    /**
+     * Only for tests: overrides the colony setting {@link BuildingTownHall#WORKERS_HELP}. Null goes back to it.
+     */
+    public static void overrideWorkersHelpForTests(final Boolean on)
+    {
+        workersHelpOverride = on;
+    }
+
+    /**
+     * @param colony the colony.
+     * @return whether the colony's workers help themselves and others: a worker without work at his hut takes a nearby labour job, a worker without a basic tool gets
+     *   one from storage or makes it (the colony setting {@link BuildingTownHall#WORKERS_HELP}, default on).
+     */
+    public static boolean workersHelp(final IColony colony)
+    {
+        final Boolean override = workersHelpOverride;
+        if (override != null)
+        {
+            return override;
+        }
+        try
+        {
+            return colony.getSettings().getSetting(BuildingTownHall.WORKERS_HELP).getValue();
+        }
+        catch (final RuntimeException e)
+        {
+            return true;
         }
     }
 

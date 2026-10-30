@@ -1,5 +1,9 @@
 package com.minecolonies.core.entity.ai.workers;
 
+import com.minecolonies.api.colony.IColony;
+import com.minecolonies.core.colony.idle.WorkerHelp;
+import com.minecolonies.api.colony.buildings.IBuilding;
+import org.jetbrains.annotations.Nullable;
 import com.minecolonies.api.colony.buildings.ModBuildings;
 import com.minecolonies.api.colony.interactionhandling.ChatPriority;
 import com.minecolonies.api.colony.jobs.ModJobs;
@@ -312,9 +316,15 @@ public class CitizenAI implements IStateAI
             return CitizenAIState.IDLE;
         }
 
-        // An unemployed citizen with a task of the idle citizen arbiter (after the needs above: they end it)
-        if (citizen.getCitizenJobHandler().getColonyJob() == null && IdleCitizenArbiter.hasSession(citizen.getCitizenData()))
+        // An unemployed citizen with a task of the idle citizen arbiter (after the needs above: they end it), or a worker helping out while his hut has nothing for
+        // him (round 3 agency; the arbiter ends it when his own work is back)
+        if ((citizen.getCitizenJobHandler().getColonyJob() == null && IdleCitizenArbiter.hasSession(citizen.getCitizenData()))
+              || WorkerHelp.isHelping(citizen.getCitizenData()))
         {
+            if (lastState != CitizenAIState.LABOUR && citizen.getCitizenJobHandler().getColonyJob() != null)
+            {
+                citizen.getCitizenData().triggerInteraction(new StandardInteraction(Component.translatableEscape(WorkerHelp.HELPING_NOTICE), ChatPriority.CHITCHAT));
+            }
             want(WORKING);
             return CitizenAIState.LABOUR;
         }
@@ -502,23 +512,33 @@ public class CitizenAI implements IStateAI
      */
     private boolean shouldWorkWhileRaining()
     {
+        final ICitizenColonyHandler colonyHandler = citizen.getCitizenColonyHandler();
+        return worksInRain(colonyHandler.getColonyOrRegister(), colonyHandler.getWorkBuilding());
+    }
+
+    /**
+     * The one rain rule of the colony (R2-F3): a citizen keeps working in the rain when the server says so, when the colony has the rain research, or when his hut
+     * allows it. The idle citizen arbiter asks the same question, so the jobless and the workers stop for the same rain.
+     *
+     * @param colony       the colony.
+     * @param workBuilding the citizen's hut, null for a citizen without a job.
+     * @return true if the rain does not stop him.
+     */
+    public static boolean worksInRain(final IColony colony, @Nullable final IBuilding workBuilding)
+    {
         if (MineColonies.getConfig().getServer().workersAlwaysWorkInRain.get())
         {
             return true;
         }
 
-        final ICitizenColonyHandler colonyHandler = citizen.getCitizenColonyHandler();
-        if (colonyHandler.getColonyOrRegister().getResearchManager().getResearchEffects().getEffectStrength(WORKING_IN_RAIN) > 0)
+        if (colony.getResearchManager().getResearchEffects().getEffectStrength(WORKING_IN_RAIN) > 0)
         {
             return true;
         }
 
-        if (colonyHandler.getWorkBuilding() != null)
+        if (workBuilding != null && workBuilding.hasModule(WorkerBuildingModule.class))
         {
-            if (colonyHandler.getWorkBuilding().hasModule(WorkerBuildingModule.class))
-            {
-                return colonyHandler.getWorkBuilding().getFirstModuleOccurance(WorkerBuildingModule.class).canWorkDuringTheRain();
-            }
+            return workBuilding.getFirstModuleOccurance(WorkerBuildingModule.class).canWorkDuringTheRain();
         }
         return false;
     }

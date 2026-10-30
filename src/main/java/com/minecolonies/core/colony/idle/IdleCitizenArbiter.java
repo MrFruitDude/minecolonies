@@ -13,6 +13,7 @@ import com.minecolonies.api.util.WorldUtil;
 import com.minecolonies.core.colony.Colony;
 import com.minecolonies.core.entity.ai.idle.BuilderHelperTask;
 import com.minecolonies.core.entity.ai.minimal.EntityAIEatTask;
+import com.minecolonies.core.entity.ai.workers.CitizenAI;
 import com.minecolonies.core.entity.ai.workers.util.WorkerSettings;
 import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
@@ -28,8 +29,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * <p>
  * The lifecycle shared by every task, once a second per colony ({@link #tick}):
  * <ul>
- *   <li>a citizen is free when he has no job, is an adult with a loaded entity, is awake, not sick or hurt, not mourning, not hungry, it does not rain and the work hours
- *   are not over ({@link #isFree});</li>
+ *   <li>a citizen is free when he has no job (or, round 3, his hut has had nothing for him for a while: {@link WorkerHelp}), is an adult with a loaded entity, is awake,
+ *   not sick or hurt, not mourning, not hungry, no raider is near him and the rain does not stop the workers either (one rule for all, R2-F3), and the work hours are
+ *   not over ({@link #isFree});</li>
  *   <li>a free citizen without a task is offered to the tasks; the first that has something gets him, the citizen AI ({@code CitizenAI}) then runs his
  *   {@link IIdleTaskSession#tick()} in the {@link CitizenAIState#LABOUR} state;</li>
  *   <li>a citizen leaves his task when he gets a job, the work hours end, he has needs (the citizen AI moves him to sleep, food or care: see
@@ -142,7 +144,19 @@ public final class IdleCitizenArbiter
     public static boolean isFree(final IColony colony, final ICitizenData citizen)
     {
         final Level level = colony.getWorld();
-        if (level == null || citizen.getJob() != null || citizen.isChild() || citizen.isPaused() || citizen.isAsleep() || !workHours(level))
+        if (level == null || citizen.isChild())
+        {
+            return false;
+        }
+        if (citizen.getJob() != null)
+        {
+            // round 3 agency: a worker whose hut has had nothing for him for a while may help out (WorkerHelp keeps the clock)
+            if (!(colony instanceof Colony c) || !WorkerHelp.mayHelp(colony, citizen, c.getIdleCitizens(), level.getGameTime()))
+            {
+                return false;
+            }
+        }
+        if (citizen.isPaused() || citizen.isAsleep() || !workHours(level))
         {
             return false;
         }
@@ -152,11 +166,37 @@ public final class IdleCitizenArbiter
             return false;
         }
         if (citizen.getCitizenDiseaseHandler().isSick() || citizen.getCitizenDiseaseHandler().isHurt() || citizen.getCitizenMournHandler().isMourning()
-              || colony.getRaiderManager().isRaided() || citizen.getSaturation() <= EntityAIEatTask.RESTAURANT_LIMIT)
+              || citizen.getSaturation() <= EntityAIEatTask.RESTAURANT_LIMIT)
         {
             return false;
         }
-        return !(level.isRaining() && !WorldUtil.isNetherType(level));
+        return !stoppedByRaid(colony, entity) && !stoppedByRain(colony, citizen);
+    }
+
+    /**
+     * R2-F3: the raid rule of the citizen AI (D3): only a citizen near a raider stops; the rest of the colony goes on.
+     *
+     * @param colony the colony.
+     * @param entity the citizen.
+     * @return true while the colony is raided and a raider is within {@link CitizenAI#RAID_HIDE_RANGE} blocks of him.
+     */
+    public static boolean stoppedByRaid(final IColony colony, final AbstractEntityCitizen entity)
+    {
+        return colony.getRaiderManager().isRaided() && CitizenAI.raiderWithin(entity, CitizenAI.RAID_HIDE_RANGE);
+    }
+
+    /**
+     * R2-F3: the rain rule of the workers ({@link CitizenAI#worksInRain}): the rain stops idle work only where it stops the workers (no rain research, no server
+     * setting), so a shower no longer freezes the labour of a colony whose workers carry on.
+     *
+     * @param colony  the colony.
+     * @param citizen the citizen.
+     * @return true while it rains and the rain stops him.
+     */
+    public static boolean stoppedByRain(final IColony colony, final ICitizenData citizen)
+    {
+        final Level level = colony.getWorld();
+        return level != null && level.isRaining() && !WorldUtil.isNetherType(level) && !CitizenAI.worksInRain(colony, citizen.getWorkBuilding());
     }
 
     // ------------------------------------------------------------------ the once a second tick
@@ -201,8 +241,13 @@ public final class IdleCitizenArbiter
             {
                 continue;
             }
+            final boolean worker = citizen.getJob() != null;
             for (final IIdleCitizenTask task : TASKS)
             {
+                if (worker && !task.acceptsWorkers())
+                {
+                    continue;
+                }
                 final IIdleTaskSession session = task.tryStart(colony, citizen);
                 if (session != null)
                 {
@@ -226,7 +271,19 @@ public final class IdleCitizenArbiter
         }
         if (citizen.getJob() != null)
         {
-            return IdleStopReason.GOT_JOB;
+            if (!WorkerHelp.isWorkerSession(entry.session()))
+            {
+                return IdleStopReason.GOT_JOB;
+            }
+            if (!IdleCitizenSettings.workersHelp(colony))
+            {
+                return IdleStopReason.SETTING_OFF;
+            }
+            if (!WorkerHelp.outOfWork(citizen))
+            {
+                // his hut has work for him again: back to it
+                return IdleStopReason.OWN_WORK;
+            }
         }
         if (citizen.isPaused())
         {
@@ -282,7 +339,9 @@ public final class IdleCitizenArbiter
         {
             return;
         }
-        final IdleStopReason reason = citizen.getJob() != null ? IdleStopReason.GOT_JOB : !workHours(colony.getWorld()) ? IdleStopReason.NIGHT : IdleStopReason.NEEDS;
+        final boolean helping = WorkerHelp.isWorkerSession(colony.getIdleCitizens().session(citizen.getId()));
+        final IdleStopReason reason = citizen.getJob() != null && !helping ? IdleStopReason.GOT_JOB
+                                        : !workHours(colony.getWorld()) ? IdleStopReason.NIGHT : IdleStopReason.NEEDS;
         end(colony, citizen.getId(), reason, colony.getWorld().getGameTime());
     }
 

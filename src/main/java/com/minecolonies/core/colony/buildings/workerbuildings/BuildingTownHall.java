@@ -126,6 +126,11 @@ public class BuildingTownHall extends AbstractBuilding implements ITownHall
     public static final ISettingKey<BoolSetting> LABOUR_SELF_SUPPLY = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "labourselfsupply"));
 
     /**
+     * Workers take initiative: one with nothing to do at the hut helps out with labour, one without a basic tool fetches or makes it.
+     */
+    public static final ISettingKey<BoolSetting> WORKERS_HELP = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "workershelp"));
+
+    /**
      * Labourers open stone shafts by themselves when cobblestone is wanted (a spot a manager marks is dug either way).
      */
     public static final ISettingKey<BoolSetting> LABOUR_SHAFTS = new SettingKey<>(BoolSetting.class, Identifier.fromNamespaceAndPath(MOD_ID, "labourshafts"));

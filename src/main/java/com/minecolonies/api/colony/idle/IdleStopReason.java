@@ -28,5 +28,9 @@ public enum IdleStopReason
     /**
      * The citizen is gone from the colony (dead, removed) or his entity is not loaded.
      */
-    CITIZEN_GONE
+    CITIZEN_GONE,
+    /**
+     * A worker who helped out while his hut had nothing for him: his own work is back.
+     */
+    OWN_WORK
 }

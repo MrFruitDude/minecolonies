@@ -378,6 +378,93 @@ public final class LabourPlanner<K>
     }
 
     /**
+     * Round 3 agency, the colony as seen for a worker who makes his own basic tool: only what he holds and what the warehouses hold. Nothing is gathered in the world
+     * (no felling, digging, stripping or loose items), and every good the warehouses hold is taken from there (covered or not); a good a specialist covers and the
+     * warehouses do not hold blocks the plan as before. Without the materials in storage the plan is blocked and nothing is made.
+     *
+     * @param env the colony.
+     * @return the bounded env.
+     */
+    public static <K> Env<K> fromStock(final Env<K> env)
+    {
+        return new Env<>()
+        {
+            @Override
+            public List<Recipe<K>> recipesFor(final K output)
+            {
+                return env.recipesFor(output);
+            }
+
+            @Override
+            public List<GatherDef<K>> gathersOf(final K item)
+            {
+                return env.gathersOf(item);
+            }
+
+            @Override
+            public boolean canGather(final GatherDef<K> gather)
+            {
+                return false;
+            }
+
+            @Override
+            public boolean hasTable()
+            {
+                return env.hasTable();
+            }
+
+            @Override
+            public boolean hasFurnace()
+            {
+                return env.hasFurnace();
+            }
+
+            @Override
+            public boolean covered(final K item)
+            {
+                return env.covered(item) || env.withdrawable(item) > 0;
+            }
+
+            @Override
+            public int withdrawable(final K item)
+            {
+                return env.withdrawable(item);
+            }
+
+            @Override
+            public boolean hasTool(final String tool, final Map<K, Integer> inventory)
+            {
+                return env.hasTool(tool, inventory);
+            }
+
+            @Override
+            @Nullable
+            public K toolItem(final String tool)
+            {
+                return env.toolItem(tool);
+            }
+
+            @Override
+            public List<K> fuels()
+            {
+                return env.fuels();
+            }
+
+            @Override
+            public double smeltsPerFuel(final K fuel)
+            {
+                return env.smeltsPerFuel(fuel);
+            }
+
+            @Override
+            public boolean smeltAllowed(final Recipe<K> recipe)
+            {
+                return env.smeltAllowed(recipe);
+            }
+        };
+    }
+
+    /**
      * The next step toward holding all the inputs, {@code times} over (each group {@code count * times} of any of its alternatives): what a machine recipe outside the
      * planner's own recipes takes (the Architect's Cutter). DONE once everything is held; one item never counts for two groups.
      *
