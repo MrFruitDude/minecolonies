@@ -428,7 +428,11 @@ public final class AliveGameTests
                         return;
                     }
                 }
-                helper.assertTrue(ticks[0] < 2400, "no chat started in 2400 ticks " + log);
+                if (ticks[0] >= 2400)
+                {
+                    helper.fail("no chat started in 2400 ticks " + log + ": " + lifeGates(a) + " / " + lifeGates(b));
+                    return;
+                }
                 helper.runAfterDelay(1, () -> poll[0].run());
             };
             helper.runAfterDelay(1, () -> poll[0].run());
@@ -616,7 +620,7 @@ public final class AliveGameTests
                         if (!spoke[i])
                         {
                             missed.add(c.getCivilianID() + " " + c.getCitizenAI().getState() + " pending '" + c.getLife().pendingLine() + "' says '" + c.getSpeech()
-                                         + "' asleep " + c.getCitizenSleepHandler().isAsleep());
+                                         + "' asleep " + c.getCitizenSleepHandler().isAsleep() + " (" + lifeGates(c) + ")");
                         }
                     }
                     helper.fail("only " + count2 + " cheered aloud in " + CHEER_WINDOW + " ticks; not yet: " + missed);
@@ -1783,6 +1787,18 @@ public final class AliveGameTests
     {
         final ServerLevel level = helper.getLevel();
         level.getServer().clockManager().setTotalTicks(level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), ticks);
+    }
+
+    /**
+     * What may keep a citizen from a chat or a line, for a failure message: his state, whether another may start a chat with him, his line, a held line, a
+     * greeting, the rain, grief and mourning.
+     */
+    private static String lifeGates(final EntityCitizen c)
+    {
+        final CitizenLife life = c.getLife();
+        return c.getCivilianID() + " " + c.getCitizenAI().getState() + " joins " + life.canJoinChat() + " chatting " + life.chatting() + " says '" + c.getSpeech()
+                 + "' held " + life.lineHeld() + " greets " + life.greetingActive() + " rain " + c.level().isRaining() + "/" + life.hurriesInRain() + " grief "
+                 + life.grief() + " mourns " + life.mourning();
     }
 
     private static void keepFed(final EntityCitizen... citizens)
