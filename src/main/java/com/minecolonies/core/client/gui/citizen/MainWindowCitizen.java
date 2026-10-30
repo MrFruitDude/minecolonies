@@ -7,6 +7,7 @@ import com.ldtteam.blockui.controls.Text;
 import com.ldtteam.blockui.views.View;
 import com.minecolonies.api.colony.ICitizenDataView;
 import com.minecolonies.api.entity.citizen.Skill;
+import com.minecolonies.api.entity.citizen.VisibleCitizenStatus;
 import com.minecolonies.api.util.constant.Constants;
 import com.minecolonies.core.colony.life.LifeTrait;
 import com.minecolonies.core.network.messages.server.colony.citizen.AdjustSkillCitizenMessage;
@@ -38,18 +39,23 @@ public class MainWindowCitizen extends AbstractWindowCitizen
         super(citizen, Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gui/citizen/main.xml"));
 
         final Image statusIcon = findPaneOfTypeByID(STATUS_ICON, Image.class);
-        if (citizen.getVisibleStatus() == null)
+        // (round 8, R7-F5: a jobless citizen who waits for labour says why, under his status; with no status he shows the idle one)
+        final Component labourWait = citizen.getLabourWait();
+        final VisibleCitizenStatus status = citizen.getVisibleStatus() == null && labourWait != null ? VisibleCitizenStatus.HOUSE : citizen.getVisibleStatus();
+        if (status == null)
         {
             statusIcon.hide();
         }
         else
         {
             statusIcon.show();
-            statusIcon.setImage(citizen.getVisibleStatus().getIcon(), false);
-            PaneBuilders.tooltipBuilder()
-                .append(Component.translatable(citizen.getVisibleStatus().getTranslationKey()))
-                .hoverPane(statusIcon)
-                .build();
+            statusIcon.setImage(status.getIcon(), false);
+            final var tooltip = PaneBuilders.tooltipBuilder().append(Component.translatable(status.getTranslationKey()));
+            if (labourWait != null)
+            {
+                tooltip.paragraphBreak().append(labourWait);
+            }
+            tooltip.hoverPane(statusIcon).build();
         }
     }
 
