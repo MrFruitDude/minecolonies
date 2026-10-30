@@ -61,6 +61,7 @@ final class LabourGameTests
     {
         com.minecolonies.core.colony.labour.LabourStats.debug = true;
         LabourSettings.clearOverrides();
+        com.minecolonies.core.colony.labour.LabourBoard.forgetWaiting();
         // (the early pace of a young colony is checked by its own tests)
         LabourSettings.override("early", false);
         LabourSettings.override("workScale", 8.0D);
@@ -94,6 +95,7 @@ final class LabourGameTests
     {
         com.minecolonies.core.colony.labour.LabourStats.debug = false;
         LabourSettings.clearOverrides();
+        com.minecolonies.core.colony.labour.LabourBoard.forgetWaiting();
         if (plotOnly != null)
         {
             com.minecolonies.api.colony.labour.LabourExclusions.unregister(plotOnly);
