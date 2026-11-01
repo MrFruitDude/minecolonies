@@ -101,6 +101,62 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
      */
     private int pauseTicks = 0;
 
+    private boolean navigationTraceEnabled;
+    private java.util.ArrayDeque<String> navigationTrace;
+    private java.util.ArrayDeque<String> stuckActionTrace;
+
+    /** Opt-in, bounded diagnostics; no path or movement changes. */
+    public void enableNavigationTrace()
+    {
+        if (!navigationTraceEnabled)
+        {
+            navigationTrace = new java.util.ArrayDeque<>();
+            stuckActionTrace = new java.util.ArrayDeque<>();
+            navigationTraceEnabled = true;
+        }
+    }
+
+    public boolean isNavigationTraceEnabled()
+    {
+        return navigationTraceEnabled;
+    }
+
+    public void traceNavigation(final String event)
+    {
+        if (!navigationTraceEnabled)
+        {
+            return;
+        }
+        final String line = ourEntity.level().getGameTime() + " " + event;
+        navigationTrace.addLast(line);
+        if (navigationTrace.size() > 96)
+        {
+            navigationTrace.removeFirst();
+        }
+        if (event.startsWith("stuck"))
+        {
+            stuckActionTrace.addLast(line);
+            if (stuckActionTrace.size() > 32)
+            {
+                stuckActionTrace.removeFirst();
+            }
+        }
+    }
+
+    public String navigationTraceState()
+    {
+        final var path = getPath();
+        return "position=" + ourEntity.position() + ", safe=" + safeDestinationPos + ", original=" + originalDestination + ", pause=" + pauseTicks
+          + ", job=" + (pathResult == null ? "none" : pathResult.getJob().getClass().getSimpleName() + ":" + pathResult.getStatus())
+          + ", end=" + (path == null ? "none" : path.getEndNode()) + ", health=" + ourEntity.getHealth();
+    }
+
+    public String navigationTraceHistory()
+    {
+        return "actions=" + stuckActionTrace + ", submissions=" + navigationTrace;
+    }
+
+
     /**
      * Increasing amount for pause times, each time a path fails
      */
@@ -369,6 +425,11 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         final BlockPos dest,
         final double speedFactor, final boolean safeDestination)
     {
+        if (navigationTraceEnabled)
+        {
+            traceNavigation("submit " + job.getClass().getSimpleName() + " dest=" + dest + " safeJob=" + safeDestination
+              + " jobTarget=" + (job instanceof IDestinationPathJob d ? d.getDestination() : "none") + " " + navigationTraceState());
+        }
         if (pauseTicks > 0)
         {
             return null;
@@ -402,6 +463,10 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
                 return null;
             }
 
+            if (navigationTraceEnabled)
+            {
+                traceNavigation("cancel by replacement " + pathResult.getJob().getClass().getSimpleName() + ":" + pathResult.getStatus());
+            }
             pathResult.cancel();
             pathResult.setStatus(PathFindingStatus.CANCELLED);
             pathResult = null;
@@ -1584,8 +1649,16 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     @Override
     public void stop()
     {
+        if (navigationTraceEnabled)
+        {
+            traceNavigation("stop " + navigationTraceState());
+        }
         if (pathResult != null)
         {
+            if (navigationTraceEnabled)
+            {
+                traceNavigation("cancel by stop " + pathResult.getJob().getClass().getSimpleName() + ":" + pathResult.getStatus());
+            }
             pathResult.cancel();
             pathResult.setStatus(PathFindingStatus.CANCELLED);
             pathResult = null;
@@ -1609,8 +1682,16 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     @Override
     public void recalc()
     {
+        if (navigationTraceEnabled)
+        {
+            traceNavigation("recalc " + navigationTraceState());
+        }
         if (pathResult != null)
         {
+            if (navigationTraceEnabled)
+            {
+                traceNavigation("cancel by recalc " + pathResult.getJob().getClass().getSimpleName() + ":" + pathResult.getStatus());
+            }
             pathResult.cancel();
             pathResult.setStatus(PathFindingStatus.CANCELLED);
         }

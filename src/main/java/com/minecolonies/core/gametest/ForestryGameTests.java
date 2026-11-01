@@ -28,6 +28,7 @@ import com.minecolonies.core.entity.ai.workers.production.EntityAIWorkLumberjack
 import com.minecolonies.core.entity.ai.workers.util.PlacedCaps;
 import com.minecolonies.core.entity.ai.workers.util.Tree;
 import com.minecolonies.core.entity.ai.workers.util.TreeClaims;
+import com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate;
 import com.minecolonies.core.entity.ai.workers.util.TreeFootprint;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -400,6 +401,10 @@ public final class ForestryGameTests
             if (ticks[0] % 20 == 0 && done.getAsBoolean())
             {
                 Log.getLogger().info("[{}] passed in {} ticks", name, ticks[0]);
+                if (everyTick instanceof ApproachTrace trace)
+                {
+                    Log.getLogger().info("[forestry approach result] {} {}", name, trace.summary());
+                }
                 helper.succeed();
                 return;
             }
@@ -411,6 +416,71 @@ public final class ForestryGameTests
             helper.runAfterDelay(1, () -> step[0].run());
         };
         helper.runAfterDelay(1, () -> step[0].run());
+    }
+
+    /** Bounded, observation-only route history for the two intermittent forestry journeys. */
+    private static final class ApproachTrace implements Runnable
+    {
+        private final GameTestHelper helper;
+        private final ICitizenData worker;
+        private final java.util.ArrayDeque<String> samples = new java.util.ArrayDeque<>();
+        private Vec3 previous;
+        private String firstDeparture = "none";
+        private int ticks;
+
+        ApproachTrace(final GameTestHelper helper, final ICitizenData worker)
+        {
+            this.helper = helper;
+            this.worker = worker;
+            previous = worker.getEntity().orElseThrow().position();
+            ((MinecoloniesAdvancedPathNavigate) worker.getEntity().orElseThrow().getNavigation()).enableNavigationTrace();
+        }
+
+        @Override
+        public void run()
+        {
+            final var entity = worker.getEntity().orElseThrow();
+            final var nav = (MinecoloniesAdvancedPathNavigate) entity.getNavigation();
+            final EntityAIWorkLumberjack ai = ai(worker);
+            if (ai != null)
+            {
+                ai.enableApproachTrace();
+            }
+            final BlockPos at = entity.blockPosition();
+            final BlockPos relative = at.subtract(helper.absolutePos(BlockPos.ZERO));
+            final boolean departed = firstDeparture.equals("none") && (relative.getX() < -8 || relative.getX() >= 40
+              || relative.getZ() < -8 || relative.getZ() >= 32 || relative.getY() < 1);
+            final boolean jumped = previous.distanceToSqr(entity.position()) > 16;
+            if (++ticks % 20 == 0 || departed || jumped)
+            {
+                final String sample = "tick=" + helper.getLevel().getGameTime() + ", relative=" + relative + ", velocity=" + entity.getDeltaMovement()
+                  + ", feet=" + helper.getLevel().getBlockState(at) + ", head=" + helper.getLevel().getBlockState(at.above())
+                  + ", support=" + helper.getLevel().getBlockState(at.below()) + ", " + nav.navigationTraceState()
+                  + ", work=" + (ai == null ? "none" : ai.getState() + " " + ai.approachTraceState());
+                samples.addLast(sample);
+                if (samples.size() > 32)
+                {
+                    samples.removeFirst();
+                }
+                if (departed)
+                {
+                    firstDeparture = sample;
+                }
+                if (departed || jumped)
+                {
+                    Log.getLogger().info("[forestry displacement] floorExit={} jump={} previous={} {}", departed, jumped, previous, summary());
+                }
+            }
+            previous = entity.position();
+        }
+
+        String summary()
+        {
+            final var nav = (MinecoloniesAdvancedPathNavigate) worker.getEntity().orElseThrow().getNavigation();
+            final EntityAIWorkLumberjack ai = ai(worker);
+            return "first supported-floor departure=" + firstDeparture + ", samples=" + samples + ", " + nav.navigationTraceHistory()
+              + ", judgments=" + (ai == null ? "none" : ai.approachTraceHistory());
+        }
     }
 
     // ---------------------------------------------------------------- whole trees
@@ -1388,8 +1458,7 @@ public final class ForestryGameTests
         helper.runAfterDelay(20, () -> {
             final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10), new ItemStack(Items.OAK_SAPLING, 8));
             final String[] last = {""};
-            final String[] leftPlot = {""};
-            final BlockPos origin = helper.absolutePos(BlockPos.ZERO);
+            final ApproachTrace trace = new ApproachTrace(helper, worker);
             pump(helper, List.of(worker), FELL_CAP, () -> {
                 final int logs = count(level, strip, s -> s.is(Blocks.OAK_LOG));
                 final long replanted = trunks.stream().filter(pos -> level.getBlockState(pos).is(Blocks.OAK_SAPLING)).count();
@@ -1398,22 +1467,7 @@ public final class ForestryGameTests
                 helper.assertTrue(building.getSkippedTreeCount() == 0 && building.getSkippedTreeCount(BuildingLumberjack.SkipReason.TOO_BIG) == 0,
                   "a touching oak was left standing: " + last[0]);
                 return logs == 0 && replanted == 4 && tree(worker) == null;
-            }, () -> last[0] + ", standing " + standingTrunks(level, colony, building, worker, trunks) + ", " + describe(worker) + ", first departure " + leftPlot[0], () -> {
-                final var entity = worker.getEntity().orElseThrow();
-                final BlockPos at = entity.blockPosition();
-                final BlockPos relative = at.subtract(origin);
-                if (leftPlot[0].isEmpty() && (relative.getX() < 0 || relative.getX() >= 64 || relative.getZ() < 0 || relative.getZ() >= 48 || relative.getY() < 0))
-                {
-                    final var navigation = entity.getNavigation();
-                    final var path = navigation.getPath();
-                    leftPlot[0] = "tick=" + level.getGameTime() + ", relative=" + relative + ", velocity=" + entity.getDeltaMovement()
-                      + ", feet=" + level.getBlockState(at) + ", head=" + level.getBlockState(at.above()) + ", support=" + level.getBlockState(at.below())
-                      + ", destination=" + navigation.getTargetPos() + ", path end=" + (path == null ? "none" : path.getEndNode())
-                      + ", items=" + level.getEntitiesOfClass(ItemEntity.class, entity.getBoundingBox().inflate(5)).stream().map(i -> i.getItem() + "@" + i.position()).toList()
-                      + ", " + describe(worker);
-                    Log.getLogger().info("[touching oak first departure] {}", leftPlot[0]);
-                }
-            }, "forestry_touching_same_wood");
+            }, () -> last[0] + ", standing " + standingTrunks(level, colony, building, worker, trunks) + ", " + describe(worker) + ", " + trace.summary(), trace, "forestry_touching_same_wood");
         });
     }
 
@@ -1713,6 +1767,7 @@ public final class ForestryGameTests
             helper.assertTrue(worker.getJob() instanceof JobLumberjack, "no lumberjack job");
             ((JobLumberjack) worker.getJob()).setTree(tree);
             final String[] last = {""};
+            final ApproachTrace trace = new ApproachTrace(helper, worker);
             pump(helper, List.of(worker), 12_000, () -> {
                 final int stems = count(level, stemBox, TreeFootprint::isTreeBlock);
                 final long rowLeft = row.stream().filter(pos -> level.getBlockState(pos).is(Blocks.RED_MUSHROOM_BLOCK)).count();
@@ -1725,7 +1780,7 @@ public final class ForestryGameTests
                     helper.assertTrue(level.getBlockState(post).is(Blocks.OAK_FENCE), "decoration post removed at " + post);
                 }
                 return stems == 0 && tree(worker) == null;
-            }, () -> last[0] + ", " + describe(worker), null, "forestry_cap_decoration");
+            }, () -> last[0] + ", " + describe(worker) + ", " + trace.summary(), trace, "forestry_cap_decoration");
         });
     }
 

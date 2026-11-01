@@ -211,6 +211,37 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private BlockPos firstWorkFrom;
     private Tree chopPathTree;
     private int treeChopRefusedOutcomeCount;
+    private boolean approachTraceEnabled;
+    private java.util.ArrayDeque<String> approachTrace;
+
+    public void enableApproachTrace()
+    {
+        if (!approachTraceEnabled)
+        {
+            approachTrace = new java.util.ArrayDeque<>();
+            approachTraceEnabled = true;
+        }
+    }
+
+    public String approachTraceState()
+    {
+        return walkNote();
+    }
+
+    public String approachTraceHistory()
+    {
+        return String.valueOf(approachTrace);
+    }
+
+    private void traceApproach(final String event)
+    {
+        approachTrace.addLast(world.getGameTime() + " " + event);
+        if (approachTrace.size() > 32)
+        {
+            approachTrace.removeFirst();
+        }
+    }
+
 
     /**
      * The time in ticks the lumberjack has waited already. Directly connected with the MAX_WAITING_TIME.
@@ -2267,6 +2298,11 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         {
             // each finished search counts once; a tree is walled by leaves only when a search that failed ran into a leaf he may not clear (r5 Fable N35)
             judgedPath = pathToTree;
+            if (approachTraceEnabled)
+            {
+                traceApproach("judge=" + pathToTree.getStatus() + " failed=" + pathToTree.failedToReachDestination() + " beforeFailures=" + failedTreePaths
+                  + " guard=" + (leafGuard == null ? "none" : leafGuard.refusalNote()) + " " + walkNote());
+            }
             if (pathToTree.failedToReachDestination())
             {
                 failedTreePaths++;
@@ -2274,6 +2310,10 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 if (leafWallTree != null && leafWallSince < 0)
                 {
                     leafWallSince = world.getGameTime();
+                    if (approachTraceEnabled)
+                    {
+                        traceApproach("leaf-wall clock starts " + walkNote());
+                    }
                 }
             }
             else if (pathToTree.isPathReachingDestination())
