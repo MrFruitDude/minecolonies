@@ -11,6 +11,8 @@ import com.minecolonies.core.entity.pathfinding.PathfindingUtils;
 import com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate;
 import com.minecolonies.core.entity.pathfinding.pathjobs.PathJobMoveToLocation;
 import com.minecolonies.core.entity.pathfinding.pathresults.PathResult;
+import com.minecolonies.core.entity.citizen.EntityCitizen;
+import com.minecolonies.core.entity.citizen.CitizenAIStateMachine;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.Identifier;
@@ -41,6 +43,7 @@ final class NavLifecycleGameTests
         TESTS.put("nav_hung_calculation", h -> heldCalculation(h, "hung"));
         TESTS.put("nav_cancel_before_calculation", h -> heldCalculation(h, "cancel_before"));
         TESTS.put("nav_cancel_after_reaching", h -> heldCalculation(h, "cancel_after"));
+        TESTS.put("nav_blocked_destination_trip", NavLifecycleGameTests::blockedDestinationTrip);
         TESTS.put("worker_eff_stuck_shaft", WorkerEfficiencyGameTests::stuckInShaft);
         TESTS.put("worker_eff_stuck_no_tool", WorkerEfficiencyGameTests::noToolForStone);
         TESTS.put("worker_eff_stuck_unloaded", WorkerEfficiencyGameTests::unloadedTargetKeepsCitizen);
@@ -120,6 +123,79 @@ final class NavLifecycleGameTests
                 final var result = nav.getPathResult();
                 sawSearch[0] |= result != null && result.getJob().getClass().getSimpleName().equals("PathJobFindTree");
             }, "nav_empty_search");
+        });
+    }
+
+    /** Real physics and navigator ticks; only the work decision machine is replaced by an empty one. */
+    private static void blockedDestinationTrip(final GameTestHelper helper)
+    {
+        final var colony = MinecoloniesGameTests.foundGameTestColony(helper, "blocked trip");
+        final var hut = ForestryGameTests.hut(helper, colony, new BlockPos(8, 1, 2), false);
+        helper.runAfterDelay(20, () -> {
+            final ICitizenData worker = ForestryGameTests.forester(helper, colony, hut, new BlockPos(14, 1, 18));
+            helper.runAfterDelay(40, () -> {
+                final EntityCitizen entity = (EntityCitizen) worker.getEntity().orElseThrow();
+                try
+                {
+                    final var decisions = EntityCitizen.class.getDeclaredField("citizenAI");
+                    decisions.setAccessible(true);
+                    decisions.set(entity, new CitizenAIStateMachine(() -> helper.getLevel().getGameTime(), () -> "navigation trip fixture", 20));
+                }
+                catch (final ReflectiveOperationException e)
+                {
+                    throw new IllegalStateException(e);
+                }
+                final var nav = (MinecoloniesAdvancedPathNavigate) entity.getNavigation();
+                nav.stop();
+                nav.enableNavigationTrace();
+                final var start = entity.position();
+                final BlockPos target = helper.absolutePos(new BlockPos(32, 1, 18));
+                final boolean[] blocked = {false};
+                final boolean[] movedAway = {false};
+                final boolean[] complete = {false};
+                final java.util.Set<BlockPos> walls = new java.util.HashSet<>();
+                final BlockPos[] pocket = {null};
+                final int[] ticks = {0};
+                nav.walkTo(target, 1.0D);
+                ForestryGameTests.pump(helper, List.of(worker), 24_000, () -> {
+                    if (!blocked[0] || !movedAway[0] || !complete[0] || entity.blockPosition().distSqr(target) > 16)
+                    {
+                        return false;
+                    }
+                    helper.assertTrue(walls.stream().allMatch(pos -> helper.getLevel().getBlockState(pos).is(Blocks.STONE)),
+                      "rescue altered protected enclosure");
+                    helper.assertTrue(entity.isAlive(), "rescue lost the citizen");
+                    return true;
+                }, () -> "blocked trip did not recover: blocked=" + blocked[0] + " away=" + movedAway[0] + " complete=" + complete[0]
+                  + " pocket=" + pocket[0] + " " + nav.navigationTraceHistory(), () -> {
+                    ticks[0]++;
+                    final String trace = nav.navigationTraceHistory();
+                    movedAway[0] |= trace.contains("stuck move-away");
+                    complete[0] |= trace.contains("stuck complete");
+                    if (!blocked[0] && entity.position().distanceToSqr(start) >= 9)
+                    {
+                        final var path = nav.getPathResult();
+                        helper.assertTrue(path != null && path.isPathReachingDestination() && nav.getPath() != null && !nav.getPath().isDone(),
+                          "trip did not begin on a real reaching movement path");
+                        pocket[0] = entity.blockPosition();
+                        for (final BlockPos pos : BlockPos.betweenClosed(pocket[0].offset(-2, 0, -2), pocket[0].offset(2, 3, 2)))
+                        {
+                            if (Math.abs(pos.getX() - pocket[0].getX()) == 2 || Math.abs(pos.getZ() - pocket[0].getZ()) == 2
+                              || pos.getY() == pocket[0].getY() + 3)
+                            {
+                                helper.getLevel().setBlockAndUpdate(pos, Blocks.STONE.defaultBlockState());
+                                walls.add(pos.immutable());
+                            }
+                        }
+                        blocked[0] = true;
+                    }
+                    if (nav.isDone())
+                    {
+                        nav.walkTo(target, 1.0D);
+                    }
+                    helper.assertTrue(blocked[0] || ticks[0] < 3000, "trip never moved before the obstruction " + trace);
+                }, "nav_blocked_destination_trip");
+            });
         });
     }
 
@@ -274,7 +350,30 @@ final class NavLifecycleGameTests
                     final Object state = find.invoke(ai);
                     helper.assertTrue(state == priorState && state != AIWorkerState.LUMBERJACK_NO_TREES_FOUND && pending.get(ai) == null,
                       "cancelled search became no-trees: state=" + state + " result=" + pending.get(ai));
-                    helper.succeed();
+                    final BlockPos base = helper.absolutePos(new BlockPos(22, 1, 18));
+                    helper.getLevel().setBlockAndUpdate(base.below(), Blocks.GRASS_BLOCK.defaultBlockState());
+                    helper.getLevel().setBlockAndUpdate(base, Blocks.OAK_SAPLING.defaultBlockState());
+                    helper.assertTrue(TreeGrower.OAK.growTree(helper.getLevel(), helper.getLevel().getChunkSource().getGenerator(), base,
+                      helper.getLevel().getBlockState(base), RandomSource.create(71L)), "retry tree did not grow");
+                    final java.util.Set<BlockPos> logs = new java.util.HashSet<>();
+                    for (final BlockPos pos : BlockPos.betweenClosed(base.offset(-4, 0, -4), base.offset(4, 12, 4)))
+                    {
+                        if (helper.getLevel().getBlockState(pos).is(Blocks.OAK_LOG))
+                        {
+                            logs.add(pos.immutable());
+                        }
+                    }
+                    helper.assertTrue(!logs.isEmpty(), "retry tree has no logs");
+                    final boolean[] newSearch = {false};
+                    entity.setNoAi(false);
+                    ForestryGameTests.pump(helper, List.of(worker), 12_000,
+                      () -> newSearch[0] && logs.stream().noneMatch(pos -> helper.getLevel().getBlockState(pos).is(Blocks.OAK_LOG))
+                        && ((JobLumberjack) worker.getJob()).getTree() == null,
+                      () -> "cancelled search never resumed through a new search and fell: " + ForestryGameTests.describe(worker),
+                      () -> {
+                          final var next = nav.getPathResult();
+                          newSearch[0] |= next != null && next != result && next.getJob() instanceof PathJobFindTree;
+                      }, "nav_cancelled_tree_search");
                 }
                 catch (final ReflectiveOperationException e)
                 {
@@ -302,14 +401,17 @@ final class NavLifecycleGameTests
             final var paths = EntityAIWorkLumberjack.class.getDeclaredField("failedTreePaths");
             final var since = EntityAIWorkLumberjack.class.getDeclaredField("leafWallSince");
             final var pending = EntityAIWorkLumberjack.class.getDeclaredField("pathToTree");
+            final var judged = EntityAIWorkLumberjack.class.getDeclaredField("judgedPath");
             paths.setAccessible(true);
             since.setAccessible(true);
             pending.setAccessible(true);
+            judged.setAccessible(true);
             paths.setInt(ai, 7);
             final long originalSince = helper.getLevel().getGameTime() - 99;
             since.setLong(ai, originalSince);
             pending.set(ai, result);
             ai.walkToTree(base);
+            helper.assertTrue(judged.get(ai) == result, "cancelled route was never judged");
             helper.assertTrue(paths.getInt(ai) == 7 && since.getLong(ai) == originalSince,
               "cancelled route changed failure evidence: failures=" + paths.getInt(ai) + " since=" + since.getLong(ai));
         }
