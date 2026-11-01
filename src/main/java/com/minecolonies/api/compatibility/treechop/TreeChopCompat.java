@@ -3,6 +3,7 @@ package com.minecolonies.api.compatibility.treechop;
 import com.minecolonies.api.util.Log;
 import com.mojang.authlib.GameProfile;
 import ht.treechop.api.TreeData;
+import ht.treechop.api.ChopEvent;
 import ht.treechop.common.block.ChoppedLogBlock;
 import ht.treechop.common.chop.ChopUtil;
 import ht.treechop.common.config.ConfigHandler;
@@ -14,6 +15,8 @@ import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.common.util.FakePlayerFactory;
 import org.jetbrains.annotations.NotNull;
@@ -22,6 +25,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.UUID;
 
@@ -49,6 +54,34 @@ public final class TreeChopCompat extends TreeChopProxy
      * Only the first TreeChop failure is logged with its stack trace.
      */
     private boolean warned = false;
+
+    private record ForesterChop(ServerLevel level, BlockPos target, Set<BlockPos> logs) { }
+
+    // Server-thread, synchronous chop calls only. Identity avoids affecting players or unrelated fake players.
+    private final Map<FakePlayer, ForesterChop> activeChops = new IdentityHashMap<>();
+
+    public TreeChopCompat()
+    {
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, this::protectForesterLeaves);
+    }
+
+    private void protectForesterLeaves(final ChopEvent.BeforeFellEvent event)
+    {
+        final ForesterChop chop = activeChops.get(event.getPlayer());
+        if (chop == null)
+        {
+            return;
+        }
+        // Recheck the final event tree too: another listener may have changed the original selection.
+        if (event.getLevel() != chop.level() || !event.getChoppedBlockPos().equals(chop.target())
+              || !event.getFellData().getTree().getLogBlocksOrEmpty().equals(chop.logs()))
+        {
+            event.setCanceled(true);
+            return;
+        }
+        // TreeChop owns the approved logs. The forester's guarded sweep owns all leaves and caps.
+        event.getFellData().setBreakLeaves(false);
+    }
 
     @Override
     public boolean isPresent()
@@ -161,11 +194,21 @@ public final class TreeChopCompat extends TreeChopProxy
             }
         }
 
+        final Set<BlockPos> approvedLogs = getTreeLogs(level, pos);
+        if (approvedLogs == null)
+        {
+            return ChopOutcome.IGNORED;
+        }
         final FakePlayer agent = FakePlayerFactory.get(level, new GameProfile(agentId, AGENT_NAME));
+        if (activeChops.containsKey(agent))
+        {
+            return ChopOutcome.IGNORED;
+        }
         agent.setPos(agentPos.x, agentPos.y, agentPos.z);
         agent.setItemInHand(InteractionHand.MAIN_HAND, tool);
         final int damage = tool.getDamageValue();
         final boolean chopped;
+        activeChops.put(agent, new ForesterChop(level, pos.immutable(), Set.copyOf(approvedLogs)));
         try
         {
             chopped = ChopUtil.chop(agent, level, pos, state, tool, agent, Math.max(1, numChops), true);
@@ -185,6 +228,7 @@ public final class TreeChopCompat extends TreeChopProxy
         }
         finally
         {
+            activeChops.remove(agent);
             agent.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
         }
 

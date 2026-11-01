@@ -1600,6 +1600,7 @@ public final class AliveGameTests
                 final long[] greetFrom = {-1};
                 final long[] wokeAt = {-1};
                 final long[] greetedAt = {-1};
+                final String[] lastGreetingState = {""};
                 final Runnable[] poll = new Runnable[1];
                 poll[0] = () -> {
                     hold.run();
@@ -1655,6 +1656,14 @@ public final class AliveGameTests
                     }
                     final EntityCitizen g = greeter[0];
                     keepFed(g);
+                    final String greetingState = "state=" + g.getCitizenAI().getState() + ", active=" + g.getLife().greetingActive()
+                      + ", waiting=" + g.getLife().awaitingListener() + ", skipped=" + g.getLife().greetSkipped()
+                      + ", spot=" + g.getLife().gatherSpot() + ", speech=" + g.getSpeech() + ", position=" + g.blockPosition();
+                    if (!greetingState.equals(lastGreetingState[0]))
+                    {
+                        Log.getLogger().info("[morning dawn] elapsed={} age={} {}", now - greetFrom[0], now - g.getLife().greetingStart(), greetingState);
+                        lastGreetingState[0] = greetingState;
+                    }
                     if (wokeAt[0] < 0 && (!sleepers[0].getCitizenSleepHandler().isAsleep() || !sleepers[1].getCitizenSleepHandler().isAsleep()))
                     {
                         wokeAt[0] = now;

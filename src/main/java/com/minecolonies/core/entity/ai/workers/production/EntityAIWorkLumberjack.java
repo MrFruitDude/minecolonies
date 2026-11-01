@@ -373,63 +373,6 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private long walkHomeSince = -1;
     private int walkHomeGivenUp = 0;
 
-    /** A failed return also pauses planting and crafting returns, rather than restarting the same walk. */
-    public static final long HUT_RETRY_TICKS = 1200L;
-    private long hutRetryUntil = -1;
-
-    /** @return the end of the current return back-off, or -1 (diagnostics). */
-    public long getHutRetryUntil()
-    {
-        return hutRetryUntil;
-    }
-
-    private boolean waitingForHutRetry()
-    {
-        if (hutRetryUntil < 0)
-        {
-            return false;
-        }
-        if (world.getGameTime() >= hutRetryUntil || worker.blockPosition().closerThan(building.getPosition(), 4))
-        {
-            hutRetryUntil = -1;
-            clearStuckReason();
-            return false;
-        }
-        setStuckReason("could not return to the forester hut; waiting before trying again");
-        return true;
-    }
-
-    /** Every own-hut return shares the same bound, including planting, crafting and unloading. */
-    private boolean walkToForesterHut()
-    {
-        if (waitingForHutRetry())
-        {
-            return false;
-        }
-        if (walkToBuilding())
-        {
-            walkHomeSince = -1;
-            return true;
-        }
-        final long now = world.getGameTime();
-        if (walkHomeSince < 0)
-        {
-            walkHomeSince = now;
-        }
-        if (now - walkHomeSince >= WALK_HOME_TICKS)
-        {
-            walkHomeSince = -1;
-            walkHomeGivenUp++;
-            hutRetryUntil = now + HUT_RETRY_TICKS;
-            searchNote = "could not get back to the hut at " + building.getPosition().toShortString()
-              + ", from " + worker.blockPosition().toShortString();
-            worker.getNavigation().stop();
-            waitingForHutRetry();
-            Log.getLogger().debug("Forester {} {}", worker.getCitizenData().getId(), searchNote);
-        }
-        return false;
-    }
-
     /**
      * Cap trees he left for now because the joined cap next to them was worked (r6 Fable N44; tests).
      */
@@ -685,18 +628,13 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     @Override
     protected IAIState decide()
     {
-        if (waitingForHutRetry())
-        {
-            return LUMBERJACK_NO_TREES_FOUND;
-        }
-
         if (checkIfStuck())
         {
             tryUnstuck();
             return getState();
         }
 
-        if (!walkToForesterHut())
+        if (!walkToBuilding())
         {
             return START_WORKING;
         }
@@ -745,12 +683,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      */
     private IAIState startWorkingAtOwnBuilding()
     {
-        if (waitingForHutRetry())
-        {
-            return LUMBERJACK_NO_TREES_FOUND;
-        }
-
-        if (!walkToForesterHut())
+        if (!walkToBuilding())
         {
             return getState();
         }
@@ -779,11 +712,6 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      */
     private IAIState waitBeforeCheckingAgain()
     {
-        if (waitingForHutRetry())
-        {
-            return LUMBERJACK_NO_TREES_FOUND;
-        }
-
         pathResult = null;
 
         // Forestry: nothing to cut, so plant a few saplings from the hut first
@@ -878,11 +806,6 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      */
     private IAIState findTree()
     {
-        if (waitingForHutRetry())
-        {
-            return LUMBERJACK_NO_TREES_FOUND;
-        }
-
         worker.getCitizenData().setVisibleStatus(SEARCH);
 
         if (pathResult != null && pathResult.isComputing())
@@ -893,9 +816,26 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         {
             if (!building.shouldRestrict() && outsideSearchDisc())
             {
-                // A completed path can end short; search only after actually returning to the hut's disc.
-                walkToForesterHut();
-                return waitingForHutRetry() ? LUMBERJACK_NO_TREES_FOUND : getState();
+                // A completed navigation attempt may still end short. The search disc, rather than that result, decides whether he is home enough to search.
+                walkToBuilding();
+                // r6 Fable N43: the search maps only the disc round the hut (radius plus a margin); from outside it (back from a meal, a bed, a flight) it finds
+                // nothing, so he walks home first. Round 8 (r7 Fable N60): not for ever; a hut he cannot get to (an island, a sealed hut) ends the search for
+                // this round as no tree found, with the usual wait, instead of leaving him searching until the stuck handler moves him
+                final long now = world.getGameTime();
+                // Walking can delay the next AI decision beyond five seconds. Sparse decisions must not restart the same walk's bound.
+                if (walkHomeSince < 0)
+                {
+                    walkHomeSince = now;
+                }
+                if (now - walkHomeSince < WALK_HOME_TICKS)
+                {
+                    return getState();
+                }
+                walkHomeSince = -1;
+                walkHomeGivenUp++;
+                searchNote = "could not get back to the hut at " + building.getPosition().toShortString() + " to search, from " + worker.blockPosition().toShortString();
+                Log.getLogger().debug("Forester {} {}", worker.getCitizenData().getId(), searchNote);
+                return LUMBERJACK_NO_TREES_FOUND;
             }
             walkHomeSince = -1;
             if (building.shouldRestrict())
@@ -1430,7 +1370,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
         if (fetchSaplingFirst)
         {
-            if (!walkToForesterHut())
+            if (!walkToBuilding())
             {
                 noteTreeProgress();
                 return getState();
@@ -1909,7 +1849,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             {
                 return stopPlanting("no sapling to plant in the hut, " + plantSpots.size() + " spots");
             }
-            if (!walkToForesterHut())
+            if (!walkToBuilding())
             {
                 plantNote = "walking to the hut for " + wanted.getItem() + ", " + plantSpots.size() + " spots";
                 return true;
@@ -2631,7 +2571,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         {
             if (!checkedInHut)
             {
-                if (!walkToForesterHut())
+                if (!walkToBuilding())
                 {
                     return false;
                 }
@@ -2682,7 +2622,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             worker.swing(worker.getUsedItemHand(), SwingAnimation.DEFAULT, false);
         }
 
-        if (timeWaited >= MAX_WAITING_TIME / 2 && !checkedInHut && walkToForesterHut())
+        if (timeWaited >= MAX_WAITING_TIME / 2 && !checkedInHut && walkToBuilding())
         {
             checkAndTransferFromHut(job.getTree().getSapling());
             checkedInHut = true;
