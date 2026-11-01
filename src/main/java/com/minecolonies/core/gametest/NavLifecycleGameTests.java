@@ -287,6 +287,10 @@ final class NavLifecycleGameTests
           helper.getLevel().getBlockState(base), RandomSource.create(71L)), "route cancellation fixture tree did not grow");
         ((JobLumberjack) worker.getJob()).setTree(new Tree(helper.getLevel(), base.above(), worker.getColony()));
         final EntityAIWorkLumberjack ai = ForestryGameTests.ai(worker);
+        // Establish this tree's work spot and leaf guard before seeding prior route evidence.
+        // Otherwise the first-ever guard setup resets failedTreePaths independently of cancellation.
+        ai.walkToTree(base);
+        worker.getEntity().orElseThrow().getNavigation().stop();
         try
         {
             final var paths = EntityAIWorkLumberjack.class.getDeclaredField("failedTreePaths");
