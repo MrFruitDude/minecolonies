@@ -2035,6 +2035,8 @@ public final class AliveGameTests
     {
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "chat departure");
         midday(helper);
+        rain(helper, false);
+        helper.getLevel().setRainLevel(0.0F);
         helper.runAfterDelay(40, () -> {
             fillBiome(helper, new BlockPos(-8, 0, -8), new BlockPos(39, 12, 31), net.minecraft.world.level.biome.Biomes.PLAINS);
             final EntityCitizen a = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));

@@ -210,6 +210,12 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             }
             // forestry (round 3): exact group names, as "forestry_treechop" contains "forestry"
             final java.util.List<String> groups = java.util.Arrays.stream(only.split(",")).map(String::trim).toList();
+            if (groups.contains("chat_departure"))
+            {
+                final String name = "alive_chat_departure";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, AliveGameTests.test(name)), withSkyAccess(isolatedColonyData(event, name)));
+            }
             if (groups.contains("nav_recovery"))
             {
                 NavLifecycleGameTests.register(event);
