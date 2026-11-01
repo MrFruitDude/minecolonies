@@ -2049,10 +2049,23 @@ public final class AliveGameTests
             helper.assertTrue(a.getLife().chatPartnerId() == b.getCivilianID() && b.getLife().chatPartnerId() == a.getCivilianID(), "chat pair is not reciprocal");
             b.getLife().schedule(CitizenLife.CHEER_BUILDING + "2", 0, true);
             final ChatTrace trace = new ChatTrace(a, b);
-            // Wander's own leisure decision uses this same delay mechanism before travelling.
+            // Give the real leisure action a destination, so it cannot immediately return to IDLE.
             a.getCitizenAI().addTransition(new com.minecolonies.api.entity.ai.statemachine.AIOneTimeEventTarget<IState>(
               (com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.IStateSupplier<IState>) () -> {
-                a.getCitizenAI().setCurrentDelay(80);
+                final Object decision = ChatTrace.read(a, EntityCitizen.class, "decisionAI");
+                helper.assertTrue(decision != null, "departure decision AI is not initialized");
+                final List<?> minimal = (List<?>) ChatTrace.read(decision, CitizenAI.class, "minimalAI");
+                final Object wander = minimal.stream().filter(EntityAICitizenWander.class::isInstance).findFirst().orElseThrow();
+                try
+                {
+                    final var site = EntityAICitizenWander.class.getDeclaredField("leisureSite");
+                    site.setAccessible(true);
+                    site.set(wander, helper.absolutePos(new BlockPos(36, 1, 29)));
+                }
+                catch (final ReflectiveOperationException e)
+                {
+                    throw new IllegalStateException(e);
+                }
                 return EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE;
             }));
             rain(helper, true);
