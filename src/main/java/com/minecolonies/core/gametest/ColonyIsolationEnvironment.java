@@ -7,7 +7,6 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.Unit;
 import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.world.entity.Entity;
 
@@ -23,14 +22,19 @@ import java.util.List;
  *
  * @param test the test this environment isolates.
  */
-public record ColonyIsolationEnvironment(String test) implements TestEnvironmentDefinition<Unit>
+public record ColonyIsolationEnvironment(String test) implements TestEnvironmentDefinition<ColonyIsolationEnvironment.TreeChopState>
 {
     public static final MapCodec<ColonyIsolationEnvironment> CODEC = Codec.STRING.fieldOf("test")
       .xmap(ColonyIsolationEnvironment::new, ColonyIsolationEnvironment::test);
 
+    public record TreeChopState(boolean compatibilityEnabled, boolean foresterEnabled) { }
+
     @Override
-    public Unit setup(final ServerLevel level)
+    public TreeChopState setup(final ServerLevel level)
     {
+        // Each colony test has its own environment/batch. Save process defaults before a fixture changes them.
+        final boolean treeChopEnabled = com.minecolonies.api.compatibility.Compatibility.treeChop.isEnabled();
+        final boolean foresterTreeChopEnabled = com.minecolonies.core.MineColonies.getConfig().getServer().lumberjacksUseTreeChop.get();
         // Tests of the request-system redesign switch the flags in code; none may leak into the next test.
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideSmartRetry(null);
@@ -49,11 +53,11 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         // batch and can land at night, when citizens without beds stop working. Start every colony test at sunrise too,
         // so it gets the same daylight budget as a single run.
         level.getServer().clockManager().setTotalTicks(level.registryAccess().getOrThrow(WorldClocks.OVERWORLD), 0L);
-        return Unit.INSTANCE;
+        return new TreeChopState(treeChopEnabled, foresterTreeChopEnabled);
     }
 
     @Override
-    public void teardown(final ServerLevel level, final Unit saveData)
+    public void teardown(final ServerLevel level, final TreeChopState saveData)
     {
         com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
         com.minecolonies.core.entity.ai.workers.util.ReachAudit.enable(false);
@@ -66,7 +70,15 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         com.minecolonies.core.colony.ColonyLimits.overrideMaxPerPlayer(null);
         com.minecolonies.core.colony.FactionConfig.overrideDefaultPlayerRank(null);
         com.minecolonies.core.colony.FactionConfig.overrideCanBeRaided(null);
-        deleteAllColonies(level);
+        try
+        {
+            deleteAllColonies(level);
+        }
+        finally
+        {
+            com.minecolonies.api.compatibility.Compatibility.treeChop.setEnabled(saveData.compatibilityEnabled());
+            com.minecolonies.core.MineColonies.getConfig().getServer().lumberjacksUseTreeChop.set(saveData.foresterEnabled());
+        }
     }
 
     @Override

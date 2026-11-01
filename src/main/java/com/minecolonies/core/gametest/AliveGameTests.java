@@ -408,8 +408,12 @@ public final class AliveGameTests
                 ticks[0]++;
                 keepFed(a, b);
                 // This test checks a nearby pair's automatic chat, not the wander AI's choice of destinations.
-                pin(helper, a, new BlockPos(16, 1, 16));
-                pin(helper, b, new BlockPos(19, 1, 16));
+                // Once either partner starts, observe the AI without stopping navigation ourselves.
+                if (start[0] < 0 && !a.getLife().chatting() && !b.getLife().chatting())
+                {
+                    pin(helper, a, new BlockPos(16, 1, 16));
+                    pin(helper, b, new BlockPos(19, 1, 16));
+                }
                 final long now = helper.getLevel().getGameTime();
                 if (start[0] < 0 && (a.getLife().chatting() || b.getLife().chatting()))
                 {

@@ -141,7 +141,8 @@ public final class ForestryGameTests
         TESTS.put("forestry_placed_cap_after_choice", helper -> placedCapAfterChoice(helper, "forestry_placed_cap_after_choice", false));
         TESTS.put("forestry_builder_marks_caps", ForestryGameTests::builderMarksCaps);
         TESTS.put("forestry_stale_marks", ForestryGameTests::staleMarks);
-        TESTS.put("forestry_walk_home_bounded", ForestryGameTests::walkHomeBounded);
+        TESTS.put("forestry_walk_home_bounded", helper -> walkHomeBounded(helper, true));
+        TESTS.put("forestry_walk_home_hut_saplings", helper -> walkHomeBounded(helper, false));
 
         TREECHOP_TESTS.put("forestry_treechop_fell", ForestryGameTests::treeChopFell);
         TREECHOP_TESTS.put("forestry_treechop_half_chopped", ForestryGameTests::treeChopHalfChopped);
@@ -2342,17 +2343,22 @@ public final class ForestryGameTests
      * stands, as on an island or by a sealed hut). After a minute of walking he ends the search for this round as no tree found, without searching from
      * where he stands; the oak by his hut is not chosen from out there.
      */
-    private static void walkHomeBounded(final GameTestHelper helper)
+    private static void walkHomeBounded(final GameTestHelper helper, final boolean carrySaplings)
     {
         final ServerLevel level = helper.getLevel();
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry walk home bounded");
-        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final BuildingLumberjack building = hut(helper, colony, HUT, true);
         grow(helper, new TreeSpec("oak", new BlockPos(16, 1, 18), false, Blocks.OAK_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.OAK, null), 61L);
         final BlockPos far = helper.absolutePos(new BlockPos(58, 1, 38));
         level.setChunkForced(far.getX() >> 4, far.getZ() >> 4, true);
 
+        InventoryUtils.forceItemStackToItemHandler(building.getItemHandlerCap(), new ItemStack(Items.OAK_SAPLING, 16), stack -> true);
         helper.runAfterDelay(20, () -> {
-            final ICitizenData worker = forester(helper, colony, building, new BlockPos(58, 1, 38), new ItemStack(Items.OAK_SAPLING, 4));
+            final ICitizenData worker = forester(helper, colony, building, new BlockPos(58, 1, 38),
+              carrySaplings ? new ItemStack(Items.OAK_SAPLING, 4) : ItemStack.EMPTY);
+            final var original = worker.getEntity().orElseThrow();
+            final long[] gaveUpAt = {-1};
+            final String[] lifecycle = {""};
             final long[] searchingAt = {-1};
             final String[] last = {""};
             pump(helper, List.of(worker), (int) EntityAIWorkLumberjack.WALK_HOME_TICKS + 1_200, () -> {
@@ -2364,11 +2370,27 @@ public final class ForestryGameTests
                 if (givenUp > 0)
                 {
                     helper.assertTrue(walked >= EntityAIWorkLumberjack.WALK_HOME_TICKS - 20, "he gave the walk home up early: " + last[0]);
-                    return true;
+                    if (gaveUpAt[0] < 0)
+                    {
+                        gaveUpAt[0] = level.getGameTime();
+                    }
+                    helper.assertTrue(ai.getHutRetryUntil() > level.getGameTime(), "return hold ended before observation: " + last[0]);
+                    helper.assertTrue(original.getNavigation().isDone(), "restarted a hut or planting walk during return hold: " + last[0]);
+                    helper.assertTrue(ai.stuckReason() != null, "no validated stuck reason during return hold");
+                    return level.getGameTime() - gaveUpAt[0] >= 400;
                 }
                 return false;
             }, () -> last[0] + ", " + describe(worker), () -> {
-                // he never gets home: held where he stands
+                final String lifecycleState = "present=" + worker.getEntity().isPresent() + ", removed=" + original.isRemoved()
+                  + ", removal=" + original.getRemovalReason() + ", alive=" + original.isAlive() + ", job=" + worker.getJob()
+                  + ", outer=" + (original instanceof com.minecolonies.core.entity.citizen.EntityCitizen citizen ? citizen.getCitizenAI().getState() : "not citizen") + ", work=" + (ai(worker) == null ? "none" : ai(worker).getState());
+                if (!lifecycleState.equals(lifecycle[0]))
+                {
+                    Log.getLogger().info("[forestry return] tick={} {}", level.getGameTime(), lifecycleState);
+                    lifecycle[0] = lifecycleState;
+                }
+                helper.assertTrue(worker.getEntity().isPresent() && !original.isRemoved(), "forester vanished: " + lifecycleState);
+                // He never gets home. Position correction does not stop or replace his navigation.
                 worker.getEntity().ifPresent(e -> e.setPos(far.getX() + 0.5D, far.getY(), far.getZ() + 0.5D));
                 final EntityAIWorkLumberjack ai = ai(worker);
                 if (ai != null && searchingAt[0] < 0)
@@ -2380,7 +2402,7 @@ public final class ForestryGameTests
                         searchingAt[0] = level.getGameTime();
                     }
                 }
-            }, "forestry_walk_home_bounded");
+            }, carrySaplings ? "forestry_walk_home_bounded" : "forestry_walk_home_hut_saplings");
         });
     }
 
