@@ -214,6 +214,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 NavLifecycleGameTests.register(event);
             }
+            if (groups.contains("nav_retry"))
+            {
+                NavLifecycleGameTests.registerRetry(event);
+            }
             if (groups.contains("forestry"))
             {
                 ForestryGameTests.register(event);

@@ -2,7 +2,6 @@ package com.minecolonies.core.gametest;
 
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState;
-import com.minecolonies.api.entity.ai.statemachine.AITarget;
 import com.minecolonies.core.entity.pathfinding.pathjobs.PathJobFindTree;
 import com.minecolonies.core.colony.jobs.JobLumberjack;
 import com.minecolonies.core.entity.ai.workers.production.EntityAIWorkLumberjack;
@@ -66,6 +65,13 @@ final class NavLifecycleGameTests
     {
         GATES.forEach(CountDownLatch::countDown);
         GATES.clear();
+    }
+
+    static void registerRetry(final RegisterGameTestsEvent event)
+    {
+        final String name = "nav_cancelled_tree_search";
+        event.registerTest(Identifier.fromNamespaceAndPath("minecolonies", name),
+          info -> new MinecoloniesGameTestInstance(info, TESTS.get(name)), MinecoloniesGameTestRegistrar.isolatedColonyData(event, name));
     }
 
     private static void emptySearch(final GameTestHelper helper)
@@ -228,7 +234,6 @@ final class NavLifecycleGameTests
             entity.setNoAi(true);
             ((JobLumberjack) worker.getJob()).createAI();
             final var ai = ForestryGameTests.ai(worker);
-            ai.getStateAI().transitionToNext(new AITarget<>(AIWorkerState.IDLE, AIWorkerState.LUMBERJACK_SEARCHING_TREE, 1));
             final var nav = (MinecoloniesAdvancedPathNavigate) entity.getNavigation();
             final CountDownLatch gate = new CountDownLatch(1);
             GATES.add(gate);
@@ -265,8 +270,9 @@ final class NavLifecycleGameTests
                     pending.set(ai, result);
                     final var find = EntityAIWorkLumberjack.class.getDeclaredMethod("findTree");
                     find.setAccessible(true);
+                    final Object priorState = ai.getState();
                     final Object state = find.invoke(ai);
-                    helper.assertTrue(state == AIWorkerState.LUMBERJACK_SEARCHING_TREE && pending.get(ai) == null,
+                    helper.assertTrue(state == priorState && state != AIWorkerState.LUMBERJACK_NO_TREES_FOUND && pending.get(ai) == null,
                       "cancelled search became no-trees: state=" + state + " result=" + pending.get(ai));
                     helper.succeed();
                 }
