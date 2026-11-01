@@ -41,14 +41,14 @@ public final class AliveGameTests
 {
     public static final String[] NAMES = {"alive_rules", "alive_chat", "alive_chat_yields", "alive_morning", "alive_building_cheer", "alive_grief", "alive_raid_relief",
       "alive_rain_hurry", "alive_rain_where", "alive_traits_stable", "alive_chat_pairs", "alive_calm_pace", "alive_morning_crowd", "alive_shelter_inside",
-      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe", "alive_greet_hearing_edge"};
+      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe", "alive_greet_hearing_edge", "alive_chat_departure"};
 
     /**
      * Tests whose citizens must stand in the rain: they run without the barrier ceiling of the GameTest frame, which stops the rain (vanilla's isRainingAt
      * reads the MOTION_BLOCKING heightmap) while it lets the sky light through.
      */
     public static final java.util.Set<String> NEEDS_SKY = java.util.Set.of("alive_rain_hurry", "alive_rain_where", "alive_shelter_inside", "alive_shelter_dry",
-      "alive_shelter_chat", "alive_chorus", "alive_lines_wait");
+      "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_chat_departure");
 
     /**
      * A life moment must give way within this many ticks: the AI decides every 10 ticks, a life step runs every 20, the setting is read once a second.
@@ -110,6 +110,7 @@ public final class AliveGameTests
             case "alive_shelter_chat" -> AliveGameTests::shelterChat;
             case "alive_chorus" -> AliveGameTests::chorus;
             case "alive_lines_wait" -> AliveGameTests::linesWait;
+            case "alive_chat_departure" -> AliveGameTests::chatDeparture;
             case "alive_morning_dawn" -> AliveGameTests::morningDawn;
             case "alive_greet_once_safe" -> AliveGameTests::greetOnceSafe;
             case "alive_greet_hearing_edge" -> h -> greetOnceSafe(h, true);
@@ -1980,17 +1981,19 @@ public final class AliveGameTests
             final long[] rainAfter = {-1};
             final long[] cheerAfter = {-1};
             final boolean[] relief = {false};
+            final ChatTrace trace = new ChatTrace(a, b, c);
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
                 keepFed(a, b, c);
                 pin(helper, c, cAt);
                 final long now = helper.getLevel().getGameTime();
+                trace.capture();
                 final boolean talking = a.getLife().chatting() || b.getLife().chatting();
                 if (talking)
                 {
                     helper.assertTrue(!a.getSpeech().startsWith(CitizenLife.RAIN) && !b.getSpeech().startsWith(CitizenLife.RAIN), "a rain remark over the chat: '"
                                                                                                                               + a.getSpeech() + "' '" + b.getSpeech() + "'");
-                    helper.assertTrue(!b.getSpeech().startsWith(CitizenLife.CHEER_BUILDING), "a cheer over the chat");
+                    helper.assertTrue(!b.getSpeech().startsWith(CitizenLife.CHEER_BUILDING), "a cheer over the chat " + trace.describe());
                 }
                 else if (chatEnd[0] < 0)
                 {
@@ -2010,6 +2013,7 @@ public final class AliveGameTests
                     rain(helper, false);
                     Log.getLogger().info("ALIVE RESULT lines_wait chat_end={} rain_after={} cheer_after={}", chatEnd[0] - t0, rainAfter[0] - chatEnd[0],
                       cheerAfter[0] - chatEnd[0]);
+                    Log.getLogger().info("ALIVE CHAT TRACE {}", trace.describe());
                     helper.succeed();
                     return;
                 }
@@ -2017,13 +2021,132 @@ public final class AliveGameTests
                 {
                     rain(helper, false);
                     helper.fail("lines missing: chat end " + chatEnd[0] + " rain " + rainAfter[0] + " cheer " + cheerAfter[0] + " relief " + relief[0] + " a '"
-                                  + a.getSpeech() + "' b '" + b.getSpeech() + "' c '" + c.getSpeech() + "'");
+                                  + a.getSpeech() + "' b '" + b.getSpeech() + "' c '" + c.getSpeech() + "' " + trace.describe());
                     return;
                 }
                 helper.runAfterDelay(1, () -> poll[0].run());
             };
             helper.runAfterDelay(1, () -> poll[0].run());
         });
+    }
+
+    /** A real event transition takes one participant out of chat, as the leisure decision can do. */
+    private static void chatDeparture(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "chat departure");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            fillBiome(helper, new BlockPos(-8, 0, -8), new BlockPos(39, 12, 31), net.minecraft.world.level.biome.Biomes.PLAINS);
+            final EntityCitizen a = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));
+            final EntityCitizen b = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
+            makeTrait(a, LifeTrait.BRISK);
+            makeTrait(b, LifeTrait.BRISK);
+            keepFed(a, b);
+            helper.assertTrue(a.getLife().canJoinChat() && b.getLife().canJoinChat(), "departure fixture pair is not eligible " + lifeGates(a) + " / " + lifeGates(b));
+            a.getLife().startChat(b);
+            helper.assertTrue(a.getLife().chatPartnerId() == b.getCivilianID() && b.getLife().chatPartnerId() == a.getCivilianID(), "chat pair is not reciprocal");
+            b.getLife().schedule(CitizenLife.CHEER_BUILDING + "2", 0, true);
+            final ChatTrace trace = new ChatTrace(a, b);
+            // Wander's own leisure decision uses this same delay mechanism before travelling.
+            a.getCitizenAI().addTransition(new com.minecolonies.api.entity.ai.statemachine.AIOneTimeEventTarget<IState>(
+              (com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.IStateSupplier<IState>) () -> {
+                a.getCitizenAI().setCurrentDelay(80);
+                return EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE;
+            }));
+            rain(helper, true);
+            final long t0 = helper.getLevel().getGameTime();
+            final long[] departed = {-1};
+            final boolean[] cheer = {false};
+            final boolean[] rainLine = {false};
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                keepFed(a, b);
+                trace.capture();
+                final long now = helper.getLevel().getGameTime();
+                if (departed[0] < 0 && a.getCitizenAI().getState() == EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE)
+                {
+                    departed[0] = now;
+                }
+                final boolean talking = a.getLife().chatting() || b.getLife().chatting();
+                helper.assertTrue(!talking || !b.getSpeech().startsWith(CitizenLife.CHEER_BUILDING), "departure cheer over chat " + trace.describe());
+                if (departed[0] >= 0 && now - departed[0] >= YIELD_TICKS)
+                {
+                    helper.assertTrue(!talking, "departed participant retains a stale chat " + trace.describe());
+                }
+                cheer[0] |= b.getSpeech().startsWith(CitizenLife.CHEER_BUILDING);
+                rainLine[0] |= a.getSpeech().startsWith(CitizenLife.RAIN);
+                if (departed[0] >= 0 && !talking && cheer[0] && rainLine[0])
+                {
+                    rain(helper, false);
+                    Log.getLogger().info("ALIVE RESULT chat_departure elapsed={} {}", now - t0, trace.describe());
+                    helper.succeed();
+                    return;
+                }
+                helper.assertTrue(now - t0 < 400, "departure event or queued lines did not finish " + trace.describe());
+                helper.runAfterDelay(1, () -> poll[0].run());
+            };
+            helper.runAfterDelay(1, () -> poll[0].run());
+        });
+    }
+
+    /** Test-only, bounded state-change history; reflection also works against the pinned old production jar. */
+    private static final class ChatTrace
+    {
+        private final EntityCitizen[] citizens;
+        private final java.util.ArrayDeque<String> changes = new java.util.ArrayDeque<>();
+        private String previous = "";
+
+        ChatTrace(final EntityCitizen... citizens)
+        {
+            this.citizens = citizens;
+            capture();
+        }
+
+        void capture()
+        {
+            final StringBuilder state = new StringBuilder();
+            for (final EntityCitizen c : citizens)
+            {
+                final CitizenLife life = c.getLife();
+                final Object decision = read(c, EntityCitizen.class, "decisionAI");
+                state.append(" [id=").append(c.getCivilianID()).append(" state=").append(c.getCitizenAI().getState())
+                  .append(" last=").append(decision == null ? "none" : read(decision, CitizenAI.class, "lastState"))
+                  .append(" chatting=").append(life.chatting()).append(" partner=").append(read(life, CitizenLife.class, "chatPartnerId"))
+                  .append(" until=").append(read(life, CitizenLife.class, "chatUntil"))
+                  .append(" speechUntil=").append(read(life, CitizenLife.class, "speechUntil"))
+                  .append(" speech=").append(c.getSpeech()).append(" pending=").append(read(life, CitizenLife.class, "pending")).append(']');
+            }
+            final String next = state.toString();
+            if (!next.equals(previous))
+            {
+                previous = next;
+                if (changes.size() == 16)
+                {
+                    changes.removeFirst();
+                }
+                changes.addLast("tick=" + citizens[0].level().getGameTime() + " phaseCounter="
+                  + read(null, com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.TickingTransition.class, "tickOffsetVariant") + next);
+            }
+        }
+
+        String describe()
+        {
+            return changes.toString();
+        }
+
+        private static Object read(final Object object, final Class<?> type, final String name)
+        {
+            try
+            {
+                final var field = type.getDeclaredField(name);
+                field.setAccessible(true);
+                return field.get(object);
+            }
+            catch (final ReflectiveOperationException e)
+            {
+                throw new IllegalStateException(e);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ helpers
