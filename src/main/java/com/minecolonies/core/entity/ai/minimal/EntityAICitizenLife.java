@@ -128,19 +128,19 @@ public class EntityAICitizenLife implements IStateAI
         {
             // round 8 (Sol M4, M1): a computed path that cannot reach the spot is no arrival: he stops walking and greets where he stands, if someone is near him
             // (asked before the walk, which starts a new path once the last one ended)
+            final List<EntityCitizen> near = citizen.level().getEntitiesOfClass(EntityCitizen.class, citizen.getBoundingBox().inflate(CitizenLife.GREET_HEAR_RANGE),
+              other -> other != citizen && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == citizen.getCitizenColonyHandler().getColonyId()
+                         && !other.getCitizenSleepHandler().isAsleep() && other.distanceToSqr(citizen) <= CitizenLife.GREET_HEAR_RANGE * CitizenLife.GREET_HEAR_RANGE);
             final boolean blocked = cannotReach(spot);
             final boolean arrived = !blocked && EntityNavigationUtils.walkToPos(citizen, spot, 3, true);
             final boolean close = citizen.blockPosition().distSqr(spot) <= CitizenLife.GREET_TALK_RANGE * CitizenLife.GREET_TALK_RANGE
-              && life.someoneToGreet(citizen.blockPosition());
+              && !near.isEmpty();
             final boolean late = now - life.greetingStart() >= CitizenLife.MORNING_BUDGET - CitizenLife.GREET_LINGER - 20;
             if (!arrived && !close && !late && !blocked)
             {
                 return LifeState.MORNING_GATHER;
             }
             citizen.getNavigation().stop();
-            final List<EntityCitizen> near = citizen.level().getEntitiesOfClass(EntityCitizen.class, citizen.getBoundingBox().inflate(CitizenLife.GREET_HEAR_RANGE),
-              other -> other != citizen && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == citizen.getCitizenColonyHandler().getColonyId()
-                         && !other.getCitizenSleepHandler().isAsleep() && other.distanceToSqr(citizen) <= CitizenLife.GREET_HEAR_RANGE * CitizenLife.GREET_HEAR_RANGE);
             EntityCitizen nearest = null;
             for (final EntityCitizen other : near)
             {

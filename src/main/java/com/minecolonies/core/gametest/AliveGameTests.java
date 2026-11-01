@@ -41,7 +41,7 @@ public final class AliveGameTests
 {
     public static final String[] NAMES = {"alive_rules", "alive_chat", "alive_chat_yields", "alive_morning", "alive_building_cheer", "alive_grief", "alive_raid_relief",
       "alive_rain_hurry", "alive_rain_where", "alive_traits_stable", "alive_chat_pairs", "alive_calm_pace", "alive_morning_crowd", "alive_shelter_inside",
-      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe"};
+      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe", "alive_greet_hearing_edge"};
 
     /**
      * Tests whose citizens must stand in the rain: they run without the barrier ceiling of the GameTest frame, which stops the rain (vanilla's isRainingAt
@@ -112,6 +112,7 @@ public final class AliveGameTests
             case "alive_lines_wait" -> AliveGameTests::linesWait;
             case "alive_morning_dawn" -> AliveGameTests::morningDawn;
             case "alive_greet_once_safe" -> AliveGameTests::greetOnceSafe;
+            case "alive_greet_hearing_edge" -> h -> greetOnceSafe(h, true);
             default -> AliveGameTests::rainHurry;
         };
     }
@@ -1706,6 +1707,11 @@ public final class AliveGameTests
      */
     public static void greetOnceSafe(final GameTestHelper helper)
     {
+        greetOnceSafe(helper, false);
+    }
+
+    private static void greetOnceSafe(final GameTestHelper helper, final boolean hearingEdge)
+    {
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-greet-once-safe");
         midday(helper);
         final ServerLevel level = helper.getLevel();
@@ -1772,6 +1778,13 @@ public final class AliveGameTests
             final BlockPos actualListenerAt = helper.relativePos(spot).offset(2, 0, 0);
             pin(helper, listener, actualListenerAt);
             helper.assertTrue(greeter.getLife().someoneToGreet(spot), "precondition failed: no listener at the actual greeting spot");
+            if (hearingEdge)
+            {
+                greeter.setPos(spot.getX() - 4.1D, spot.getY(), spot.getZ() + 0.5D);
+                listener.setPos(spot.getX() + 3.95D, spot.getY(), spot.getZ() + 0.5D);
+                helper.assertTrue(greeter.getLife().someoneToGreet(greeter.blockPosition()) && greeter.distanceToSqr(listener) > 64,
+                  "fixture did not straddle block and exact hearing predicates");
+            }
             final long t0 = level.getGameTime();
             final int[] lines = {0};
             final boolean[] speaking = {false};
@@ -1782,6 +1795,10 @@ public final class AliveGameTests
                 final long now = level.getGameTime();
                 keepFed(greeter, shut, listener);
                 pin(helper, listener, actualListenerAt);
+                if (hearingEdge)
+                {
+                    listener.setPos(spot.getX() + 3.95D, spot.getY(), spot.getZ() + 0.5D);
+                }
                 final String state = "state=" + greeter.getCitizenAI().getState() + ", skipped=" + greeter.getLife().greetSkipped()
                   + ", position=" + greeter.blockPosition() + ", listener=" + listener.blockPosition() + ", spot=" + spot + ", speech=" + greeter.getSpeech();
                 if (!state.equals(lastState[0]))

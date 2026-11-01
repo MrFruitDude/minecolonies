@@ -86,6 +86,7 @@ public final class TreeChopCompat extends TreeChopProxy
             return;
         }
         chop.event = event;
+        event.getFellData().setBreakLeaves(false);
         if (event.isCanceled() || event.getLevel() != chop.level || !event.getChoppedBlockPos().equals(chop.target)
               || !event.getFellData().getTree().getLogBlocksOrEmpty().equals(chop.logs))
         {
@@ -234,13 +235,14 @@ public final class TreeChopCompat extends TreeChopProxy
             if (!warned)
             {
                 warned = true;
-                Log.getLogger().warn("TreeChop failed for a Forester at {}, using the normal path for this tree", pos, e);
+                Log.getLogger().warn("TreeChop failed for a Forester at {}, leaving this tree alone", pos, e);
             }
             else
             {
                 Log.getLogger().debug("TreeChop failed for a Forester at {}: {}", pos, e.toString());
             }
-            return ChopOutcome.FAILED;
+            // Dispatch can throw before our listener observes a cancellation. An uncertain chop must never fall back to cutting.
+            return ChopOutcome.REFUSED;
         }
         finally
         {

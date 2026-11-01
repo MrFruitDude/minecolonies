@@ -208,6 +208,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      * Position where the Builders constructs from.
      */
     private BlockPos workFrom;
+    private BlockPos firstWorkFrom;
 
     /**
      * The time in ticks the lumberjack has waited already. Directly connected with the MAX_WAITING_TIME.
@@ -1187,6 +1188,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         treeChopTarget = null;
         workFrom = null;
         triedWorkSpots.clear();
+        firstWorkFrom = null;
         outOfWorkSpots = false;
         leafWallSince = -1;
         searchedTree = null;
@@ -1419,6 +1421,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 {
                     // no way to it but through leaves he may not clear, from any spot round the stump (r6 Fable N49: not after the second of four), or the
                     // other spots had their minute (r7: each waits out the back-off): skip it now, with that reason, instead of standing at it for two minutes
+                    walkNoteAtGiveUp = walkNote();
                     return giveUpTree(job.getTree(), true);
                 }
                 if (checkIfStuck())
@@ -2187,6 +2190,10 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         if (workFrom == null || isSapling(world.getBlockState(workFrom.above())) || isSapling(world.getBlockState(workFrom)))
         {
             workFrom = getWorkingPosition(workAt);
+            if (firstWorkFrom == null)
+            {
+                firstWorkFrom = workFrom;
+            }
         }
 
         if (MathUtils.twoDimDistance(worker.blockPosition(), workFrom) <= MIN_WORKING_RANGE && Math.abs(worker.blockPosition().getY() - workFrom.getY()) <= MAX_WORK_HEIGHT
@@ -2350,7 +2357,16 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private String walkNote()
     {
         final BlockPos at = worker.blockPosition();
-        return "at " + at.toShortString() + ", work spot " + (workFrom == null ? "none" : workFrom.toShortString()) + " (tried " + triedWorkSpots.size() + ")"
+        final Tree tree = job.getTree();
+        final BlockPos stump = tree == null ? at : tree.getStumpLocations().isEmpty() ? tree.getLocation() : tree.getStumpLocations().get(0);
+        final long now = world.getGameTime();
+        return "stump " + stump.toShortString() + ", relative stance " + at.subtract(stump).toShortString()
+                 + ", horizontal " + MathUtils.twoDimDistance(at, stump) + ", height " + (at.getY() - stump.getY())
+                 + ", close age " + (closeSince < 0 ? -1 : now - closeSince) + ", leaf-wall age " + (leafWallSince < 0 ? -1 : now - leafWallSince)
+                 + ", first relative " + (firstWorkFrom == null ? "none" : firstWorkFrom.subtract(stump).toShortString())
+                 + ", spots exhausted " + outOfWorkSpots + ", tried relative " + triedWorkSpots.stream().map(p -> p.subtract(stump).toShortString()).toList()
+                 + ", no path " + (pathToTree != null && !pathToTree.isInProgress() && pathToTree.getPath() == null)
+                 + ", refusal " + (leafGuard == null ? "none" : leafGuard.refusalNote()) + ", at " + at.toShortString() + ", work spot " + (workFrom == null ? "none" : workFrom.toShortString()) + " (tried " + triedWorkSpots.size() + ")"
                  + ", failed paths " + failedTreePaths + ", navigator backs off " + (workFrom != null && ((MinecoloniesAdvancedPathNavigate) worker.getNavigation()).isDestinationUnreachable(workFrom))
                  + ", path " + (pathToTree == null ? "none" : pathToTree.getStatus()) + ", reached " + reachedTree + ", searched " + (job.getTree() != null && job.getTree() == searchedTree)
                  + ", retried " + (job.getTree() != null && job.getTree() == walkRetriedTree);

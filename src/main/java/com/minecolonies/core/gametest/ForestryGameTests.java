@@ -129,6 +129,20 @@ public final class ForestryGameTests
         TESTS.put("forestry_sweep_near_build", ForestryGameTests::sweepNearBuild);
         TESTS.put("forestry_replant_protected", ForestryGameTests::replantProtected);
         TESTS.put("forestry_cap_decoration", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_west", h -> capDecoration(h, new BlockPos(-3, 0, 0)));
+        TESTS.put("forestry_cap_decoration_north", h -> capDecoration(h, new BlockPos(0, 0, -3)));
+        TESTS.put("forestry_cap_decoration_corner", h -> capDecoration(h, new BlockPos(-2, 0, -2)));
+        TESTS.put("forestry_cap_decoration_east", h -> capDecoration(h, new BlockPos(3, 0, 0)));
+        TESTS.put("forestry_cap_decoration_far", h -> capDecoration(h, new BlockPos(-8, 0, -8)));
+        TESTS.put("forestry_cap_decoration_repeat_1", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_2", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_3", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_4", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_5", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_6", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_7", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_8", ForestryGameTests::capDecoration);
+
         TESTS.put("forestry_leaf_wall", ForestryGameTests::leafWall);
         TESTS.put("forestry_same_wood_beam", ForestryGameTests::sameWoodBeam);
         TESTS.put("forestry_cap_added_fungus", ForestryGameTests::capAddedFungus);
@@ -144,6 +158,8 @@ public final class ForestryGameTests
         TESTS.put("forestry_walk_home_bounded", helper -> walkHomeBounded(helper, true));
         TESTS.put("forestry_walk_home_hut_saplings", helper -> walkHomeBounded(helper, false));
 
+        TREECHOP_TESTS.put("forestry_treechop_veto_throw", helper -> TreeChopGuardGameTests.test(helper, "throw"));
+        TREECHOP_TESTS.put("forestry_treechop_veto_worker", TreeChopGuardGameTests::workerTest);
         TREECHOP_TESTS.put("forestry_treechop_veto_early", helper -> TreeChopGuardGameTests.test(helper, "early"));
         TREECHOP_TESTS.put("forestry_treechop_veto_late", helper -> TreeChopGuardGameTests.test(helper, "late"));
         TREECHOP_TESTS.put("forestry_treechop_veto_mismatch", helper -> TreeChopGuardGameTests.test(helper, "mismatch"));
@@ -213,7 +229,7 @@ public final class ForestryGameTests
         helper.getLevel().getGameRules().set(net.minecraft.world.level.gamerules.GameRules.RANDOM_TICK_SPEED, 0, helper.getLevel().getServer());
     }
 
-    private static BuildingLumberjack hut(final GameTestHelper helper, final IColony colony, final BlockPos rel, final boolean plantForest)
+    static BuildingLumberjack hut(final GameTestHelper helper, final IColony colony, final BlockPos rel, final boolean plantForest)
     {
         noRandomTicks(helper);
         final IBuilding building = MinecoloniesGameTests.placeProductionBuilding(helper, colony, ModBlocks.blockHutLumberjack, rel, "fundamentals/lumberjack1.blueprint");
@@ -227,7 +243,7 @@ public final class ForestryGameTests
         return lumberjack;
     }
 
-    private static ICitizenData forester(final GameTestHelper helper, final IColony colony, final BuildingLumberjack building, final BlockPos rel, final ItemStack... extra)
+    static ICitizenData forester(final GameTestHelper helper, final IColony colony, final BuildingLumberjack building, final BlockPos rel, final ItemStack... extra)
     {
         final ServerLevel level = helper.getLevel();
         final BlockPos anchor = helper.absolutePos(rel);
@@ -245,7 +261,7 @@ public final class ForestryGameTests
         return worker;
     }
 
-    private static EntityAIWorkLumberjack ai(final ICitizenData worker)
+    static EntityAIWorkLumberjack ai(final ICitizenData worker)
     {
         return worker.getEntity().map(e -> (Object) e.getCitizenJobHandler().getWorkAI()).filter(EntityAIWorkLumberjack.class::isInstance)
           .map(EntityAIWorkLumberjack.class::cast).orElse(null);
@@ -256,7 +272,7 @@ public final class ForestryGameTests
         return worker.getJob() instanceof JobLumberjack job ? job.getTree() : null;
     }
 
-    private static String describe(final ICitizenData worker)
+    static String describe(final ICitizenData worker)
     {
         final EntityAIWorkLumberjack ai = ai(worker);
         final Tree tree = tree(worker);
@@ -357,7 +373,7 @@ public final class ForestryGameTests
     /**
      * Pump the fixture every tick (daylight, full belly) until the check holds (asked every 20 ticks) or the cap is hit.
      */
-    private static void pump(
+    static void pump(
       final GameTestHelper helper,
       final List<ICitizenData> workers,
       final int cap,
@@ -1617,6 +1633,11 @@ public final class ForestryGameTests
      */
     private static void capDecoration(final GameTestHelper helper)
     {
+        capDecoration(helper, null);
+    }
+
+    private static void capDecoration(final GameTestHelper helper, final BlockPos stance)
+    {
         final ServerLevel level = helper.getLevel();
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry cap decoration");
         final BuildingLumberjack building = hut(helper, colony, HUT, false);
@@ -1661,7 +1682,7 @@ public final class ForestryGameTests
         helper.runAfterDelay(20, () -> {
             final Tree tree = new Tree(level, stem.above(1), colony);
             helper.assertTrue(tree.isTree() && tree.getSkip() == TreeFootprint.Skip.NONE, "the mushroom is no tree: " + tree.getSkip() + " " + tree.getSkipDetail());
-            final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10));
+            final ICitizenData worker = forester(helper, colony, building, stance == null ? new BlockPos(14, 1, 10) : helper.relativePos(stem).offset(stance));
             helper.assertTrue(worker.getJob() instanceof JobLumberjack, "no lumberjack job");
             ((JobLumberjack) worker.getJob()).setTree(tree);
             final String[] last = {""};
@@ -1672,6 +1693,10 @@ public final class ForestryGameTests
                             + level.getBlockState(shroomlight).getBlock();
                 helper.assertTrue(rowLeft == 4 && level.getBlockState(plank).is(Blocks.OAK_PLANKS), "the decoration joined to the cap was taken: " + last[0]);
                 helper.assertTrue(level.getBlockState(shroomlight).is(Blocks.SHROOMLIGHT), "the shroomlight on the cap was taken: " + last[0]);
+                for (BlockPos post = plank.below(); post.getY() >= stem.getY(); post = post.below())
+                {
+                    helper.assertTrue(level.getBlockState(post).is(Blocks.OAK_FENCE), "decoration post removed at " + post);
+                }
                 return stems == 0 && tree(worker) == null;
             }, () -> last[0] + ", " + describe(worker), null, "forestry_cap_decoration");
         });
@@ -2630,7 +2655,7 @@ public final class ForestryGameTests
 
     // ---------------------------------------------------------------- TreeChop lane
 
-    private static void resetTreeChop(final GameTestHelper helper)
+    static void resetTreeChop(final GameTestHelper helper)
     {
         helper.assertTrue(Compatibility.treeChop.isPresent(), "TreeChop is loaded but the Forester's TreeChop compat is not active");
         Compatibility.treeChop.setEnabled(true);

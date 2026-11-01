@@ -1,6 +1,14 @@
 package com.minecolonies.core.gametest;
 
 import com.minecolonies.api.compatibility.Compatibility;
+import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.ICitizenData;
+import com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack;
+import com.minecolonies.core.colony.jobs.JobLumberjack;
+import com.minecolonies.core.entity.ai.workers.production.EntityAIWorkLumberjack;
+import com.minecolonies.core.entity.ai.workers.util.Tree;
+import com.minecolonies.core.entity.ai.workers.util.TreeClaims;
+
 import com.minecolonies.api.compatibility.treechop.TreeChopProxy;
 import com.minecolonies.api.util.Log;
 import ht.treechop.api.ChopEvent;
@@ -75,6 +83,10 @@ final class TreeChopGuardGameTests
         else
         {
             event.setCanceled(true);
+            if (test.mode.equals("throw"))
+            {
+                throw new IllegalStateException("GameTest cancelled TreeChop dispatch");
+            }
         }
     }
 
@@ -89,11 +101,56 @@ final class TreeChopGuardGameTests
         return base;
     }
 
+    static void workerTest(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "worker veto");
+        final ServerLevel level = helper.getLevel();
+        final BuildingLumberjack hut = ForestryGameTests.hut(helper, colony, new BlockPos(8, 1, 2), false);
+        ForestryGameTests.resetTreeChop(helper);
+        final BlockPos base = grow(helper, new BlockPos(24, 1, 10), 61L);
+        final BlockPos next = grow(helper, new BlockPos(32, 1, 24), 62L);
+        final Set<BlockPos> protectedLogs = Set.copyOf(Compatibility.treeChop.getTreeLogs(level, base));
+        final Set<BlockPos> nextLogs = Set.copyOf(Compatibility.treeChop.getTreeLogs(level, next));
+        helper.runAfterDelay(20, () -> {
+            final ICitizenData worker = ForestryGameTests.forester(helper, colony, hut, new BlockPos(21, 1, 10));
+            final UUID actor = UUID.nameUUIDFromBytes(("minecolonies_lumberjack:" + colony.getID() + ":" + worker.getId()).getBytes(StandardCharsets.UTF_8));
+            final VetoCase test = new VetoCase(level, base, actor, "early");
+            active = test;
+            ((JobLumberjack) worker.getJob()).setTree(new Tree(level, base.above(), colony));
+            final long[] refusedAt = {-1};
+            ForestryGameTests.pump(helper, java.util.List.of(worker), 24_000, () -> {
+                final EntityAIWorkLumberjack ai = ForestryGameTests.ai(worker);
+                if (ai == null || ai.getTreeChopRefusedCount() < 1)
+                {
+                    return false;
+                }
+                if (refusedAt[0] < 0)
+                {
+                    refusedAt[0] = level.getGameTime();
+                    helper.assertTrue(test.seen && hut.getSkipReason(base) != null, "worker veto was not recorded by hut");
+                    helper.assertTrue(TreeClaims.isBlocked(level, base), "refused tree was not blocked");
+                }
+                return level.getGameTime() - refusedAt[0] >= TreeClaims.BLOCKED_CLAIM_TICKS
+                  && nextLogs.stream().noneMatch(p -> level.getBlockState(p).is(Blocks.OAK_LOG) || Compatibility.treeChop.isChoppedLog(level.getBlockState(p)))
+                  && ai.getTreeChopFellCount() >= 1;
+            }, () -> ForestryGameTests.describe(worker) + ", veto observed " + test.seen, () -> {
+                if (refusedAt[0] < 0 || level.getGameTime() - refusedAt[0] < TreeClaims.BLOCKED_CLAIM_TICKS)
+                {
+                    for (final BlockPos log : protectedLogs)
+                    {
+                        helper.assertTrue(level.getBlockState(log).is(Blocks.OAK_LOG) || Compatibility.treeChop.isChoppedLog(level.getBlockState(log)),
+                          "worker fell back to cutting vetoed log " + log);
+                    }
+                }
+            }, "forestry_treechop_veto_worker");
+        });
+    }
+
     static void test(final GameTestHelper helper, final String mode)
     {
         MinecoloniesGameTests.foundGameTestColony(helper, "treechop veto " + mode);
         final ServerLevel level = helper.getLevel();
-        Compatibility.treeChop.setEnabled(true);
+        ForestryGameTests.resetTreeChop(helper);
         final BlockPos base = grow(helper, new BlockPos(16, 1, 16), 61L);
         final BlockPos next = grow(helper, new BlockPos(30, 1, 16), 62L);
         final Set<BlockPos> logs = Compatibility.treeChop.getTreeLogs(level, base);
@@ -109,7 +166,10 @@ final class TreeChopGuardGameTests
             if (test.seen)
             {
                 helper.assertTrue(outcome == TreeChopProxy.ChopOutcome.REFUSED, "veto reported " + outcome + " instead of REFUSED");
-                helper.assertTrue(axe.getDamageValue() > test.damageBeforeVeto, "fixture did not exercise cancelled chop tool wear");
+                if (!mode.equals("throw"))
+                {
+                    helper.assertTrue(axe.getDamageValue() > test.damageBeforeVeto, "fixture did not exercise cancelled chop tool wear");
+                }
                 for (final BlockPos log : logs)
                 {
                     helper.assertTrue(level.getBlockState(log).is(Blocks.OAK_LOG) || Compatibility.treeChop.isChoppedLog(level.getBlockState(log)),
