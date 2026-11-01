@@ -154,12 +154,20 @@ final class NavLifecycleGameTests
             };
             final PathResult<?> result = nav.setPathJob(job, target, 1.0D, true);
             helper.assertTrue(result != null, "held job submission refused");
+            if (mode.equals("cancel_after"))
+            {
+                gate.countDown();
+            }
             final int[] tick = {0};
             final int[] interruptedAt = {-1};
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
                 tick[0]++;
-                nav.tick();
+                // The reaching-result case isolates cancellation evidence from the separate queue-wait canary.
+                if (!mode.equals("cancel_after") || result.isDone())
+                {
+                    nav.tick();
+                }
                 if (interrupted.get() && interruptedAt[0] < 0)
                 {
                     interruptedAt[0] = tick[0];
@@ -173,7 +181,7 @@ final class NavLifecycleGameTests
                     helper.succeed();
                     return;
                 }
-                if (tick[0] == 400 && !mode.equals("hung"))
+                if (tick[0] == 400 && !mode.equals("hung") && !mode.equals("cancel_after"))
                 {
                     gate.countDown();
                     helper.assertTrue(entered.get() && !interrupted.get() && result.isComputing() && nav.getStuckHandler().getStuckLevel() < 0,
@@ -186,7 +194,7 @@ final class NavLifecycleGameTests
                     helper.succeed();
                     return;
                 }
-                if (!mode.equals("hung") && tick[0] > 400 && result.isDone())
+                if (!mode.equals("hung") && (mode.equals("cancel_after") || tick[0] > 400) && result.isDone())
                 {
                     helper.assertTrue(result.isPathReachingDestination(), "released calculation did not produce a reaching path");
                     if (mode.equals("cancel_after"))
