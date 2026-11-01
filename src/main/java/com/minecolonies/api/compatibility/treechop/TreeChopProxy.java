@@ -38,7 +38,9 @@ public class TreeChopProxy
         /**
          * TreeChop threw. Use the normal path for this tree.
          */
-        FAILED
+        FAILED,
+        /** A felling was vetoed. The caller must leave the tree, rather than cutting it through a fallback. */
+        REFUSED
     }
 
     /**

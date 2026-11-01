@@ -34,7 +34,7 @@ import java.util.UUID;
  * Lets a Forester chop through TreeChop. Only created when TreeChop is loaded ({@code CompatibilityManager}); every TreeChop type stays inside method bodies.
  * <p>
  * Citizens break blocks without a break event, so TreeChop never sees them. Here a server-side fake player (one per Forester, never in the player
- * list) calls TreeChop's chop with the server config: tree size, leaves strategy, the correct tool rule and the item list apply as for a player. The fake player holds a
+ * list) calls TreeChop's chop with the server config for tree size, tools and item lists. Leaf removal stays with the forester's guarded sweep. The fake player holds a
  * copy of the citizen's axe; TreeChop's wear lands on the copy, and the caller wears the real axe with MineColonies' own rule.
  */
 public final class TreeChopCompat extends TreeChopProxy
@@ -55,30 +55,45 @@ public final class TreeChopCompat extends TreeChopProxy
      */
     private boolean warned = false;
 
-    private record ForesterChop(ServerLevel level, BlockPos target, Set<BlockPos> logs) { }
-
-    // Server-thread, synchronous chop calls only. Identity avoids affecting players or unrelated fake players.
-    private final Map<FakePlayer, ForesterChop> activeChops = new IdentityHashMap<>();
-
-    public TreeChopCompat()
+    private static final class ForesterChop
     {
-        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, this::protectForesterLeaves);
+        private final ServerLevel level;
+        private final BlockPos target;
+        private final Set<BlockPos> logs;
+        private ChopEvent.BeforeFellEvent event;
+        private boolean refused;
+
+        private ForesterChop(final ServerLevel level, final BlockPos target, final Set<BlockPos> logs)
+        {
+            this.level = level;
+            this.target = target;
+            this.logs = logs;
+        }
     }
 
-    private void protectForesterLeaves(final ChopEvent.BeforeFellEvent event)
+    // One listener across server discovery/reloads. Entries live only for a synchronous server-thread call.
+    private static final Map<FakePlayer, ForesterChop> ACTIVE_CHOPS = new IdentityHashMap<>();
+    static
     {
-        final ForesterChop chop = activeChops.get(event.getPlayer());
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, true, TreeChopCompat::protectForesterLeaves);
+    }
+
+    private static void protectForesterLeaves(final ChopEvent.BeforeFellEvent event)
+    {
+        final ForesterChop chop = ACTIVE_CHOPS.get(event.getPlayer());
         if (chop == null)
         {
             return;
         }
-        // Recheck the final event tree too: another listener may have changed the original selection.
-        if (event.getLevel() != chop.level() || !event.getChoppedBlockPos().equals(chop.target())
-              || !event.getFellData().getTree().getLogBlocksOrEmpty().equals(chop.logs()))
+        chop.event = event;
+        if (event.isCanceled() || event.getLevel() != chop.level || !event.getChoppedBlockPos().equals(chop.target)
+              || !event.getFellData().getTree().getLogBlocksOrEmpty().equals(chop.logs))
         {
+            chop.refused = true;
             event.setCanceled(true);
             return;
         }
+        // The pinned pack has no later BeforeFell listener. Arbitrary added mods can change event data after LOWEST.
         // TreeChop owns the approved logs. The forester's guarded sweep owns all leaves and caps.
         event.getFellData().setBreakLeaves(false);
     }
@@ -200,7 +215,7 @@ public final class TreeChopCompat extends TreeChopProxy
             return ChopOutcome.IGNORED;
         }
         final FakePlayer agent = FakePlayerFactory.get(level, new GameProfile(agentId, AGENT_NAME));
-        if (activeChops.containsKey(agent))
+        if (ACTIVE_CHOPS.containsKey(agent))
         {
             return ChopOutcome.IGNORED;
         }
@@ -208,7 +223,8 @@ public final class TreeChopCompat extends TreeChopProxy
         agent.setItemInHand(InteractionHand.MAIN_HAND, tool);
         final int damage = tool.getDamageValue();
         final boolean chopped;
-        activeChops.put(agent, new ForesterChop(level, pos.immutable(), Set.copyOf(approvedLogs)));
+        final ForesterChop context = new ForesterChop(level, pos.immutable(), Set.copyOf(approvedLogs));
+        ACTIVE_CHOPS.put(agent, context);
         try
         {
             chopped = ChopUtil.chop(agent, level, pos, state, tool, agent, Math.max(1, numChops), true);
@@ -228,10 +244,16 @@ public final class TreeChopCompat extends TreeChopProxy
         }
         finally
         {
-            activeChops.remove(agent);
+            ACTIVE_CHOPS.remove(agent);
             agent.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
         }
 
+        // Cancellation still applies chops and can wear the fake axe. Never infer felling from that wear.
+        // Keep the event reference so a later listener's cancellation is observed too.
+        if (context.refused || (context.event != null && context.event.isCanceled()))
+        {
+            return ChopOutcome.REFUSED;
+        }
         if (chopped)
         {
             return ChopOutcome.CHOPPED;

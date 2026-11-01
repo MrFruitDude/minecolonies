@@ -144,6 +144,9 @@ public final class ForestryGameTests
         TESTS.put("forestry_walk_home_bounded", helper -> walkHomeBounded(helper, true));
         TESTS.put("forestry_walk_home_hut_saplings", helper -> walkHomeBounded(helper, false));
 
+        TREECHOP_TESTS.put("forestry_treechop_veto_early", helper -> TreeChopGuardGameTests.test(helper, "early"));
+        TREECHOP_TESTS.put("forestry_treechop_veto_late", helper -> TreeChopGuardGameTests.test(helper, "late"));
+        TREECHOP_TESTS.put("forestry_treechop_veto_mismatch", helper -> TreeChopGuardGameTests.test(helper, "mismatch"));
         TREECHOP_TESTS.put("forestry_treechop_fell", ForestryGameTests::treeChopFell);
         TREECHOP_TESTS.put("forestry_treechop_half_chopped", ForestryGameTests::treeChopHalfChopped);
         TREECHOP_TESTS.put("forestry_treechop_disabled_fallback", ForestryGameTests::treeChopDisabledFallback);
@@ -1073,6 +1076,7 @@ public final class ForestryGameTests
             final java.util.function.ToIntFunction<Grown> standing = grown -> (int) logsAtChoice.get(grown).stream().filter(pos -> level.getBlockState(pos).is(Blocks.OAK_LOG)).count();
             final List<BlockPos> planks = new ArrayList<>();
             final boolean[] duringChanged = {false};
+            final Map<Grown, Integer> chopsAtChoice = new HashMap<>();
             final String[] last = {""};
             pump(helper, List.of(worker), FELL_CAP, () -> {
                 for (final BlockPos pos : planks)
@@ -1111,6 +1115,7 @@ public final class ForestryGameTests
                     roles.add(grown);
                     logsAtChoice.put(grown, List.copyOf(current.getAllLogs()));
                     baseAtChoice.put(grown, current.getLocation());
+                    chopsAtChoice.put(grown, ai(worker) == null ? 0 : ai(worker).getTreeChopChopCount());
                     if (roles.size() == 1)
                     {
                         // Before his first cut: the top log becomes planks
@@ -1119,9 +1124,15 @@ public final class ForestryGameTests
                         planks.add(top);
                     }
                 }
-                if (roles.size() >= 2 && grown == roles.get(1) && !duringChanged[0] && current.getLogsLeft() < current.getAllLogs().size()
-                      && level.getBlockState(current.getLocation()).is(Blocks.OAK_LOG))
+                final EntityAIWorkLumberjack activeAI = ai(worker);
+                final boolean partialChop = activeAI != null && activeAI.usesTreeChop()
+                  && activeAI.getTreeChopChopCount() > chopsAtChoice.get(grown)
+                  && Compatibility.treeChop.isChoppedLog(level.getBlockState(current.getLocation()));
+                if (roles.size() >= 2 && grown == roles.get(1) && !duringChanged[0]
+                      && ((current.getLogsLeft() < current.getAllLogs().size() && level.getBlockState(current.getLocation()).is(Blocks.OAK_LOG)) || partialChop))
                 {
+                    Log.getLogger().info("[changed tree] partialTreeChop={} chops={} fellings={} base={}", partialChop,
+                      activeAI == null ? -1 : activeAI.getTreeChopChopCount(), activeAI == null ? -1 : activeAI.getTreeChopFellCount(), level.getBlockState(current.getLocation()));
                     // During the felling: the base log becomes planks
                     level.setBlockAndUpdate(current.getLocation(), Blocks.OAK_PLANKS.defaultBlockState());
                     planks.add(current.getLocation());

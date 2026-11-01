@@ -130,7 +130,8 @@ public class EntityAICitizenLife implements IStateAI
             // (asked before the walk, which starts a new path once the last one ended)
             final boolean blocked = cannotReach(spot);
             final boolean arrived = !blocked && EntityNavigationUtils.walkToPos(citizen, spot, 3, true);
-            final boolean close = citizen.blockPosition().distSqr(spot) <= CitizenLife.GREET_TALK_RANGE * CitizenLife.GREET_TALK_RANGE;
+            final boolean close = citizen.blockPosition().distSqr(spot) <= CitizenLife.GREET_TALK_RANGE * CitizenLife.GREET_TALK_RANGE
+              && life.someoneToGreet(citizen.blockPosition());
             final boolean late = now - life.greetingStart() >= CitizenLife.MORNING_BUDGET - CitizenLife.GREET_LINGER - 20;
             if (!arrived && !close && !late && !blocked)
             {

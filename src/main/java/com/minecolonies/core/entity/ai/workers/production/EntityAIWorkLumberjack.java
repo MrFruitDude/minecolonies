@@ -1766,6 +1766,17 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
         switch (outcome[0])
         {
+            case REFUSED ->
+            {
+                final List<BlockPos> logs = new ArrayList<>(tree.getAllLogs());
+                final BlockPos location = tree.getLocation();
+                logs.add(location);
+                finishTree();
+                TreeClaims.block(world, logs, building.getColony().getID());
+                building.addSkippedTree(location);
+                treeChopRefusedCount++;
+                return LUMBERJACK_SEARCHING_TREE;
+            }
             case CHOPPED -> treeChopChopCount++;
             case FELLED ->
             {

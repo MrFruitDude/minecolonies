@@ -1453,6 +1453,9 @@ public final class AliveGameTests
                     helper.assertTrue(!home.isInBuilding(start) && level.canSeeSky(start.above()), "precondition failed: the roof covers the start " + start + " roof x "
                                                                                                   + x0 + ".." + x1 + " z " + z0 + ".." + z1);
                 }
+                rain(helper, true);
+                level.setRainLevel(1.0F);
+                helper.assertTrue(level.isRaining(), "precondition failed: rain has not become effective");
                 final EntityCitizen[] mates = new EntityCitizen[2];
                 for (int i = 0; i < 2; i++)
                 {
@@ -1766,15 +1769,26 @@ public final class AliveGameTests
             helper.assertTrue(!reloaded.greetingHolds(true) && reloaded.gatherSpot() == null, "a reloaded greeter greets again the same morning");
             helper.assertTrue(shut.getLife().greetingHolds(true) && shut.getLife().gatherSpot() != null, "precondition failed: the shut-in greeter has no spot");
             final BlockPos shutSpot = shut.getLife().gatherSpot();
+            final BlockPos actualListenerAt = helper.relativePos(spot).offset(2, 0, 0);
+            pin(helper, listener, actualListenerAt);
+            helper.assertTrue(greeter.getLife().someoneToGreet(spot), "precondition failed: no listener at the actual greeting spot");
             final long t0 = level.getGameTime();
             final int[] lines = {0};
             final boolean[] speaking = {false};
             final long[] shutEnded = {-1};
+            final String[] lastState = {""};
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
                 final long now = level.getGameTime();
                 keepFed(greeter, shut, listener);
-                pin(helper, listener, listenerAt);
+                pin(helper, listener, actualListenerAt);
+                final String state = "state=" + greeter.getCitizenAI().getState() + ", skipped=" + greeter.getLife().greetSkipped()
+                  + ", position=" + greeter.blockPosition() + ", listener=" + listener.blockPosition() + ", spot=" + spot + ", speech=" + greeter.getSpeech();
+                if (!state.equals(lastState[0]))
+                {
+                    Log.getLogger().info("[greet safe] elapsed={} {}", now - t0, state);
+                    lastState[0] = state;
+                }
                 final boolean says = greeter.getSpeech().contains(".morning");
                 lines[0] += says && !speaking[0] ? 1 : 0;
                 speaking[0] = says;
