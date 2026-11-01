@@ -1775,11 +1775,21 @@ public final class AliveGameTests
             helper.assertTrue(!reloaded.greetingHolds(true) && reloaded.gatherSpot() == null, "a reloaded greeter greets again the same morning");
             helper.assertTrue(shut.getLife().greetingHolds(true) && shut.getLife().gatherSpot() != null, "precondition failed: the shut-in greeter has no spot");
             final BlockPos shutSpot = shut.getLife().gatherSpot();
-            final BlockPos actualListenerAt = helper.relativePos(spot).offset(2, 0, 0);
+            final BlockPos actualListenerAt = spot.offset(2, 0, 0).subtract(helper.absolutePos(BlockPos.ZERO));
+            helper.assertTrue(helper.absolutePos(actualListenerAt).equals(spot.offset(2, 0, 0)), "listener coordinate round trip failed");
             pin(helper, listener, actualListenerAt);
+            helper.assertTrue(listener.blockPosition().equals(spot.offset(2, 0, 0)), "listener was not placed beside the actual spot");
             helper.assertTrue(greeter.getLife().someoneToGreet(spot), "precondition failed: no listener at the actual greeting spot");
             if (hearingEdge)
             {
+                // The hearing-edge variant needs an open route; the separate safety case retains all original terrain.
+                for (int dx = -5; dx <= 1; dx++)
+                {
+                    final BlockPos cell = spot.offset(dx, 0, 0);
+                    level.setBlockAndUpdate(cell.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                    level.setBlockAndUpdate(cell, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                    level.setBlockAndUpdate(cell.above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                }
                 greeter.setPos(spot.getX() - 4.1D, spot.getY(), spot.getZ() + 0.5D);
                 listener.setPos(spot.getX() + 3.95D, spot.getY(), spot.getZ() + 0.5D);
                 helper.assertTrue(greeter.getLife().someoneToGreet(greeter.blockPosition()) && greeter.distanceToSqr(listener) > 64,
@@ -1789,6 +1799,7 @@ public final class AliveGameTests
             final int[] lines = {0};
             final boolean[] speaking = {false};
             final long[] shutEnded = {-1};
+            final boolean[] edgeObserved = {false};
             final String[] lastState = {""};
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
@@ -1798,6 +1809,21 @@ public final class AliveGameTests
                 if (hearingEdge)
                 {
                     listener.setPos(spot.getX() + 3.95D, spot.getY(), spot.getZ() + 0.5D);
+                }
+                if (hearingEdge && !edgeObserved[0] && greeter.getCitizenAI().getState() == EntityAICitizenLife.LifeState.MORNING_GATHER)
+                {
+                    final var eligible = level.getEntitiesOfClass(EntityCitizen.class, greeter.getBoundingBox().inflate(CitizenLife.GREET_HEAR_RANGE),
+                      other -> other != greeter && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == colony.getID()
+                        && !other.getCitizenSleepHandler().isAsleep() && other.distanceToSqr(greeter) <= 64);
+                    helper.assertTrue(eligible.isEmpty() && greeter.distanceToSqr(listener) > 64 && greeter.getLife().someoneToGreet(greeter.blockPosition()),
+                      "first gather did not retain empty exact listener set at block hearing edge: " + eligible + " distance " + greeter.distanceToSqr(listener));
+                    helper.assertTrue(!greeter.getLife().greetSkipped() && !greeter.getSpeech().contains(".morning"), "edge skipped or spoke before approaching");
+                    for (int dx = -5; dx <= 1; dx++)
+                    {
+                        helper.assertTrue(CitizenLife.safeStand(level, spot.offset(dx, 0, 0)), "edge route obstructed at " + spot.offset(dx, 0, 0));
+                    }
+                    edgeObserved[0] = true;
+                    Log.getLogger().info("[greet first gather edge] position={} listener={} distance={} eligible={}", greeter.position(), listener.position(), greeter.distanceToSqr(listener), eligible.size());
                 }
                 final String state = "state=" + greeter.getCitizenAI().getState() + ", skipped=" + greeter.getLife().greetSkipped()
                   + ", position=" + greeter.blockPosition() + ", listener=" + listener.blockPosition() + ", spot=" + spot + ", speech=" + greeter.getSpeech();
@@ -1819,6 +1845,7 @@ public final class AliveGameTests
                 }
                 if (now - t0 > CitizenLife.MORNING_BUDGET + 60)
                 {
+                    helper.assertTrue(!hearingEdge || edgeObserved[0], "no first-gather hearing edge observed");
                     helper.assertTrue(lines[0] == 1, "the greeter said his morning line " + lines[0] + " times");
                     helper.assertTrue(!greeter.getLife().greetingHolds(true) && !new CitizenLife(greeter).greetingHolds(true), "the greeting came back");
                     helper.assertTrue(shutEnded[0] >= 0, "the shut-in greeter still holds his greeting");

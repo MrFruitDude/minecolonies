@@ -96,7 +96,7 @@ public final class TreeChopCompat extends TreeChopProxy
         }
         // The pinned pack has no later BeforeFell listener. Arbitrary added mods can change event data after LOWEST.
         // TreeChop owns the approved logs. The forester's guarded sweep owns all leaves and caps.
-        event.getFellData().setBreakLeaves(false);
+
     }
 
     @Override
@@ -229,6 +229,10 @@ public final class TreeChopCompat extends TreeChopProxy
         try
         {
             chopped = ChopUtil.chop(agent, level, pos, state, tool, agent, Math.max(1, numChops), true);
+        }
+        catch (final VirtualMachineError e)
+        {
+            throw e;
         }
         catch (final Throwable e)
         {

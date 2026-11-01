@@ -159,6 +159,7 @@ public final class ForestryGameTests
         TESTS.put("forestry_walk_home_hut_saplings", helper -> walkHomeBounded(helper, false));
 
         TREECHOP_TESTS.put("forestry_treechop_veto_throw", helper -> TreeChopGuardGameTests.test(helper, "throw"));
+        TREECHOP_TESTS.put("forestry_treechop_veto_reload", helper -> TreeChopGuardGameTests.workerTest(helper, true));
         TREECHOP_TESTS.put("forestry_treechop_veto_worker", TreeChopGuardGameTests::workerTest);
         TREECHOP_TESTS.put("forestry_treechop_veto_early", helper -> TreeChopGuardGameTests.test(helper, "early"));
         TREECHOP_TESTS.put("forestry_treechop_veto_late", helper -> TreeChopGuardGameTests.test(helper, "late"));
@@ -1387,6 +1388,8 @@ public final class ForestryGameTests
         helper.runAfterDelay(20, () -> {
             final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10), new ItemStack(Items.OAK_SAPLING, 8));
             final String[] last = {""};
+            final String[] leftPlot = {""};
+            final BlockPos origin = helper.absolutePos(BlockPos.ZERO);
             pump(helper, List.of(worker), FELL_CAP, () -> {
                 final int logs = count(level, strip, s -> s.is(Blocks.OAK_LOG));
                 final long replanted = trunks.stream().filter(pos -> level.getBlockState(pos).is(Blocks.OAK_SAPLING)).count();
@@ -1395,7 +1398,22 @@ public final class ForestryGameTests
                 helper.assertTrue(building.getSkippedTreeCount() == 0 && building.getSkippedTreeCount(BuildingLumberjack.SkipReason.TOO_BIG) == 0,
                   "a touching oak was left standing: " + last[0]);
                 return logs == 0 && replanted == 4 && tree(worker) == null;
-            }, () -> last[0] + ", standing " + standingTrunks(level, colony, building, worker, trunks) + ", " + describe(worker), null, "forestry_touching_same_wood");
+            }, () -> last[0] + ", standing " + standingTrunks(level, colony, building, worker, trunks) + ", " + describe(worker) + ", first departure " + leftPlot[0], () -> {
+                final var entity = worker.getEntity().orElseThrow();
+                final BlockPos at = entity.blockPosition();
+                final BlockPos relative = at.subtract(origin);
+                if (leftPlot[0].isEmpty() && (relative.getX() < 0 || relative.getX() >= 64 || relative.getZ() < 0 || relative.getZ() >= 48 || relative.getY() < 0))
+                {
+                    final var navigation = entity.getNavigation();
+                    final var path = navigation.getPath();
+                    leftPlot[0] = "tick=" + level.getGameTime() + ", relative=" + relative + ", velocity=" + entity.getDeltaMovement()
+                      + ", feet=" + level.getBlockState(at) + ", head=" + level.getBlockState(at.above()) + ", support=" + level.getBlockState(at.below())
+                      + ", destination=" + navigation.getTargetPos() + ", path end=" + (path == null ? "none" : path.getEndNode())
+                      + ", items=" + level.getEntitiesOfClass(ItemEntity.class, entity.getBoundingBox().inflate(5)).stream().map(i -> i.getItem() + "@" + i.position()).toList()
+                      + ", " + describe(worker);
+                    Log.getLogger().info("[touching oak first departure] {}", leftPlot[0]);
+                }
+            }, "forestry_touching_same_wood");
         });
     }
 
@@ -1682,7 +1700,16 @@ public final class ForestryGameTests
         helper.runAfterDelay(20, () -> {
             final Tree tree = new Tree(level, stem.above(1), colony);
             helper.assertTrue(tree.isTree() && tree.getSkip() == TreeFootprint.Skip.NONE, "the mushroom is no tree: " + tree.getSkip() + " " + tree.getSkipDetail());
-            final ICitizenData worker = forester(helper, colony, building, stance == null ? new BlockPos(14, 1, 10) : helper.relativePos(stem).offset(stance));
+            final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10));
+            if (stance != null)
+            {
+                final BlockPos target = stem.offset(stance);
+                helper.assertTrue(helper.absolutePos(new BlockPos(24, 1, 18)).equals(stem), "mushroom stem differs from known fixture base");
+                helper.assertTrue(level.getBlockState(target).isAir() && level.getBlockState(target.above()).isAir()
+                  && !level.getBlockState(target.below()).getCollisionShape(level, target.below()).isEmpty(), "unsafe approach stance " + target);
+                worker.getEntity().orElseThrow().setPos(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D);
+                helper.runAfterDelay(1, () -> helper.assertTrue(worker.getEntity().orElseThrow().blockPosition().equals(target), "stance moved before first approach tick"));
+            }
             helper.assertTrue(worker.getJob() instanceof JobLumberjack, "no lumberjack job");
             ((JobLumberjack) worker.getJob()).setTree(tree);
             final String[] last = {""};

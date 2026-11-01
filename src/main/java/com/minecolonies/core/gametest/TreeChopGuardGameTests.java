@@ -42,6 +42,7 @@ final class TreeChopGuardGameTests
         final String mode;
         int damageBeforeVeto = -1;
         boolean seen;
+        long eventAt = -1;
 
         VetoCase(final ServerLevel level, final BlockPos target, final UUID actor, final String mode)
         {
@@ -73,6 +74,7 @@ final class TreeChopGuardGameTests
             return;
         }
         test.seen = true;
+        test.eventAt = test.level.getGameTime();
         test.damageBeforeVeto = event.getPlayer().getMainHandItem().getDamageValue();
         if (test.mode.equals("mismatch"))
         {
@@ -103,46 +105,73 @@ final class TreeChopGuardGameTests
 
     static void workerTest(final GameTestHelper helper)
     {
+        workerTest(helper, false);
+    }
+
+    static void workerTest(final GameTestHelper helper, final boolean reload)
+    {
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "worker veto");
         final ServerLevel level = helper.getLevel();
         final BuildingLumberjack hut = ForestryGameTests.hut(helper, colony, new BlockPos(8, 1, 2), false);
         ForestryGameTests.resetTreeChop(helper);
-        final BlockPos base = grow(helper, new BlockPos(24, 1, 10), 61L);
-        final BlockPos next = grow(helper, new BlockPos(32, 1, 24), 62L);
+        final BlockPos base = grow(helper, new BlockPos(22, 1, 18), 71L);
         final Set<BlockPos> protectedLogs = Set.copyOf(Compatibility.treeChop.getTreeLogs(level, base));
-        final Set<BlockPos> nextLogs = Set.copyOf(Compatibility.treeChop.getTreeLogs(level, next));
+        final Set<BlockPos> nextLogs = new HashSet<>();
         helper.runAfterDelay(20, () -> {
-            final ICitizenData worker = ForestryGameTests.forester(helper, colony, hut, new BlockPos(21, 1, 10));
+            final ICitizenData worker = ForestryGameTests.forester(helper, colony, hut, new BlockPos(14, 1, 10), new ItemStack(Items.OAK_SAPLING, 4));
             final UUID actor = UUID.nameUUIDFromBytes(("minecolonies_lumberjack:" + colony.getID() + ":" + worker.getId()).getBytes(StandardCharsets.UTF_8));
             final VetoCase test = new VetoCase(level, base, actor, "early");
             active = test;
-            ((JobLumberjack) worker.getJob()).setTree(new Tree(level, base.above(), colony));
-            final long[] refusedAt = {-1};
+            final boolean[] chosen = {false};
+            final boolean[] reloaded = {false};
+            final boolean[] restored = {false};
+            final boolean[] blocked = {false};
             ForestryGameTests.pump(helper, java.util.List.of(worker), 24_000, () -> {
                 final EntityAIWorkLumberjack ai = ForestryGameTests.ai(worker);
-                if (ai == null || ai.getTreeChopRefusedCount() < 1)
+                if (ai == null || ai.getTreeChopRefusedOutcomeCount() < 1)
                 {
                     return false;
                 }
-                if (refusedAt[0] < 0)
+                helper.assertTrue(chosen[0] && test.seen && (!reload || (reloaded[0] && restored[0])), "no complete selected-mode/veto/reload episode");
+                if (!blocked[0])
                 {
-                    refusedAt[0] = level.getGameTime();
-                    helper.assertTrue(test.seen && hut.getSkipReason(base) != null, "worker veto was not recorded by hut");
-                    helper.assertTrue(TreeClaims.isBlocked(level, base), "refused tree was not blocked");
+                    helper.assertTrue(hut.getSkipReason(base) != null && TreeClaims.isBlocked(level, base), "refused tree was not blocked and recorded");
+                    blocked[0] = true;
+                    final BlockPos next = grow(helper, new BlockPos(34, 1, 24), 71L);
+                    nextLogs.addAll(Compatibility.treeChop.getTreeLogs(level, next));
                 }
-                return level.getGameTime() - refusedAt[0] >= TreeClaims.BLOCKED_CLAIM_TICKS
-                  && nextLogs.stream().noneMatch(p -> level.getBlockState(p).is(Blocks.OAK_LOG) || Compatibility.treeChop.isChoppedLog(level.getBlockState(p)))
+                return level.getGameTime() - test.eventAt >= TreeClaims.BLOCKED_CLAIM_TICKS
+                  && !nextLogs.isEmpty() && nextLogs.stream().noneMatch(p -> level.getBlockState(p).is(Blocks.OAK_LOG) || Compatibility.treeChop.isChoppedLog(level.getBlockState(p)))
                   && ai.getTreeChopFellCount() >= 1;
-            }, () -> ForestryGameTests.describe(worker) + ", veto observed " + test.seen, () -> {
-                if (refusedAt[0] < 0 || level.getGameTime() - refusedAt[0] < TreeClaims.BLOCKED_CLAIM_TICKS)
+            }, () -> ForestryGameTests.describe(worker) + ", veto=" + test.seen + ", selected=" + chosen[0] + ", reload=" + reloaded[0] + ", restored=" + restored[0], () -> {
+                final EntityAIWorkLumberjack ai = ForestryGameTests.ai(worker);
+                final JobLumberjack job = (JobLumberjack) worker.getJob();
+                if (ai != null && job.getTree() != null && job.getTree().getLocation().equals(base) && ai.usesTreeChop())
+                {
+                    helper.assertTrue(base.equals(ai.getTreeChopTarget()), "unexpected TreeChop target " + ai.getTreeChopTarget());
+                    chosen[0] = true;
+                    restored[0] |= reloaded[0];
+                }
+                if (reload && !reloaded[0] && chosen[0] && ai != null && ai.getTreeChopChopCount() > 0 && !test.seen)
+                {
+                    final var saved = job.serializeNBT(level.registryAccess());
+                    ai.onRemoval();
+                    job.deserializeNBT(level.registryAccess(), saved);
+                    helper.assertTrue(job.getTree() != null, "saved tree was not restored");
+                    job.createAI();
+                    helper.assertTrue(ForestryGameTests.ai(worker) != ai, "AI did not rebuild");
+                    reloaded[0] = true;
+                }
+                if (!test.seen || level.getGameTime() - test.eventAt < TreeClaims.BLOCKED_CLAIM_TICKS)
                 {
                     for (final BlockPos log : protectedLogs)
                     {
                         helper.assertTrue(level.getBlockState(log).is(Blocks.OAK_LOG) || Compatibility.treeChop.isChoppedLog(level.getBlockState(log)),
-                          "worker fell back to cutting vetoed log " + log);
+                          "protected log changed " + log + ", seen=" + test.seen + ", mode=" + (ai != null && ai.usesTreeChop())
+                            + ", target=" + (ai == null ? null : ai.getTreeChopTarget()) + ", " + ForestryGameTests.describe(worker));
                     }
                 }
-            }, "forestry_treechop_veto_worker");
+            }, reload ? "forestry_treechop_veto_reload" : "forestry_treechop_veto_worker");
         });
     }
 

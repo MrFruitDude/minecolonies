@@ -209,6 +209,8 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      */
     private BlockPos workFrom;
     private BlockPos firstWorkFrom;
+    private Tree chopPathTree;
+    private int treeChopRefusedOutcomeCount;
 
     /**
      * The time in ticks the lumberjack has waited already. Directly connected with the MAX_WAITING_TIME.
@@ -976,6 +978,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
      */
     private void chooseChopPath(@NotNull final Tree tree)
     {
+        chopPathTree = tree;
         useTreeChop = false;
         treeChopTarget = null;
         if (!MineColonies.getConfig().getServer().lumberjacksUseTreeChop.get() || !Compatibility.treeChop.isEnabled() || tree.isDynamicTree() || !tree.isFootprintTree())
@@ -1178,6 +1181,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     private void finishTree()
     {
         job.setTree(null);
+        chopPathTree = null;
         pathResult = null;
         checkedInHut = false;
         TreeClaims.release(claim);
@@ -1351,6 +1355,12 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             Log.getLogger().debug("Forester {} leaves the tree at {}: another Forester works it", worker.getCitizenData().getId(), job.getTree().getLocation());
             finishTree();
             return START_WORKING;
+        }
+
+        // A saved job retains its tree while a rebuilt AI loses its transient chop-mode choice.
+        if (chopPathTree != job.getTree())
+        {
+            chooseChopPath(job.getTree());
         }
 
         // Forestry: the give-up clock runs only while he is at the tree work
@@ -1778,6 +1788,7 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 TreeClaims.block(world, logs, building.getColony().getID());
                 building.addSkippedTree(location);
                 treeChopRefusedCount++;
+                treeChopRefusedOutcomeCount++;
                 return LUMBERJACK_SEARCHING_TREE;
             }
             case CHOPPED -> treeChopChopCount++;
@@ -1793,6 +1804,18 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
         worker.decreaseSaturationForContinuousAction();
         return getState();
+    }
+
+    /** @return explicit REFUSED chop outcomes, excluding footprint and placed-cap fallbacks. */
+    public int getTreeChopRefusedOutcomeCount()
+    {
+        return treeChopRefusedOutcomeCount;
+    }
+
+    @Nullable
+    public BlockPos getTreeChopTarget()
+    {
+        return treeChopTarget;
     }
 
     /**
