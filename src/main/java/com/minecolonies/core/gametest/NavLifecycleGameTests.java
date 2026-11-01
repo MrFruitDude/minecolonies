@@ -156,7 +156,7 @@ final class NavLifecycleGameTests
                 final java.util.Set<BlockPos> walls = new java.util.HashSet<>();
                 final BlockPos[] pocket = {null};
                 final int[] ticks = {0};
-                nav.walkTo(target, 1.0D);
+                nav.setPathJob(new PathJobMoveToLocation(helper.getLevel(), PathfindingUtils.prepareStart(entity), target, 32, entity), target, 1.0D, true);
                 ForestryGameTests.pump(helper, List.of(worker), 24_000, () -> {
                     if (!blocked[0] || !movedAway[0] || !complete[0] || entity.blockPosition().distSqr(target) > 16)
                     {
@@ -191,7 +191,7 @@ final class NavLifecycleGameTests
                     }
                     if (nav.isDone())
                     {
-                        nav.walkTo(target, 1.0D);
+                        nav.setPathJob(new PathJobMoveToLocation(helper.getLevel(), PathfindingUtils.prepareStart(entity), target, 32, entity), target, 1.0D, true);
                     }
                     helper.assertTrue(blocked[0] || ticks[0] < 3000, "trip never moved before the obstruction " + trace);
                 }, "nav_blocked_destination_trip");
