@@ -427,6 +427,7 @@ public final class ForestryGameTests
         private Vec3 previous;
         private String firstDeparture = "none";
         private int ticks;
+        private int displacementLogs;
 
         ApproachTrace(final GameTestHelper helper, final ICitizenData worker)
         {
@@ -466,7 +467,7 @@ public final class ForestryGameTests
                 {
                     firstDeparture = sample;
                 }
-                if (departed || jumped)
+                if ((departed || jumped) && displacementLogs++ < 4)
                 {
                     Log.getLogger().info("[forestry displacement] floorExit={} jump={} previous={} {}", departed, jumped, previous, summary());
                 }

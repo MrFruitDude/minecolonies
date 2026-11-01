@@ -11,6 +11,8 @@ import com.minecolonies.api.util.DamageSourceKeys;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.api.util.constant.ColonyConstants;
 import com.minecolonies.core.entity.pathfinding.SurfaceType;
+import com.minecolonies.core.entity.pathfinding.pathjobs.IDestinationPathJob;
+import com.minecolonies.core.entity.pathfinding.pathresults.PathResult;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Mob;
@@ -74,6 +76,9 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
      * Global timeout counter, used to determine when we're completly stuck
      */
     private int globalTimeout = 0;
+    private PathResult<?> calculatingResult;
+    private long calculatingSince = -1;
+    private static final int CALCULATION_GRACE_TICKS = 600;
 
     /**
      * The previously desired go to position of the entity
@@ -178,11 +183,39 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
     {
         if (navigator.getPathResult() == null)
         {
+            calculatingResult = null;
+            calculatingSince = -1;
             resetGlobalStuckTimers();
             return;
         }
 
         if (navigator.getOurEntity() instanceof IStuckHandlerEntity && !((IStuckHandlerEntity) navigator.getOurEntity()).canBeStuck())
+        {
+            resetGlobalStuckTimers();
+            return;
+        }
+
+        final PathResult<?> result = navigator.getPathResult();
+        if (result.isCalculatingPath())
+        {
+            if (calculatingResult != result)
+            {
+                calculatingResult = result;
+                calculatingSince = navigator.getOurEntity().level().getGameTime();
+            }
+            // A queued calculation has not had a chance to produce movement yet. A hung one still reaches rescue.
+            if (navigator.getOurEntity().level().getGameTime() - calculatingSince < CALCULATION_GRACE_TICKS)
+            {
+                return;
+            }
+        }
+        else
+        {
+            calculatingResult = null;
+            calculatingSince = -1;
+        }
+        if (result.isDone() && !(result.getJob() instanceof IDestinationPathJob)
+              && (navigator.getPath() == null || navigator.getPath().isDone()))
         {
             resetGlobalStuckTimers();
             return;
@@ -354,7 +387,10 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
         {
             return false;
         }
-        traceAction(entity.getNavigation(), "quick-rescue target=" + tpPos);
+        if (traceEnabled(entity.getNavigation()))
+        {
+            traceAction(entity.getNavigation(), "quick-rescue target=" + tpPos);
+        }
         entity.teleportTo(tpPos.getX() + 0.5, tpPos.getY(), tpPos.getZ() + 0.5);
         return true;
     }
@@ -398,7 +434,10 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
      */
     private void completeStuckAction(final NAV navigator)
     {
-        traceAction(navigator, "complete level=" + stuckLevel);
+        if (traceEnabled(navigator))
+        {
+            traceAction(navigator, "complete level=" + stuckLevel);
+        }
         final BlockPos desired = navigator.getSafeDestination();
         final Level world = navigator.getOurEntity().level();
         final Mob entity = navigator.getOurEntity();
@@ -490,7 +529,10 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
             return;
         }
         delayToNextUnstuckAction = 50;
-        traceAction(navigator, "step level=" + stuckLevel);
+        if (traceEnabled(navigator))
+        {
+            traceAction(navigator, "step level=" + stuckLevel);
+        }
 
         if (stuckLevel < 0)
         {
@@ -536,8 +578,11 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
             }
 
             final int range = ColonyConstants.rand.nextInt(20) + 20;
-            traceAction(navigator, "move-away level=" + lastStuckLevel + " target=" + navigator.getOurEntity().blockPosition().relative(movingAwayDir, 40)
-              + " range=" + range + " pauseAfter=" + (range * TICKS_PER_BLOCK));
+            if (traceEnabled(navigator))
+            {
+                traceAction(navigator, "move-away level=" + lastStuckLevel + " target=" + navigator.getOurEntity().blockPosition().relative(movingAwayDir, 40)
+                  + " range=" + range + " pauseAfter=" + (range * TICKS_PER_BLOCK));
+            }
             navigator.setPauseTicks(0);
             ((MinecoloniesAdvancedPathNavigate) navigator).walkTowards(navigator.getOurEntity().blockPosition().relative(movingAwayDir, 40), range, 1.0f);
             movingAwayDir = movingAwayDir.getClockWise();
@@ -873,6 +918,11 @@ public class PathingStuckHandler<NAV extends PathNavigation & IMinecoloniesNavig
     {
         return stuckLevel;
     }
+    private static boolean traceEnabled(final PathNavigation navigator)
+    {
+        return navigator instanceof MinecoloniesAdvancedPathNavigate nav && nav.isNavigationTraceEnabled();
+    }
+
     private static void traceAction(final PathNavigation navigator, final String action)
     {
         if (navigator instanceof MinecoloniesAdvancedPathNavigate nav && nav.isNavigationTraceEnabled())

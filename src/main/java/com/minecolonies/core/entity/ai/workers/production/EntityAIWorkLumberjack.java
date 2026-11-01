@@ -842,6 +842,12 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
     {
         worker.getCitizenData().setVisibleStatus(SEARCH);
 
+        if (pathResult != null && pathResult.isCancelled() && pathResult.treeLocation == null)
+        {
+            pathResult = null;
+            searchNote = "tree search interrupted; retrying";
+            return getState();
+        }
         if (pathResult != null && pathResult.isComputing())
         {
             return getState();
@@ -2303,7 +2309,11 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
                 traceApproach("judge=" + pathToTree.getStatus() + " failed=" + pathToTree.failedToReachDestination() + " beforeFailures=" + failedTreePaths
                   + " guard=" + (leafGuard == null ? "none" : leafGuard.refusalNote()) + " " + walkNote());
             }
-            if (pathToTree.failedToReachDestination())
+            if (pathToTree.isCancelled())
+            {
+                // An interruption says nothing about whether this route can reach the tree.
+            }
+            else if (pathToTree.failedToReachDestination())
             {
                 failedTreePaths++;
                 leafWallTree = leafGuard != null && leafGuardTree == job.getTree() && leafGuard.refused() ? job.getTree() : null;

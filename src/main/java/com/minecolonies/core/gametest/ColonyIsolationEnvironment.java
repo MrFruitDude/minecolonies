@@ -76,6 +76,7 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         }
         finally
         {
+            NavLifecycleGameTests.clear();
             if (com.minecolonies.api.compatibility.Compatibility.treeChop.isPresent())
             {
                 TreeChopGuardGameTests.clear();

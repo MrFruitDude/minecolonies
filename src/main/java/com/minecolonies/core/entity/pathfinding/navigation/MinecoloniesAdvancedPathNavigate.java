@@ -427,11 +427,15 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
     {
         if (navigationTraceEnabled)
         {
-            traceNavigation("submit " + job.getClass().getSimpleName() + " dest=" + dest + " safeJob=" + safeDestination
+            traceNavigation("attempt " + job.getClass().getSimpleName() + " dest=" + dest + " safeJob=" + safeDestination
               + " jobTarget=" + (job instanceof IDestinationPathJob d ? d.getDestination() : "none") + " " + navigationTraceState());
         }
         if (pauseTicks > 0)
         {
+            if (navigationTraceEnabled)
+            {
+                traceNavigation("refused pause=" + pauseTicks);
+            }
             return null;
         }
 
@@ -439,6 +443,10 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         // (also when another citizen of the colony just found it unreachable)
         if (job instanceof IDestinationPathJob destinationJob && isRefused(destinationJob.getDestination(), goalOf(job)))
         {
+            if (navigationTraceEnabled)
+            {
+                traceNavigation("refused unreachable=" + destinationJob.getDestination());
+            }
             return null;
         }
 
@@ -524,6 +532,10 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         }
         pathResult = job.getResult();
         pathResult.startJob(Pathfinding.getExecutor());
+        if (navigationTraceEnabled)
+        {
+            traceNavigation("accepted " + job.getClass().getSimpleName() + " " + navigationTraceState());
+        }
         return (PathResult<T>) pathResult;
     }
 
@@ -598,10 +610,20 @@ public class MinecoloniesAdvancedPathNavigate extends AbstractAdvancedPathNaviga
         {
             if (pathResult != null)
             {
-                pathResult.setStatus(PathFindingStatus.COMPLETE);
+                if (!pathResult.isCancelled())
+                {
+                    pathResult.setStatus(PathFindingStatus.COMPLETE);
+                }
+                if (!(pathResult.getJob() instanceof IDestinationPathJob) && (getPath() == null || getPath().isDone()))
+                {
+                    // Release an empty/completed search without cancelling the caller's result or inventing a rescue trip.
+                    pathResult = null;
+                    finishTime = ourEntity.level().getGameTime();
+                    stuckHandler.resetGlobalStuckTimers();
+                }
 
                 // Cleanup pathresult if the entity forgot about it
-                if (ourEntity.level().getGameTime() - finishTime > TICKS_SECOND * 20 + pauseTickBackupAmount)
+                if (pathResult != null && ourEntity.level().getGameTime() - finishTime > TICKS_SECOND * 20 + pauseTickBackupAmount)
                 {
                     pathResult = null;
                 }
