@@ -37,6 +37,7 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         final var leisureProvider = com.minecolonies.api.IMinecoloniesAPI.getInstance().getCitizenLeisureProvider();
         final boolean treeChopEnabled = com.minecolonies.api.compatibility.Compatibility.treeChop.isEnabled();
         final boolean foresterTreeChopEnabled = com.minecolonies.core.MineColonies.getConfig().getServer().lumberjacksUseTreeChop.get();
+        MixedColonyLoadGameTests.clear(level);
         // Tests of the request-system redesign switch the flags in code; none may leak into the next test.
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideSmartRetry(null);
@@ -79,15 +80,22 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         }
         finally
         {
-            // Also restore after framework timeouts or failures outside guarded fixture callbacks.
-            com.minecolonies.api.IMinecoloniesAPI.getInstance().setCitizenLeisureProvider(saveData.leisureProvider());
-            NavLifecycleGameTests.clear();
-            if (com.minecolonies.api.compatibility.Compatibility.treeChop.isPresent())
+            try
             {
-                TreeChopGuardGameTests.clear();
+                // Also restore after framework timeouts or failures outside guarded fixture callbacks.
+                com.minecolonies.api.IMinecoloniesAPI.getInstance().setCitizenLeisureProvider(saveData.leisureProvider());
+                NavLifecycleGameTests.clear();
+                if (com.minecolonies.api.compatibility.Compatibility.treeChop.isPresent())
+                {
+                    TreeChopGuardGameTests.clear();
+                }
+                com.minecolonies.api.compatibility.Compatibility.treeChop.setEnabled(saveData.compatibilityEnabled());
+                com.minecolonies.core.MineColonies.getConfig().getServer().lumberjacksUseTreeChop.set(saveData.foresterEnabled());
             }
-            com.minecolonies.api.compatibility.Compatibility.treeChop.setEnabled(saveData.compatibilityEnabled());
-            com.minecolonies.core.MineColonies.getConfig().getServer().lumberjacksUseTreeChop.set(saveData.foresterEnabled());
+            finally
+            {
+                MixedColonyLoadGameTests.clear(level);
+            }
         }
     }
 

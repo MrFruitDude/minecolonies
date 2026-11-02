@@ -2192,6 +2192,16 @@ public final class MinecoloniesGameTests
      */
     private static final java.util.Map<ServerPlayer, EmbeddedChannel> CHANNELS = new java.util.WeakHashMap<>();
 
+    static void removeConnectedTestPlayer(final ServerPlayer player)
+    {
+        try { player.level().getServer().getPlayerList().remove(player); }
+        finally
+        {
+            final EmbeddedChannel channel = CHANNELS.remove(player);
+            if (channel != null) { channel.finishAndReleaseAll(); }
+        }
+    }
+
     /**
      * The chat lines the server sent this connected player since the last call (system messages), oldest first.
      */

@@ -218,6 +218,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerAliveCase(event, "alive_greet_hearing_edge");
             }
+            if (groups.contains("mixed_load_probe"))
+            {
+                MixedColonyLoadGameTests.register(event);
+            }
             if (groups.contains("obstacle_journeys"))
             {
                 ObstacleJourneyGameTests.register(event);
