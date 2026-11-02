@@ -1,6 +1,7 @@
 package com.minecolonies.core.gametest;
 
 import com.minecolonies.api.blocks.ModBlocks;
+import com.minecolonies.api.entity.citizen.VisibleCitizenStatus;
 import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.api.util.Log;
 import com.minecolonies.core.colony.buildingextensions.FarmField;
@@ -72,6 +73,7 @@ final class WorkerJourneyGameTests
             final boolean[] moved = {false};
             final String[] last = {"not observed"};
             final boolean[] leisureSeeded = {false};
+            final boolean[] heldHarvestStatusObserved = {false};
             ForestryGameTests.pump(helper, List.of(citizen), 16_000, () -> {
                 final int mature = (int) crops.stream().filter(pos -> fixture.level.getBlockState(pos).is(Blocks.WHEAT)
                   && fixture.level.getBlockState(pos).getValue(CropBlock.AGE) == 7).count();
@@ -79,7 +81,7 @@ final class WorkerJourneyGameTests
                 final int stored = InventoryUtils.getCountFromBuilding(hut, stack -> stack.is(Items.WHEAT));
                 final var ai = entity.getCitizenJobHandler().getWorkAI();
                 last[0] = "mature=" + mature + " carried=" + carried + " stored=" + stored + " fetchedHoe=" + fetchedHoe[0]
-                  + " moved=" + moved[0] + " citizenState=" + entity.getCitizenAI().getState() + " dumpFlag=" + readFlag(ai, "shouldDumpInventory") + " gainBaseline=" + readFlag(ai, "itemsAfterLastDump")
+                  + " moved=" + moved[0] + " visibleStatus=" + citizen.getStatus() + " heldStatusObserved=" + heldHarvestStatusObserved[0] + " citizenState=" + entity.getCitizenAI().getState() + " dumpFlag=" + readFlag(ai, "shouldDumpInventory") + " gainBaseline=" + readFlag(ai, "itemsAfterLastDump")
                   + " fieldSteps=" + readFlag(ai, "fieldStepsSinceDump") + " colonyDay=" + fixture.colony.getDay() + " state=" + (ai == null ? "none" : ai.getState()) + " position=" + entity.position() + " field=" + field.getFieldStage();
                 if (mature == 0 && stored == 8 && carried == 0 && fetchedHoe[0] && moved[0])
                 {
@@ -87,6 +89,12 @@ final class WorkerJourneyGameTests
                       "harvest was not delivered while earned leisure remained: seeded=" + leisureSeeded[0] + " remaining=" + citizen.getLeisureTime());
                     helper.assertTrue(fixture.level.getBlockState(scarecrow).is(ModBlocks.blockScarecrow), "farmer broke the scarecrow");
                     helper.assertTrue(citizen.getJob() instanceof com.minecolonies.core.colony.jobs.JobFarmer, "farmer lost its job");
+                    if (earnedLeisure)
+                    {
+                        helper.assertTrue(heldHarvestStatusObserved[0], "farmer never showed WORKING while holding its harvest");
+                        // Let the native citizen decision publish the break status after delivery.
+                        if (citizen.getStatus() != VisibleCitizenStatus.LEISURE) { return false; }
+                    }
                     Log.getLogger().info("[farmer harvest journey] {}", last[0]);
                     return true;
                 }
@@ -98,6 +106,9 @@ final class WorkerJourneyGameTests
                 {
                     helper.assertTrue(work.getState() != com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState.INVENTORY_FULL,
                       "leisure fixture missed the pending window before active dumping");
+                    helper.assertTrue(citizen.getStatus() == VisibleCitizenStatus.WORKING,
+                      "pending harvest showed " + citizen.getStatus() + " instead of WORKING");
+                    heldHarvestStatusObserved[0] = true;
                     seedLeisure(citizen, 3600);
                     leisureSeeded[0] = true;
                     helper.assertTrue(citizen.getLeisureTime() == 3600 && citizen.getJob().canAIBeInterrupted(), "leisure fixture did not activate the earned break branch");
