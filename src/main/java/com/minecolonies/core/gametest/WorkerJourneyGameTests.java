@@ -93,7 +93,7 @@ final class WorkerJourneyGameTests
                 return false;
             }, () -> last[0], () -> {
                 helper.assertTrue(entity.isAlive(), "farmer died during native work");
-                final var work = entity.getCitizenJobHandler().getWorkAI();
+                final var work = (com.minecolonies.core.entity.ai.workers.production.agriculture.EntityAIWorkFarmer) entity.getCitizenJobHandler().getWorkAI();
                 if (earnedLeisure && !leisureSeeded[0] && "true".equals(readFlag(work, "shouldDumpInventory")))
                 {
                     helper.assertTrue(work.getState() != com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState.INVENTORY_FULL,
