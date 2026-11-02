@@ -2311,10 +2311,18 @@ public final class AliveGameTests
             final EntityCitizen listener = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
             makeTrait(citizen, LifeTrait.CHATTY);
             keepFed(citizen, listener);
-            helper.runAfterDelay(20, () -> {
+            final long readyStart = helper.getLevel().getGameTime();
+            final Runnable[] ready = new Runnable[1];
+            ready[0] = () -> {
+                if (citizen.getDecisionAI() == null)
+                {
+                    helper.assertTrue(helper.getLevel().getGameTime() - readyStart < 200, "citizen decision AI never initialized");
+                    helper.runAfterDelay(1, ready[0]);
+                    return;
+                }
                 keepFed(citizen, listener);
                 citizen.getNavigation().stop();
-                final Object decision = ChatTrace.read(citizen, EntityCitizen.class, "decisionAI");
+                final CitizenAI decision = citizen.getDecisionAI();
                 final List<?> minimal = (List<?>) ChatTrace.read(decision, CitizenAI.class, "minimalAI");
                 final EntityAICitizenWander wander = (EntityAICitizenWander) minimal.stream()
                   .filter(EntityAICitizenWander.class::isInstance).findFirst().orElseThrow();
@@ -2340,7 +2348,8 @@ public final class AliveGameTests
                 citizen.getLife().finishGreeting();
                 helper.assertTrue(wander.canUse(), "finished greeting did not restore idle movement eligibility");
                 helper.succeed();
-            });
+            };
+            helper.runAfterDelay(1, ready[0]);
         });
     }
 
