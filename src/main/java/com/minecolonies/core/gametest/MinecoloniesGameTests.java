@@ -893,7 +893,9 @@ public final class MinecoloniesGameTests
                     workOrder.setRequested(false);
                     workOrder.setCleared(false);
                     constructionOrder[0] = workOrder;
-                    constructionBaselineBuilderPlanks[0] = builderPlanks;
+                    final var beforeBuild = ProductionStockLedger.capture(helper, colony, player);
+                    helper.assertTrue(beforeBuild.planks() == 4, "finite production must account for exactly four physical planks before building: " + beforeBuild);
+                    constructionBaselineBuilderPlanks[0] = beforeBuild.planks();
                     constructionArmed[0] = true;
                     Log.getLogger().info("P10C armed bounded builder construction order={} target={} blueprintSize={}x{}x{} baselineBuilderPlanks={} workOrder={}",
                       workOrder.getID(),
@@ -919,9 +921,10 @@ public final class MinecoloniesGameTests
                       "production/courier citizens lost their jobs after delivery");
                     helper.assertTrue(builderCitizen.getJob() != null,
                       "builder citizen lost its job after bounded construction");
-                    helper.assertTrue(builderPlanks == constructionBaselineBuilderPlanks[0] - 1,
-                      "bounded builder consumed an unexpected amount of oak planks: before="
-                        + constructionBaselineBuilderPlanks[0] + ", after=" + builderPlanks);
+                    final var afterBuild = ProductionStockLedger.capture(helper, colony, player);
+                    helper.assertTrue(afterBuild.planks() == constructionBaselineBuilderPlanks[0] - 1,
+                      "bounded builder physical stock mismatch: one target placed, before=" + constructionBaselineBuilderPlanks[0]
+                        + ", remaining=" + afterBuild.planks() + ", locations=" + afterBuild.locations());
                     helper.succeed();
                 }
                 else if (pollTicks[0] >= 40_000)
