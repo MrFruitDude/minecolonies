@@ -101,6 +101,7 @@ final class MixedColonyLoadGameTests
         private long began, windowStart, stable = -1;
         private int inputLogs;
         private boolean crafted, delivered;
+        private boolean choppedObserved;
 
         private Session(final GameTestHelper helper) { this.helper = helper; this.level = helper.getLevel(); }
 
@@ -277,7 +278,7 @@ final class MixedColonyLoadGameTests
             if ((now - windowStart) % 20 == 0) { ledger(); assertRequests(); }
             final boolean built = order != null && level.getBlockState(targets.get(window)).is(Blocks.OAK_PLANKS)
               && !((BuildingBuilder) builder).hasWorkOrder() && a.getWorkManager().getWorkOrder(order.getID()) == null;
-            final boolean felled = roots.stream().allMatch(root -> java.util.stream.IntStream.range(0, 4).allMatch(y -> !level.getBlockState(root.above(y)).is(Blocks.BIRCH_LOG)));
+            final boolean felled = roots.stream().allMatch(root -> java.util.stream.IntStream.range(0, 4).allMatch(y -> !standingBirch(root.above(y))));
             final int kept = InventoryUtils.getItemCountInItemHandler(workers.get(3).getInventory(), item -> item.is(Items.BIRCH_LOG))
               + InventoryUtils.getItemCountInItemHandler(lumber.getItemHandlerCap(), item -> item.is(Items.BIRCH_LOG));
             if (built && crafted && delivered && felled && kept == (window + 1) * 4)
@@ -371,9 +372,28 @@ final class MixedColonyLoadGameTests
             for (final BlockPos target : targets) { if (level.getBlockState(target).is(Blocks.OAK_PLANKS)) { totals[0]++; } }
             for (final BlockPos root : roots)
             {
-                for (int y = 0; y < 4; y++) { if (level.getBlockState(root.above(y)).is(Blocks.BIRCH_LOG)) { totals[1]++; } }
+                for (int y = 0; y < 4; y++) { if (standingBirch(root.above(y))) { totals[1]++; } }
             }
-            helper.assertTrue(totals[0] == 12 && totals[1] == roots.size() * 4, "mixed physical conservation failed: oakPlankEquivalent=" + totals[0] + " birchLogs=" + totals[1]);
+            helper.assertTrue(totals[0] == 12 && totals[1] == roots.size() * 4, "mixed physical conservation failed: oakPlankEquivalent=" + totals[0]
+              + " birchLogs=" + totals[1] + " roots=" + roots.stream().map(root -> java.util.stream.IntStream.range(0, 4)
+                .mapToObj(y -> root.above(y) + "=" + level.getBlockState(root.above(y))).toList()).toList()
+              + " forester=" + ForestryGameTests.describe(workers.get(3)));
+        }
+
+        private boolean standingBirch(final BlockPos position)
+        {
+            final var state = level.getBlockState(position);
+            if (state.is(Blocks.BIRCH_LOG)) { return true; }
+            final var treeChop = com.minecolonies.api.compatibility.Compatibility.treeChop;
+            if (!treeChop.isChoppedLog(state)) { return false; }
+            final var original = treeChop.getOriginalLogState(level, position);
+            helper.assertTrue(original != null && original.is(Blocks.BIRCH_LOG), "mixed seeded log has unknown/wrong TreeChop original: " + position + " " + original);
+            if (!choppedObserved)
+            {
+                choppedObserved = true;
+                Log.getLogger().info("MIXED standing chopped-log position={} state={} original={}", position, state, original);
+            }
+            return true;
         }
 
         private void count(final IItemHandler inventory, final Set<IItemHandler> seen, final int[] totals)
