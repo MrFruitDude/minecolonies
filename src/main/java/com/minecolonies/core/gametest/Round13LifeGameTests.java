@@ -335,7 +335,7 @@ public final class Round13LifeGameTests
             {
                 helper.runAfterDelay(40 + i * 50, () -> {
                     log.add(id(idle.getStatus()) + "/" + id(mourner.getStatus()) + "/" + id(hungry.getStatus())
-                      + ":state=" + idle.getEntity().orElseThrow().getCitizenAI().getState());
+                      + ":state=" + ((EntityCitizen) idle.getEntity().orElseThrow()).getCitizenAI().getState());
                     helper.assertTrue(mourner.getStatus() == VisibleCitizenStatus.MOURNING, "B5: mourner shows " + mourner.getStatus() + " " + log);
                     helper.assertTrue(hungry.getStatus() == VisibleCitizenStatus.EAT, "B5: hungry citizen shows " + hungry.getStatus() + " " + log);
                     final EntityCitizen e = (EntityCitizen) idle.getEntity().get();
