@@ -49,11 +49,12 @@ final class ForestryPerformanceGameTests
             {
                 final BlockPos ground = helper.absolutePos(new BlockPos(x, 0, z));
                 level.setChunkForced(ground.getX() >> 4, ground.getZ() >> 4, true);
+                // Huts beyond the common 40x32 floor need support inside their footprint too.
+                level.setBlockAndUpdate(ground, Blocks.GRASS_BLOCK.defaultBlockState());
                 if (colony.getServerBuildingManager().getBuildings().values().stream().anyMatch(b -> b.isInBuilding(ground.above())))
                 {
                     continue;
                 }
-                level.setBlockAndUpdate(ground, Blocks.GRASS_BLOCK.defaultBlockState());
                 for (int y = 1; y <= 12; y++)
                 {
                     level.setBlockAndUpdate(ground.above(y), Blocks.AIR.defaultBlockState());
