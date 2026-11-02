@@ -24,6 +24,16 @@ final class WorkerJourneyGameTests
 
     static void farmerHarvest(final GameTestHelper helper)
     {
+        farmerHarvest(helper, false);
+    }
+
+    static void farmerHarvestLeisure(final GameTestHelper helper)
+    {
+        farmerHarvest(helper, true);
+    }
+
+    private static void farmerHarvest(final GameTestHelper helper, final boolean earnedLeisure)
+    {
         final RsFixture fixture = RsFixture.found(helper, "farmer harvest journey", 2);
         final var hiring = fixture.colony.getSettings().getSetting(BuildingTownHall.AUTO_HIRING_MODE);
         if (hiring.getValue()) { hiring.trigger(); }
@@ -61,6 +71,7 @@ final class WorkerJourneyGameTests
             final boolean[] fetchedHoe = {false};
             final boolean[] moved = {false};
             final String[] last = {"not observed"};
+            final boolean[] leisureSeeded = {false};
             ForestryGameTests.pump(helper, List.of(citizen), 16_000, () -> {
                 final int mature = (int) crops.stream().filter(pos -> fixture.level.getBlockState(pos).is(Blocks.WHEAT)
                   && fixture.level.getBlockState(pos).getValue(CropBlock.AGE) == 7).count();
@@ -72,6 +83,8 @@ final class WorkerJourneyGameTests
                   + " fieldSteps=" + readFlag(ai, "fieldStepsSinceDump") + " colonyDay=" + fixture.colony.getDay() + " state=" + (ai == null ? "none" : ai.getState()) + " position=" + entity.position() + " field=" + field.getFieldStage();
                 if (mature == 0 && stored == 8 && carried == 0 && fetchedHoe[0] && moved[0])
                 {
+                    helper.assertTrue(!earnedLeisure || leisureSeeded[0] && citizen.getLeisureTime() > 0,
+                      "harvest was not delivered while earned leisure remained: seeded=" + leisureSeeded[0] + " remaining=" + citizen.getLeisureTime());
                     helper.assertTrue(fixture.level.getBlockState(scarecrow).is(ModBlocks.blockScarecrow), "farmer broke the scarecrow");
                     helper.assertTrue(citizen.getJob() instanceof com.minecolonies.core.colony.jobs.JobFarmer, "farmer lost its job");
                     Log.getLogger().info("[farmer harvest journey] {}", last[0]);
@@ -80,12 +93,42 @@ final class WorkerJourneyGameTests
                 return false;
             }, () -> last[0], () -> {
                 helper.assertTrue(entity.isAlive(), "farmer died during native work");
+                final var work = entity.getCitizenJobHandler().getWorkAI();
+                if (earnedLeisure && !leisureSeeded[0] && "true".equals(readFlag(work, "shouldDumpInventory")))
+                {
+                    helper.assertTrue(work.getState() != com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState.INVENTORY_FULL,
+                      "leisure fixture missed the pending window before active dumping");
+                    seedLeisure(citizen, 3600);
+                    leisureSeeded[0] = true;
+                    helper.assertTrue(citizen.getLeisureTime() == 3600 && citizen.getJob().canAIBeInterrupted(), "leisure fixture did not activate the earned break branch");
+                    Log.getLogger().info("[farmer leisure boundary] state={} citizenState={} pending={} leisure={} canTakeLeisure={}",
+                      work.getState(), entity.getCitizenAI().getState(), readFlag(work, "shouldDumpInventory"), citizen.getLeisureTime(), work.canTakeLeisure());
+                    helper.assertTrue(!work.canTakeLeisure(), "farmer accepted leisure with pending harvest");
+                }
                 fetchedHoe[0] |= InventoryUtils.getItemCountInItemHandler(citizen.getInventory(), stack -> stack.is(Items.STONE_HOE)) == 1;
                 moved[0] |= entity.position().distanceToSqr(start) >= 9;
                 final long elapsed = fixture.level.getGameTime();
                 if (elapsed % 1000 == 0) { Log.getLogger().info("[farmer harvest progress] {}", last[0]); }
-            }, "farmer_harvest_journey");
+            }, earnedLeisure ? "farmer_harvest_leisure" : "farmer_harvest_journey");
         });
+    }
+
+    /** Seed an earned break once; leave state choice, physics, elapsed leisure and dumping to native AI. */
+    private static void seedLeisure(final Object citizen, final int ticks)
+    {
+        for (Class<?> type = citizen.getClass(); type != null; type = type.getSuperclass())
+        {
+            try
+            {
+                final var field = type.getDeclaredField("leisureTime");
+                field.setAccessible(true);
+                field.setInt(citizen, ticks);
+                return;
+            }
+            catch (final NoSuchFieldException missing) { /* Look through citizen hierarchy. */ }
+            catch (final ReflectiveOperationException failure) { throw new IllegalStateException("cannot seed earned leisure", failure); }
+        }
+        throw new IllegalStateException("citizen leisure field missing");
     }
 
     private static String readFlag(final Object object, final String name)
