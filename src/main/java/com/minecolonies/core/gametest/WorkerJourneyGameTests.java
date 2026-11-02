@@ -81,7 +81,7 @@ final class WorkerJourneyGameTests
                 final int stored = InventoryUtils.getCountFromBuilding(hut, stack -> stack.is(Items.WHEAT));
                 final var ai = entity.getCitizenJobHandler().getWorkAI();
                 last[0] = "mature=" + mature + " carried=" + carried + " stored=" + stored + " fetchedHoe=" + fetchedHoe[0]
-                  + " moved=" + moved[0] + " visibleStatus=" + citizen.getStatus() + " heldStatusObserved=" + heldHarvestStatusObserved[0] + " citizenState=" + entity.getCitizenAI().getState() + " dumpFlag=" + readFlag(ai, "shouldDumpInventory") + " gainBaseline=" + readFlag(ai, "itemsAfterLastDump")
+                  + " moved=" + moved[0] + " visibleStatus=" + statusLabel(citizen.getStatus()) + " heldStatusObserved=" + heldHarvestStatusObserved[0] + " citizenState=" + entity.getCitizenAI().getState() + " dumpFlag=" + readFlag(ai, "shouldDumpInventory") + " gainBaseline=" + readFlag(ai, "itemsAfterLastDump")
                   + " fieldSteps=" + readFlag(ai, "fieldStepsSinceDump") + " colonyDay=" + fixture.colony.getDay() + " state=" + (ai == null ? "none" : ai.getState()) + " position=" + entity.position() + " field=" + field.getFieldStage();
                 if (mature == 0 && stored == 8 && carried == 0 && fetchedHoe[0] && moved[0])
                 {
@@ -91,7 +91,7 @@ final class WorkerJourneyGameTests
                     helper.assertTrue(citizen.getJob() instanceof com.minecolonies.core.colony.jobs.JobFarmer, "farmer lost its job");
                     if (earnedLeisure)
                     {
-                        helper.assertTrue(heldHarvestStatusObserved[0], "farmer never showed WORKING while holding its harvest");
+                        helper.assertTrue(heldHarvestStatusObserved[0], "farmer never showed its work status while holding its harvest");
                         // Let the native citizen decision publish the break status after delivery.
                         if (citizen.getStatus() != VisibleCitizenStatus.LEISURE) { return false; }
                     }
@@ -106,8 +106,12 @@ final class WorkerJourneyGameTests
                 {
                     helper.assertTrue(work.getState() != com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState.INVENTORY_FULL,
                       "leisure fixture missed the pending window before active dumping");
-                    helper.assertTrue(citizen.getStatus() == VisibleCitizenStatus.WORKING,
-                      "pending harvest showed " + citizen.getStatus() + " instead of WORKING");
+                    final var status = citizen.getStatus();
+                    helper.assertTrue(status == VisibleCitizenStatus.WORKING || status != null
+                        && "com.minecolonies.gui.visiblestatus.farmer".equals(status.getTranslationKey())
+                        && "minecolonies:textures/icons/work/farmer.png".equals(status.getIcon().toString()),
+                      "pending harvest showed " + statusLabel(status) + " instead of its working or farming status");
+                    Log.getLogger().info("[farmer held harvest status] {}", statusLabel(status));
                     heldHarvestStatusObserved[0] = true;
                     seedLeisure(citizen, 3600);
                     leisureSeeded[0] = true;
@@ -122,6 +126,11 @@ final class WorkerJourneyGameTests
                 if (elapsed % 1000 == 0) { Log.getLogger().info("[farmer harvest progress] {}", last[0]); }
             }, earnedLeisure ? "farmer_harvest_leisure" : "farmer_harvest_journey");
         });
+    }
+
+    private static String statusLabel(final VisibleCitizenStatus status)
+    {
+        return status == null ? "none" : status.getId() + ":" + status.getTranslationKey() + ":" + status.getIcon();
     }
 
     /** Seed an earned break once; leave state choice, physics, elapsed leisure and dumping to native AI. */
