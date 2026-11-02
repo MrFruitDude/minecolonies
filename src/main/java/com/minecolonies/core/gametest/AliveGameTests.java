@@ -41,7 +41,8 @@ public final class AliveGameTests
 {
     public static final String[] NAMES = {"alive_rules", "alive_chat", "alive_chat_yields", "alive_morning", "alive_building_cheer", "alive_grief", "alive_raid_relief",
       "alive_rain_hurry", "alive_rain_where", "alive_traits_stable", "alive_chat_pairs", "alive_calm_pace", "alive_morning_crowd", "alive_shelter_inside",
-      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe", "alive_greet_hearing_edge", "alive_chat_departure"};
+      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe", "alive_greet_hearing_edge", "alive_chat_departure",
+      "alive_chat_wander_gate", "alive_chat_pair_lifecycle", "alive_chat_raid_a_first", "alive_chat_raid_b_first", "alive_chat_raid_expired"};
 
     /**
      * Tests whose citizens must stand in the rain: they run without the barrier ceiling of the GameTest frame, which stops the rain (vanilla's isRainingAt
@@ -111,6 +112,11 @@ public final class AliveGameTests
             case "alive_chorus" -> AliveGameTests::chorus;
             case "alive_lines_wait" -> AliveGameTests::linesWait;
             case "alive_chat_departure" -> AliveGameTests::chatDeparture;
+            case "alive_chat_wander_gate" -> AliveGameTests::chatWanderGate;
+            case "alive_chat_pair_lifecycle" -> AliveGameTests::chatPairLifecycle;
+            case "alive_chat_raid_a_first" -> h -> chatRaidPair(h, false, false);
+            case "alive_chat_raid_b_first" -> h -> chatRaidPair(h, true, false);
+            case "alive_chat_raid_expired" -> h -> chatRaidPair(h, true, true);
             case "alive_morning_dawn" -> AliveGameTests::morningDawn;
             case "alive_greet_once_safe" -> AliveGameTests::greetOnceSafe;
             case "alive_greet_hearing_edge" -> h -> greetOnceSafe(h, true);
@@ -1312,6 +1318,8 @@ public final class AliveGameTests
                         helper.assertTrue(!e.getLife().chatting() && !e.getLife().canJoinChat() && e.getCitizenAI().getState() != EntityAICitizenLife.LifeState.CHAT,
                           "a chat during the raid: citizen " + e.getCivilianID() + " in " + e.getCitizenAI().getState() + " says '" + e.getSpeech() + "'");
                     }
+                    helper.assertTrue(!talkA.getSpeech().startsWith(CitizenLife.CHAT) && !talkB.getSpeech().startsWith(CitizenLife.CHAT),
+                      "a chat bubble outlived raid entry: '" + talkA.getSpeech() + "' / '" + talkB.getSpeech() + "'");
                 }
                 for (int i = 0; i < who.length; i++)
                 {
@@ -2052,6 +2060,7 @@ public final class AliveGameTests
             // Give the real leisure action a destination, so it cannot immediately return to IDLE.
             a.getCitizenAI().addTransition(new com.minecolonies.api.entity.ai.statemachine.AIOneTimeEventTarget<IState>(
               (com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.IStateSupplier<IState>) () -> {
+                helper.assertTrue(a.getLife().chatting() && b.getLife().chatting(), "departure event did not interrupt an active pair " + trace.describe());
                 final Object decision = ChatTrace.read(a, EntityCitizen.class, "decisionAI");
                 helper.assertTrue(decision != null, "departure decision AI is not initialized");
                 final List<?> minimal = (List<?>) ChatTrace.read(decision, CitizenAI.class, "minimalAI");
@@ -2101,6 +2110,139 @@ public final class AliveGameTests
                 helper.runAfterDelay(1, () -> poll[0].run());
             };
             helper.runAfterDelay(1, () -> poll[0].run());
+        });
+    }
+
+    /** The idle decision, unlike an urgent event, must respect the invitation before CHAT entry. */
+    private static void chatWanderGate(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "chat wander gate");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            final EntityCitizen a = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));
+            final EntityCitizen b = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
+            a.getNavigation().stop();
+            final var wander = new EntityAICitizenWander(a, 0.6D);
+            helper.assertTrue(a.getCitizenAI().getState() == CitizenAIState.IDLE && wander.canUse(), "wander gate fixture not otherwise eligible");
+            a.getLife().startChat(b);
+            helper.assertTrue(!wander.canUse(), "idle wandering accepts a citizen already chatting");
+            try
+            {
+                final var decide = EntityAICitizenWander.class.getDeclaredMethod("decide");
+                decide.setAccessible(true);
+                helper.assertTrue(decide.invoke(wander) == CitizenAIState.IDLE && a.getNavigation().isDone(), "wander decision started a walk during chat");
+            }
+            catch (final ReflectiveOperationException e)
+            {
+                throw new IllegalStateException(e);
+            }
+            a.getLife().endChat();
+            helper.assertTrue(wander.canUse(), "ending the chat did not restore idle wander eligibility");
+            helper.succeed();
+        });
+    }
+
+    /** Controlled pair identity boundaries, separate from the live departure journey. */
+    private static void chatPairLifecycle(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "chat pair lifecycle");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            final EntityCitizen a = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));
+            final EntityCitizen b = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
+            final EntityCitizen c = entity(spawn(helper, colony, new BlockPos(22, 1, 16)));
+            a.getLife().startChat(b);
+            a.getLife().endChat();
+            helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting(), "leader end left a chat side");
+            a.getLife().startChat(b);
+            b.getLife().endChat();
+            helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting(), "partner end left a chat side");
+            a.getLife().endChat();
+            a.getLife().startChat(b);
+            b.getLife().startChat(c);
+            a.getLife().endChat();
+            helper.assertTrue(b.getLife().chatPartnerId() == c.getCivilianID() && c.getLife().chatPartnerId() == b.getCivilianID(),
+              "ending an old invitation cleared a newer conversation");
+            b.getLife().endChat();
+            // Same raw ID, different entity reference: this is a synthetic replacement boundary, not a world reload.
+            a.getLife().startChat(b);
+            try
+            {
+                final var reference = CitizenLife.class.getDeclaredField("chatPartner");
+                reference.setAccessible(true);
+                reference.set(b.getLife(), new java.lang.ref.WeakReference<>(c));
+                a.getLife().endChat();
+                helper.assertTrue(b.getLife().chatting(), "ID-only match cleared another entity's conversation");
+                b.getLife().endChat();
+                a.getLife().startChat(b);
+                reference.set(a.getLife(), new java.lang.ref.WeakReference<EntityCitizen>(null));
+                a.getLife().endChat();
+                b.getLife().chatStep();
+                helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting(), "missing reference left a chat side");
+            }
+            catch (final ReflectiveOperationException e)
+            {
+                throw new IllegalStateException(e);
+            }
+            final boolean enabled = MineColonies.getConfig().getServer().citizenLifeExtras.get();
+            try
+            {
+                a.getLife().startChat(b);
+                MineColonies.getConfig().getServer().citizenLifeExtras.set(false);
+                a.getLife().tick20();
+                b.getLife().tick20();
+                helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting() && a.getSpeech().isEmpty() && b.getSpeech().isEmpty(), "disabled life left chat state");
+                MineColonies.getConfig().getServer().citizenLifeExtras.set(true);
+                a.getLife().startChat(b);
+                helper.assertTrue(a.getLife().chatPartnerId() == b.getCivilianID(), "chat did not re-enter after enabling");
+                b.discard();
+                a.getLife().chatStep();
+                helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting(), "removed partner left chat state");
+            }
+            finally
+            {
+                MineColonies.getConfig().getServer().citizenLifeExtras.set(enabled);
+            }
+            helper.succeed();
+        });
+    }
+
+    /** Drives the actual once-a-second raid callback in each order, including already expired chat flags. */
+    private static void chatRaidPair(final GameTestHelper helper, final boolean bFirst, final boolean expired)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "chat raid pair");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            final EntityCitizen a = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));
+            final EntityCitizen b = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
+            a.getLife().startChat(b);
+            final Runnable raid = () -> {
+                if (expired)
+                {
+                    helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting(), "chat did not expire before raid boundary");
+                }
+                // Explicitly seed both bubbles so neither tick order can hide an uncleared partner line.
+                a.getLife().say(CitizenLife.CHAT + "rain.1");
+                b.getLife().say(CitizenLife.CHAT + "rain.1.reply.1");
+                colony.getRaiderManager().setPassThroughRaid();
+                helper.assertTrue(colony.getRaiderManager().isRaided(), "raid fixture did not start");
+                (bFirst ? b : a).getLife().tick20();
+                (bFirst ? a : b).getLife().tick20();
+                for (final EntityCitizen citizen : new EntityCitizen[] {a, b})
+                {
+                    helper.assertTrue(!citizen.getLife().chatting() && !citizen.getSpeech().startsWith(CitizenLife.CHAT), "raid left chat state or bubble");
+                    helper.assertTrue(CitizenLife.RAID_START.equals(citizen.getLife().pendingLine()), "raid warning not queued for both participants");
+                }
+                helper.succeed();
+            };
+            if (expired)
+            {
+                helper.runAfterDelay(CitizenLife.CHAT_TICKS + 1, raid);
+            }
+            else
+            {
+                raid.run();
+            }
         });
     }
 

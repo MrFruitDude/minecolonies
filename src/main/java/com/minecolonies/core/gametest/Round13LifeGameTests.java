@@ -329,6 +329,7 @@ public final class Round13LifeGameTests
             }
             helper.runAfterDelay(40 + 6 * 50 + 5, () -> {
                 Log.getLogger().info("R13 LIFE RESULT statuses samples={} idle_checks={}", log, idleChecks[0]);
+                helper.assertTrue(idleChecks[0] > 0, "no idle homeless status was observed");
                 helper.succeed();
             });
         });
