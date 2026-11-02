@@ -4,6 +4,7 @@ import com.minecolonies.api.blocks.ModBlocks;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.core.entity.pathfinding.PlayerWatch;
+import com.minecolonies.core.entity.citizen.EntityCitizen;
 import com.minecolonies.core.network.messages.server.CreateColonyMessage;
 import com.minecolonies.core.tileentities.TileEntityColonyBuilding;
 import net.minecraft.core.BlockPos;
@@ -291,7 +292,7 @@ final class MixedColonyLoadGameTests
             {
                 Log.getLogger().info("MIXED progress window={} elapsed={} inputLogs={} builderHutAndWorkerPlanks={} crafted={} courierCarried={} delivered={} built={} felled={} birchKept={} citizenStates={}",
                   window, now - windowStart, logs, planks, crafted, courierCarried, delivered, built, felled, kept,
-                  workers.stream().map(worker -> worker.getId() + ":" + worker.getEntity().orElseThrow().getCitizenAI().getState()).toList());
+                  workers.stream().map(worker -> worker.getId() + ":" + ((EntityCitizen) worker.getEntity().orElseThrow()).getCitizenAI().getState()).toList());
             }
             if (built && crafted && delivered && felled && kept == (window + 1) * 4)
             {
