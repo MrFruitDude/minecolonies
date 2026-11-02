@@ -373,24 +373,29 @@ final class NavLifecycleGameTests
             HELD_RESULTS.add(result);
             final Runnable[] ready = new Runnable[1];
             ready[0] = () -> {
+                final boolean hasEntered = entered.get();
+                final long entryDelayNanos = hasEntered ? enteredNanos.get() - submittedNanos : -1;
                 final long age = helper.getLevel().getGameTime() - submittedTick;
                 final long wallNanos = System.nanoTime() - submittedNanos;
-                if (!entered.get())
+                // Enforce both bounds even when entry occurred between callbacks, before accepting the scenario.
+                if (age >= 200 || wallNanos >= 2_000_000_000L || entryDelayNanos >= 2_000_000_000L
+                      || (!hasEntered && (result.isCancelled() || result.isDone())))
                 {
-                    if (age >= 200 || wallNanos >= 2_000_000_000L || result.isCancelled() || result.isDone())
-                    {
-                        final String evidence = "age=" + age + " wallNs=" + wallNanos + " " + heldSearchSnapshot(nav, result);
-                        Log.getLogger().info("[held tree admission] invalid {}", evidence);
-                        result.cancel();
-                        gate.countDown();
-                        helper.fail("held tree search never began: " + evidence);
-                        return;
-                    }
+                    final String evidence = "entered=" + hasEntered + " entryDelayNs=" + entryDelayNanos
+                      + " age=" + age + " wallNs=" + wallNanos + " " + heldSearchSnapshot(nav, result);
+                    Log.getLogger().info("[held tree admission] invalid {}", evidence);
+                    result.cancel();
+                    gate.countDown();
+                    helper.fail("held tree search admission failed: " + evidence);
+                    return;
+                }
+                if (!hasEntered)
+                {
                     helper.runAfterDelay(1, () -> runHeld(ready[0], result, gate));
                     return;
                 }
                 Log.getLogger().info("[held tree admission] entered age={} entryDelayNs={} {}", age,
-                  enteredNanos.get() - submittedNanos, heldSearchSnapshot(nav, result));
+                  entryDelayNanos, heldSearchSnapshot(nav, result));
                 nav.recalc();
                 nav.tick();
                 gate.countDown();
