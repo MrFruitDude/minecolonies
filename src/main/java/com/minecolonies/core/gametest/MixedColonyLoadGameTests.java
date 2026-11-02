@@ -54,6 +54,8 @@ import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 final class MixedColonyLoadGameTests
 {
     private static final String PACK = "Minecolonies Original";
+    private static final int OBS_MIN = -32;
+    private static final int OBS_MAX = 96;
     private static Session active;
 
     private MixedColonyLoadGameTests() { }
@@ -102,6 +104,7 @@ final class MixedColonyLoadGameTests
         private int inputLogs;
         private boolean crafted, delivered;
         private boolean choppedObserved;
+        private boolean courierCarried;
 
         private Session(final GameTestHelper helper) { this.helper = helper; this.level = helper.getLevel(); }
 
@@ -121,8 +124,9 @@ final class MixedColonyLoadGameTests
 
         private void pad(final int offset)
         {
-            final BlockPos lo = helper.absolutePos(new BlockPos(offset - 8, 0, -8));
-            final BlockPos hi = helper.absolutePos(new BlockPos(offset + 60, 0, 40));
+            // Observe native idle walks beyond the work pad without moving or confining citizens.
+            final BlockPos lo = helper.absolutePos(new BlockPos(offset + OBS_MIN, 0, OBS_MIN));
+            final BlockPos hi = helper.absolutePos(new BlockPos(offset + OBS_MAX, 0, OBS_MAX));
             for (int x = lo.getX() >> 4; x <= hi.getX() >> 4; x++)
             {
                 for (int z = lo.getZ() >> 4; z <= hi.getZ() >> 4; z++)
@@ -211,8 +215,8 @@ final class MixedColonyLoadGameTests
         private void startWindow()
         {
             windowStart = level.getGameTime();
-            stable = -1; order = null; crafted = false; delivered = false;
-            inputLogs = InventoryUtils.getItemCountInItemHandler(sawmill.getItemHandlerCap(), item -> item.is(Items.OAK_LOG));
+            stable = -1; order = null; crafted = false; delivered = false; courierCarried = false;
+            inputLogs = craftingLogs();
             final BlockPos root = helper.absolutePos(new BlockPos(534 + window * 8, 1, 12));
             helper.assertTrue(IColonyManager.getInstance().getColonyByPosFromWorld(level, root) == b
               && IColonyManager.getInstance().getColonyByPosFromWorld(level, builder.getID()) == a, "mixed work areas have wrong claims");
@@ -268,10 +272,12 @@ final class MixedColonyLoadGameTests
                 helper.assertTrue(level.isPositionEntityTicking(worker.getEntity().orElseThrow().blockPosition()), "mixed worker stopped ticking");
             }
             if ((now - windowStart) % 80 == 0) { waypoint((int) (((now - windowStart) / 80) % 2)); assertWatchers(helper, players); }
-            final int logs = InventoryUtils.getItemCountInItemHandler(sawmill.getItemHandlerCap(), item -> item.is(Items.OAK_LOG));
-            final int planks = InventoryUtils.getItemCountInItemHandler(builder.getItemHandlerCap(), item -> item.is(Items.OAK_PLANKS));
+            final int logs = craftingLogs();
+            final int planks = InventoryUtils.getItemCountInItemHandler(builder.getItemHandlerCap(), item -> item.is(Items.OAK_PLANKS))
+              + InventoryUtils.getItemCountInItemHandler(workers.get(0).getInventory(), item -> item.is(Items.OAK_PLANKS));
             crafted |= logs < inputLogs;
-            delivered |= crafted && planks >= 4 + window * 3;
+            courierCarried |= InventoryUtils.getItemCountInItemHandler(workers.get(2).getInventory(), item -> item.is(Items.OAK_PLANKS)) > 0;
+            delivered |= crafted && courierCarried && planks >= 4 + window * 3;
             final var current = a.getRequestManager().getRequestForToken(request);
             helper.assertTrue(current == null || current.getState() != RequestState.FAILED, "mixed production request failed");
             if (order == null && delivered && (current == null || current.getState() == RequestState.RECEIVED || current.getState() == RequestState.COMPLETED)) { armConstruction(); }
@@ -281,6 +287,12 @@ final class MixedColonyLoadGameTests
             final boolean felled = roots.stream().allMatch(root -> java.util.stream.IntStream.range(0, 4).allMatch(y -> !standingBirch(root.above(y))));
             final int kept = InventoryUtils.getItemCountInItemHandler(workers.get(3).getInventory(), item -> item.is(Items.BIRCH_LOG))
               + InventoryUtils.getItemCountInItemHandler(lumber.getItemHandlerCap(), item -> item.is(Items.BIRCH_LOG));
+            if ((now - windowStart) % 200 == 0)
+            {
+                Log.getLogger().info("MIXED progress window={} elapsed={} inputLogs={} builderHutAndWorkerPlanks={} crafted={} courierCarried={} delivered={} built={} felled={} birchKept={} citizenStates={}",
+                  window, now - windowStart, logs, planks, crafted, courierCarried, delivered, built, felled, kept,
+                  workers.stream().map(worker -> worker.getId() + ":" + worker.getEntity().orElseThrow().getCitizenAI().getState()).toList());
+            }
             if (built && crafted && delivered && felled && kept == (window + 1) * 4)
             {
                 if (stable < 0) { stable = now; }
@@ -343,9 +355,10 @@ final class MixedColonyLoadGameTests
                     final var entity = citizen.getEntity().orElseThrow();
                     final BlockPos relative = entity.blockPosition().subtract(helper.absolutePos(BlockPos.ZERO));
                     final int offset = colony == a ? 0 : 512;
-                    helper.assertTrue(relative.getX() >= offset - 8 && relative.getX() <= offset + 60 && relative.getZ() >= -8
-                      && relative.getZ() <= 40 && relative.getY() >= 0 && relative.getY() < 32 && level.isPositionEntityTicking(entity.blockPosition()),
-                      "mixed ledger citizen outside observable ticking pad: " + entity.blockPosition());
+                    helper.assertTrue(relative.getX() >= offset + OBS_MIN && relative.getX() <= offset + OBS_MAX && relative.getZ() >= OBS_MIN
+                      && relative.getZ() <= OBS_MAX && relative.getY() >= 0 && relative.getY() < 32 && level.isPositionEntityTicking(entity.blockPosition()),
+                      "mixed ledger citizen outside observable ticking area: colony=" + colony.getID() + " citizen=" + citizen.getId()
+                        + " job=" + citizen.getJob() + " position=" + entity.blockPosition());
                     count(citizen.getInventory(), seen, totals);
                 }
                 final Set<BlockPos> containers = new LinkedHashSet<>();
@@ -365,8 +378,8 @@ final class MixedColonyLoadGameTests
             for (final ServerPlayer player : players) { count(new InvWrapper(player.getInventory()), seen, totals); }
             for (final int offset : new int[] {0, 512})
             {
-                final AABB area = new AABB(Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(offset - 8, 0, -8))),
-                  Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(offset + 61, 32, 41))));
+                final AABB area = new AABB(Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(offset + OBS_MIN, 0, OBS_MIN))),
+                  Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(offset + OBS_MAX + 1, 32, OBS_MAX + 1))));
                 for (final ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, area)) { count(item.getItem(), totals); }
             }
             for (final BlockPos target : targets) { if (level.getBlockState(target).is(Blocks.OAK_PLANKS)) { totals[0]++; } }
@@ -394,6 +407,12 @@ final class MixedColonyLoadGameTests
                 Log.getLogger().info("MIXED standing chopped-log position={} state={} original={}", position, state, original);
             }
             return true;
+        }
+
+        private int craftingLogs()
+        {
+            return InventoryUtils.getItemCountInItemHandler(sawmill.getItemHandlerCap(), item -> item.is(Items.OAK_LOG))
+              + InventoryUtils.getItemCountInItemHandler(workers.get(1).getInventory(), item -> item.is(Items.OAK_LOG));
         }
 
         private void count(final IItemHandler inventory, final Set<IItemHandler> seen, final int[] totals)
