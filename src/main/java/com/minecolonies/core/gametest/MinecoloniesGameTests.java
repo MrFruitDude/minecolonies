@@ -998,6 +998,8 @@ public final class MinecoloniesGameTests
 
                 if (pollTicks[0] % 500 == 0)
                 {
+                    Log.getLogger().info("P10C restart activity active={} closeSubscribers={} ownerPosition={} ownerDistance={}", colony.isActive(),
+                      colony.getPackageManager().getCloseSubscribers().size(), fixture.player().position(), fixture.player().blockPosition().distSqr(fixture.townHallPos()));
                     Log.getLogger().info("P10C restart prepare ticks={} request={} retainedRequestState={} parentDeliveries={} inputConsumed={} parentDelivery={} courierDelivery={} builderPlanks={} sawmillLogs={} builderInventory={} sawmillCitizen={} courierCitizen={}",
                       pollTicks[0],
                       current == null ? "null" : current.getState(),
@@ -1418,6 +1420,9 @@ public final class MinecoloniesGameTests
         final IColony colony = IColonyManager.getInstance().createColony(
           level, townHallPos, player, "P10C restart production courier colony", "Minecolonies Original");
         helper.assertTrue(colony != null, "restart fixture colony creation returned null");
+        // The embedded login starts at the world spawn, far from this test's plot. Enter the colony as a real owner would.
+        player.teleportTo(townHallPos.getX() + 0.5D, townHallPos.getY() + 1, townHallPos.getZ() + 0.5D);
+        colony.getPackageManager().addCloseSubscriber(player);
         final IBuilding townHall = colony.getServerBuildingManager().addNewBuilding(townHallHut, level);
         helper.assertTrue(townHall != null && colony.getServerBuildingManager().hasTownHall(),
           "restart fixture did not register the town hall");
