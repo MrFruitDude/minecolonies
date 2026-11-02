@@ -241,9 +241,27 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             if (groups.contains("forestry_perf"))
             {
                 final String name = "forestry_perf_20tps";
+                final var data = withSkyAccess(longIsolatedColonyData(event, name, 10_000));
                 event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
                   info -> new MinecoloniesGameTestInstance(info, ForestryPerformanceGameTests::run),
-                  withSkyAccess(longIsolatedColonyData(event, name, 10_000)));
+                  new TestData<>(data.environment(), data.dimension(), Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest/forestry_perf_plot"),
+                    data.maxTicks(), data.setupTicks(), data.required(), data.rotation(), data.manualOnly(), data.maxAttempts(), data.requiredSuccesses(), true, data.padding()));
+            }
+            if (groups.contains("restart_prepare"))
+            {
+                final String name = "production_courier_builder_restart_prepare";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilderRestartPrepare),
+                  plotData(event.registerEnvironment(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony/restart_prepare_focused"),
+                    new TestEnvironmentDefinition.Weather(TestEnvironmentDefinition.Weather.Type.CLEAR))));
+            }
+            if (groups.contains("restart_resume"))
+            {
+                final String name = "production_courier_builder_restart_resume";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilderRestartResume),
+                  new TestData<>(event.registerEnvironment(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "restart_resume_focused")),
+                    Identifier.fromNamespaceAndPath("minecraft", "empty"), 40100, 0, true, Rotation.NONE));
             }
             if (groups.contains("nav_recovery"))
             {

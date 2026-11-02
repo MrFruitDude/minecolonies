@@ -82,6 +82,8 @@ final class RecoveryJourneyGameTests
             final boolean[] moved = {false};
             final boolean[] fetched = {false};
             final boolean[] opened = {false};
+            final boolean[] crossedIn = {false};
+            final boolean[] crossedOut = {false};
             final int[] stationary = {0};
             final int[] blockedSamples = {0};
             final Vec3[] previous = {start};
@@ -109,7 +111,7 @@ final class RecoveryJourneyGameTests
                 helper.assertTrue(inHut + carried + saplings == 16, "saplings lost or duplicated: " + observation[0]);
                 if (arrived[0] >= 0 && fetched[0] && outsideSaplings >= (reopenBeforeArrival ? 3 : 1)
                   && ai != null && ai.getPlantedTotal() >= (reopenBeforeArrival ? 3 : 1)
-                  && (!reopenBeforeArrival || level.getGameTime() - arrived[0] >= 600))
+                  && (!reopenBeforeArrival || crossedIn[0] && crossedOut[0] && level.getGameTime() - arrived[0] >= 600))
                 {
                     Log.getLogger().info("RECOVERY RESULT {} {}", observation[0], nav.navigationTraceHistory());
                     return true;
@@ -125,7 +127,7 @@ final class RecoveryJourneyGameTests
                 }
                 if (reopenBeforeArrival)
                 {
-                    helper.assertTrue(entity.position().distanceToSqr(previous[0]) < 16, "hut reroute teleported " + nav.navigationTraceHistory());
+                    helper.assertTrue(entity.position().distanceToSqr(previous[0]) < 2.25, "hut reroute jumped more than 1.5 blocks " + nav.navigationTraceHistory());
                     final var ai = ForestryGameTests.ai(worker);
                     helper.assertTrue(ai == null || ai.putBackCount() == 0, "hut reroute used the work-handler snap");
                     if (!opened[0] && level.getGameTime() - began == 400)
@@ -136,6 +138,11 @@ final class RecoveryJourneyGameTests
                         Log.getLogger().info("RECOVERY DOOR opened at fixed elapsed=400 blockedSamples={}", blockedSamples[0]);
                     }
                 }
+                if (opened[0] && entity.blockPosition().equals(door.get(0)))
+                {
+                    if (arrived[0] < 0) { crossedIn[0] = true; }
+                    else { crossedOut[0] = true; }
+                }
                 previous[0] = entity.position();
                 if (arrived[0] < 0 && Math.abs(entity.getY() - center.getY()) < 1
                   && Math.abs(entity.getX() - center.getX()) < 4 && Math.abs(entity.getZ() - center.getZ()) < 4)
@@ -144,6 +151,7 @@ final class RecoveryJourneyGameTests
                     helper.assertTrue(level.getGameTime() - began >= 200, "sealed hut was reached before a recovery episode");
                     arrived[0] = level.getGameTime();
                     helper.assertTrue(!reopenBeforeArrival || opened[0], "entered before the fixed door opening");
+                    helper.assertTrue(!reopenBeforeArrival || crossedIn[0], "entered without occupying the doorway column");
                     if (!reopenBeforeArrival)
                     {
                         // Legacy snap coverage only. This branch is not navigation recovery evidence.

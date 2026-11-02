@@ -250,7 +250,11 @@ public final class ForestryGameTests
         final ServerLevel level = helper.getLevel();
         final BlockPos anchor = helper.absolutePos(rel);
         final ICitizenData worker = colony.getCitizenManager().spawnOrCreateCivilian(null, level, List.of(anchor), true);
-        helper.assertTrue(worker != null && worker.getEntity().isPresent(), "forester did not spawn");
+        helper.assertTrue(worker != null && worker.getEntity().isPresent(), "forester did not spawn: anchor=" + anchor
+          + " ticking=" + com.minecolonies.api.util.WorldUtil.isEntityBlockLoaded(level, anchor)
+          + " calculated=" + com.minecolonies.api.util.EntityUtils.getSpawnPoint(level, anchor)
+          + " data=" + (worker == null ? "null" : worker.getId()) + " entity=" + (worker != null && worker.getEntity().isPresent())
+          + " registeredData=" + colony.getCitizenManager().getCurrentCitizenCount());
         helper.assertTrue(building.getModule(BuildingModules.FORESTER_WORK).assignCitizen(worker), "forester assignment failed");
         worker.getEntity().get().setPos(anchor.getX() + 0.5D, anchor.getY(), anchor.getZ() + 0.5D);
         worker.getInventory().setStackInSlot(0, new ItemStack(Items.STONE_AXE));

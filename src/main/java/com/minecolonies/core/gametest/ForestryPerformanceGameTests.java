@@ -72,16 +72,59 @@ final class ForestryPerformanceGameTests
         {
             grow(helper, roots.get(i), 117L + i);
         }
-        helper.runAfterDelay(20, () -> {
+        final Runnable[] ready = new Runnable[1];
+        final int[] waited = {0};
+        ready[0] = () -> {
+            boolean ticking = true;
+            final StringBuilder diagnostics = new StringBuilder();
+            for (int i = 0; i < huts.size(); i++)
+            {
+                final BlockPos anchor = helper.absolutePos(new BlockPos(14 + 24 * i, 1, 12));
+                final boolean entityTicking = com.minecolonies.api.util.WorldUtil.isEntityBlockLoaded(level, anchor);
+                final BlockPos calculated = com.minecolonies.api.util.EntityUtils.getSpawnPoint(level, anchor);
+                final var owner = com.minecolonies.api.colony.IColonyManager.getInstance().getColonyByPosFromWorld(level, anchor);
+                diagnostics.append(" worker=").append(i).append(" anchor=").append(anchor).append(" ticking=").append(entityTicking)
+                  .append(" fullStatus=").append(level.getChunkAt(anchor).getFullStatus()).append(" calculated=").append(calculated)
+                  .append(" feet=").append(level.getBlockState(anchor)).append(" head=").append(level.getBlockState(anchor.above()))
+                  .append(" support=").append(level.getBlockState(anchor.below())).append(" owner=").append(owner == null ? "none" : owner.getID());
+                ticking &= entityTicking && calculated != null;
+            }
+            final BlockPos low = helper.absolutePos(new BlockPos(0, 1, 0));
+            final BlockPos high = helper.absolutePos(new BlockPos(96, 1, 60));
+            for (int cx = low.getX() >> 4; cx <= high.getX() >> 4; cx++)
+            {
+                for (int cz = low.getZ() >> 4; cz <= high.getZ() >> 4; cz++)
+                {
+                    if (!com.minecolonies.api.util.WorldUtil.isEntityChunkLoaded(level, cx, cz))
+                    {
+                        ticking = false;
+                        diagnostics.append(" notTickingWorkChunk=").append(new net.minecraft.world.level.ChunkPos(cx, cz));
+                    }
+                }
+            }
+            if (waited[0] == 0 || ticking || waited[0] >= 200)
+            {
+                Log.getLogger().info("FORESTRY PERF readiness waited={} ready={} {}", waited[0], ticking, diagnostics);
+            }
+            helper.assertTrue(ticking || waited[0] < 200, "forestry chunks/spawn points not ready after bounded wait: " + diagnostics);
+            if (!ticking)
+            {
+                waited[0] += 10;
+                helper.runAfterDelay(10, () -> ready[0].run());
+                return;
+            }
             final List<ICitizenData> workers = new ArrayList<>();
             for (int i = 0; i < huts.size(); i++)
             {
                 final var worker = ForestryGameTests.forester(helper, colony, huts.get(i), new BlockPos(14 + 24 * i, 1, 12), new ItemStack(Items.OAK_SAPLING, 64));
+                Log.getLogger().info("FORESTRY PERF spawned index={} data={} entity={} added={} position={}", i, worker.getId(), worker.getEntity().isPresent(),
+                  worker.getEntity().orElseThrow().isAddedToLevel(), worker.getEntity().orElseThrow().position());
                 worker.getEntity().orElseThrow().getRandom().setSeed(117L + i);
                 workers.add(worker);
             }
             new Meter(helper, workers, roots).start();
-        });
+        };
+        helper.runAfterDelay(20, () -> ready[0].run());
     }
 
     private static void grow(final GameTestHelper helper, final BlockPos root, final long seed)
@@ -114,6 +157,15 @@ final class ForestryPerformanceGameTests
         private int regrown;
         private int fellsAtWarmup;
         private int chopsAtWarmup;
+        private final int[] workerFellsAtWarmup = new int[4];
+        private final int[] blockFells = new int[6];
+        private int lastBlockFells;
+        private long completedAtWarmup;
+        private long startedAtWarmup;
+        private int newThreadsMeasured;
+        private long unassignedFirstThreadCpu;
+        private int overrunsMeasured;
+        private long maxOverrunNs;
 
         Meter(final GameTestHelper helper, final List<ICitizenData> workers, final List<BlockPos> roots)
         {
@@ -146,7 +198,17 @@ final class ForestryPerformanceGameTests
                     final long cpu = threads.getThreadCpuTime(id);
                     helper.assertTrue(cpu >= 0, "pathfinder CPU clock unavailable");
                     now.put(id, cpu);
-                    delta += cpu - pathMarks.getOrDefault(id, 0L);
+                    final Long previous = pathMarks.get(id);
+                    if (previous == null)
+                    {
+                        // Its earlier lifetime does not belong to this interval. Invalidate measured windows with a new thread.
+                        unassignedFirstThreadCpu += cpu;
+                        if (helper.getLevel().getGameTime() - began > WARMUP) { newThreadsMeasured++; }
+                    }
+                    else
+                    {
+                        delta += cpu - previous;
+                    }
                 }
             }
             helper.assertTrue(now.keySet().containsAll(pathMarks.keySet()), "pathfinder thread ended: CPU accounting would be incomplete");
@@ -196,6 +258,20 @@ final class ForestryPerformanceGameTests
             {
                 fellsAtWarmup = fells();
                 chopsAtWarmup = chops();
+                lastBlockFells = fellsAtWarmup;
+                completedAtWarmup = pool.getCompletedTaskCount();
+                startedAtWarmup = Pathfinding.Stats.started.get();
+                for (int i = 0; i < workers.size(); i++)
+                {
+                    final var ai = ForestryGameTests.ai(workers.get(i));
+                    workerFellsAtWarmup[i] = ai == null ? 0 : ai.getTreeChopFellCount();
+                }
+            }
+            if (tick > WARMUP && (tick - WARMUP) % 1000 == 0)
+            {
+                final int fellNow = fells();
+                blockFells[(int) (tick - WARMUP) / 1000 - 1] = fellNow - lastBlockFells;
+                lastBlockFells = fellNow;
             }
             if (tick % 400 == 0)
             {
@@ -222,6 +298,12 @@ final class ForestryPerformanceGameTests
             }
             helper.runAfterDelay(1, this::tick);
             deadline += 50_000_000L;
+            final long lag = System.nanoTime() - deadline;
+            if (tick > WARMUP && lag > 0)
+            {
+                overrunsMeasured++;
+                maxOverrunNs = Math.max(maxOverrunNs, lag);
+            }
             while (System.nanoTime() < deadline)
             {
                 LockSupport.parkNanos(deadline - System.nanoTime());
@@ -246,17 +328,44 @@ final class ForestryPerformanceGameTests
             out.addProperty("pathThreads", pathMarks.size());
             out.addProperty("queueMax", queueMax);
             out.addProperty("activeMax", activeMax);
+            out.addProperty("newThreadsMeasured", newThreadsMeasured);
+            out.addProperty("unassignedFirstThreadCpuNs", unassignedFirstThreadCpu);
+            out.addProperty("overrunsMeasured", overrunsMeasured);
+            out.addProperty("maxOverrunNs", maxOverrunNs);
             series(out, "serverCpu", serverCpu);
             series(out, "pathCpu", pathCpu);
             series(out, "combinedCpu", combinedCpu);
             series(out, "wall", wall);
             out.addProperty("pathStats", Pathfinding.Stats.summary());
-            final boolean active = fells() - fellsAtWarmup >= 8 && chops() - chopsAtWarmup >= 16 && pathMarks.size() > 0;
+            final long pathTotal = Arrays.stream(pathCpu).sum();
+            final long completed = Pathfinding.getExecutor().getCompletedTaskCount() - completedAtWarmup;
+            out.addProperty("pathCpuNsTotalMeasured", pathTotal);
+            out.addProperty("pathJobsStartedMeasured", Pathfinding.Stats.started.get() - startedAtWarmup);
+            out.addProperty("pathJobsCompletedMeasured", completed);
+            out.addProperty("pathCpuNsPerCompletedJob", completed == 0 ? 0 : pathTotal / completed);
+            final JsonArray perWorker = new JsonArray();
+            boolean allWorkers = true;
+            for (int i = 0; i < workers.size(); i++)
+            {
+                final var ai = ForestryGameTests.ai(workers.get(i));
+                final int fell = (ai == null ? 0 : ai.getTreeChopFellCount()) - workerFellsAtWarmup[i];
+                perWorker.add(fell);
+                allWorkers &= fell >= 2;
+            }
+            out.add("measuredFellsPerWorker", perWorker);
+            final JsonArray perBlock = new JsonArray();
+            for (final int count : blockFells) { perBlock.add(count); }
+            out.add("measuredFellsPer1000Ticks", perBlock);
+            out.addProperty("registeredDecisionMetric", "serverCpuP95Ns; async CPU totals and per-completed-job cost reported separately");
+            final boolean active = allWorkers && Arrays.stream(blockFells).allMatch(count -> count > 0)
+              && fells() - fellsAtWarmup >= 8 && chops() - chopsAtWarmup >= 16 && pathMarks.size() > 0
+              && pathTotal > 0 && completed > 0 && newThreadsMeasured == 0;
             out.addProperty("activeWorkGate", active);
             BenchEnv.write("ai_forestry_20tps", out);
-            helper.assertTrue(active, "paced forestry did not exercise enough TreeChop felling: " + out);
-            Log.getLogger().info("FORESTRY PERF result samples={} measuredFells={} serverP95={} pathP95={} combinedP95={}", samples,
-              fells() - fellsAtWarmup, percentile(serverCpu, .95), percentile(pathCpu, .95), percentile(combinedCpu, .95));
+            helper.assertTrue(active, "paced forestry activity/accounting gate failed: perWorker=" + perWorker + " perBlock=" + perBlock
+              + " pathCpu=" + pathTotal + " completed=" + completed + " newThreads=" + newThreadsMeasured);
+            Log.getLogger().info("FORESTRY PERF result samples={} measuredFells={} serverP95={} pathCpuTotal={} completedJobs={}", samples,
+              fells() - fellsAtWarmup, percentile(serverCpu, .95), pathTotal, completed);
             helper.succeed();
         }
 
