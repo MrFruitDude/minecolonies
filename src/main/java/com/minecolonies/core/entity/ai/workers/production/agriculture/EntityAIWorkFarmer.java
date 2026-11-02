@@ -946,6 +946,12 @@ public class EntityAIWorkFarmer extends AbstractEntityAICrafting<JobFarmer, Buil
     @Override
     public boolean canGoIdle()
     {
+        // Completing the last field does not complete the work: deliver its harvest first.
+        // Keep the active dump as well as its pending flag, which wantInventoryDumped consumes.
+        if (shouldDumpInventory || getState() == INVENTORY_FULL)
+        {
+            return false;
+        }
         if (building.getModule(FARMER_FIELDS).getBuildingExtensionToWorkOn() == null)
         {
             return !super.hasWorkToDo();
