@@ -224,6 +224,13 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 com.minecolonies.core.gametest.bench.BenchRegistrar.registerAiPerf(event);
             }
+            if (groups.contains("ai_recovery"))
+            {
+                final String name = "forestry_natural_hut_return_plant";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, RecoveryJourneyGameTests::hutReturnAndPlant),
+                  withSkyAccess(isolatedColonyData(event, name)));
+            }
             if (groups.contains("nav_recovery"))
             {
                 NavLifecycleGameTests.register(event);
