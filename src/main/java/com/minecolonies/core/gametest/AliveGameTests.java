@@ -404,6 +404,7 @@ public final class AliveGameTests
             final EntityCitizen b = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
             makeTrait(a, LifeTrait.CHATTY);
             makeTrait(b, LifeTrait.CHATTY);
+            final LeisureVisitTestScope visits = new LeisureVisitTestScope(List.of(a.getCitizenData(), b.getCitizenData()));
             final long[] start = {-1};
             final long[] end = {-1};
             final boolean[] replied = {false};
@@ -412,7 +413,7 @@ public final class AliveGameTests
             final List<String> log = new ArrayList<>();
             final Runnable[] poll = new Runnable[1];
             final int[] ticks = {0};
-            poll[0] = () -> {
+            poll[0] = visits.guard(() -> {
                 ticks[0]++;
                 keepFed(a, b);
                 // This test checks a nearby pair's automatic chat, not the wander AI's choice of destinations.
@@ -425,6 +426,7 @@ public final class AliveGameTests
                 final long now = helper.getLevel().getGameTime();
                 if (start[0] < 0 && (a.getLife().chatting() || b.getLife().chatting()))
                 {
+                    visits.close();
                     start[0] = now;
                     final EntityCitizen leader = a.getLife().chatLeader() ? a : b;
                     final EntityCitizen partner = leader == a ? b : a;
@@ -474,7 +476,7 @@ public final class AliveGameTests
                     return;
                 }
                 helper.runAfterDelay(1, () -> poll[0].run());
-            };
+            });
             helper.runAfterDelay(1, () -> poll[0].run());
         });
     }

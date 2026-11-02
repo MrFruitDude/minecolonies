@@ -311,29 +311,33 @@ public final class Round13LifeGameTests
             mourner.getCitizenMournHandler().setMourning(true);
             final ICitizenData hungry = spawn(helper, colony, new BlockPos(30, 1, 20));
             hungry.setSaturation(0);
+            final LeisureVisitTestScope visits = new LeisureVisitTestScope(List.of(idle));
             final List<String> log = new ArrayList<>();
             final int[] idleChecks = {0};
             final int[] denseIdleChecks = {0};
+            final boolean[] initialized = {false};
             final java.util.Map<String, Integer> stateTicks = new java.util.LinkedHashMap<>();
-            // The six samples remain; observe between them too so transition phase cannot hide a short IDLE.
             final long observedFrom = helper.getLevel().getGameTime();
             final Runnable[] observe = new Runnable[1];
-            observe[0] = () -> {
+            observe[0] = visits.guard(() -> {
                 final EntityCitizen e = (EntityCitizen) idle.getEntity().orElseThrow();
-                final String state = String.valueOf(e.getCitizenAI().getState());
+                final String state = e.getCitizenAI().getState() + ":" + id(idle.getStatus());
                 stateTicks.merge(state, 1, Integer::sum);
-                if (e.getCitizenAI().getState() == CitizenAIState.IDLE && idle.getHomeBuilding() == null && idle.getJob() == null)
+                // A newly spawned citizen has no status until its first policy decision.
+                // Once initialized, a later null or wrong idle status is still a failure.
+                initialized[0] |= idle.getStatus() != null;
+                if (initialized[0] && e.getCitizenAI().getState() == CitizenAIState.IDLE && idle.getHomeBuilding() == null && idle.getJob() == null)
                 {
                     denseIdleChecks[0]++;
                     helper.assertTrue(idle.getStatus() == VisibleCitizenStatus.HOMELESS,
                       "B5: dense idle citizen without home shows " + idle.getStatus() + " states=" + stateTicks);
                 }
                 if (helper.getLevel().getGameTime() - observedFrom < 340) { helper.runAfterDelay(1, () -> observe[0].run()); }
-            };
+            });
             helper.runAfterDelay(40, () -> observe[0].run());
             for (int i = 1; i <= 6; i++)
             {
-                helper.runAfterDelay(40 + i * 50, () -> {
+                helper.runAfterDelay(40 + i * 50, visits.guard(() -> {
                     log.add(id(idle.getStatus()) + "/" + id(mourner.getStatus()) + "/" + id(hungry.getStatus())
                       + ":state=" + ((EntityCitizen) idle.getEntity().orElseThrow()).getCitizenAI().getState());
                     helper.assertTrue(mourner.getStatus() == VisibleCitizenStatus.MOURNING, "B5: mourner shows " + mourner.getStatus() + " " + log);
@@ -344,13 +348,16 @@ public final class Round13LifeGameTests
                         idleChecks[0]++;
                         helper.assertTrue(idle.getStatus() == VisibleCitizenStatus.HOMELESS, "B5: idle citizen without home shows " + idle.getStatus() + " " + log);
                     }
-                });
+                }));
             }
-            helper.runAfterDelay(40 + 6 * 50 + 5, () -> {
-                Log.getLogger().info("R13 LIFE RESULT statuses samples={} idle_checks={} dense_idle_checks={} state_ticks={}", log, idleChecks[0], denseIdleChecks[0], stateTicks);
-                helper.assertTrue(idleChecks[0] + denseIdleChecks[0] > 0, "no idle homeless status was observed: states=" + stateTicks + " samples=" + log);
+            helper.runAfterDelay(40 + 6 * 50 + 5, visits.guard(() -> {
+                Log.getLogger().info("R13 LIFE RESULT statuses samples={} idle_checks={} dense_idle_checks={} initialized={} state_ticks={}",
+                  log, idleChecks[0], denseIdleChecks[0], initialized[0], stateTicks);
+                helper.assertTrue(initialized[0] && idleChecks[0] + denseIdleChecks[0] > 0,
+                  "no idle homeless status was observed: states=" + stateTicks + " samples=" + log);
+                visits.close();
                 helper.succeed();
-            });
+            }));
         });
     }
 
