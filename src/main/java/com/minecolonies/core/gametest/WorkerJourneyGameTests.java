@@ -27,7 +27,8 @@ final class WorkerJourneyGameTests
         final RsFixture fixture = RsFixture.found(helper, "farmer harvest journey", 2);
         final var hiring = fixture.colony.getSettings().getSetting(BuildingTownHall.AUTO_HIRING_MODE);
         if (hiring.getValue()) { hiring.trigger(); }
-        final var hut = fixture.place(ModBlocks.blockHutFarmer, new BlockPos(8, 1, 24), "fundamentals/farmer1.blueprint");
+        helper.assertTrue(WorkerJourneyGameTests.class.getClassLoader().getResource("blueprints/minecolonies/original/agriculture/horticulture/farmer1.blueprint") != null, "farmer fixture blueprint missing from runtime");
+        final var hut = fixture.place(ModBlocks.blockHutFarmer, new BlockPos(8, 1, 24), "agriculture/horticulture/farmer1.blueprint");
         final BlockPos scarecrow = helper.absolutePos(new BlockPos(26, 1, 20));
         fixture.level.setBlockAndUpdate(scarecrow, ModBlocks.blockScarecrow.defaultBlockState());
         final FarmField field = FarmField.create(scarecrow, fixture.level);
@@ -55,7 +56,7 @@ final class WorkerJourneyGameTests
             final var citizen = fixture.spawn(new BlockPos(14, 1, 16), false);
             for (int slot = 0; slot < citizen.getInventory().getSlots(); slot++) { citizen.getInventory().setStackInSlot(slot, ItemStack.EMPTY); }
             helper.assertTrue(hut.getModule(BuildingModules.FARMER_CRAFT).assignCitizen(citizen), "native farmer assignment failed");
-            final var entity = citizen.getEntity().orElseThrow();
+            final var entity = (com.minecolonies.core.entity.citizen.EntityCitizen) citizen.getEntity().orElseThrow();
             final var start = entity.position();
             final boolean[] fetchedHoe = {false};
             final boolean[] moved = {false};
@@ -67,7 +68,7 @@ final class WorkerJourneyGameTests
                 final int stored = InventoryUtils.getCountFromBuilding(hut, stack -> stack.is(Items.WHEAT));
                 final var ai = entity.getCitizenJobHandler().getWorkAI();
                 last[0] = "mature=" + mature + " carried=" + carried + " stored=" + stored + " fetchedHoe=" + fetchedHoe[0]
-                  + " moved=" + moved[0] + " state=" + (ai == null ? "none" : ai.getState()) + " position=" + entity.position() + " field=" + field.getFieldStage();
+                  + " moved=" + moved[0] + " citizenState=" + entity.getCitizenAI().getState() + " dumpFlag=" + readFlag(ai, "shouldDumpInventory") + " state=" + (ai == null ? "none" : ai.getState()) + " position=" + entity.position() + " field=" + field.getFieldStage();
                 if (mature == 0 && stored == 8 && carried == 0 && fetchedHoe[0] && moved[0])
                 {
                     helper.assertTrue(fixture.level.getBlockState(scarecrow).is(ModBlocks.blockScarecrow), "farmer broke the scarecrow");
@@ -84,5 +85,17 @@ final class WorkerJourneyGameTests
                 if (elapsed % 1000 == 0) { Log.getLogger().info("[farmer harvest progress] {}", last[0]); }
             }, "farmer_harvest_journey");
         });
+    }
+
+    private static String readFlag(final Object object, final String name)
+    {
+        if (object == null) { return "no AI"; }
+        try
+        {
+            final var field = object.getClass().getDeclaredField(name);
+            field.setAccessible(true);
+            return String.valueOf(field.get(object));
+        }
+        catch (final ReflectiveOperationException failure) { throw new IllegalStateException("farmer diagnostic field missing", failure); }
     }
 }
