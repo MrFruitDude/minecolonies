@@ -51,7 +51,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.clock.WorldClocks;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
-/** Two finite native production/forestry windows with three watched mock players; no timing instrumentation. */
+/** Two finite native production/forestry windows with three PlayerWatch-enabled mock players; no timing instrumentation. */
 final class MixedColonyLoadGameTests
 {
     private static final String PACK = "Minecolonies Original";
@@ -299,9 +299,14 @@ final class MixedColonyLoadGameTests
                 if (stable < 0) { stable = now; }
                 if (now - stable >= 160)
                 {
+                    for (final BlockPos target : targets)
+                    {
+                        helper.assertTrue(level.getBlockState(target).is(Blocks.OAK_PLANKS), "mixed completed target no longer placed: " + target);
+                    }
                     ledger(); assertRequests();
                     helper.assertTrue(a.getRequestManager().getRequestForToken(request) == null, "mixed completed request still open");
-                    Log.getLogger().info("MIXED window={} complete={} birchKept={} builderPlanks={} inputLogs={}", window, now - windowStart, kept, planks, logs);
+                    Log.getLogger().info("MIXED window={} complete={} birchKept={} builderPlanks={} inputLogs={} persistentTargets={} custody=A:12oak,0birch;B:0oak,{}birch",
+                      window, now - windowStart, kept, planks, logs, targets.size(), roots.size() * 4);
                     if (++window == 2)
                     {
                         helper.assertTrue(logs == 1 && planks == 6, "mixed residual stock differs after two windows");
@@ -347,9 +352,10 @@ final class MixedColonyLoadGameTests
         private void ledger()
         {
             final Set<IItemHandler> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-            final int[] totals = {0, 0};
+            final int[][] custody = {{0, 0}, {0, 0}};
             for (final IColony colony : List.of(a, b))
             {
+                final int[] totals = custody[colony == a ? 0 : 1];
                 for (final var citizen : colony.getCitizenManager().getCitizens())
                 {
                     helper.assertTrue(citizen.getEntity().isPresent() && citizen.getEntity().orElseThrow().isAlive(), "mixed ledger citizen unavailable");
@@ -376,20 +382,29 @@ final class MixedColonyLoadGameTests
                     count(inventory, seen, totals);
                 }
             }
-            for (final ServerPlayer player : players) { count(new InvWrapper(player.getInventory()), seen, totals); }
+            for (int i = 0; i < players.size(); i++)
+            {
+                final ServerPlayer player = players.get(i);
+                final IColony colony = i == 1 ? b : a;
+                helper.assertTrue(IColonyManager.getInstance().getColonyByPosFromWorld(level, player.blockPosition()) == colony,
+                  "mixed player left assigned colony: " + player.getUUID());
+                count(new InvWrapper(player.getInventory()), seen, custody[i == 1 ? 1 : 0]);
+            }
             for (final int offset : new int[] {0, 512})
             {
+                final int[] totals = custody[offset == 0 ? 0 : 1];
                 final AABB area = new AABB(Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(offset + OBS_MIN, 0, OBS_MIN))),
                   Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(offset + OBS_MAX + 1, 32, OBS_MAX + 1))));
                 for (final ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, area)) { count(item.getItem(), totals); }
             }
-            for (final BlockPos target : targets) { if (level.getBlockState(target).is(Blocks.OAK_PLANKS)) { totals[0]++; } }
+            for (final BlockPos target : targets) { if (level.getBlockState(target).is(Blocks.OAK_PLANKS)) { custody[0][0]++; } }
             for (final BlockPos root : roots)
             {
-                for (int y = 0; y < 4; y++) { if (standingBirch(root.above(y))) { totals[1]++; } }
+                for (int y = 0; y < 4; y++) { if (standingBirch(root.above(y))) { custody[1][1]++; } }
             }
-            helper.assertTrue(totals[0] == 12 && totals[1] == roots.size() * 4, "mixed physical conservation failed: oakPlankEquivalent=" + totals[0]
-              + " birchLogs=" + totals[1] + " roots=" + roots.stream().map(root -> java.util.stream.IntStream.range(0, 4)
+            helper.assertTrue(custody[0][0] == 12 && custody[0][1] == 0 && custody[1][0] == 0 && custody[1][1] == roots.size() * 4,
+              "mixed physical custody failed: A[oak,birch]=" + java.util.Arrays.toString(custody[0])
+              + " B[oak,birch]=" + java.util.Arrays.toString(custody[1]) + " roots=" + roots.stream().map(root -> java.util.stream.IntStream.range(0, 4)
                 .mapToObj(y -> root.above(y) + "=" + level.getBlockState(root.above(y))).toList()).toList()
               + " forester=" + ForestryGameTests.describe(workers.get(3)));
         }

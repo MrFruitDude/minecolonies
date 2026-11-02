@@ -2194,11 +2194,19 @@ public final class MinecoloniesGameTests
 
     static void removeConnectedTestPlayer(final ServerPlayer player)
     {
-        try { player.level().getServer().getPlayerList().remove(player); }
+        try
+        {
+            if (player.connection != null) { player.level().getServer().getPlayerList().remove(player); }
+        }
         finally
         {
-            final EmbeddedChannel channel = CHANNELS.remove(player);
-            if (channel != null) { channel.finishAndReleaseAll(); }
+            com.minecolonies.core.entity.pathfinding.PlayerWatch.watchForTests(player.getUUID());
+            try { player.discard(); }
+            finally
+            {
+                final EmbeddedChannel channel = CHANNELS.remove(player);
+                if (channel != null) { channel.finishAndReleaseAll(); }
+            }
         }
     }
 
@@ -2255,23 +2263,32 @@ public final class MinecoloniesGameTests
         };
         gameType.updatePlayerAbilities(player.getAbilities());
         // (a mock player stands somewhere in the shared test world: it does not stop the workers of other tests from being put out, see PlayerWatch)
-        com.minecolonies.core.entity.pathfinding.PlayerWatch.ignoreForTests(playerUuid);
-        final Connection connection = new Connection(PacketFlow.SERVERBOUND);
-        CHANNELS.put(player, new EmbeddedChannel(connection));
-        // NeoForge provides a complete payload/channel setup for test
-        // connections. Without it, the production PlayerLoggedInEvent sends
-        // Structurize's ServerUUIDMessage before the mock has a client
-        // play-phase channel and NeoForge rejects the payload. This is the
-        // supported mock-connection path; do not swallow the packet in an
-        // overridden listener method because that would hide a real channel
-        // registration or phase defect.
-        NetworkRegistry.configureMockConnection(connection);
-        final CommonListenerCookie cookie = CommonListenerCookie.createInitial(player.getGameProfile(), false);
-        // Use the normal server placement path so the login event and its
-        // client-bound Structurize sync packet are actually fired. The
-        // embedded channel is the supported no-socket test transport.
-        helper.getLevel().getServer().getPlayerList().placeNewPlayer(connection, player, cookie);
-        return player;
+        try
+        {
+            com.minecolonies.core.entity.pathfinding.PlayerWatch.ignoreForTests(playerUuid);
+            final Connection connection = new Connection(PacketFlow.SERVERBOUND);
+            CHANNELS.put(player, new EmbeddedChannel(connection));
+            // NeoForge provides a complete payload/channel setup for test
+            // connections. Without it, the production PlayerLoggedInEvent sends
+            // Structurize's ServerUUIDMessage before the mock has a client
+            // play-phase channel and NeoForge rejects the payload. This is the
+            // supported mock-connection path; do not swallow the packet in an
+            // overridden listener method because that would hide a real channel
+            // registration or phase defect.
+            NetworkRegistry.configureMockConnection(connection);
+            final CommonListenerCookie cookie = CommonListenerCookie.createInitial(player.getGameProfile(), false);
+            // Use the normal server placement path so the login event and its
+            // client-bound Structurize sync packet are actually fired. The
+            // embedded channel is the supported no-socket test transport.
+            helper.getLevel().getServer().getPlayerList().placeNewPlayer(connection, player, cookie);
+            return player;
+        }
+        catch (final RuntimeException | Error failure)
+        {
+            try { removeConnectedTestPlayer(player); }
+            catch (final RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+            throw failure;
+        }
     }
 
     /**
