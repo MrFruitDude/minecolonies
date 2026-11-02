@@ -50,6 +50,8 @@ final class CourierLoadJourneyGameTests
         f.stock(0, new ItemStack(Items.OAK_LOG, 64));
         f.stock(1, new ItemStack(Items.OAK_LOG, 64));
         f.stock(2, new ItemStack(Items.BIRCH_LOG, 64));
+        f.stock(3, new ItemStack(Items.OAK_LOG, 32));
+        f.stock(3, new ItemStack(Items.BIRCH_LOG, 32));
         helper.runAfterDelay(200, () -> {
             final var courier = f.spawn(new BlockPos(18, 1, 8), false);
             helper.assertTrue(deliveryHut.getModule(BuildingModules.COURIER_WORK).assignCitizen(courier), "courier assignment failed");
@@ -86,7 +88,7 @@ final class CourierLoadJourneyGameTests
                     if (goods(item.getItem())) { dropped += item.getItem().getCount(); }
                 }
                 physical.put("dropped", dropped);
-                helper.assertTrue(physical.values().stream().mapToInt(Integer::intValue).sum() == 192, "multi-stack physical conservation failed: " + physical);
+                helper.assertTrue(physical.values().stream().mapToInt(Integer::intValue).sum() == 256, "multi-stack physical conservation failed: " + physical);
                 final String state = "oak=" + oak + " birch=" + birch + " carried=" + carried + " queue=" + job.getTaskQueue().size()
                   + " work=" + (job.getWorkerAI() == null ? "none" : job.getWorkerAI().getState());
                 if (!state.equals(prior[0]))
@@ -100,6 +102,16 @@ final class CourierLoadJourneyGameTests
                     if (finished[0] < 0) { finished[0] = f.level.getGameTime(); }
                     if (f.level.getGameTime() - finished[0] >= 160)
                     {
+                        int oakLeft = 0;
+                        int birchLeft = 0;
+                        for (int i = 0; i < f.racks.size(); i++)
+                        {
+                            oakLeft += InventoryUtils.getItemCountInItemHandler(f.rack(i).getInventory(), stack -> stack.is(Items.OAK_LOG));
+                            birchLeft += InventoryUtils.getItemCountInItemHandler(f.rack(i).getInventory(), stack -> stack.is(Items.BIRCH_LOG));
+                        }
+                        helper.assertTrue(oakLeft == 32 && birchLeft == 32, "surplus stock changed: oak=" + oakLeft + " birch=" + birchLeft);
+                        helper.assertTrue(f.request(oakRequest) == null && f.request(birchRequest) == null,
+                          "completed deliveries left requests open: " + f.describe(oakRequest) + " / " + f.describe(birchRequest));
                         helper.assertTrue(maxCarried[0] >= 128, "courier completed demand without carrying the two-stack load: peak=" + maxCarried[0]);
                         helper.assertTrue(physical.get("dropped") == 0 && physical.get("delivery-hut") == 0,
                           "delivered stock is elsewhere: " + physical);
@@ -108,6 +120,10 @@ final class CourierLoadJourneyGameTests
                         helper.succeed();
                         return;
                     }
+                }
+                else
+                {
+                    finished[0] = -1;
                 }
                 helper.assertTrue(f.level.getGameTime() - start < 9000, "competing multi-stack jobs did not finish: " + state
                   + " requests=" + f.describe(oakRequest) + " / " + f.describe(birchRequest));

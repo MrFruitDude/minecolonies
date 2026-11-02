@@ -21,6 +21,7 @@ import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.LadderBlock;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
@@ -116,6 +117,7 @@ final class ObstacleJourneyGameTests
                         final BlockPos at = new BlockPos(x, y, z);
                         shell.remove(helper.absolutePos(at));
                         helper.setBlock(at, Blocks.WATER.defaultBlockState());
+                        obstacle.put(helper.absolutePos(at), Blocks.WATER);
                     }
                 }
             }
@@ -146,9 +148,14 @@ final class ObstacleJourneyGameTests
                 final boolean[] events = {false, false};
                 final boolean[] crossed = {false, false};
                 final boolean[] touched = {false, false};
+                final boolean[] opened = {false, false};
+                final boolean toggle = name.equals("journey_door") || name.equals("journey_gate");
+                final BlockPos toggleAt = helper.absolutePos(new BlockPos(20, 1, 16));
+                final long[] returnReady = {-1};
+                final boolean[] returnQueued = {false};
                 final int[] leg = {0};
                 final Vec3[] prior = {citizen.position()};
-                enterVisit(citizen, destination, events, 0);
+                enterVisit(helper, name, citizen, destination, events, 0);
                 final Runnable[] poll = new Runnable[1];
                 poll[0] = () -> {
                     data.setSaturation(20);
@@ -169,6 +176,24 @@ final class ObstacleJourneyGameTests
                             helper.assertTrue(level.getBlockState(block.getKey()).is(block.getValue()), name + " corridor altered at " + block.getKey());
                         }
                     }
+                    if (which == 1 && !returnQueued[0])
+                    {
+                        // Let the native toggle interaction close the first visit before supplying the return destination.
+                        if (toggle && level.getBlockState(toggleAt).getValue(BlockStateProperties.OPEN))
+                        {
+                            helper.assertTrue(level.getGameTime() - returnReady[0] < 200, name + " did not close after the outward leg");
+                        }
+                        else
+                        {
+                            enterVisit(helper, name, citizen, start, events, 1);
+                            returnQueued[0] = true;
+                        }
+                    }
+                    if (toggle && events[which] && level.getBlockState(toggleAt).getValue(BlockStateProperties.OPEN)
+                          && citizen.position().distanceToSqr(Vec3.atCenterOf(toggleAt)) <= 16)
+                    {
+                        opened[which] = true;
+                    }
                     crossed[which] |= which == 0 ? rel.getX() >= 21 : rel.getX() <= 18;
                     touched[which] |= switch (name)
                     {
@@ -182,11 +207,15 @@ final class ObstacleJourneyGameTests
                         final BlockPos goal = which == 0 ? destination : start;
                         helper.assertTrue(events[which] && crossed[which] && touched[which] && citizen.position().distanceToSqr(Vec3.atCenterOf(goal)) <= 16,
                           name + " arrival bypassed obstacle: leg=" + which + " at=" + feet + " touched=" + touched[which]);
-                        Log.getLogger().info("JOURNEY obstacle={} leg={} elapsed={} at={} health={} touched=true", name, which, level.getGameTime() - began, feet, citizen.getHealth());
+                        helper.assertTrue(!toggle || opened[which], name + " was not seen opening near the traveller on leg " + which);
+                        final String trace = nav.navigationTraceHistory();
+                        helper.assertTrue(trace.startsWith("actions=[]"), name + " used a stuck-handler action: " + trace);
+                        Log.getLogger().info("JOURNEY obstacle={} leg={} elapsed={} at={} health={} touched=true opened={} trace={}",
+                          name, which, level.getGameTime() - began, feet, citizen.getHealth(), opened[which], trace);
                         if (which == 0)
                         {
                             leg[0] = 1;
-                            enterVisit(citizen, start, events, 1);
+                            returnReady[0] = level.getGameTime();
                         }
                         else
                         {
@@ -205,8 +234,14 @@ final class ObstacleJourneyGameTests
         });
     }
 
-    private static void enterVisit(final EntityCitizen citizen, final BlockPos goal, final boolean[] seen, final int index)
+    private static void enterVisit(final GameTestHelper helper, final String name, final EntityCitizen citizen, final BlockPos goal, final boolean[] seen, final int index)
     {
+        if (name.equals("journey_door") || name.equals("journey_gate"))
+        {
+            final var state = helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(20, 1, 16)));
+            helper.assertTrue(!state.getValue(BlockStateProperties.OPEN), name + " was open at start of leg " + index);
+            Log.getLogger().info("JOURNEY obstacle={} startLeg={} open=false", name, index);
+        }
         citizen.getCitizenAI().addTransition(new AIOneTimeEventTarget<IState>((IStateSupplier<IState>) () -> {
             try
             {
