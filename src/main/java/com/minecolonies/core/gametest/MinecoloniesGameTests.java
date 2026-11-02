@@ -759,6 +759,8 @@ public final class MinecoloniesGameTests
               new Stack(new ItemStack(Items.OAK_PLANKS, 1), 1, 1),
               true);
             final IRequest<?> targetRequest = colony.getRequestManager().getRequestForToken(targetRequestToken);
+            logProductionRequestGraph(colony, builder, targetRequest, "created");
+            Log.getLogger().info("P10C recipe token={} value={} source={}", recipeToken, recipe, "explicit gametest identifier");
             helper.assertTrue(targetRequest != null && targetRequest.getState() != RequestState.FAILED,
               "builder oak-plank request was not registered: " + targetRequest);
 
@@ -828,6 +830,7 @@ public final class MinecoloniesGameTests
 
                 if (pollTicks[0] % 500 == 0)
                 {
+                    logProductionRequestGraph(colony, builder, targetRequest, "control tick=" + pollTicks[0]);
                     Log.getLogger().info("P10C production/courier ticks={} request={} retainedRequestState={} parentDeliveries={} inputConsumed={} produced={} parentDelivery={} courierDelivery={} builderPlanks={} constructionArmed={} constructionObserved={} constructionTarget={} constructionBlock={} constructionOrder={} sawmillLogs={} sawmillInventory={} builderInventory={} warehouseQueue={} sawmillCitizen={} courierCitizen={}",
                       pollTicks[0],
                       current == null ? "null" : current.getState(),
@@ -998,6 +1001,7 @@ public final class MinecoloniesGameTests
 
                 if (pollTicks[0] % 500 == 0)
                 {
+                    logProductionRequestGraph(colony, builder, fixture.targetRequest(), "prepare tick=" + pollTicks[0]);
                     Log.getLogger().info("P10C restart activity active={} closeSubscribers={} ownerPosition={} ownerDistance={}", colony.isActive(),
                       colony.getPackageManager().getCloseSubscribers().size(), fixture.player().position(), fixture.player().blockPosition().distSqr(fixture.townHallPos()));
                     Log.getLogger().info("P10C restart prepare ticks={} request={} retainedRequestState={} parentDeliveries={} inputConsumed={} parentDelivery={} courierDelivery={} builderPlanks={} sawmillLogs={} builderInventory={} sawmillCitizen={} courierCitizen={}",
@@ -1497,6 +1501,8 @@ public final class MinecoloniesGameTests
             final IToken<?> targetRequestToken = builder.createRequest(
               new Stack(new ItemStack(Items.OAK_PLANKS, 1), 1, 1), true);
             final IRequest<?> targetRequest = colony.getRequestManager().getRequestForToken(targetRequestToken);
+            logProductionRequestGraph(colony, builder, targetRequest, "created");
+            Log.getLogger().info("P10C recipe token={} value={} source={}", recipeToken, recipe, "explicit gametest identifier");
             helper.assertTrue(targetRequest != null && targetRequest.getState() != RequestState.FAILED,
               "restart builder request was not registered: " + targetRequest);
             final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler sawmillInventory = sawmill.getItemHandlerCap();
@@ -1947,6 +1953,43 @@ public final class MinecoloniesGameTests
             }
         }
         return inserted;
+    }
+
+    private static void logProductionRequestGraph(final IColony colony, final IBuilding building, final IRequest<?> parent, final String stage)
+    {
+        if (parent == null) { Log.getLogger().info("P10C graph stage={} parent missing", stage); return; }
+        final var manager = colony.getRequestManager();
+        final var standard = (com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager) manager;
+        final java.util.ArrayDeque<IToken<?>> pending = new java.util.ArrayDeque<>();
+        final java.util.HashSet<IToken<?>> seen = new java.util.HashSet<>();
+        pending.add(parent.getId());
+        while (!pending.isEmpty() && seen.size() < 64)
+        {
+            final var token = pending.removeFirst();
+            if (!seen.add(token)) { continue; }
+            final var request = manager.getRequestForToken(token);
+            if (request == null)
+            {
+                Log.getLogger().info("P10C graph stage={} token={} removed retainedParent={}", stage, token, parent.getState());
+                continue;
+            }
+            final var resolverToken = standard.getRequestResolverRequestAssignmentDataStore().getAssignmentForValue(token);
+            final var resolver = resolverToken == null ? null : manager.getResolverForToken(resolverToken);
+            final java.util.LinkedHashSet<IToken<?>> candidates = new java.util.LinkedHashSet<>();
+            for (final var type : request.getSuperClasses())
+            {
+                final var registered = standard.getRequestableTypeRequestResolverAssignmentDataStore().getAssignments().get(type);
+                if (registered != null) { candidates.addAll(registered); }
+            }
+            final var descriptions = candidates.stream().map(id -> {
+                final var candidate = manager.getResolverForToken(id);
+                return candidate.getClass().getSimpleName() + "/" + id + "/priority=" + candidate.getPriority();
+            }).toList();
+            Log.getLogger().info("P10C graph stage={} active={} request={} resolver={} candidates={} wait={}", stage, colony.isActive(),
+              describeRequest(building, request), resolver == null ? "none" : resolver.getClass().getName() + "/" + resolver.getId(),
+              descriptions, request.getWaitReason());
+            pending.addAll(request.getChildren());
+        }
     }
 
     private static String describeRequest(final IBuilding building, final IRequest<?> request)

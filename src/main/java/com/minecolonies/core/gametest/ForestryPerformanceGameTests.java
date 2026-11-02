@@ -28,7 +28,10 @@ import java.util.concurrent.locks.LockSupport;
 /** Continuous forestry with native worker decisions, 20 TPS pacing, and explicit async path CPU accounting. */
 final class ForestryPerformanceGameTests
 {
-    private static final int WARMUP = 2000;
+    private static final int INVOCATION_WARMUP = 20_000;
+    private static final int SETTLE = 2000;
+    private static final int WARMUP = INVOCATION_WARMUP + SETTLE;
+    private static final long WARMUP_CAP_NS = 120_000_000_000L;
     private static final int SAMPLES = 6000;
 
     private ForestryPerformanceGameTests() { }
@@ -146,6 +149,10 @@ final class ForestryPerformanceGameTests
         private final long[] pathCpu = new long[SAMPLES];
         private final long[] combinedCpu = new long[SAMPLES];
         private final long[] wall = new long[SAMPLES];
+        private final long[] busyWall = new long[SAMPLES];
+        private final JsonArray telemetry = new JsonArray();
+        private long warmupStartedWall;
+        private long priorBusyWall;
         private long priorServer;
         private long priorWall;
         private long priorTick;
@@ -180,7 +187,10 @@ final class ForestryPerformanceGameTests
             began = helper.getLevel().getGameTime();
             priorTick = began;
             deadline = System.nanoTime();
+            warmupStartedWall = deadline;
+            priorBusyWall = deadline;
             priorWall = deadline;
+            recordTelemetry(0);
             pathDelta();
             priorServer = threads.getCurrentThreadCpuTime();
             helper.runAfterDelay(1, this::tick);
@@ -241,6 +251,7 @@ final class ForestryPerformanceGameTests
                 serverCpu[samples] = nowServer - priorServer;
                 pathCpu[samples] = async;
                 combinedCpu[samples] = serverCpu[samples] + async;
+                busyWall[samples] = nowWall - priorBusyWall;
                 wall[samples++] = nowWall - priorWall;
             }
             priorTick = nowTick;
@@ -289,6 +300,7 @@ final class ForestryPerformanceGameTests
             }
             if (tick % 1000 == 0)
             {
+                recordTelemetry(tick);
                 Log.getLogger().info("FORESTRY PERF progress tick={} samples={} fells={} chops={} regrown={} queue={} active={}", tick, samples, fells(), chops(), regrown, pool.getQueue().size(), pool.getActiveCount());
             }
             if (samples == SAMPLES)
@@ -297,6 +309,24 @@ final class ForestryPerformanceGameTests
                 return;
             }
             helper.runAfterDelay(1, this::tick);
+            if (tick < INVOCATION_WARMUP)
+            {
+                helper.assertTrue(System.nanoTime() - warmupStartedWall <= WARMUP_CAP_NS, "invocation warmup exceeded fixed 120-second cap");
+                // Same bounded drain as MacroRun, only in unmeasured invocation warmup.
+                final long pathDeadline = System.nanoTime() + 200_000_000L;
+                while ((!pool.getQueue().isEmpty() || pool.getActiveCount() > 0) && System.nanoTime() < pathDeadline)
+                {
+                    LockSupport.parkNanos(20_000L);
+                }
+                priorServer = threads.getCurrentThreadCpuTime();
+                priorBusyWall = System.nanoTime();
+                return;
+            }
+            if (tick == INVOCATION_WARMUP)
+            {
+                helper.assertTrue(System.nanoTime() - warmupStartedWall <= WARMUP_CAP_NS, "invocation warmup exceeded fixed 120-second cap");
+                deadline = System.nanoTime();
+            }
             deadline += 50_000_000L;
             final long lag = System.nanoTime() - deadline;
             if (tick > WARMUP && lag > 0)
@@ -310,6 +340,7 @@ final class ForestryPerformanceGameTests
             }
             // Exclude all fixture bookkeeping and pacing from the next server-thread CPU window.
             priorServer = threads.getCurrentThreadCpuTime();
+            priorBusyWall = System.nanoTime();
         }
 
         private void finish()
@@ -317,6 +348,10 @@ final class ForestryPerformanceGameTests
             final JsonObject out = new JsonObject();
             out.addProperty("samples", samples);
             out.addProperty("warmupTicks", WARMUP);
+            out.addProperty("invocationWarmupTicks", INVOCATION_WARMUP);
+            out.addProperty("pacedSettleTicks", SETTLE);
+            out.addProperty("invocationWarmupCapNs", WARMUP_CAP_NS);
+            out.add("jvmTelemetryPer1000Ticks", telemetry);
             out.addProperty("targetTickNs", 50_000_000L);
             out.addProperty("worldSeed", helper.getLevel().getSeed());
             out.addProperty("fixtureSeed", 117);
@@ -336,6 +371,31 @@ final class ForestryPerformanceGameTests
             series(out, "pathCpu", pathCpu);
             series(out, "combinedCpu", combinedCpu);
             series(out, "wall", wall);
+            series(out, "busyWall", busyWall);
+            out.addProperty("wallIntervalsOver55ms", Arrays.stream(wall).filter(n -> n > 55_000_000L).count());
+            out.addProperty("wallMaxNs", Arrays.stream(wall).max().orElse(0));
+            final JsonArray phaseP95 = new JsonArray();
+            for (int phase = 0; phase < 5; phase++)
+            {
+                final long[] values = new long[SAMPLES / 5];
+                for (int i = 0; i < values.length; i++) { values[i] = serverCpu[i * 5 + phase]; }
+                phaseP95.add(percentile(values, .95));
+            }
+            out.add("serverCpuP95NsPerPhaseMod5", phaseP95);
+            final long[] blockP95 = new long[6];
+            final JsonArray blockValues = new JsonArray();
+            for (int i = 0; i < 6; i++)
+            {
+                blockP95[i] = percentile(Arrays.copyOfRange(serverCpu, i * 1000, (i + 1) * 1000), .95);
+                blockValues.add(blockP95[i]);
+            }
+            final double spread = (double) Arrays.stream(blockP95).max().orElseThrow() / Arrays.stream(blockP95).min().orElseThrow();
+            final double trend = (double) percentile(Arrays.copyOfRange(blockP95, 3, 6), .5) / percentile(Arrays.copyOfRange(blockP95, 0, 3), .5);
+            final boolean stationary = spread <= 1.10 && trend >= .95 && trend <= 1.05;
+            out.add("serverCpuP95NsPer1000Ticks", blockValues);
+            out.addProperty("stationarityMaxMinRatio", spread);
+            out.addProperty("stationarityLastFirstMedianRatio", trend);
+            out.addProperty("stationarityGate", stationary);
             out.addProperty("pathStats", Pathfinding.Stats.summary());
             final long pathTotal = Arrays.stream(pathCpu).sum();
             final long completed = Pathfinding.getExecutor().getCompletedTaskCount() - completedAtWarmup;
@@ -366,7 +426,31 @@ final class ForestryPerformanceGameTests
               + " pathCpu=" + pathTotal + " completed=" + completed + " newThreads=" + newThreadsMeasured);
             Log.getLogger().info("FORESTRY PERF result samples={} measuredFells={} serverP95={} pathCpuTotal={} completedJobs={}", samples,
               fells() - fellsAtWarmup, percentile(serverCpu, .95), pathTotal, completed);
+            helper.assertTrue(stationary, "forestry baseline validity failed: blockP95=" + blockValues + " spread=" + spread + " trend=" + trend);
             helper.succeed();
+        }
+
+        private void recordTelemetry(final long tick)
+        {
+            final JsonObject point = new JsonObject();
+            point.addProperty("tick", tick);
+            final var compilation = ManagementFactory.getCompilationMXBean();
+            point.addProperty("compileTimeMs", compilation.isCompilationTimeMonitoringSupported() ? compilation.getTotalCompilationTime() : -1);
+            point.addProperty("loadedClasses", ManagementFactory.getClassLoadingMXBean().getLoadedClassCount());
+            point.addProperty("totalLoadedClasses", ManagementFactory.getClassLoadingMXBean().getTotalLoadedClassCount());
+            point.addProperty("heapCommittedBytes", ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getCommitted());
+            point.addProperty("heapUsedBytes", ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed());
+            long count = 0;
+            long time = 0;
+            for (final var gc : ManagementFactory.getGarbageCollectorMXBeans())
+            {
+                count += gc.getCollectionCount();
+                time += gc.getCollectionTime();
+            }
+            point.addProperty("gcCount", count);
+            point.addProperty("gcTimeMs", time);
+            telemetry.add(point);
+            Log.getLogger().info("FORESTRY PERF jvm {}", point);
         }
 
         private static void series(final JsonObject out, final String name, final long[] values)

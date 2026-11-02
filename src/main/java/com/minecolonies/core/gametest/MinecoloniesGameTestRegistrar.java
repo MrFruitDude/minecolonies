@@ -241,11 +241,18 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             if (groups.contains("forestry_perf"))
             {
                 final String name = "forestry_perf_20tps";
-                final var data = withSkyAccess(longIsolatedColonyData(event, name, 10_000));
+                final var data = withSkyAccess(longIsolatedColonyData(event, name, 30_000));
                 event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
                   info -> new MinecoloniesGameTestInstance(info, ForestryPerformanceGameTests::run),
                   new TestData<>(data.environment(), data.dimension(), Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest/forestry_perf_plot"),
                     data.maxTicks(), data.setupTicks(), data.required(), data.rotation(), data.manualOnly(), data.maxAttempts(), data.requiredSuccesses(), true, data.padding()));
+            }
+            if (groups.contains("production_control"))
+            {
+                final String name = "production_courier_builder";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilder),
+                  isolatedColonyData(event, name));
             }
             if (groups.contains("restart_prepare"))
             {
