@@ -258,6 +258,9 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             if (groups.contains("social_probe"))
             {
                 registerAliveCase(event, "alive_chat");
+                final String cleanup = "fixture_leisure_scope_cleanup";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, cleanup),
+                  info -> new MinecoloniesGameTestInstance(info, LeisureVisitTestScope::testCleanup), isolatedColonyData(event, cleanup));
                 final String name = "life_statuses";
                 event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
                   info -> new MinecoloniesGameTestInstance(info, Round13LifeGameTests::statuses), isolatedColonyData(event, name));
