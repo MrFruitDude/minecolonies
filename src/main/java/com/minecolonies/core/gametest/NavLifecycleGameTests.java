@@ -1,6 +1,8 @@
 package com.minecolonies.core.gametest;
 
 import com.minecolonies.api.colony.ICitizenData;
+import com.minecolonies.api.util.Log;
+import com.minecolonies.core.entity.pathfinding.Pathfinding;
 import com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState;
 import com.minecolonies.core.entity.pathfinding.pathjobs.PathJobFindTree;
 import com.minecolonies.core.colony.jobs.JobLumberjack;
@@ -35,6 +37,7 @@ final class NavLifecycleGameTests
 {
     static final Map<String, Consumer<GameTestHelper>> TESTS = new LinkedHashMap<>();
     private static final List<CountDownLatch> GATES = new ArrayList<>();
+    private static final List<PathResult<?>> HELD_RESULTS = new ArrayList<>();
     static
     {
         TESTS.put("nav_cancelled_tree_search", NavLifecycleGameTests::cancelledTreeSearch);
@@ -77,8 +80,17 @@ final class NavLifecycleGameTests
 
     static void clear()
     {
-        GATES.forEach(CountDownLatch::countDown);
-        GATES.clear();
+        try
+        {
+            // Cancel exact futures (including queued work) before releasing any gate or deleting fixture state.
+            HELD_RESULTS.forEach(PathResult::cancel);
+        }
+        finally
+        {
+            HELD_RESULTS.clear();
+            GATES.forEach(CountDownLatch::countDown);
+            GATES.clear();
+        }
     }
 
     static void registerRetry(final RegisterGameTestsEvent event)
@@ -247,6 +259,7 @@ final class NavLifecycleGameTests
             };
             final PathResult<?> result = nav.setPathJob(job, target, 1.0D, true);
             helper.assertTrue(result != null, "held job submission refused");
+            HELD_RESULTS.add(result);
             if (mode.equals("cancel_after"))
             {
                 gate.countDown();
@@ -325,12 +338,14 @@ final class NavLifecycleGameTests
             final CountDownLatch gate = new CountDownLatch(1);
             GATES.add(gate);
             final AtomicBoolean entered = new AtomicBoolean();
+            final java.util.concurrent.atomic.AtomicLong enteredNanos = new java.util.concurrent.atomic.AtomicLong();
             final PathJobFindTree job = new PathJobFindTree(helper.getLevel(), PathfindingUtils.prepareStart(entity), hut.getPosition(), 16,
               List.of(), 1, colony, entity, true)
             {
                 @Override
                 protected Path search()
                 {
+                    enteredNanos.set(System.nanoTime());
                     entered.set(true);
                     try
                     {
@@ -344,9 +359,38 @@ final class NavLifecycleGameTests
                     return super.search();
                 }
             };
+            final long submittedTick = helper.getLevel().getGameTime();
+            final long submittedNanos = System.nanoTime();
+            nav.enableNavigationTrace();
             final PathResult<?> result = nav.setPathJob(job, null, 1.0D, true);
-            helper.runAfterDelay(40, () -> {
-                helper.assertTrue(entered.get(), "held tree search never began");
+            Log.getLogger().info("[held tree admission] submitted accepted={} {}", result != null, heldSearchSnapshot(nav, result));
+            if (result == null)
+            {
+                gate.countDown();
+                helper.fail("held tree search submission refused: " + heldSearchSnapshot(nav, null));
+                return;
+            }
+            HELD_RESULTS.add(result);
+            final Runnable[] ready = new Runnable[1];
+            ready[0] = () -> {
+                final long age = helper.getLevel().getGameTime() - submittedTick;
+                final long wallNanos = System.nanoTime() - submittedNanos;
+                if (!entered.get())
+                {
+                    if (age >= 200 || wallNanos >= 2_000_000_000L || result.isCancelled() || result.isDone())
+                    {
+                        final String evidence = "age=" + age + " wallNs=" + wallNanos + " " + heldSearchSnapshot(nav, result);
+                        Log.getLogger().info("[held tree admission] invalid {}", evidence);
+                        result.cancel();
+                        gate.countDown();
+                        helper.fail("held tree search never began: " + evidence);
+                        return;
+                    }
+                    helper.runAfterDelay(1, () -> runHeld(ready[0], result, gate));
+                    return;
+                }
+                Log.getLogger().info("[held tree admission] entered age={} entryDelayNs={} {}", age,
+                  enteredNanos.get() - submittedNanos, heldSearchSnapshot(nav, result));
                 nav.recalc();
                 nav.tick();
                 gate.countDown();
@@ -390,8 +434,39 @@ final class NavLifecycleGameTests
                 {
                     throw new IllegalStateException(e);
                 }
-            });
+            };
+            helper.runAfterDelay(1, () -> runHeld(ready[0], result, gate));
         });
+    }
+
+    private static void runHeld(final Runnable step, final PathResult<?> result, final CountDownLatch gate)
+    {
+        try
+        {
+            step.run();
+        }
+        catch (final RuntimeException | Error failure)
+        {
+            try
+            {
+                result.cancel();
+            }
+            finally
+            {
+                gate.countDown();
+            }
+            throw failure;
+        }
+    }
+
+    private static String heldSearchSnapshot(final MinecoloniesAdvancedPathNavigate nav, final PathResult<?> result)
+    {
+        final var executor = Pathfinding.getExecutor();
+        return "result=" + (result == null ? "null" : System.identityHashCode(result) + "/" + result.getStatus() + "/cancelled=" + result.isCancelled())
+          + " navSame=" + (result != null && nav.getPathResult() == result) + " active=" + executor.getActiveCount()
+          + " queued=" + executor.getQueue().size() + " running=" + Pathfinding.Stats.running.get()
+          + " submitted=" + Pathfinding.Stats.submitted.get() + " rejected=" + Pathfinding.Stats.rejected.get()
+          + " started=" + Pathfinding.Stats.started.get() + " navTrace=" + nav.navigationTraceHistory();
     }
 
     private static void judgeCancelledRoute(final GameTestHelper helper, final ICitizenData worker, final PathResult<?> result)

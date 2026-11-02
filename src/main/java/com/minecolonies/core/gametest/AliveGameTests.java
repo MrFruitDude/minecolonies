@@ -1788,6 +1788,12 @@ public final class AliveGameTests
                                             && late[0].getCitizenAI().getState() != EntityAICitizenLife.LifeState.MORNING_GATHER,
                           "the late greeter held work or greeted a sleeper: '" + late[0].getSpeech() + "' " + late[0].getCitizenAI().getState());
                     }
+                    // Its skipped-greeting contract is checked for 60 ticks; keep that separate cohort out of the first riser's audience afterwards.
+                    if (late[0] != null && now - lateFrom[0] > 60)
+                    {
+                        keepFed(late[0]);
+                        pin(helper, late[0], lateAt);
+                    }
                     if (late[0] != null && now - lateFrom[0] > 60 && (now - lateFrom[0]) % 20 == 0)
                     {
                         Log.getLogger().info("[morning dawn late] elapsed={} id={} block={} greeterDistSqr={}", now - lateFrom[0],
@@ -1808,7 +1814,7 @@ public final class AliveGameTests
                         makeTrait(greeter[0], LifeTrait.BRISK);
                         toGreetingDay(helper, greeter[0]);
                         final EntityCitizen g = greeter[0];
-                        helper.assertTrue(!g.getLife().someoneToGreet(g.blockPosition()), "precondition failed: someone is awake by the first riser");
+                        helper.assertTrue(!g.getLife().someoneToGreet(g.blockPosition()), "precondition failed: someone is awake by the first riser: " + dawnAudience(g, sleepers, late[0]));
                         helper.assertTrue(g.getLife().greetingHolds(true) && g.getLife().gatherSpot() == null && g.getLife().awaitingListener(),
                           "a first riser with a neighbour due does not wait: holds " + g.getLife().greetingHolds(true) + " spot " + g.getLife().gatherSpot());
                         greetFrom[0] = now;

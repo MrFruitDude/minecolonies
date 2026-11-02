@@ -63,6 +63,7 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
     {
         try
         {
+            NavLifecycleGameTests.clear();
             com.minecolonies.core.entity.ai.workers.util.WorkerSettings.clearOverrides();
             com.minecolonies.core.entity.ai.workers.util.ReachAudit.enable(false);
             com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(null);
