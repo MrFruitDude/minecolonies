@@ -33,6 +33,15 @@ final class ForestryPerformanceGameTests
     private static final int WARMUP = INVOCATION_WARMUP + SETTLE;
     private static final long WARMUP_CAP_NS = 120_000_000_000L;
     private static final int SAMPLES = 6000;
+    private static final int[][] HUTS = {{32, 48}, {88, 48}, {32, 104}, {88, 104}};
+    private static final int[][] ROOTS = {{32, 30}, {32, 14}, {88, 30}, {88, 14}, {32, 122}, {32, 138}, {88, 122}, {88, 138}};
+
+    private static ItemStack axe()
+    {
+        final ItemStack stack = new ItemStack(Items.STONE_AXE);
+        stack.set(net.minecraft.core.component.DataComponents.UNBREAKABLE, net.minecraft.util.Unit.INSTANCE);
+        return stack;
+    }
 
     private ForestryPerformanceGameTests() { }
 
@@ -40,15 +49,15 @@ final class ForestryPerformanceGameTests
     {
         ForestryGameTests.resetTreeChop(helper);
         final var level = helper.getLevel();
-        final var colony = MinecoloniesGameTests.foundGameTestColony(helper, "paced forestry performance");
+        final var colony = MinecoloniesGameTests.foundGameTestColony(helper, "paced forestry performance", new BlockPos(60, 1, 76));
         final List<com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack> huts = new ArrayList<>();
         for (int i = 0; i < 4; i++)
         {
-            huts.add(ForestryGameTests.hut(helper, colony, new BlockPos(8 + 24 * i, 1, 8), false));
+            huts.add(ForestryGameTests.hut(helper, colony, new BlockPos(HUTS[i][0], 1, HUTS[i][1]), false));
         }
-        for (int x = 0; x <= 96; x++)
+        for (int x = 0; x <= 120; x++)
         {
-            for (int z = 0; z <= 60; z++)
+            for (int z = 0; z <= 152; z++)
             {
                 final BlockPos ground = helper.absolutePos(new BlockPos(x, 0, z));
                 level.setChunkForced(ground.getX() >> 4, ground.getZ() >> 4, true);
@@ -67,12 +76,24 @@ final class ForestryPerformanceGameTests
         final List<BlockPos> roots = new ArrayList<>();
         for (int i = 0; i < 4; i++)
         {
-            roots.add(helper.absolutePos(new BlockPos(8 + 24 * i, 1, 26)));
-            roots.add(helper.absolutePos(new BlockPos(8 + 24 * i, 1, 42)));
-            InventoryUtils.forceItemStackToItemHandler(huts.get(i).getItemHandlerCap(), new ItemStack(Items.STONE_AXE, 16), s -> true);
+            roots.add(helper.absolutePos(new BlockPos(ROOTS[i * 2][0], 1, ROOTS[i * 2][1])));
+            roots.add(helper.absolutePos(new BlockPos(ROOTS[i * 2 + 1][0], 1, ROOTS[i * 2 + 1][1])));
+            for (int spare = 0; spare < 16; spare++)
+            {
+                helper.assertTrue(InventoryUtils.forceItemStackToItemHandler(huts.get(i).getItemHandlerCap(), axe(), item -> true).isEmpty(),
+                  "unbreakable spare axe stock did not fit");
+            }
         }
         for (int i = 0; i < roots.size(); i++)
         {
+            for (int hut = 0; hut < huts.size(); hut++)
+            {
+                if (hut != i / 2)
+                {
+                    helper.assertTrue(huts.get(hut).getID().distSqr(roots.get(i)) > 48 * 48,
+                      "another hut can search this worker's tree: hut=" + hut + " root=" + roots.get(i));
+                }
+            }
             grow(helper, roots.get(i), 117L + i);
         }
         final Runnable[] ready = new Runnable[1];
@@ -82,7 +103,7 @@ final class ForestryPerformanceGameTests
             final StringBuilder diagnostics = new StringBuilder();
             for (int i = 0; i < huts.size(); i++)
             {
-                final BlockPos anchor = helper.absolutePos(new BlockPos(14 + 24 * i, 1, 12));
+                final BlockPos anchor = helper.absolutePos(new BlockPos(HUTS[i][0] + 6, 1, HUTS[i][1] + 4));
                 final boolean entityTicking = com.minecolonies.api.util.WorldUtil.isEntityBlockLoaded(level, anchor);
                 final BlockPos calculated = com.minecolonies.api.util.EntityUtils.getSpawnPoint(level, anchor);
                 final var owner = com.minecolonies.api.colony.IColonyManager.getInstance().getColonyByPosFromWorld(level, anchor);
@@ -90,10 +111,15 @@ final class ForestryPerformanceGameTests
                   .append(" fullStatus=").append(level.getChunkAt(anchor).getFullStatus()).append(" calculated=").append(calculated)
                   .append(" feet=").append(level.getBlockState(anchor)).append(" head=").append(level.getBlockState(anchor.above()))
                   .append(" support=").append(level.getBlockState(anchor.below())).append(" owner=").append(owner == null ? "none" : owner.getID());
-                ticking &= entityTicking && calculated != null;
+                ticking &= entityTicking && calculated != null && owner == colony;
+            }
+            for (final BlockPos root : roots)
+            {
+                final var owner = com.minecolonies.api.colony.IColonyManager.getInstance().getColonyByPosFromWorld(level, root);
+                if (owner != colony) { ticking = false; diagnostics.append(" rootOutsideColony=").append(root); }
             }
             final BlockPos low = helper.absolutePos(new BlockPos(0, 1, 0));
-            final BlockPos high = helper.absolutePos(new BlockPos(96, 1, 60));
+            final BlockPos high = helper.absolutePos(new BlockPos(120, 1, 152));
             for (int cx = low.getX() >> 4; cx <= high.getX() >> 4; cx++)
             {
                 for (int cz = low.getZ() >> 4; cz <= high.getZ() >> 4; cz++)
@@ -119,13 +145,14 @@ final class ForestryPerformanceGameTests
             final List<ICitizenData> workers = new ArrayList<>();
             for (int i = 0; i < huts.size(); i++)
             {
-                final var worker = ForestryGameTests.forester(helper, colony, huts.get(i), new BlockPos(14 + 24 * i, 1, 12), new ItemStack(Items.OAK_SAPLING, 64));
+                final var worker = ForestryGameTests.forester(helper, colony, huts.get(i), new BlockPos(HUTS[i][0] + 6, 1, HUTS[i][1] + 4), new ItemStack(Items.OAK_SAPLING, 64));
                 Log.getLogger().info("FORESTRY PERF spawned index={} data={} entity={} added={} position={}", i, worker.getId(), worker.getEntity().isPresent(),
                   worker.getEntity().orElseThrow().isAddedToLevel(), worker.getEntity().orElseThrow().position());
+                worker.getInventory().setStackInSlot(0, axe());
                 worker.getEntity().orElseThrow().getRandom().setSeed(117L + i);
                 workers.add(worker);
             }
-            new Meter(helper, workers, roots).start();
+            new Meter(helper, workers, huts, roots).start();
         };
         helper.runAfterDelay(20, () -> ready[0].run());
     }
@@ -143,6 +170,8 @@ final class ForestryPerformanceGameTests
         private final GameTestHelper helper;
         private final List<ICitizenData> workers;
         private final List<BlockPos> roots;
+        private final List<com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack> huts;
+        private long swapInAtWarmup;
         private final ThreadMXBean threads = ManagementFactory.getThreadMXBean();
         private final Map<Long, Long> pathMarks = new HashMap<>();
         private final long[] serverCpu = new long[SAMPLES];
@@ -174,11 +203,13 @@ final class ForestryPerformanceGameTests
         private int overrunsMeasured;
         private long maxOverrunNs;
 
-        Meter(final GameTestHelper helper, final List<ICitizenData> workers, final List<BlockPos> roots)
+        Meter(final GameTestHelper helper, final List<ICitizenData> workers,
+          final List<com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack> huts, final List<BlockPos> roots)
         {
             this.helper = helper;
             this.workers = workers;
             this.roots = roots;
+            this.huts = huts;
         }
 
         void start()
@@ -267,6 +298,7 @@ final class ForestryPerformanceGameTests
             }
             if (tick == WARMUP)
             {
+                swapInAtWarmup = hostCounter("pswpin");
                 fellsAtWarmup = fells();
                 chopsAtWarmup = chops();
                 lastBlockFells = fellsAtWarmup;
@@ -352,6 +384,33 @@ final class ForestryPerformanceGameTests
             out.addProperty("pacedSettleTicks", SETTLE);
             out.addProperty("invocationWarmupCapNs", WARMUP_CAP_NS);
             out.add("jvmTelemetryPer1000Ticks", telemetry);
+            final long swappedIn = hostCounter("pswpin") - swapInAtWarmup;
+            final boolean hostValid = swappedIn >= 0 && swappedIn <= 2560;
+            out.addProperty("hostSwapInPagesMeasured", swappedIn);
+            out.addProperty("hostValidityGate", hostValid);
+            final JsonArray warmupFells = new JsonArray();
+            for (final int count : workerFellsAtWarmup) { warmupFells.add(count); }
+            out.add("warmupFellsPerWorker", warmupFells);
+            int axes = 0;
+            boolean axesIntact = true;
+            for (int i = 0; i < workers.size(); i++)
+            {
+                for (final var inventory : List.of(workers.get(i).getInventory(), huts.get(i).getItemHandlerCap()))
+                {
+                    for (int slot = 0; slot < inventory.getSlots(); slot++)
+                    {
+                        final ItemStack stack = inventory.getStackInSlot(slot);
+                        if (stack.is(Items.STONE_AXE))
+                        {
+                            axes += stack.getCount();
+                            axesIntact &= stack.has(net.minecraft.core.component.DataComponents.UNBREAKABLE) && stack.getDamageValue() == 0;
+                        }
+                    }
+                }
+            }
+            axesIntact &= axes == 68;
+            out.addProperty("axesRetained", axes);
+            out.addProperty("zeroAxeBreaksGate", axesIntact);
             out.addProperty("targetTickNs", 50_000_000L);
             out.addProperty("worldSeed", helper.getLevel().getSeed());
             out.addProperty("fixtureSeed", 117);
@@ -419,13 +478,14 @@ final class ForestryPerformanceGameTests
             out.addProperty("registeredDecisionMetric", "serverCpuP95Ns; async CPU totals and per-completed-job cost reported separately");
             final boolean active = allWorkers && Arrays.stream(blockFells).allMatch(count -> count > 0)
               && fells() - fellsAtWarmup >= 8 && chops() - chopsAtWarmup >= 16 && pathMarks.size() > 0
-              && pathTotal > 0 && completed > 0 && newThreadsMeasured == 0;
+              && pathTotal > 0 && completed > 0 && newThreadsMeasured == 0 && axesIntact;
             out.addProperty("activeWorkGate", active);
             BenchEnv.write("ai_forestry_20tps", out);
             helper.assertTrue(active, "paced forestry activity/accounting gate failed: perWorker=" + perWorker + " perBlock=" + perBlock
               + " pathCpu=" + pathTotal + " completed=" + completed + " newThreads=" + newThreadsMeasured);
             Log.getLogger().info("FORESTRY PERF result samples={} measuredFells={} serverP95={} pathCpuTotal={} completedJobs={}", samples,
               fells() - fellsAtWarmup, percentile(serverCpu, .95), pathTotal, completed);
+            helper.assertTrue(hostValid, "host invalid: more than 2560 pages swapped in during measurement: " + swappedIn);
             helper.assertTrue(stationary, "forestry baseline validity failed: blockP95=" + blockValues + " spread=" + spread + " trend=" + trend);
             helper.succeed();
         }
@@ -449,8 +509,53 @@ final class ForestryPerformanceGameTests
             }
             point.addProperty("gcCount", count);
             point.addProperty("gcTimeMs", time);
+            point.addProperty("hostSwapInPages", hostCounter("pswpin"));
+            point.addProperty("hostSwapOutPages", hostCounter("pswpout"));
+            point.addProperty("hostMajorFaults", hostCounter("pgmajfault"));
+            try { point.addProperty("hostLoadavg", java.nio.file.Files.readString(java.nio.file.Path.of("/proc/loadavg")).trim()); }
+            catch (final java.io.IOException failure) { throw new IllegalStateException(failure); }
+            final JsonArray citizens = new JsonArray();
+            for (int i = 0; i < workers.size(); i++)
+            {
+                final var citizen = workers.get(i);
+                final var ai = ForestryGameTests.ai(citizen);
+                final JsonObject worker = new JsonObject();
+                worker.addProperty("id", citizen.getId());
+                worker.addProperty("fells", ai == null ? -1 : ai.getTreeChopFellCount());
+                worker.addProperty("chops", ai == null ? -1 : ai.getTreeChopChopCount());
+                worker.addProperty("aiState", ai == null ? "none" : String.valueOf(ai.getState()));
+                worker.addProperty("position", citizen.getEntity().orElseThrow().position().toString());
+                worker.addProperty("tree", citizen.getJob() instanceof com.minecolonies.core.colony.jobs.JobLumberjack job && job.getTree() != null
+                  ? job.getTree().getLocation().toString() : "none");
+                final ItemStack held = citizen.getEntity().orElseThrow().getMainHandItem();
+                worker.addProperty("held", held.toString());
+                worker.addProperty("heldDamage", held.getDamageValue());
+                worker.addProperty("axesInInventory", InventoryUtils.getItemCountInItemHandler(citizen.getInventory(), stack -> stack.is(Items.STONE_AXE)));
+                worker.addProperty("axesInHut", InventoryUtils.getItemCountInItemHandler(huts.get(i).getItemHandlerCap(), stack -> stack.is(Items.STONE_AXE)));
+                int free = 0;
+                for (int slot = 0; slot < citizen.getInventory().getSlots(); slot++)
+                {
+                    if (citizen.getInventory().getStackInSlot(slot).isEmpty()) { free++; }
+                }
+                worker.addProperty("freeSlots", free);
+                citizens.add(worker);
+            }
+            point.add("workers", citizens);
             telemetry.add(point);
             Log.getLogger().info("FORESTRY PERF jvm {}", point);
+        }
+
+        private static long hostCounter(final String key)
+        {
+            try
+            {
+                for (final String line : java.nio.file.Files.readAllLines(java.nio.file.Path.of("/proc/vmstat")))
+                {
+                    if (line.startsWith(key + " ")) { return Long.parseLong(line.substring(key.length()).trim()); }
+                }
+                throw new IllegalStateException("missing host counter: " + key);
+            }
+            catch (final java.io.IOException failure) { throw new IllegalStateException(failure); }
         }
 
         private static void series(final JsonObject out, final String name, final long[] values)

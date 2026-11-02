@@ -649,6 +649,8 @@ public final class MinecoloniesGameTests
           "P10C production courier colony",
           "Minecolonies Original");
         helper.assertTrue(colony != null, "production fixture colony creation returned null");
+        player.teleportTo(townHallPos.getX() + 0.5D, townHallPos.getY() + 1, townHallPos.getZ() + 0.5D);
+        colony.getPackageManager().addCloseSubscriber(player);
         final IBuilding townHall = colony.getServerBuildingManager().addNewBuilding(townHallHut, level);
         helper.assertTrue(townHall != null && colony.getServerBuildingManager().hasTownHall(),
           "production fixture did not register the town hall");
@@ -747,22 +749,13 @@ public final class MinecoloniesGameTests
 
             final ICraftingBuildingModule sawmillCraft = sawmill.getModule(BuildingModules.SAWMILL_CRAFT);
             final RecipeStorage recipe = RecipeStorage.builder()
-              .withRecipeId(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest/oak_planks"))
+              .withRecipeId(null)
               .withInputs(List.of(new ItemStorage(new ItemStack(Items.OAK_LOG, 1))))
               .withPrimaryOutput(new ItemStack(Items.OAK_PLANKS, 4))
               .build();
             final IToken<?> recipeToken = IColonyManager.getInstance().getRecipeManager().checkOrAddRecipe(recipe);
             helper.assertTrue(sawmillCraft.addRecipe(recipeToken),
               "sawmill rejected the compatible GameTest oak-plank recipe");
-
-            final IToken<?> targetRequestToken = builder.createRequest(
-              new Stack(new ItemStack(Items.OAK_PLANKS, 1), 1, 1),
-              true);
-            final IRequest<?> targetRequest = colony.getRequestManager().getRequestForToken(targetRequestToken);
-            logProductionRequestGraph(colony, builder, targetRequest, "created");
-            Log.getLogger().info("P10C recipe token={} value={} source={}", recipeToken, recipe, "explicit gametest identifier");
-            helper.assertTrue(targetRequest != null && targetRequest.getState() != RequestState.FAILED,
-              "builder oak-plank request was not registered: " + targetRequest);
 
             final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler sawmillInventory = sawmill.getItemHandlerCap();
             final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler builderInventory = builder.getItemHandlerCap();
@@ -775,6 +768,19 @@ public final class MinecoloniesGameTests
               stack -> true);
             helper.assertTrue(inputRemainder.isEmpty(),
               "production fixture could not insert its finite oak-log input: " + inputRemainder);
+            helper.assertTrue(InventoryUtils.getItemCountInItemHandler(sawmillInventory, stack -> stack.is(Items.OAK_LOG)) == 1,
+              "fixture must hold exactly its one finite oak log before request assignment");
+            final IToken<?> targetRequestToken = builder.createRequest(
+              new Stack(new ItemStack(Items.OAK_PLANKS, 1), 1, 1),
+              true);
+            final IRequest<?> targetRequest = colony.getRequestManager().getRequestForToken(targetRequestToken);
+            logProductionRequestGraph(colony, builder, targetRequest, "created");
+            Log.getLogger().info("P10C recipe token={} value={} source={}", recipeToken, recipe, recipe.getRecipeSource());
+            helper.assertTrue(targetRequest != null && targetRequest.getState() != RequestState.FAILED,
+              "builder oak-plank request was not registered: " + targetRequest);
+
+            assertInitialProductionAssignment(helper, colony, targetRequest);
+
             Log.getLogger().info("P10C setup sawmill={} corners={} containers={} workTags={} inputChest={} buildingOakLogs={} handler={} citizen={}",
               sawmill.getID(),
               sawmill.getCorners(),
@@ -806,6 +812,8 @@ public final class MinecoloniesGameTests
                   level.registryAccess().getOrThrow(WorldClocks.OVERWORLD),
                   6000L);
                 final IRequest<?> current = colony.getRequestManager().getRequestForToken(targetRequestToken);
+                helper.assertTrue(sawmillCraft.getRecipes().contains(recipeToken), "control recipe was removed during view sync");
+                assertProductionResolverRetained(helper, colony, current);
                 final int sawmillLogCount = InventoryUtils.getCountFromBuilding(sawmill, stack -> stack.is(Items.OAK_LOG));
                 final int builderPlanks = InventoryUtils.getItemCountInItemHandler(
                   builderInventory,
@@ -979,6 +987,9 @@ public final class MinecoloniesGameTests
                   level.registryAccess().getOrThrow(WorldClocks.OVERWORLD),
                   6000L);
                 final IRequest<?> current = colony.getRequestManager().getRequestForToken(fixture.targetRequestToken());
+                helper.assertTrue(fixture.sawmill().getModule(BuildingModules.SAWMILL_CRAFT).getRecipes().contains(fixture.recipeToken()),
+                  "prepare recipe was removed during view sync");
+                assertProductionResolverRetained(helper, colony, current);
                 final int sawmillLogCount = InventoryUtils.getCountFromBuilding(
                   fixture.sawmill(), stack -> stack.is(Items.OAK_LOG));
                 final int builderPlanks = InventoryUtils.getItemCountInItemHandler(
@@ -1491,20 +1502,13 @@ public final class MinecoloniesGameTests
 
             final ICraftingBuildingModule sawmillCraft = sawmill.getModule(BuildingModules.SAWMILL_CRAFT);
             final RecipeStorage recipe = RecipeStorage.builder()
-              .withRecipeId(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest/oak_planks_restart"))
+              .withRecipeId(null)
               .withInputs(List.of(new ItemStorage(new ItemStack(Items.OAK_LOG, 1))))
               .withPrimaryOutput(new ItemStack(Items.OAK_PLANKS, 4))
               .build();
             final IToken<?> recipeToken = IColonyManager.getInstance().getRecipeManager().checkOrAddRecipe(recipe);
             helper.assertTrue(sawmillCraft.addRecipe(recipeToken),
               "restart sawmill rejected the compatible oak-plank recipe");
-            final IToken<?> targetRequestToken = builder.createRequest(
-              new Stack(new ItemStack(Items.OAK_PLANKS, 1), 1, 1), true);
-            final IRequest<?> targetRequest = colony.getRequestManager().getRequestForToken(targetRequestToken);
-            logProductionRequestGraph(colony, builder, targetRequest, "created");
-            Log.getLogger().info("P10C recipe token={} value={} source={}", recipeToken, recipe, "explicit gametest identifier");
-            helper.assertTrue(targetRequest != null && targetRequest.getState() != RequestState.FAILED,
-              "restart builder request was not registered: " + targetRequest);
             final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler sawmillInventory = sawmill.getItemHandlerCap();
             final com.ldtteam.structurize.api.compat.itemhandler.IItemHandler builderInventory = builder.getItemHandlerCap();
             helper.assertTrue(sawmillInventory != null && builderInventory != null,
@@ -1512,8 +1516,19 @@ public final class MinecoloniesGameTests
             final ItemStack remainder = InventoryUtils.forceItemStackToItemHandler(
               sawmillInventory, new ItemStack(Items.OAK_LOG, 1), stack -> true);
             helper.assertTrue(remainder.isEmpty(), "restart fixture could not insert oak log: " + remainder);
+            helper.assertTrue(InventoryUtils.getItemCountInItemHandler(sawmillInventory, stack -> stack.is(Items.OAK_LOG)) == 1,
+              "fixture must hold exactly its one finite oak log before request assignment");
+            final IToken<?> targetRequestToken = builder.createRequest(
+              new Stack(new ItemStack(Items.OAK_PLANKS, 1), 1, 1), true);
+            final IRequest<?> targetRequest = colony.getRequestManager().getRequestForToken(targetRequestToken);
+            logProductionRequestGraph(colony, builder, targetRequest, "created");
+            Log.getLogger().info("P10C recipe token={} value={} source={}", recipeToken, recipe, recipe.getRecipeSource());
+            helper.assertTrue(targetRequest != null && targetRequest.getState() != RequestState.FAILED,
+              "restart builder request was not registered: " + targetRequest);
+            assertInitialProductionAssignment(helper, colony, targetRequest);
+
             continuation.accept(new RestartProductionFixture(level, player, colony, townHall, builder, sawmill, warehouse,
-              deliveryman, builderCitizen, sawmillCitizen, courierCitizen, targetRequestToken, targetRequest,
+              deliveryman, builderCitizen, sawmillCitizen, courierCitizen, recipeToken, targetRequestToken, targetRequest,
               townHallPos, builderAnchor, sawmillAnchor, courierAnchor, builder.getID().offset(0, 0, 10),
               builderInventory, sawmillInventory));
         });
@@ -1659,6 +1674,7 @@ public final class MinecoloniesGameTests
       ICitizenData builderCitizen,
       ICitizenData sawmillCitizen,
       ICitizenData courierCitizen,
+      IToken<?> recipeToken,
       IToken<?> targetRequestToken,
       IRequest<?> targetRequest,
       BlockPos townHallPos,
@@ -1955,6 +1971,31 @@ public final class MinecoloniesGameTests
         return inserted;
     }
 
+    private static void assertProductionResolverRetained(final GameTestHelper helper, final IColony colony, final IRequest<?> request)
+    {
+        if (request == null || request.getState() == RequestState.COMPLETED || request.getState() == RequestState.RECEIVED) { return; }
+        final var manager = (com.minecolonies.core.colony.requestsystem.management.IStandardRequestManager) colony.getRequestManager();
+        helper.assertTrue(manager.getRequestResolverRequestAssignmentDataStore().getAssignmentForValue(request.getId()) != null,
+          "production parent lost its assigned resolver: " + request.getState());
+    }
+
+    private static void assertInitialProductionAssignment(final GameTestHelper helper, final IColony colony, final IRequest<?> parent)
+    {
+        assertProductionResolverRetained(helper, colony, parent);
+        helper.assertTrue(parent.hasChildren(), "stocked production parent never created a crafting child");
+        boolean crafting = false;
+        for (final var token : parent.getChildren())
+        {
+            final var child = colony.getRequestManager().getRequestForToken(token);
+            if (child != null && child.getRequest() instanceof com.minecolonies.api.colony.requestsystem.requestable.crafting.PublicCrafting)
+            {
+                crafting = true;
+                helper.assertTrue(!child.hasChildren(), "stocked crafting child still asks for an ingredient: " + child.getChildren());
+            }
+        }
+        helper.assertTrue(crafting, "stocked parent has no PublicCrafting child");
+    }
+
     private static void logProductionRequestGraph(final IColony colony, final IBuilding building, final IRequest<?> parent, final String stage)
     {
         if (parent == null) { Log.getLogger().info("P10C graph stage={} parent missing", stage); return; }
@@ -2001,6 +2042,10 @@ public final class MinecoloniesGameTests
               + ",min=" + tool.getMinLevel() + ",max=" + tool.getMaxLevel()
               + ",matchPickaxe=" + tool.matches(new ItemStack(Items.WOODEN_PICKAXE))
               + ",matchAxe=" + tool.matches(new ItemStack(Items.WOODEN_AXE)) + "]";
+        }
+        else if (request.getRequest() instanceof Stack stack)
+        {
+            requestValue = stack.getStack() + " count=" + stack.getCount();
         }
         else
         {
@@ -6865,6 +6910,11 @@ public final class MinecoloniesGameTests
      */
     static IColony foundGameTestColony(final GameTestHelper helper, final String name)
     {
+        return foundGameTestColony(helper, name, new BlockPos(2, 1, 2));
+    }
+
+    static IColony foundGameTestColony(final GameTestHelper helper, final String name, final BlockPos relativeTownHall)
+    {
         final ServerLevel level = helper.getLevel();
         clearColonyFixture(helper, 0, 40, 32);
         for (int x = -8; x < 40; x++)
@@ -6874,7 +6924,6 @@ public final class MinecoloniesGameTests
                 helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
             }
         }
-        final BlockPos relativeTownHall = new BlockPos(2, 1, 2);
         final BlockPos townHallPos = helper.absolutePos(relativeTownHall);
         level.setChunkForced(townHallPos.getX() >> 4, townHallPos.getZ() >> 4, true);
         helper.setBlock(relativeTownHall, ModBlocks.blockHutTownHall.defaultBlockState());
