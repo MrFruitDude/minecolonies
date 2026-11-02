@@ -283,6 +283,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                       withSkyAccess(isolatedColonyData(event, name)));
                 }
             }
+            if (groups.contains("supply_probe"))
+            {
+                registerRequestPriorities(event);
+            }
             if (groups.contains("production_control"))
             {
                 final String name = "production_courier_builder";
@@ -1102,6 +1106,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_courier_stuck"),
           info -> new MinecoloniesGameTestInstance(info, RequestWaitGameTests::stuckCourierGivesUp),
           isolatedColonyData(event, "rs_wait_courier_stuck"));
+        registerRequestPriorities(event);
+    }
+
+    private void registerRequestPriorities(final RegisterGameTestsEvent event)
+    {
         // RS3: priority classes.
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_far_nine"),
