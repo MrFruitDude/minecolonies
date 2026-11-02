@@ -281,6 +281,8 @@ public class EntityAICitizenWander implements IStateAI
             final Optional<BlockPos> site = chooseLeisureSite();
             if (site.isPresent())
             {
+                // A visit interrupted by shelter must not resume its previous walk target.
+                walkTo = null;
                 leisureSite = site.get();
                 citizen.getCitizenAI().setCurrentDelay(60 * 20);
                 return GO_TO_LEISURE_SITE;

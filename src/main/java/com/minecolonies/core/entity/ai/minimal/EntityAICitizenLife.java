@@ -67,6 +67,10 @@ public class EntityAICitizenLife implements IStateAI
           () -> enterChat(EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE), 20));
         citizen.getCitizenAI().addTransition(new TickingTransition<>(CitizenAIState.IDLE, life::greetingActive, this::startGathering, 20));
         citizen.getCitizenAI().addTransition(new TickingTransition<>(CitizenAIState.IDLE, life::wantsShelter, this::startShelter, 40));
+        citizen.getCitizenAI().addTransition(new TickingTransition<>(EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE,
+          life::wantsShelter, this::startShelter, 40));
+        citizen.getCitizenAI().addTransition(new TickingTransition<>(EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE,
+          life::wantsShelter, this::startShelter, 40));
         // round 6: citizens sheltering together may chat (before the shelter step, which always runs); the chat ends back in the shelter
         citizen.getCitizenAI().addTransition(new TickingTransition<>(LifeState.SHELTER, this::wantsShelterChat, () -> enterChat(LifeState.SHELTER), 20));
 
@@ -178,6 +182,8 @@ public class EntityAICitizenLife implements IStateAI
 
     private IState startShelter()
     {
+        citizen.getNavigation().stop();
+        if (citizen.getVehicle() instanceof com.minecolonies.core.entity.other.SittingEntity) { citizen.stopRiding(); }
         shelterSince = citizen.level().getGameTime();
         shelterSpot = null;
         return LifeState.SHELTER;
