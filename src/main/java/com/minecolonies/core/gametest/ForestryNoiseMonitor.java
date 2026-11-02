@@ -163,12 +163,29 @@ final class ForestryNoiseMonitor
         record.addProperty("serverThreadName", Thread.currentThread().getName());
         onlineCapacity = cpuListCount(online);
         final java.util.BitSet processCpus = new java.util.BitSet();
+        int vanishedTasks = 0;
+        final String leaderId = process.substring(0, process.indexOf(' '));
+        final String serverId = task.substring(0, task.indexOf(' '));
         try (final var tasks = Files.list(Path.of("/proc/self/task")))
         {
             for (final Path taskDirectory : tasks.sorted().toList())
             {
-                final String taskStatus = read(taskDirectory.resolve("status"), record);
-                final String list = Arrays.stream(taskStatus.split("\n")).filter(x -> x.startsWith("Cpus_allowed_list:")).findFirst().orElseThrow();
+                final String taskStatus;
+                try { taskStatus = read(taskDirectory.resolve("status"), record); }
+                catch (final IllegalStateException failure)
+                {
+                    final String id = taskDirectory.getFileName().toString();
+                    if (failure.getCause() instanceof java.nio.file.NoSuchFileException && !id.equals(leaderId) && !id.equals(serverId))
+                    {
+                        vanishedTasks++;
+                        continue;
+                    }
+                    throw failure;
+                }
+                final String list = Arrays.stream(taskStatus.split("\n")).filter(x -> x.startsWith("Cpus_allowed_list:")).findFirst().orElse(null);
+                if (list == null && !Files.exists(taskDirectory) && !taskDirectory.getFileName().toString().equals(leaderId)
+                    && !taskDirectory.getFileName().toString().equals(serverId)) { vanishedTasks++; continue; }
+                require(list != null, "live task lacks affinity");
                 for (final String part : list.substring(list.indexOf(':') + 1).trim().split(","))
                 {
                     final String[] range = part.split("-");
@@ -179,6 +196,7 @@ final class ForestryNoiseMonitor
             }
         }
         catch (final IOException failure) { throw new IllegalStateException("v2 process affinity unavailable", failure); }
+        record.addProperty("vanishedTasksDuringAffinityRead", vanishedTasks);
         affinityCapacity = processCpus.cardinality();
         require(affinityCapacity > 0 && affinityCapacity <= onlineCapacity, "v2 process affinity capacity invalid");
         record.addProperty("processAffinityUnion", processCpus.toString());

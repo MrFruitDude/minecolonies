@@ -1562,12 +1562,18 @@ public final class AliveGameTests
      * first riser whose only neighbour sleeps on past the wait goes on with his day at once, without a word and without standing still. A first riser with a
      * neighbour due inside the wait holds his greeting, the neighbour gets up by himself inside it, and he is greeted then, never before.
      */
-    private static String dawnAudience(final EntityCitizen greeter)
+    private static String dawnAudience(final EntityCitizen greeter, final EntityCitizen[] sleepers, final EntityCitizen late)
     {
-        return greeter.level().getEntitiesOfClass(EntityCitizen.class, greeter.getBoundingBox().inflate(CitizenLife.GREET_HEAR_RANGE),
+        final BlockPos at = greeter.blockPosition();
+        return greeter.level().getEntitiesOfClass(EntityCitizen.class, new net.minecraft.world.phys.AABB(at).inflate(CitizenLife.GREET_HEAR_RANGE),
           other -> other != greeter && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == greeter.getCitizenColonyHandler().getColonyId()
-            && !other.getCitizenSleepHandler().isAsleep() && other.distanceToSqr(greeter) <= CitizenLife.GREET_HEAR_RANGE * CitizenLife.GREET_HEAR_RANGE)
-          .stream().map(other -> other.getCivilianID() + "@" + other.position() + ":" + other.getCitizenAI().getState()).toList().toString();
+            && !other.getCitizenSleepHandler().isAsleep() && other.blockPosition().distSqr(at) <= CitizenLife.GREET_HEAR_RANGE * CitizenLife.GREET_HEAR_RANGE)
+          .stream().map(other -> {
+              String role = other == late ? "late" : "other";
+              for (int i = 0; i < sleepers.length; i++) { if (other == sleepers[i]) { role = "sleeper" + i; } }
+              return role + ":id=" + other.getCivilianID() + ":uuid=" + other.getUUID() + ":colony=" + other.getCitizenColonyHandler().getColonyId()
+                + ":block=" + other.blockPosition() + ":distSqr=" + other.blockPosition().distSqr(at) + ":asleep=" + other.getCitizenSleepHandler().isAsleep();
+          }).toList().toString();
     }
 
     public static void morningDawn(final GameTestHelper helper)
@@ -1653,6 +1659,11 @@ public final class AliveGameTests
                                             && late[0].getCitizenAI().getState() != EntityAICitizenLife.LifeState.MORNING_GATHER,
                           "the late greeter held work or greeted a sleeper: '" + late[0].getSpeech() + "' " + late[0].getCitizenAI().getState());
                     }
+                    if (late[0] != null && now - lateFrom[0] > 60 && (now - lateFrom[0]) % 20 == 0)
+                    {
+                        Log.getLogger().info("[morning dawn late] elapsed={} id={} block={} greeterDistSqr={}", now - lateFrom[0],
+                          late[0].getCivilianID(), late[0].blockPosition(), late[0].blockPosition().distSqr(helper.absolutePos(greeterAt)));
+                    }
                     final int wake = Math.min(CitizenAI.wakeDelayOf(sleepers[0]), CitizenAI.wakeDelayOf(sleepers[1]));
                     if (greeter[0] == null)
                     {
@@ -1680,7 +1691,7 @@ public final class AliveGameTests
                     final String greetingState = "state=" + g.getCitizenAI().getState() + ", active=" + g.getLife().greetingActive()
                       + ", waiting=" + g.getLife().awaitingListener() + ", skipped=" + g.getLife().greetSkipped()
                       + ", spot=" + g.getLife().gatherSpot() + ", speech=" + g.getSpeech() + ", position=" + g.blockPosition()
-                      + ", hearers=" + dawnAudience(g) + ", trackedAsleep=" + sleepers[0].getCitizenSleepHandler().isAsleep()
+                      + ", hearers=" + dawnAudience(g, sleepers, late[0]) + ", productSomeone=" + g.getLife().someoneToGreet(g.blockPosition()) + ", trackedAsleep=" + sleepers[0].getCitizenSleepHandler().isAsleep()
                       + "/" + sleepers[1].getCitizenSleepHandler().isAsleep() + ", lateId=" + late[0].getCivilianID() + ", latePosition=" + late[0].blockPosition();
                     if (!greetingState.equals(lastGreetingState[0]))
                     {

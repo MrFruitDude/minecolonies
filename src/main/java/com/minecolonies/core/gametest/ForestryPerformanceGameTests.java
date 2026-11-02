@@ -297,6 +297,8 @@ final class ForestryPerformanceGameTests
                 busyWall[samples] = nowWall - priorBusyWall;
                 wall[samples++] = nowWall - priorWall;
             }
+            // Retain the failing boundary's worker state before any resource gate can abort.
+            if (tick > WARMUP && (tick - WARMUP) % 1000 == 0) { recordTelemetry(tick); }
             if (tick <= WARMUP) { noise.warmup(tick); }
             else { noise.sample(nowTick, samples, serverCpu[samples - 1], pathCpu[samples - 1], wall[samples - 1], busyWall[samples - 1]); }
             priorTick = nowTick;
@@ -312,6 +314,8 @@ final class ForestryPerformanceGameTests
             }
             if (tick == WARMUP)
             {
+                recordTelemetry(tick);
+                stationarityPrefix(new long[] {1L, 1L}, 2);
                 noise.beginMeasurement();
                 swapInAtWarmup = hostCounter("pswpin");
                 fellsAtWarmup = fells();
@@ -330,16 +334,9 @@ final class ForestryPerformanceGameTests
                 final int fellNow = fells();
                 blockFells[(int) (tick - WARMUP) / 1000 - 1] = fellNow - lastBlockFells;
                 lastBlockFells = fellNow;
-                recordTelemetry(tick); // Durable worker state even when this boundary immediately invalidates.
+
                 helper.assertTrue(blockFells[(int) (tick - WARMUP) / 1000 - 1] > 0, "v2 block has no fells");
-                final long[] prefix = new long[samples / 1000];
-                for (int i = 0; i < prefix.length; i++) { prefix[i] = percentile(Arrays.copyOfRange(serverCpu, i * 1000, (i + 1) * 1000), .95); }
-                long minimum = Long.MAX_VALUE;
-                long maximum = 0;
-                for (final long value : prefix) { minimum = Math.min(minimum, value); maximum = Math.max(maximum, value); }
-                final double spread = (double) maximum / minimum;
-                final JsonObject stationarity = new JsonObject(); stationarity.addProperty("type", "stationarity-prefix");
-                stationarity.addProperty("blocks", prefix.length); stationarity.addProperty("maxMin", spread); noise.evidence(stationarity);
+                final double spread = stationarityPrefix(serverCpu, samples);
                 helper.assertTrue(spread <= 1.10, "v2 stationarity block spread already exceeds 1.10");
             }
             if (tick % 400 == 0)
@@ -515,6 +512,20 @@ final class ForestryPerformanceGameTests
             helper.assertTrue(stationary, "forestry baseline validity failed: blockP95=" + blockValues + " spread=" + spread + " trend=" + trend);
             noise.complete();
             helper.succeed();
+        }
+
+        private double stationarityPrefix(final long[] values, final int length)
+        {
+            final int blockSize = length < 1000 ? 1 : 1000;
+            final long[] prefix = new long[length / blockSize];
+            for (int i = 0; i < prefix.length; i++) { prefix[i] = percentile(Arrays.copyOfRange(values, i * blockSize, (i + 1) * blockSize), .95); }
+            long minimum = Long.MAX_VALUE;
+            long maximum = 0;
+            for (final long value : prefix) { minimum = Math.min(minimum, value); maximum = Math.max(maximum, value); }
+            final double spread = (double) maximum / minimum;
+            final JsonObject record = new JsonObject(); record.addProperty("type", "stationarity-prefix");
+            record.addProperty("blocks", prefix.length); record.addProperty("maxMin", spread); noise.evidence(record);
+            return spread;
         }
 
         private void recordTelemetry(final long tick)

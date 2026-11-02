@@ -216,9 +216,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             }
             if (groups.contains("dawn_probe"))
             {
-                final String name = "alive_morning_dawn";
-                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
-                  info -> new MinecoloniesGameTestInstance(info, AliveGameTests::morningDawn), withSkyAccess(isolatedColonyData(event, name)));
+                registerAliveCase(event, "alive_morning_dawn");
             }
             if (groups.contains("chat_departure"))
             {
@@ -1690,12 +1688,16 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     {
         for (final String name : AliveGameTests.NAMES)
         {
-            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = AliveGameTests.test(name);
-            event.registerTest(
-              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
-              info -> new MinecoloniesGameTestInstance(info, test),
-              AliveGameTests.NEEDS_SKY.contains(name) ? withSkyAccess(isolatedColonyData(event, name)) : isolatedColonyData(event, name));
+            registerAliveCase(event, name);
         }
+    }
+
+    private void registerAliveCase(final RegisterGameTestsEvent event, final String name)
+    {
+        final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = AliveGameTests.test(name);
+        event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+          info -> new MinecoloniesGameTestInstance(info, test),
+          AliveGameTests.NEEDS_SKY.contains(name) ? withSkyAccess(isolatedColonyData(event, name)) : isolatedColonyData(event, name));
     }
 
     /**
