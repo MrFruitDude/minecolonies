@@ -2317,7 +2317,7 @@ public final class AliveGameTests
                 if (citizen.getDecisionAI() == null)
                 {
                     helper.assertTrue(helper.getLevel().getGameTime() - readyStart < 200, "citizen decision AI never initialized");
-                    helper.runAfterDelay(1, ready[0]);
+                    helper.runAfterDelay(1, () -> ready[0].run());
                     return;
                 }
                 keepFed(citizen, listener);
@@ -2349,7 +2349,7 @@ public final class AliveGameTests
                 helper.assertTrue(wander.canUse(), "finished greeting did not restore idle movement eligibility");
                 helper.succeed();
             };
-            helper.runAfterDelay(1, ready[0]);
+            helper.runAfterDelay(1, () -> ready[0].run());
         });
     }
 
