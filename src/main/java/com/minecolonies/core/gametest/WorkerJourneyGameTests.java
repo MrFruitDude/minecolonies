@@ -27,7 +27,7 @@ final class WorkerJourneyGameTests
         final RsFixture fixture = RsFixture.found(helper, "farmer harvest journey", 2);
         final var hiring = fixture.colony.getSettings().getSetting(BuildingTownHall.AUTO_HIRING_MODE);
         if (hiring.getValue()) { hiring.trigger(); }
-        helper.assertTrue(WorkerJourneyGameTests.class.getClassLoader().getResource("blueprints/minecolonies/original/agriculture/horticulture/farmer1.blueprint") != null, "farmer fixture blueprint missing from runtime");
+        helper.assertTrue(WorkerJourneyGameTests.class.getResource("/blueprints/minecolonies/original/agriculture/horticulture/farmer1.blueprint") != null, "farmer fixture blueprint missing from runtime");
         final var hut = fixture.place(ModBlocks.blockHutFarmer, new BlockPos(8, 1, 24), "agriculture/horticulture/farmer1.blueprint");
         final BlockPos scarecrow = helper.absolutePos(new BlockPos(26, 1, 20));
         fixture.level.setBlockAndUpdate(scarecrow, ModBlocks.blockScarecrow.defaultBlockState());
@@ -68,7 +68,8 @@ final class WorkerJourneyGameTests
                 final int stored = InventoryUtils.getCountFromBuilding(hut, stack -> stack.is(Items.WHEAT));
                 final var ai = entity.getCitizenJobHandler().getWorkAI();
                 last[0] = "mature=" + mature + " carried=" + carried + " stored=" + stored + " fetchedHoe=" + fetchedHoe[0]
-                  + " moved=" + moved[0] + " citizenState=" + entity.getCitizenAI().getState() + " dumpFlag=" + readFlag(ai, "shouldDumpInventory") + " state=" + (ai == null ? "none" : ai.getState()) + " position=" + entity.position() + " field=" + field.getFieldStage();
+                  + " moved=" + moved[0] + " citizenState=" + entity.getCitizenAI().getState() + " dumpFlag=" + readFlag(ai, "shouldDumpInventory") + " gainBaseline=" + readFlag(ai, "itemsAfterLastDump")
+                  + " fieldSteps=" + readFlag(ai, "fieldStepsSinceDump") + " colonyDay=" + fixture.colony.getDay() + " state=" + (ai == null ? "none" : ai.getState()) + " position=" + entity.position() + " field=" + field.getFieldStage();
                 if (mature == 0 && stored == 8 && carried == 0 && fetchedHoe[0] && moved[0])
                 {
                     helper.assertTrue(fixture.level.getBlockState(scarecrow).is(ModBlocks.blockScarecrow), "farmer broke the scarecrow");
@@ -90,12 +91,17 @@ final class WorkerJourneyGameTests
     private static String readFlag(final Object object, final String name)
     {
         if (object == null) { return "no AI"; }
-        try
+        for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass())
         {
-            final var field = object.getClass().getDeclaredField(name);
-            field.setAccessible(true);
-            return String.valueOf(field.get(object));
+            try
+            {
+                final var field = type.getDeclaredField(name);
+                field.setAccessible(true);
+                return String.valueOf(field.get(object));
+            }
+            catch (final NoSuchFieldException missing) { /* Look through the AI hierarchy without running stateful getters. */ }
+            catch (final ReflectiveOperationException | RuntimeException failure) { return "unavailable:" + failure.getClass().getSimpleName(); }
         }
-        catch (final ReflectiveOperationException failure) { throw new IllegalStateException("farmer diagnostic field missing", failure); }
+        return "missing:" + name;
     }
 }
