@@ -330,7 +330,17 @@ final class ForestryPerformanceGameTests
                 final int fellNow = fells();
                 blockFells[(int) (tick - WARMUP) / 1000 - 1] = fellNow - lastBlockFells;
                 lastBlockFells = fellNow;
+                recordTelemetry(tick); // Durable worker state even when this boundary immediately invalidates.
                 helper.assertTrue(blockFells[(int) (tick - WARMUP) / 1000 - 1] > 0, "v2 block has no fells");
+                final long[] prefix = new long[samples / 1000];
+                for (int i = 0; i < prefix.length; i++) { prefix[i] = percentile(Arrays.copyOfRange(serverCpu, i * 1000, (i + 1) * 1000), .95); }
+                long minimum = Long.MAX_VALUE;
+                long maximum = 0;
+                for (final long value : prefix) { minimum = Math.min(minimum, value); maximum = Math.max(maximum, value); }
+                final double spread = (double) maximum / minimum;
+                final JsonObject stationarity = new JsonObject(); stationarity.addProperty("type", "stationarity-prefix");
+                stationarity.addProperty("blocks", prefix.length); stationarity.addProperty("maxMin", spread); noise.evidence(stationarity);
+                helper.assertTrue(spread <= 1.10, "v2 stationarity block spread already exceeds 1.10");
             }
             if (tick % 400 == 0)
             {
@@ -348,7 +358,7 @@ final class ForestryPerformanceGameTests
             }
             if (tick % 1000 == 0)
             {
-                recordTelemetry(tick);
+                if (tick <= WARMUP) { recordTelemetry(tick); }
                 Log.getLogger().info("FORESTRY PERF progress tick={} samples={} fells={} chops={} regrown={} queue={} active={}", tick, samples, fells(), chops(), regrown, pool.getQueue().size(), pool.getActiveCount());
             }
             if (samples == SAMPLES)
@@ -559,6 +569,8 @@ final class ForestryPerformanceGameTests
             }
             point.add("workers", citizens);
             telemetry.add(point);
+            point.addProperty("type", "worker-and-jvm-telemetry");
+            noise.evidence(point);
             Log.getLogger().info("FORESTRY PERF jvm {}", point);
         }
 

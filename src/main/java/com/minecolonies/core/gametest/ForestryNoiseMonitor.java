@@ -47,6 +47,11 @@ final class ForestryNoiseMonitor
     private String identity;
     private String cgroup;
     private Path pressure;
+    private PressureLocation pressureLocation;
+    private int onlineCapacity;
+    private int affinityCapacity;
+    private long finalBlockPsiStart;
+    private long finalBlockCpu;
     private Counters previous;
     private final long ticksPerSecond;
     private long blockCanaryMin = Long.MAX_VALUE;
@@ -58,6 +63,7 @@ final class ForestryNoiseMonitor
 
     private record Write(String text, boolean terminal, CompletableFuture<Void> ack) { }
     private record Read(String raw, long before, long after) { }
+    private record PressureLocation(Path file, String mountIdentity) { }
     private record Counters(long busy, long own, long before, long after, long uncertaintyNs) { }
 
     ForestryNoiseMonitor()
@@ -90,8 +96,10 @@ final class ForestryNoiseMonitor
         require(Runtime.getRuntime().totalMemory() == Runtime.getRuntime().maxMemory(), "v2 heap was not fully committed");
         identity = identity(metadata);
         cgroup = read(Path.of("/proc/self/cgroup"), metadata).trim();
-        pressure = pressurePath(cgroup, metadata);
+        pressureLocation = pressurePath(cgroup, metadata);
+        pressure = pressureLocation.file();
         metadata.addProperty("cgroupPressureFile", pressure.toString());
+        checkCgroup(metadata);
         pressureTotal(metadata); // capability check and class initialization before measurement
         hugeFraction(metadata);
         context(metadata);
@@ -153,11 +161,34 @@ final class ForestryNoiseMonitor
         final String online = read(Path.of("/sys/devices/system/cpu/online"), record).trim();
         require(Thread.currentThread().getName().equals("Server thread"), "observer not on platform Server thread");
         record.addProperty("serverThreadName", Thread.currentThread().getName());
+        onlineCapacity = cpuListCount(online);
+        final java.util.BitSet processCpus = new java.util.BitSet();
+        try (final var tasks = Files.list(Path.of("/proc/self/task")))
+        {
+            for (final Path taskDirectory : tasks.sorted().toList())
+            {
+                final String taskStatus = read(taskDirectory.resolve("status"), record);
+                final String list = Arrays.stream(taskStatus.split("\n")).filter(x -> x.startsWith("Cpus_allowed_list:")).findFirst().orElseThrow();
+                for (final String part : list.substring(list.indexOf(':') + 1).trim().split(","))
+                {
+                    final String[] range = part.split("-");
+                    final int first = Integer.parseInt(range[0]);
+                    final int last = range.length == 1 ? first : Integer.parseInt(range[1]);
+                    processCpus.set(first, last + 1);
+                }
+            }
+        }
+        catch (final IOException failure) { throw new IllegalStateException("v2 process affinity unavailable", failure); }
+        affinityCapacity = processCpus.cardinality();
+        require(affinityCapacity > 0 && affinityCapacity <= onlineCapacity, "v2 process affinity capacity invalid");
+        record.addProperty("processAffinityUnion", processCpus.toString());
+        record.addProperty("onlineCpuCapacity", onlineCapacity);
+        record.addProperty("affinityCpuCapacity", affinityCapacity);
         return task.substring(0, task.indexOf(' ')) + ":" + stat(task)[19] + ":"
-          + process.substring(0, process.indexOf(' ')) + ":" + stat(process)[19] + ":" + affinity + ":" + online;
+          + process.substring(0, process.indexOf(' ')) + ":" + stat(process)[19] + ":" + affinity + ":" + processCpus + ":" + online;
     }
 
-    private Path pressurePath(final String group, final JsonObject record)
+    private PressureLocation pressurePath(final String group, final JsonObject record)
     {
         final String path = Arrays.stream(group.split("\n")).filter(x -> x.startsWith("0::")).findFirst().orElseThrow().substring(3);
         for (final String mount : read(Path.of("/proc/self/mountinfo"), record).split("\n"))
@@ -167,7 +198,7 @@ final class ForestryNoiseMonitor
             final String root = fields[3];
             if (!root.equals("/") && !path.equals(root) && !path.startsWith(root + "/")) { continue; }
             final String suffix = root.equals("/") ? path : path.substring(root.length());
-            return Path.of(fields[4]).resolve(suffix.replaceFirst("^/", "")).resolve("memory.pressure");
+            return new PressureLocation(Path.of(fields[4]).resolve(suffix.replaceFirst("^/", "")).resolve("memory.pressure"), mount);
         }
         throw new IllegalStateException("v2 cgroup2 mount unavailable");
     }
@@ -230,13 +261,15 @@ final class ForestryNoiseMonitor
         reads.addProperty("globalBeforeNs", global.before()); reads.addProperty("globalAfterNs", global.after());
         reads.addProperty("ownBeforeNs", own.before()); reads.addProperty("ownAfterNs", own.after());
         record.add("cpuCounterReads", reads);
-        return new Counters(busy, ownCpu, before, System.nanoTime(), global.after() - global.before() + own.after() - own.before());
+        return new Counters(busy, ownCpu, before, System.nanoTime(), System.nanoTime() - before);
     }
 
     void beginMeasurement()
     {
+        exerciseRecordPaths(); // Before fault/pressure baselines and the loaded-class window.
         final JsonObject record = new JsonObject(); record.addProperty("type", "measurement-start");
         record.addProperty("writerNativeTid", writerTid);
+        record.addProperty("cgroupIdentity", cgroup);
         require(writerTid > 0, "v2 writer identity missing");
         require(identity.equals(identity(record)), "v2 PID/TID/start/affinity/online identity changed");
         require(cgroup.equals(read(Path.of("/proc/self/cgroup"), record).trim()), "v2 cgroup changed");
@@ -256,10 +289,7 @@ final class ForestryNoiseMonitor
         require(measuring && sample >= 1 && sample <= 6000, "v2 sample outside measured window");
         require(cpu >= 0 && pathCpu >= 0, "v2 CPU counters decreased");
         cpuTotal += cpu; blockCpu += cpu;
-        final JsonObject point = new JsonObject();
-        point.addProperty("tick", tick); point.addProperty("sample", sample); point.addProperty("timestampNs", System.nanoTime());
-        point.addProperty("serverCpuNs", cpu); point.addProperty("pathCpuNs", pathCpu); point.addProperty("wallNs", wall); point.addProperty("busyWallNs", busyWall);
-        point.addProperty("immediatelyAfterCanary", sample % 50 == 1);
+        final JsonObject point = sampleRecord(tick, sample, cpu, pathCpu, wall, busyWall);
         pending.add(point);
         if (sample % 50 != 0) { checkWriter(); return; }
         final JsonObject record = new JsonObject(); record.addProperty("type", "samples"); record.add("samples", pending); pending = new JsonArray();
@@ -316,22 +346,12 @@ final class ForestryNoiseMonitor
     private void boundary(final JsonObject record, final int sample)
     {
         require(identity.equals(identity(record)), "v2 process/thread identity changed");
-        require(cgroup.equals(read(Path.of("/proc/self/cgroup"), record).trim()), "v2 cgroup path changed");
+        checkCgroup(record);
         final Counters now = counters(record);
-        require(now.busy() >= previous.busy() && now.own() >= previous.own(), "v2 CPU counters decreased");
-        final double minSeconds = (now.before() - previous.after()) / 1e9;
-        final double maxSeconds = (now.after() - previous.before()) / 1e9;
-        require(minSeconds > 0 && maxSeconds >= minSeconds, "v2 counter timestamp order");
-        final double capacity = Runtime.getRuntime().availableProcessors();
-        final double errorSeconds = capacity * ((now.uncertaintyNs() + previous.uncertaintyNs()) / 1e9 + 4.0 / ticksPerSecond);
-        final double deltaSeconds = (double) (now.busy() - previous.busy() - now.own() + previous.own()) / ticksPerSecond;
-        final double low = Math.min((deltaSeconds - errorSeconds) / minSeconds, (deltaSeconds - errorSeconds) / maxSeconds);
-        final double high = Math.max((deltaSeconds + errorSeconds) / minSeconds, (deltaSeconds + errorSeconds) / maxSeconds);
-        record.addProperty("nonSelfCoresLower", low); record.addProperty("nonSelfCoresUpper", high);
-        record.addProperty("nonSelfSignedCpuSeconds", deltaSeconds); record.addProperty("counterUncertaintyCpuSeconds", errorSeconds);
-        require(low >= -.05 && high <= 1.5, "v2 non-self CPU interval outside [-0.05,1.5]: " + low + ".." + high);
+        cpuInterval(record, previous, now, onlineCapacity, affinityCapacity, ticksPerSecond);
         previous = now;
         final long psi = pressureTotal(record);
+        if (sample == 6000) { finalBlockPsiStart = psiPrevious; finalBlockCpu = blockCpu; }
         require(psi >= psiPrevious, "v2 PSI counter decreased");
         record.addProperty("memoryPressureDeltaUs", psi - psiPrevious);
         record.addProperty("registeredBlockCpuNs", blockCpu);
@@ -368,8 +388,101 @@ final class ForestryNoiseMonitor
 
     void complete()
     {
-        final JsonObject record = new JsonObject(); record.addProperty("type", "complete");
-        record.addProperty("individualRunValid", true); emit(record, true, true); closed = true;
+        final JsonObject record = new JsonObject(); record.addProperty("type", "final-observations");
+        try
+        {
+            context(record);
+            require(identity.equals(identity(record)), "v2 final process identity changed");
+            checkCgroup(record);
+            emit(record.deepCopy(), true, false); // Include outstanding observer I/O before the final pressure reading.
+            final long finalMajor = Long.parseLong(stat(read(Path.of("/proc/thread-self/stat"), record))[9]);
+            final long finalSwap = kilobytes(read(Path.of("/proc/self/status"), record), "VmSwap");
+            final long finalPressure = pressureTotal(record);
+            record.addProperty("finalMajorFaultDelta", finalMajor - majorStart);
+            record.addProperty("finalMemoryPressureDeltaUs", finalPressure - psiStart);
+            require(finalMajor == majorStart, "v2 final observer work incurred a major fault");
+            require(finalSwap <= swapStart, "v2 final observer work grew VmSwap");
+            require(finalPressure >= psiPrevious, "v2 final PSI counter decreased");
+            require((finalPressure - finalBlockPsiStart) * 1000.0 <= finalBlockCpu * .01, "v2 final-block observer PSI exceeds 1%");
+            require((finalPressure - psiStart) * 1000.0 <= cpuTotal * .01, "v2 final observer PSI exceeds 1%");
+            record.addProperty("type", "complete"); record.addProperty("individualRunValid", true);
+            emit(record, true, true); closed = true;
+        }
+        catch (final RuntimeException | Error failure)
+        {
+            record.addProperty("invalidReason", failure.toString()); emit(record, true, false); throw failure;
+        }
+    }
+
+    void evidence(final JsonObject record)
+    {
+        emit(record.deepCopy(), true, false);
+    }
+
+    private void checkCgroup(final JsonObject record)
+    {
+        final String current = read(Path.of("/proc/self/cgroup"), record).trim();
+        require(cgroup.equals(current), "v2 cgroup path changed");
+        require(pressureLocation.equals(pressurePath(current, record)), "v2 resolved cgroup mount identity changed");
+    }
+
+    static int cpuListCount(final String value)
+    {
+        int total = 0;
+        for (final String part : value.trim().split(","))
+        {
+            final String[] range = part.split("-");
+            final int first = Integer.parseInt(range[0]);
+            final int last = range.length == 1 ? first : Integer.parseInt(range[1]);
+            require(range.length <= 2 && first >= 0 && last >= first, "invalid CPU range");
+            total += last - first + 1;
+        }
+        require(total > 0, "empty CPU capacity");
+        return total;
+    }
+
+    private static JsonObject sampleRecord(final long tick, final int sample, final long cpu, final long pathCpu, final long wall, final long busyWall)
+    {
+        final JsonObject point = new JsonObject();
+        point.addProperty("tick", tick); point.addProperty("sample", sample); point.addProperty("timestampNs", System.nanoTime());
+        point.addProperty("serverCpuNs", cpu); point.addProperty("pathCpuNs", pathCpu); point.addProperty("wallNs", wall); point.addProperty("busyWallNs", busyWall);
+        point.addProperty("immediatelyAfterCanary", sample % 50 == 1);
+        return point;
+    }
+
+    private static void cpuInterval(final JsonObject record, final Counters previous, final Counters now,
+      final int online, final int affinity, final long hz)
+    {
+        require(now.busy() >= previous.busy() && now.own() >= previous.own(), "v2 CPU counters decreased");
+        final double minSeconds = (now.before() - previous.after()) / 1e9;
+        final double maxSeconds = (now.after() - previous.before()) / 1e9;
+        require(minSeconds > 0 && maxSeconds >= minSeconds, "v2 counter timestamp order");
+        final double spans = (now.uncertaintyNs() + previous.uncertaintyNs()) / 1e9;
+        // Global busy covers all online CPUs; own process covers its affinity. Full read spans include the gap between files.
+        final double errorSeconds = online * (spans + 2.0 / hz) + affinity * (spans + 2.0 / hz);
+        final double deltaSeconds = (double) (now.busy() - previous.busy() - now.own() + previous.own()) / hz;
+        final double low = Math.min((deltaSeconds - errorSeconds) / minSeconds, (deltaSeconds - errorSeconds) / maxSeconds);
+        final double high = Math.max((deltaSeconds + errorSeconds) / minSeconds, (deltaSeconds + errorSeconds) / maxSeconds);
+        final double signed = deltaSeconds / ((minSeconds + maxSeconds) / 2);
+        record.addProperty("nonSelfCoresLower", low); record.addProperty("nonSelfCoresUpper", high);
+        record.addProperty("nonSelfSignedCpuSeconds", deltaSeconds); record.addProperty("nonSelfSignedCores", signed);
+        record.addProperty("nonSelfCores", Math.max(0, signed)); record.addProperty("counterUncertaintyCpuSeconds", errorSeconds);
+        record.addProperty("onlineCpuCapacity", online); record.addProperty("affinityCpuCapacity", affinity);
+        require(low >= -.05 && high <= 1.5, "v2 non-self CPU interval outside [-0.05,1.5]");
+    }
+
+    /** Synthetic producer/arithmetic exercise only. No real sample, observer state or resource-gate bypass. */
+    static void exerciseRecordPaths()
+    {
+        for (int block = 0; block < 2; block++)
+        {
+            final JsonArray points = new JsonArray();
+            for (int i = 1; i <= 1000; i++) { points.add(sampleRecord(i + block * 1000L, i, 200_000, 1000, 50_000_000, 200_000)); }
+            final JsonObject record = new JsonObject(); record.add("samples", points);
+            cpuInterval(record, new Counters(100, 50, 0, 1000, 1000),
+              new Counters(200, 150, 50_000_000_000L, 50_000_001_000L, 1000), 6, 2, 100);
+            record.deepCopy().toString();
+        }
     }
 
     void abort(final Throwable failure)
