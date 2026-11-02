@@ -15,6 +15,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 
 import java.util.LinkedHashMap;
@@ -78,7 +79,7 @@ final class CourierLoadJourneyGameTests
                 physical.put("delivery-hut", count(deliveryHut.getItemHandlerCap()));
                 physical.put("courier", carried);
                 physical.put("owner", count(new InvWrapper(f.player.getInventory())));
-                final AABB area = new AABB(helper.absolutePos(new BlockPos(-8, 0, -8)), helper.absolutePos(new BlockPos(48, 32, 32)));
+                final AABB area = new AABB(Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(-8, 0, -8))), Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(48, 32, 32))));
                 int dropped = 0;
                 for (final ItemEntity item : f.level.getEntitiesOfClass(ItemEntity.class, area))
                 {

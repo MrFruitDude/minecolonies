@@ -1,6 +1,7 @@
 package com.minecolonies.core.gametest;
 
 import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.entity.ai.statemachine.AIOneTimeEventTarget;
 import com.minecolonies.api.entity.ai.statemachine.states.IState;
 import com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.IStateSupplier;
@@ -122,9 +123,10 @@ final class ObstacleJourneyGameTests
         final BlockPos start = helper.absolutePos(new BlockPos(8, 1, 16));
         final BlockPos destination = helper.absolutePos(new BlockPos(32, raised ? 7 : 1, 16));
         helper.runAfterDelay(40, () -> {
-            final var data = colony.getCitizenManager().spawnOrCreateCivilian(null, level, List.of(start), true);
-            helper.assertTrue(data != null && data.getEntity().isPresent(), "obstacle traveller did not spawn");
-            final EntityCitizen citizen = data.getEntity().orElseThrow();
+            final var spawned = colony.getCitizenManager().spawnOrCreateCivilian(null, level, List.of(start), true);
+            helper.assertTrue(spawned instanceof ICitizenData && spawned.getEntity().isPresent(), "obstacle traveller did not spawn");
+            final ICitizenData data = (ICitizenData) spawned;
+            final EntityCitizen citizen = (EntityCitizen) data.getEntity().orElseThrow();
             data.setSaturation(20);
             final long preparedAt = level.getGameTime();
             final Runnable[] ready = new Runnable[1];
