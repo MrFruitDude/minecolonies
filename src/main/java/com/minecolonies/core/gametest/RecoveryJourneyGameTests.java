@@ -18,7 +18,17 @@ final class RecoveryJourneyGameTests
 {
     private RecoveryJourneyGameTests() { }
 
-    static void hutReturnAndPlant(final GameTestHelper helper)
+    static void hutSnapThenPlant(final GameTestHelper helper)
+    {
+        run(helper, false);
+    }
+
+    static void hutDoorReopens(final GameTestHelper helper)
+    {
+        run(helper, true);
+    }
+
+    private static void run(final GameTestHelper helper, final boolean reopenBeforeArrival)
     {
         final var level = helper.getLevel();
         final var colony = MinecoloniesGameTests.foundGameTestColony(helper, "natural hut return and plant");
@@ -71,6 +81,10 @@ final class RecoveryJourneyGameTests
             final long[] arrived = {-1};
             final boolean[] moved = {false};
             final boolean[] fetched = {false};
+            final boolean[] opened = {false};
+            final int[] stationary = {0};
+            final int[] blockedSamples = {0};
+            final Vec3[] previous = {start};
             final String[] observation = {"not started"};
             ForestryGameTests.pump(helper, List.of(worker), 24_000, () -> {
                 int saplings = 0;
@@ -93,7 +107,9 @@ final class RecoveryJourneyGameTests
                 observation[0] = "elapsed=" + (level.getGameTime() - began) + " arrived=" + arrived[0] + " moved=" + moved[0]
                   + " fetched=" + fetched[0] + " hut=" + inHut + " carried=" + carried + " planted=" + saplings + " outside=" + outsideSaplings;
                 helper.assertTrue(inHut + carried + saplings == 16, "saplings lost or duplicated: " + observation[0]);
-                if (arrived[0] >= 0 && fetched[0] && outsideSaplings > 0 && ai != null && ai.getPlantedTotal() > 0)
+                if (arrived[0] >= 0 && fetched[0] && outsideSaplings >= (reopenBeforeArrival ? 3 : 1)
+                  && ai != null && ai.getPlantedTotal() >= (reopenBeforeArrival ? 3 : 1)
+                  && (!reopenBeforeArrival || level.getGameTime() - arrived[0] >= 600))
                 {
                     Log.getLogger().info("RECOVERY RESULT {} {}", observation[0], nav.navigationTraceHistory());
                     return true;
@@ -102,19 +118,44 @@ final class RecoveryJourneyGameTests
             }, () -> observation[0] + " " + ForestryGameTests.describe(worker) + " " + nav.navigationTraceHistory(), () -> {
                 helper.assertTrue(entity.isAlive() && !entity.isRemoved(), "return journey lost its worker");
                 moved[0] |= entity.position().distanceToSqr(start) >= 9 && !nav.isDone();
-                if (arrived[0] < 0 && Math.abs(entity.getX() - center.getX()) < 4 && Math.abs(entity.getZ() - center.getZ()) < 4)
+                stationary[0] = entity.position().distanceToSqr(previous[0]) < 0.001 ? stationary[0] + 1 : 0;
+                if (!opened[0] && stationary[0] >= 40 && entity.position().distanceToSqr(start) >= 9)
+                {
+                    blockedSamples[0]++;
+                }
+                if (reopenBeforeArrival)
+                {
+                    helper.assertTrue(entity.position().distanceToSqr(previous[0]) < 16, "hut reroute teleported " + nav.navigationTraceHistory());
+                    final var ai = ForestryGameTests.ai(worker);
+                    helper.assertTrue(ai == null || ai.putBackCount() == 0, "hut reroute used the work-handler snap");
+                    if (!opened[0] && level.getGameTime() - began == 400)
+                    {
+                        helper.assertTrue(moved[0] && blockedSamples[0] > 0 && arrived[0] < 0, "door reopened without a blocked approach");
+                        opened[0] = true;
+                        door.forEach(pos -> level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState()));
+                        Log.getLogger().info("RECOVERY DOOR opened at fixed elapsed=400 blockedSamples={}", blockedSamples[0]);
+                    }
+                }
+                previous[0] = entity.position();
+                if (arrived[0] < 0 && Math.abs(entity.getY() - center.getY()) < 1
+                  && Math.abs(entity.getX() - center.getX()) < 4 && Math.abs(entity.getZ() - center.getZ()) < 4)
                 {
                     helper.assertTrue(moved[0], "worker arrived without beginning a real journey");
                     helper.assertTrue(level.getGameTime() - began >= 200, "sealed hut was reached before a recovery episode");
                     arrived[0] = level.getGameTime();
-                    // A player reopens access after recovery. The worker must fetch and plant without further help.
-                    door.forEach(pos -> level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState()));
+                    helper.assertTrue(!reopenBeforeArrival || opened[0], "entered before the fixed door opening");
+                    if (!reopenBeforeArrival)
+                    {
+                        // Legacy snap coverage only. This branch is not navigation recovery evidence.
+                        opened[0] = true;
+                        door.forEach(pos -> level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState()));
+                    }
                 }
                 for (final BlockPos pos : shell)
                 {
-                    helper.assertTrue(arrived[0] >= 0 && door.contains(pos) || level.getBlockState(pos).is(Blocks.STONE), "worker damaged the sealed hut at " + pos);
+                    helper.assertTrue(opened[0] && door.contains(pos) || level.getBlockState(pos).is(Blocks.STONE), "worker damaged the sealed hut at " + pos);
                 }
-            }, "forestry_natural_hut_return_plant");
+            }, reopenBeforeArrival ? "forestry_hut_door_reroute_plant" : "forestry_hut_snap_exit_plant");
         });
     }
 }

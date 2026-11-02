@@ -226,10 +226,24 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             }
             if (groups.contains("ai_recovery"))
             {
-                final String name = "forestry_natural_hut_return_plant";
+                final String name = "forestry_hut_snap_exit_plant";
                 event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
-                  info -> new MinecoloniesGameTestInstance(info, RecoveryJourneyGameTests::hutReturnAndPlant),
+                  info -> new MinecoloniesGameTestInstance(info, RecoveryJourneyGameTests::hutSnapThenPlant),
                   withSkyAccess(isolatedColonyData(event, name)));
+            }
+            if (groups.contains("ai_reroute"))
+            {
+                final String name = "forestry_hut_door_reroute_plant";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, RecoveryJourneyGameTests::hutDoorReopens),
+                  withSkyAccess(isolatedColonyData(event, name)));
+            }
+            if (groups.contains("forestry_perf"))
+            {
+                final String name = "forestry_perf_20tps";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, ForestryPerformanceGameTests::run),
+                  withSkyAccess(longIsolatedColonyData(event, name, 10_000)));
             }
             if (groups.contains("nav_recovery"))
             {

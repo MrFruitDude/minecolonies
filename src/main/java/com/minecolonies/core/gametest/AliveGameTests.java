@@ -2062,7 +2062,6 @@ public final class AliveGameTests
             // Give the real leisure action a destination, so it cannot immediately return to IDLE.
             a.getCitizenAI().addTransition(new com.minecolonies.api.entity.ai.statemachine.AIOneTimeEventTarget<IState>(
               (com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.IStateSupplier<IState>) () -> {
-                eventSeen[0] = true;
                 activePairAtEvent[0] = a.getLife().chatting() && b.getLife().chatting();
                 final Object decision = ChatTrace.read(a, EntityCitizen.class, "decisionAI");
                 helper.assertTrue(decision != null, "departure decision AI is not initialized");
@@ -2078,6 +2077,7 @@ public final class AliveGameTests
                 {
                     throw new IllegalStateException(e);
                 }
+                eventSeen[0] = true;
                 return EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE;
             }));
             rain(helper, true);
