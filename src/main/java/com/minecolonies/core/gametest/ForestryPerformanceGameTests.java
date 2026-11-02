@@ -201,7 +201,9 @@ final class ForestryPerformanceGameTests
                 for (int i = 0; i < roots.size(); i++)
                 {
                     final var root = roots.get(i);
-                    if (level.getBlockState(root).is(Blocks.OAK_SAPLING))
+                    final boolean activeTree = workers.stream().anyMatch(worker -> worker.getJob() instanceof com.minecolonies.core.colony.jobs.JobLumberjack job
+                      && job.getTree() != null && job.getTree().getStumpLocations().contains(root));
+                    if (!activeTree && level.getBlockState(root).is(Blocks.OAK_SAPLING))
                     {
                         grow(helper, root, 117L + i);
                         regrown++;
