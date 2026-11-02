@@ -1880,6 +1880,20 @@ public final class AliveGameTests
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-greet-once-safe");
         midday(helper);
         final ServerLevel level = helper.getLevel();
+        if (hearingEdge)
+        {
+            // The edge approach extends west of the vanilla force-loaded structure box.
+            // Promote its chunks before the existing setup delay and greeting budget.
+            final BlockPos edgeMin = helper.absolutePos(new BlockPos(-8, 0, -4));
+            final BlockPos edgeMax = helper.absolutePos(new BlockPos(-1, 0, 8));
+            for (int chunkX = edgeMin.getX() >> 4; chunkX <= edgeMax.getX() >> 4; chunkX++)
+            {
+                for (int chunkZ = edgeMin.getZ() >> 4; chunkZ <= edgeMax.getZ() >> 4; chunkZ++)
+                {
+                    level.setChunkForced(chunkX, chunkZ, true);
+                }
+            }
+        }
         // the rule itself, on the plot's stone floor
         helper.assertTrue(CitizenLife.safeStand(level, helper.absolutePos(new BlockPos(30, 1, 4))), "plain stone floor is not safe to stand on");
         helper.setBlock(new BlockPos(31, 0, 4), net.minecraft.world.level.block.Blocks.MAGMA_BLOCK.defaultBlockState());
@@ -1961,8 +1975,16 @@ public final class AliveGameTests
                 listener.setPos(spot.getX() + 3.95D, spot.getY(), spot.getZ() + 0.5D);
                 helper.assertTrue(greeter.getLife().someoneToGreet(greeter.blockPosition()) && greeter.distanceToSqr(listener) > 64,
                   "fixture did not straddle block and exact hearing predicates");
+                for (final EntityCitizen actor : new EntityCitizen[] {greeter, listener, shut})
+                {
+                    helper.assertTrue(level.isPositionEntityTicking(actor.blockPosition()),
+                      "precondition failed: hearing-edge actor not entity-ticking at " + actor.blockPosition());
+                }
+                Log.getLogger().info("[greet edge ticking] origin={} greeter={} entityTicking={} tickCount={}",
+                  helper.absolutePos(BlockPos.ZERO), greeter.blockPosition(), level.isPositionEntityTicking(greeter.blockPosition()), greeter.tickCount);
             }
             final long t0 = level.getGameTime();
+            final int initialGreeterTicks = greeter.tickCount;
             final int[] lines = {0};
             final boolean[] speaking = {false};
             final long[] shutEnded = {-1};
@@ -1990,7 +2012,9 @@ public final class AliveGameTests
                         helper.assertTrue(CitizenLife.safeStand(level, spot.offset(dx, 0, 0)), "edge route obstructed at " + spot.offset(dx, 0, 0));
                     }
                     edgeObserved[0] = true;
-                    Log.getLogger().info("[greet first gather edge] position={} listener={} distance={} eligible={}", greeter.position(), listener.position(), greeter.distanceToSqr(listener), eligible.size());
+                    Log.getLogger().info("[greet first gather edge] position={} listener={} distance={} eligible={} entityTicking={} tickDelta={}",
+                      greeter.position(), listener.position(), greeter.distanceToSqr(listener), eligible.size(),
+                      level.isPositionEntityTicking(greeter.blockPosition()), greeter.tickCount - initialGreeterTicks);
                 }
                 final String state = "state=" + greeter.getCitizenAI().getState() + ", skipped=" + greeter.getLife().greetSkipped()
                   + ", position=" + greeter.blockPosition() + ", listener=" + listener.blockPosition() + ", spot=" + spot + ", speech=" + greeter.getSpeech();
@@ -2012,7 +2036,9 @@ public final class AliveGameTests
                 }
                 if (now - t0 > CitizenLife.MORNING_BUDGET + 60)
                 {
-                    helper.assertTrue(!hearingEdge || edgeObserved[0], "no first-gather hearing edge observed");
+                    helper.assertTrue(!hearingEdge || edgeObserved[0], "no first-gather hearing edge observed: origin=" + helper.absolutePos(BlockPos.ZERO)
+                      + " chunk=" + (greeter.blockPosition().getX() >> 4) + "," + (greeter.blockPosition().getZ() >> 4)
+                      + " entityTicking=" + level.isPositionEntityTicking(greeter.blockPosition()) + " tickDelta=" + (greeter.tickCount - initialGreeterTicks));
                     helper.assertTrue(lines[0] == 1, "the greeter said his morning line " + lines[0] + " times");
                     helper.assertTrue(!greeter.getLife().greetingHolds(true) && !new CitizenLife(greeter).greetingHolds(true), "the greeting came back");
                     helper.assertTrue(shutEnded[0] >= 0, "the shut-in greeter still holds his greeting");
