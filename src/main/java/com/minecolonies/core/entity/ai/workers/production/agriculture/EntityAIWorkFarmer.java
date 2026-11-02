@@ -949,6 +949,13 @@ public class EntityAIWorkFarmer extends AbstractEntityAICrafting<JobFarmer, Buil
         return canGoIdle() && noCraftingWork();
     }
 
+    /** Finish handing over a harvest before an earned leisure break; urgent needs still take priority in CitizenAI. */
+    @Override
+    public boolean canTakeLeisure()
+    {
+        return !shouldDumpInventory && getState() != INVENTORY_FULL && super.canTakeLeisure();
+    }
+
     @Override
     public boolean canGoIdle()
     {
