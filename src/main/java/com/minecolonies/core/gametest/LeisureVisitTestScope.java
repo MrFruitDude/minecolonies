@@ -58,7 +58,7 @@ final class LeisureVisitTestScope implements AutoCloseable
               com.minecolonies.api.compatibility.Compatibility.treeChop.isEnabled(),
               com.minecolonies.core.MineColonies.getConfig().getServer().lumberjacksUseTreeChop.get(), previous);
             final var at = helper.absolutePos(new net.minecraft.core.BlockPos(10, 1, 10));
-            final var citizen = colony.getCitizenManager().spawnOrCreateCivilian(null, helper.getLevel(), List.of(at), true);
+            final ICitizenData citizen = colony.getCitizenManager().spawnOrCreateCivilian(null, helper.getLevel(), List.of(at), true);
             helper.assertTrue(citizen != null && citizen.getEntity().isPresent(), "cleanup fixture citizen missing");
             final var guarded = new LeisureVisitTestScope(List.of(citizen));
             final var sentinel = new IllegalStateException("intentional fixture callback failure");
