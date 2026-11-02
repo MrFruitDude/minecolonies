@@ -176,11 +176,17 @@ public class EntityAIWorkFarmer extends AbstractEntityAICrafting<JobFarmer, Buil
     {
         if (shouldDumpInventory || job.getActionsDone() >= getActionRewardForCraftingSuccess() || gatheredEnoughToDump())
         {
-            shouldDumpInventory = false;
-            fieldStepsSinceDump = 0;
             return true;
         }
         return super.wantInventoryDumped();
+    }
+
+    @Override
+    protected void onDumpFinished(final boolean buildingFull)
+    {
+        super.onDumpFinished(buildingFull);
+        shouldDumpInventory = false;
+        fieldStepsSinceDump = 0;
     }
 
     @Override
@@ -947,7 +953,7 @@ public class EntityAIWorkFarmer extends AbstractEntityAICrafting<JobFarmer, Buil
     public boolean canGoIdle()
     {
         // Completing the last field does not complete the work: deliver its harvest first.
-        // Keep the active dump as well as its pending flag, which wantInventoryDumped consumes.
+        // Keep other active dumps too; deciding whether to dump must not consume the pending flag.
         if (shouldDumpInventory || getState() == INVENTORY_FULL)
         {
             return false;
