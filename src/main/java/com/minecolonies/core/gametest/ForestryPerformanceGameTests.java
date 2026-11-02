@@ -172,6 +172,7 @@ final class ForestryPerformanceGameTests
         private final List<BlockPos> roots;
         private final List<com.minecolonies.core.colony.buildings.workerbuildings.BuildingLumberjack> huts;
         private long swapInAtWarmup;
+        private ForestryNoiseMonitor noise;
         private final ThreadMXBean threads = ManagementFactory.getThreadMXBean();
         private final Map<Long, Long> pathMarks = new HashMap<>();
         private final long[] serverCpu = new long[SAMPLES];
@@ -215,6 +216,7 @@ final class ForestryPerformanceGameTests
         void start()
         {
             helper.assertTrue(threads.isThreadCpuTimeSupported() && threads.isThreadCpuTimeEnabled(), "thread CPU meter unavailable");
+            noise = new ForestryNoiseMonitor();
             began = helper.getLevel().getGameTime();
             priorTick = began;
             deadline = System.nanoTime();
@@ -270,6 +272,16 @@ final class ForestryPerformanceGameTests
 
         private void tick()
         {
+            try { tickMeasured(); }
+            catch (final RuntimeException | Error failure)
+            {
+                noise.abort(failure);
+                throw failure;
+            }
+        }
+
+        private void tickMeasured()
+        {
             final long nowWall = System.nanoTime();
             final long nowServer = threads.getCurrentThreadCpuTime();
             final long async = pathDelta();
@@ -285,6 +297,8 @@ final class ForestryPerformanceGameTests
                 busyWall[samples] = nowWall - priorBusyWall;
                 wall[samples++] = nowWall - priorWall;
             }
+            if (tick <= WARMUP) { noise.warmup(tick); }
+            else { noise.sample(nowTick, samples, serverCpu[samples - 1], pathCpu[samples - 1], wall[samples - 1], busyWall[samples - 1]); }
             priorTick = nowTick;
             priorWall = nowWall;
             final var pool = Pathfinding.getExecutor();
@@ -298,6 +312,7 @@ final class ForestryPerformanceGameTests
             }
             if (tick == WARMUP)
             {
+                noise.beginMeasurement();
                 swapInAtWarmup = hostCounter("pswpin");
                 fellsAtWarmup = fells();
                 chopsAtWarmup = chops();
@@ -315,6 +330,7 @@ final class ForestryPerformanceGameTests
                 final int fellNow = fells();
                 blockFells[(int) (tick - WARMUP) / 1000 - 1] = fellNow - lastBlockFells;
                 lastBlockFells = fellNow;
+                helper.assertTrue(blockFells[(int) (tick - WARMUP) / 1000 - 1] > 0, "v2 block has no fells");
             }
             if (tick % 400 == 0)
             {
@@ -385,9 +401,10 @@ final class ForestryPerformanceGameTests
             out.addProperty("invocationWarmupCapNs", WARMUP_CAP_NS);
             out.add("jvmTelemetryPer1000Ticks", telemetry);
             final long swappedIn = hostCounter("pswpin") - swapInAtWarmup;
-            final boolean hostValid = swappedIn >= 0 && swappedIn <= 2560;
+            // Global swap is context only under protocol v2, never a validity gate.
             out.addProperty("hostSwapInPagesMeasured", swappedIn);
-            out.addProperty("hostValidityGate", hostValid);
+            out.addProperty("hostSwapContextOnly", true);
+            out.add("protocolV2Noise", noise.finish());
             final JsonArray warmupFells = new JsonArray();
             for (final int count : workerFellsAtWarmup) { warmupFells.add(count); }
             out.add("warmupFellsPerWorker", warmupFells);
@@ -485,8 +502,8 @@ final class ForestryPerformanceGameTests
               + " pathCpu=" + pathTotal + " completed=" + completed + " newThreads=" + newThreadsMeasured);
             Log.getLogger().info("FORESTRY PERF result samples={} measuredFells={} serverP95={} pathCpuTotal={} completedJobs={}", samples,
               fells() - fellsAtWarmup, percentile(serverCpu, .95), pathTotal, completed);
-            helper.assertTrue(hostValid, "host invalid: more than 2560 pages swapped in during measurement: " + swappedIn);
             helper.assertTrue(stationary, "forestry baseline validity failed: blockP95=" + blockValues + " spread=" + spread + " trend=" + trend);
+            noise.complete();
             helper.succeed();
         }
 

@@ -247,6 +247,16 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                   new TestData<>(data.environment(), data.dimension(), Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest/forestry_perf_plot"),
                     data.maxTicks(), data.setupTicks(), data.required(), data.rotation(), data.manualOnly(), data.maxAttempts(), data.requiredSuccesses(), true, data.padding()));
             }
+            if (groups.contains("ai_worker_journeys"))
+            {
+                for (final String name : new String[]{"farmer_harvest_journey", "labour_crafts_wooden_tools"})
+                {
+                    event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                      info -> new MinecoloniesGameTestInstance(info, name.equals("farmer_harvest_journey")
+                        ? WorkerJourneyGameTests::farmerHarvest : LabourGameTests::craftsWoodenTools),
+                      withSkyAccess(isolatedColonyData(event, name)));
+                }
+            }
             if (groups.contains("production_control"))
             {
                 final String name = "production_courier_builder";

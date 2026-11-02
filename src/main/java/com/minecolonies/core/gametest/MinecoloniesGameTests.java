@@ -921,6 +921,7 @@ public final class MinecoloniesGameTests
                       "production/courier citizens lost their jobs after delivery");
                     helper.assertTrue(builderCitizen.getJob() != null,
                       "builder citizen lost its job after bounded construction");
+                    helper.assertTrue(level.getBlockState(constructionTarget).is(Blocks.OAK_PLANKS), "construction target missing at final physical ledger");
                     final var afterBuild = ProductionStockLedger.capture(helper, colony, player);
                     helper.assertTrue(afterBuild.planks() == constructionBaselineBuilderPlanks[0] - 1,
                       "bounded builder physical stock mismatch: one target placed, before=" + constructionBaselineBuilderPlanks[0]
