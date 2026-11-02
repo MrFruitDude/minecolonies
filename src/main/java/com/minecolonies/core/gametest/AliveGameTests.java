@@ -1595,7 +1595,8 @@ public final class AliveGameTests
         final ServerLevel level = helper.getLevel();
         rain(helper, !afterArrival);
         level.setRainLevel(afterArrival ? 0.0F : 1.0F);
-        final BlockPos site = afterArrival ? citizen.blockPosition() : helper.absolutePos(new BlockPos(6, 1, 4));
+        final BlockPos site = afterArrival ? citizen.getCitizenData().getColony().getServerBuildingManager().getTownHall().getPosition()
+          : helper.absolutePos(new BlockPos(6, 1, 4));
         helper.assertTrue(!home.isInBuilding(site) && level.canSeeSky(site.above()), "probe leisure site must be outdoors");
         helper.assertTrue(home.getPosition().distSqr(site) < 48 * 48, "probe home must be nearby");
         final boolean[] injected = {false};
@@ -1617,6 +1618,7 @@ public final class AliveGameTests
         final long began = level.getGameTime();
         final long[] eligible = {-1};
         final long[] sheltered = {-1};
+        final com.minecolonies.core.entity.other.SittingEntity[] seat = {null};
         final List<String> trace = new ArrayList<>();
         final Runnable[] poll = new Runnable[1];
         poll[0] = () -> {
@@ -1627,19 +1629,35 @@ public final class AliveGameTests
               : EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE;
             if (injected[0] && eligible[0] < 0 && state == target)
             {
-                if (afterArrival) { rain(helper, true); level.setRainLevel(1.0F); }
+                if (afterArrival)
+                {
+                    helper.assertTrue(level.getBlockEntity(site) instanceof com.minecolonies.api.tileentities.IBlueprintDataProviderBE,
+                      "WANDER probe must use a real building leisure site");
+                    helper.assertTrue(com.minecolonies.core.entity.other.SittingEntity.sitDown(citizen.blockPosition().below(), citizen, 600),
+                      "probe could not establish its seat input");
+                    helper.assertTrue(citizen.getVehicle() instanceof com.minecolonies.core.entity.other.SittingEntity,
+                      "probe citizen is not seated");
+                    seat[0] = (com.minecolonies.core.entity.other.SittingEntity) citizen.getVehicle();
+                    rain(helper, true);
+                    level.setRainLevel(1.0F);
+                }
                 helper.assertTrue(citizen.getLife().wantsShelter() && citizen.getLife().hurriesInRain(), "probe entry not shelter eligible: " + shelterGates(citizen));
                 eligible[0] = now;
             }
             if (trace.size() == 120) { trace.removeFirst(); }
             trace.add((now - began) + " " + shelterGates(citizen));
             if (eligible[0] >= 0 && sheltered[0] < 0 && state == EntityAICitizenLife.LifeState.SHELTER) { sheltered[0] = now; }
+            helper.assertTrue(!afterArrival || eligible[0] < 0 || sheltered[0] >= 0 || state == target,
+              "WANDER probe bypassed the shelter transition through another state: " + trace);
             helper.assertTrue(eligible[0] < 0 || sheltered[0] >= 0 || now - eligible[0] <= 80,
               "eligible leisure citizen did not begin shelter within 80 ticks: " + trace);
             if (sheltered[0] >= 0 && citizen.getLife().shelteredAtHome())
             {
                 rain(helper, false);
-                Log.getLogger().info("ALIVE RESULT leisure_rain arrival={} eligible={} shelter={} trace={}", afterArrival, eligible[0] - began, sheltered[0] - began, trace);
+                helper.assertTrue(!afterArrival || seat[0] != null && seat[0].isRemoved() && !citizen.isPassenger(),
+                  "shelter did not remove its seat and dismount the citizen");
+                Log.getLogger().info("ALIVE RESULT leisure_rain arrival={} eligible={} shelter={} seatRemoved={} trace={}",
+                  afterArrival, eligible[0] - began, sheltered[0] - began, seat[0] == null ? "not seated" : seat[0].isRemoved(), trace);
                 helper.succeed();
                 return;
             }
