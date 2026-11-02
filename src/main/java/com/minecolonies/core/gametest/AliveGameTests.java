@@ -1631,7 +1631,7 @@ public final class AliveGameTests
             {
                 if (afterArrival)
                 {
-                    helper.assertTrue(level.getBlockEntity(site) instanceof com.minecolonies.api.tileentities.IBlueprintDataProviderBE,
+                    helper.assertTrue(level.getBlockEntity(site) instanceof com.ldtteam.structurize.blockentities.interfaces.IBlueprintDataProviderBE,
                       "WANDER probe must use a real building leisure site");
                     helper.assertTrue(com.minecolonies.core.entity.other.SittingEntity.sitDown(citizen.blockPosition().below(), citizen, 600),
                       "probe could not establish its seat input");
@@ -1646,7 +1646,11 @@ public final class AliveGameTests
             }
             if (trace.size() == 120) { trace.removeFirst(); }
             trace.add((now - began) + " " + shelterGates(citizen));
-            if (eligible[0] >= 0 && sheltered[0] < 0 && state == EntityAICitizenLife.LifeState.SHELTER) { sheltered[0] = now; }
+            if (eligible[0] >= 0 && sheltered[0] < 0 && state == EntityAICitizenLife.LifeState.SHELTER)
+            {
+                helper.assertTrue(!afterArrival || !citizen.isPassenger(), "shelter entry left the citizen seated");
+                sheltered[0] = now;
+            }
             helper.assertTrue(!afterArrival || eligible[0] < 0 || sheltered[0] >= 0 || state == target,
               "WANDER probe bypassed the shelter transition through another state: " + trace);
             helper.assertTrue(eligible[0] < 0 || sheltered[0] >= 0 || now - eligible[0] <= 80,
