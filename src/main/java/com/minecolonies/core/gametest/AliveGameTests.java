@@ -42,7 +42,7 @@ public final class AliveGameTests
     public static final String[] NAMES = {"alive_rules", "alive_chat", "alive_chat_yields", "alive_morning", "alive_building_cheer", "alive_grief", "alive_raid_relief",
       "alive_rain_hurry", "alive_rain_where", "alive_traits_stable", "alive_chat_pairs", "alive_calm_pace", "alive_morning_crowd", "alive_shelter_inside",
       "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_leisure_rain_go", "alive_leisure_rain_wander", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe", "alive_greet_hearing_edge", "alive_chat_departure",
-      "alive_chat_wander_gate", "alive_chat_pair_lifecycle", "alive_chat_raid_a_first", "alive_chat_raid_b_first", "alive_chat_raid_expired"};
+      "alive_chat_wander_gate", "alive_greet_wander_gate", "alive_chat_pair_lifecycle", "alive_chat_raid_a_first", "alive_chat_raid_b_first", "alive_chat_raid_expired"};
 
     /**
      * Tests whose citizens must stand in the rain: they run without the barrier ceiling of the GameTest frame, which stops the rain (vanilla's isRainingAt
@@ -115,6 +115,7 @@ public final class AliveGameTests
             case "alive_lines_wait" -> AliveGameTests::linesWait;
             case "alive_chat_departure" -> AliveGameTests::chatDeparture;
             case "alive_chat_wander_gate" -> AliveGameTests::chatWanderGate;
+            case "alive_greet_wander_gate" -> AliveGameTests::greetingWanderGate;
             case "alive_chat_pair_lifecycle" -> AliveGameTests::chatPairLifecycle;
             case "alive_chat_raid_a_first" -> h -> chatRaidPair(h, false, false);
             case "alive_chat_raid_b_first" -> h -> chatRaidPair(h, true, false);
@@ -1156,6 +1157,8 @@ public final class AliveGameTests
             final int hall = atHall;
             final long t0 = level.getGameTime();
             final boolean[] said = new boolean[all.size()];
+            final java.util.Map<Integer, String> previous = new java.util.HashMap<>();
+            final List<String> crowdTrace = new ArrayList<>();
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
                 final long now = level.getGameTime();
@@ -1167,6 +1170,18 @@ public final class AliveGameTests
                 {
                     final EntityCitizen c = all.get(i);
                     keepFed(c);
+                    final String state = c.getCitizenAI().getState() + "/active=" + c.getLife().greetingActive()
+                      + "/skipped=" + c.getLife().greetSkipped() + "/speech=" + c.getSpeech();
+                    if (!state.equals(previous.put(c.getCivilianID(), state)))
+                    {
+                        final String entry = "elapsed=" + (now - t0) + " id=" + c.getCivilianID() + " " + state
+                          + " age=" + (now - c.getLife().greetingStart()) + " spot=" + c.getLife().gatherSpot()
+                          + " pos=" + c.blockPosition() + " audience=" + c.getLife().someoneToGreet(c.blockPosition())
+                          + " navDone=" + c.getNavigation().isDone();
+                        if (crowdTrace.size() == 120) { crowdTrace.removeFirst(); }
+                        crowdTrace.add(entry);
+                        Log.getLogger().info("[morning crowd state] {}", entry);
+                    }
                     if (!said[i] && c.getSpeech().contains(".morning"))
                     {
                         helper.assertTrue(c.getLife().someoneToGreet(c.blockPosition()), "citizen " + c.getCivilianID() + " greets with nobody within "
@@ -1196,9 +1211,9 @@ public final class AliveGameTests
                         }
                         spoke += said[i] ? 1 : 0;
                     }
-                    helper.assertTrue(mute.isEmpty(), "greeters who never said their line: " + mute);
+                    helper.assertTrue(mute.isEmpty(), "greeters who never said their line: " + mute + " trace=" + crowdTrace);
                     helper.assertTrue(spoke >= ColonyLife.MAX_GREETERS_PER_SPOT, "only " + spoke + " greeted in a crowd");
-                    Log.getLogger().info("ALIVE RESULT morning_crowd greeters={} at_hall={}", greeters.size(), hall);
+                    Log.getLogger().info("ALIVE RESULT morning_crowd greeters={} at_hall={} trace={}", greeters.size(), hall, crowdTrace);
                     helper.succeed();
                     return;
                 }
@@ -2281,6 +2296,51 @@ public final class AliveGameTests
             a.getLife().endChat();
             helper.assertTrue(wander.canUse(), "ending the chat did not restore idle wander eligibility");
             helper.succeed();
+        });
+    }
+
+    /** Component boundary: idle movement must not steal the native greeting hold. */
+    private static void greetingWanderGate(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "greeting wander gate");
+        midday(helper);
+        rain(helper, false);
+        helper.getLevel().setRainLevel(0.0F);
+        helper.runAfterDelay(40, () -> {
+            final EntityCitizen citizen = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));
+            final EntityCitizen listener = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
+            makeTrait(citizen, LifeTrait.CHATTY);
+            keepFed(citizen, listener);
+            helper.runAfterDelay(20, () -> {
+                keepFed(citizen, listener);
+                citizen.getNavigation().stop();
+                final Object decision = ChatTrace.read(citizen, EntityCitizen.class, "decisionAI");
+                final List<?> minimal = (List<?>) ChatTrace.read(decision, CitizenAI.class, "minimalAI");
+                final EntityAICitizenWander wander = (EntityAICitizenWander) minimal.stream()
+                  .filter(EntityAICitizenWander.class::isInstance).findFirst().orElseThrow();
+                helper.assertTrue(citizen.getCitizenAI().getState() == CitizenAIState.IDLE && wander.canUse(),
+                  "greeting component is not initially eligible for idle wandering: " + lifeGates(citizen));
+                long day = helper.getLevel().getOverworldClockTime() / 24000L + 1;
+                while (!CitizenLife.greetsOn(citizen.getCivilianID(), day, LifeTrait.CHATTY)) { day++; }
+                setClock(helper, day * 24000L + 100L);
+                helper.assertTrue(citizen.getLife().greetingHolds(true) && citizen.getLife().greetingActive(),
+                  "component did not establish an active native greeting: " + lifeGates(citizen));
+                Log.getLogger().info("[greeting wander gate] active={} state={} canUse={} audience={}",
+                  citizen.getLife().greetingActive(), citizen.getCitizenAI().getState(), wander.canUse(),
+                  citizen.getLife().someoneToGreet(citizen.blockPosition()));
+                helper.assertTrue(!wander.canUse(), "idle wandering accepts an active morning greeter");
+                try
+                {
+                    final var decide = EntityAICitizenWander.class.getDeclaredMethod("decide");
+                    decide.setAccessible(true);
+                    helper.assertTrue(decide.invoke(wander) == CitizenAIState.IDLE && citizen.getNavigation().isDone(),
+                      "wander decision started moving during a greeting hold");
+                }
+                catch (final ReflectiveOperationException failure) { throw new IllegalStateException(failure); }
+                citizen.getLife().finishGreeting();
+                helper.assertTrue(wander.canUse(), "finished greeting did not restore idle movement eligibility");
+                helper.succeed();
+            });
         });
     }
 
