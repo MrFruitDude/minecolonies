@@ -2057,10 +2057,13 @@ public final class AliveGameTests
             helper.assertTrue(a.getLife().chatPartnerId() == b.getCivilianID() && b.getLife().chatPartnerId() == a.getCivilianID(), "chat pair is not reciprocal");
             b.getLife().schedule(CitizenLife.CHEER_BUILDING + "2", 0, true);
             final ChatTrace trace = new ChatTrace(a, b);
+            final boolean[] eventSeen = {false};
+            final boolean[] activePairAtEvent = {false};
             // Give the real leisure action a destination, so it cannot immediately return to IDLE.
             a.getCitizenAI().addTransition(new com.minecolonies.api.entity.ai.statemachine.AIOneTimeEventTarget<IState>(
               (com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.IStateSupplier<IState>) () -> {
-                helper.assertTrue(a.getLife().chatting() && b.getLife().chatting(), "departure event did not interrupt an active pair " + trace.describe());
+                eventSeen[0] = true;
+                activePairAtEvent[0] = a.getLife().chatting() && b.getLife().chatting();
                 final Object decision = ChatTrace.read(a, EntityCitizen.class, "decisionAI");
                 helper.assertTrue(decision != null, "departure decision AI is not initialized");
                 final List<?> minimal = (List<?>) ChatTrace.read(decision, CitizenAI.class, "minimalAI");
@@ -2087,8 +2090,10 @@ public final class AliveGameTests
                 keepFed(a, b);
                 trace.capture();
                 final long now = helper.getLevel().getGameTime();
+                helper.assertTrue(!eventSeen[0] || activePairAtEvent[0], "departure event did not interrupt an active pair " + trace.describe());
                 if (departed[0] < 0 && a.getCitizenAI().getState() == EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE)
                 {
+                    helper.assertTrue(eventSeen[0], "departure was not caused by the controlled event " + trace.describe());
                     departed[0] = now;
                 }
                 final boolean talking = a.getLife().chatting() || b.getLife().chatting();

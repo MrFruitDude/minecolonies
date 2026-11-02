@@ -220,6 +220,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
                   info -> new MinecoloniesGameTestInstance(info, AliveGameTests.test(name)), withSkyAccess(isolatedColonyData(event, name)));
             }
+            if (groups.contains("ai_perf"))
+            {
+                com.minecolonies.core.gametest.bench.BenchRegistrar.registerAiPerf(event);
+            }
             if (groups.contains("nav_recovery"))
             {
                 NavLifecycleGameTests.register(event);
