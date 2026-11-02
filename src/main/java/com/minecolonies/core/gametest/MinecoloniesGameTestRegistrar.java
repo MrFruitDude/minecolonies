@@ -214,6 +214,12 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 AIQualificationGameTests.register(event);
             }
+            if (groups.contains("dawn_probe"))
+            {
+                final String name = "alive_morning_dawn";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, AliveGameTests::morningDawn), withSkyAccess(isolatedColonyData(event, name)));
+            }
             if (groups.contains("chat_departure"))
             {
                 final String name = "alive_chat_departure";

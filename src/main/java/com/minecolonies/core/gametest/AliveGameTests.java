@@ -1562,6 +1562,14 @@ public final class AliveGameTests
      * first riser whose only neighbour sleeps on past the wait goes on with his day at once, without a word and without standing still. A first riser with a
      * neighbour due inside the wait holds his greeting, the neighbour gets up by himself inside it, and he is greeted then, never before.
      */
+    private static String dawnAudience(final EntityCitizen greeter)
+    {
+        return greeter.level().getEntitiesOfClass(EntityCitizen.class, greeter.getBoundingBox().inflate(CitizenLife.GREET_HEAR_RANGE),
+          other -> other != greeter && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == greeter.getCitizenColonyHandler().getColonyId()
+            && !other.getCitizenSleepHandler().isAsleep() && other.distanceToSqr(greeter) <= CitizenLife.GREET_HEAR_RANGE * CitizenLife.GREET_HEAR_RANGE)
+          .stream().map(other -> other.getCivilianID() + "@" + other.position() + ":" + other.getCitizenAI().getState()).toList().toString();
+    }
+
     public static void morningDawn(final GameTestHelper helper)
     {
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-morning-dawn");
@@ -1671,7 +1679,9 @@ public final class AliveGameTests
                     keepFed(g);
                     final String greetingState = "state=" + g.getCitizenAI().getState() + ", active=" + g.getLife().greetingActive()
                       + ", waiting=" + g.getLife().awaitingListener() + ", skipped=" + g.getLife().greetSkipped()
-                      + ", spot=" + g.getLife().gatherSpot() + ", speech=" + g.getSpeech() + ", position=" + g.blockPosition();
+                      + ", spot=" + g.getLife().gatherSpot() + ", speech=" + g.getSpeech() + ", position=" + g.blockPosition()
+                      + ", hearers=" + dawnAudience(g) + ", trackedAsleep=" + sleepers[0].getCitizenSleepHandler().isAsleep()
+                      + "/" + sleepers[1].getCitizenSleepHandler().isAsleep() + ", lateId=" + late[0].getCivilianID() + ", latePosition=" + late[0].blockPosition();
                     if (!greetingState.equals(lastGreetingState[0]))
                     {
                         Log.getLogger().info("[morning dawn] elapsed={} age={} {}", now - greetFrom[0], now - g.getLife().greetingStart(), greetingState);
@@ -1685,7 +1695,7 @@ public final class AliveGameTests
                     if (greetedAt[0] < 0 && g.getSpeech().contains(".morning"))
                     {
                         greetedAt[0] = now;
-                        helper.assertTrue(wokeAt[0] >= 0, "the first riser greeted before anyone woke, at " + (now - greetFrom[0]));
+                        helper.assertTrue(wokeAt[0] >= 0, "the first riser greeted before anyone woke, at " + (now - greetFrom[0]) + ": " + greetingState);
                         helper.assertTrue(g.getLife().someoneToGreet(g.blockPosition()), "the first riser greets with nobody awake near");
                     }
                     if (g.getLife().greetingHolds(true))
