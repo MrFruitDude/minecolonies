@@ -1820,7 +1820,9 @@ public final class AliveGameTests
                     level.setBlockAndUpdate(cell, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
                     level.setBlockAndUpdate(cell.above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
                 }
-                greeter.setPos(spot.getX() - 4.1D, spot.getY(), spot.getZ() + 0.5D);
+                // Same block-position distance of eight, with 0.85 blocks of exact-distance margin.
+                // A normal physics step before the first test poll must not erase the precondition.
+                greeter.setPos(spot.getX() - 4.9D, spot.getY(), spot.getZ() + 0.5D);
                 listener.setPos(spot.getX() + 3.95D, spot.getY(), spot.getZ() + 0.5D);
                 helper.assertTrue(greeter.getLife().someoneToGreet(greeter.blockPosition()) && greeter.distanceToSqr(listener) > 64,
                   "fixture did not straddle block and exact hearing predicates");

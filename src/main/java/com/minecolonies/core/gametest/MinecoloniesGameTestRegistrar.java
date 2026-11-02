@@ -214,6 +214,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 AIQualificationGameTests.register(event);
             }
+            if (groups.contains("hearing_probe"))
+            {
+                registerAliveCase(event, "alive_greet_hearing_edge");
+            }
             if (groups.contains("dawn_probe"))
             {
                 registerAliveCase(event, "alive_morning_dawn");
