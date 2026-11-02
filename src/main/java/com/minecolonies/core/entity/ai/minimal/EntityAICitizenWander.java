@@ -323,7 +323,7 @@ public class EntityAICitizenWander implements IStateAI
 
     public boolean canUse()
     {
-        return citizen.getNavigation().isDone() && !citizen.isBaby() && !citizen.getLife().chatting()
+        return citizen.getNavigation().isDone() && !citizen.isBaby() && !citizen.getLife().chatting() && !citizen.getLife().greetingActive()
                  && !(citizen.getCitizenData().getJob() instanceof AbstractJobGuard);
     }
 }
