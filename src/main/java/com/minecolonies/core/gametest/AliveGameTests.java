@@ -41,7 +41,7 @@ public final class AliveGameTests
 {
     public static final String[] NAMES = {"alive_rules", "alive_chat", "alive_chat_yields", "alive_morning", "alive_building_cheer", "alive_grief", "alive_raid_relief",
       "alive_rain_hurry", "alive_rain_where", "alive_traits_stable", "alive_chat_pairs", "alive_calm_pace", "alive_morning_crowd", "alive_shelter_inside",
-      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe", "alive_greet_hearing_edge", "alive_chat_departure",
+      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_leisure_rain_go", "alive_leisure_rain_wander", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe", "alive_greet_hearing_edge", "alive_chat_departure",
       "alive_chat_wander_gate", "alive_chat_pair_lifecycle", "alive_chat_raid_a_first", "alive_chat_raid_b_first", "alive_chat_raid_expired"};
 
     /**
@@ -49,7 +49,7 @@ public final class AliveGameTests
      * reads the MOTION_BLOCKING heightmap) while it lets the sky light through.
      */
     public static final java.util.Set<String> NEEDS_SKY = java.util.Set.of("alive_rain_hurry", "alive_rain_where", "alive_shelter_inside", "alive_shelter_dry",
-      "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_chat_departure");
+      "alive_shelter_chat", "alive_leisure_rain_go", "alive_leisure_rain_wander", "alive_chorus", "alive_lines_wait", "alive_chat_departure");
 
     /**
      * A life moment must give way within this many ticks: the AI decides every 10 ticks, a life step runs every 20, the setting is read once a second.
@@ -109,6 +109,8 @@ public final class AliveGameTests
             case "alive_no_cheer" -> AliveGameTests::noCheer;
             case "alive_shelter_dry" -> AliveGameTests::shelterDry;
             case "alive_shelter_chat" -> AliveGameTests::shelterChat;
+            case "alive_leisure_rain_go" -> helper -> shelterChat(helper, 1);
+            case "alive_leisure_rain_wander" -> helper -> shelterChat(helper, 2);
             case "alive_chorus" -> AliveGameTests::chorus;
             case "alive_lines_wait" -> AliveGameTests::linesWait;
             case "alive_chat_departure" -> AliveGameTests::chatDeparture;
@@ -1419,6 +1421,11 @@ public final class AliveGameTests
      */
     public static void shelterChat(final GameTestHelper helper)
     {
+        shelterChat(helper, 0);
+    }
+
+    private static void shelterChat(final GameTestHelper helper, final int leisureProbe)
+    {
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-shelter-chat");
         midday(helper);
         helper.runAfterDelay(40, () -> {
@@ -1502,13 +1509,29 @@ public final class AliveGameTests
                 }
                 helper.assertTrue(guestSpot != null, "precondition failed: no dry spot for the guest by " + inside);
                 final BlockPos guestAt = guestSpot;
+                if (leisureProbe != 0)
+                {
+                    leisureRainProbe(helper, a, home, leisureProbe == 2);
+                    return;
+                }
                 rain(helper, true);
                 final long t0 = helper.getLevel().getGameTime();
                 final String[] opener = {""};
                 final long[] chatEnd = {-1};
+                final List<String> shelterTrace = new ArrayList<>();
+                final String[] priorStates = {""};
                 final Runnable[] poll = new Runnable[1];
                 poll[0] = () -> {
                     keepFed(a, b, guest);
+                    final String states = a.getCitizenAI().getState() + "/" + b.getCitizenAI().getState();
+                    if (!states.equals(priorStates[0]))
+                    {
+                        priorStates[0] = states;
+                        final String entry = (level.getGameTime() - t0) + " a=" + shelterGates(a) + " b=" + shelterGates(b);
+                        if (shelterTrace.size() == 40) { shelterTrace.removeFirst(); }
+                        shelterTrace.add(entry);
+                        Log.getLogger().info("[shelter chat state] {}", entry);
+                    }
                     if (guestData.getHomeBuilding() != null)
                     {
                         // the colony may give the homeless guest a free bed; he stays a guest
@@ -1540,7 +1563,7 @@ public final class AliveGameTests
                         helper.assertTrue(a.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER || b.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER,
                           "after the chat nobody waits out the rain: " + a.getCitizenAI().getState() + " / " + b.getCitizenAI().getState());
                         rain(helper, false);
-                        Log.getLogger().info("ALIVE RESULT shelter_chat chat_after={} opener={}", chatEnd[0] - t0, opener[0]);
+                        Log.getLogger().info("ALIVE RESULT shelter_chat chat_after={} opener={}", chatEnd[0] - t0, opener[0] + " trace=" + shelterTrace);
                         helper.succeed();
                         return;
                     }
@@ -1548,7 +1571,7 @@ public final class AliveGameTests
                     {
                         rain(helper, false);
                         helper.fail("no chat in the shelter: states " + a.getCitizenAI().getState() + " / " + b.getCitizenAI().getState() + " at " + a.blockPosition() + " "
-                                      + b.blockPosition() + " inside " + a.getLife().shelteredAtHome() + "/" + b.getLife().shelteredAtHome());
+                                      + b.blockPosition() + " inside " + a.getLife().shelteredAtHome() + "/" + b.getLife().shelteredAtHome() + " trace=" + shelterTrace);
                         return;
                     }
                     helper.runAfterDelay(1, () -> poll[0].run());
@@ -1557,6 +1580,73 @@ public final class AliveGameTests
             };
             helper.runAfterDelay(1, () -> lit[0].run());
         });
+    }
+
+    private static String shelterGates(final EntityCitizen citizen)
+    {
+        return citizen.getCitizenAI().getState() + " pos=" + citizen.blockPosition()
+          + " wants=" + citizen.getLife().wantsShelter() + " hurries=" + citizen.getLife().hurriesInRain()
+          + " home=" + citizen.getLife().shelteredAtHome() + " navDone=" + citizen.getNavigation().isDone();
+    }
+
+    /** Controlled entry only: the route to the leisure site, rain response and walk home remain native. */
+    private static void leisureRainProbe(final GameTestHelper helper, final EntityCitizen citizen, final IBuilding home, final boolean afterArrival)
+    {
+        final ServerLevel level = helper.getLevel();
+        rain(helper, !afterArrival);
+        level.setRainLevel(afterArrival ? 0.0F : 1.0F);
+        final BlockPos site = afterArrival ? citizen.blockPosition() : helper.absolutePos(new BlockPos(6, 1, 4));
+        helper.assertTrue(!home.isInBuilding(site) && level.canSeeSky(site.above()), "probe leisure site must be outdoors");
+        helper.assertTrue(home.getPosition().distSqr(site) < 48 * 48, "probe home must be nearby");
+        final boolean[] injected = {false};
+        citizen.getCitizenAI().addTransition(new com.minecolonies.api.entity.ai.statemachine.AIOneTimeEventTarget<IState>(
+          (com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.IStateSupplier<IState>) () -> {
+              final Object decision = ChatTrace.read(citizen, EntityCitizen.class, "decisionAI");
+              final List<?> minimal = (List<?>) ChatTrace.read(decision, CitizenAI.class, "minimalAI");
+              final Object wander = minimal.stream().filter(EntityAICitizenWander.class::isInstance).findFirst().orElseThrow();
+              try
+              {
+                  final var destination = EntityAICitizenWander.class.getDeclaredField("leisureSite");
+                  destination.setAccessible(true);
+                  destination.set(wander, site);
+              }
+              catch (final ReflectiveOperationException failure) { throw new IllegalStateException(failure); }
+              injected[0] = true;
+              return EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE;
+          }));
+        final long began = level.getGameTime();
+        final long[] eligible = {-1};
+        final long[] sheltered = {-1};
+        final List<String> trace = new ArrayList<>();
+        final Runnable[] poll = new Runnable[1];
+        poll[0] = () -> {
+            keepFed(citizen);
+            final long now = level.getGameTime();
+            final IState state = citizen.getCitizenAI().getState();
+            final IState target = afterArrival ? EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE
+              : EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE;
+            if (injected[0] && eligible[0] < 0 && state == target)
+            {
+                if (afterArrival) { rain(helper, true); level.setRainLevel(1.0F); }
+                helper.assertTrue(citizen.getLife().wantsShelter() && citizen.getLife().hurriesInRain(), "probe entry not shelter eligible: " + shelterGates(citizen));
+                eligible[0] = now;
+            }
+            if (trace.size() == 120) { trace.removeFirst(); }
+            trace.add((now - began) + " " + shelterGates(citizen));
+            if (eligible[0] >= 0 && sheltered[0] < 0 && state == EntityAICitizenLife.LifeState.SHELTER) { sheltered[0] = now; }
+            helper.assertTrue(eligible[0] < 0 || sheltered[0] >= 0 || now - eligible[0] <= 80,
+              "eligible leisure citizen did not begin shelter within 80 ticks: " + trace);
+            if (sheltered[0] >= 0 && citizen.getLife().shelteredAtHome())
+            {
+                rain(helper, false);
+                Log.getLogger().info("ALIVE RESULT leisure_rain arrival={} eligible={} shelter={} trace={}", afterArrival, eligible[0] - began, sheltered[0] - began, trace);
+                helper.succeed();
+                return;
+            }
+            helper.assertTrue(now - began <= 800, "probe entry or native walk home did not finish: " + trace);
+            helper.runAfterDelay(1, () -> poll[0].run());
+        };
+        helper.runAfterDelay(1, () -> poll[0].run());
     }
 
     /**

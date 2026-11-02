@@ -218,6 +218,13 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 registerAliveCase(event, "alive_greet_hearing_edge");
             }
+            if (groups.contains("rain_probe"))
+            {
+                for (final String name : new String[]{"alive_leisure_rain_go", "alive_leisure_rain_wander", "alive_shelter_chat"})
+                {
+                    registerAliveCase(event, name);
+                }
+            }
             if (groups.contains("dawn_probe"))
             {
                 registerAliveCase(event, "alive_morning_dawn");
