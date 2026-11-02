@@ -255,7 +255,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                   new TestData<>(data.environment(), data.dimension(), Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest/forestry_perf_plot"),
                     data.maxTicks(), data.setupTicks(), data.required(), data.rotation(), data.manualOnly(), data.maxAttempts(), data.requiredSuccesses(), true, data.padding()));
             }
-            if (groups.contains("life_capture"))
+            if (groups.contains("social_probe"))
             {
                 registerAliveCase(event, "alive_chat");
                 final String name = "life_statuses";
