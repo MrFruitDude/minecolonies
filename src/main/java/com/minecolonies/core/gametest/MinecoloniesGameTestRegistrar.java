@@ -222,7 +222,7 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             {
                 ObstacleJourneyGameTests.register(event);
             }
-            if (groups.contains("courier_load_journey"))
+            if (groups.contains("load_journey"))
             {
                 CourierLoadJourneyGameTests.register(event);
             }
