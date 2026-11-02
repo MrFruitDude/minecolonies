@@ -60,8 +60,19 @@ final class NavLifecycleGameTests
 
     static void register(final RegisterGameTestsEvent event)
     {
-        TESTS.forEach((name, test) -> event.registerTest(Identifier.fromNamespaceAndPath("minecolonies", name),
-          info -> new MinecoloniesGameTestInstance(info, test), MinecoloniesGameTestRegistrar.isolatedColonyData(event, name)));
+        register(event, false);
+    }
+
+    static void register(final RegisterGameTestsEvent event, final boolean forestryIncluded)
+    {
+        TESTS.forEach((name, test) -> {
+            // The forestry suite registers this exact same consumer; execute it once in a combined run.
+            if (!forestryIncluded || !name.equals("forestry_walk_home_bounded"))
+            {
+                event.registerTest(Identifier.fromNamespaceAndPath("minecolonies", name),
+                  info -> new MinecoloniesGameTestInstance(info, test), MinecoloniesGameTestRegistrar.isolatedColonyData(event, name));
+            }
+        });
     }
 
     static void clear()
