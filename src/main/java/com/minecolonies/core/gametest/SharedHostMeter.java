@@ -50,7 +50,7 @@ final class SharedHostMeter
     private Map<String, Long> previousCounters;
     private Map<String, String> nativePathIdentity;
     private long began, previousTick, warmupStart, deadline, priorCpu, priorWall, priorBusyWall;
-    private long completedStart, startedStart, pathTotal, maxOverrun;
+    private long completedStart, startedStart, pathTotal, maxOverrun, warmupElapsed;
     private int samples, overruns;
     private boolean closed;
 
@@ -137,6 +137,7 @@ final class SharedHostMeter
             samples++;
         }
         if (tick <= INVOCATION && timing) { noise.warmup(tick); }
+        if (tick == INVOCATION) { warmupElapsed = System.nanoTime() - warmupStart; }
         if (tick == INVOCATION + SETTLE)
         {
             activity.verify();
@@ -281,6 +282,7 @@ final class SharedHostMeter
         if (!timing) { activity.verifyAdmissionHeadroom(); }
         final JsonObject result = new JsonObject();
         result.addProperty("phaseElapsedNs", System.nanoTime() - warmupStart);
+        result.addProperty("warmupElapsedNs", warmupElapsed);
         result.addProperty("admissionHeadroomPassed", true);
         result.addProperty("workload", workload);
         result.addProperty("mode", timing ? "timing" : "functional");
