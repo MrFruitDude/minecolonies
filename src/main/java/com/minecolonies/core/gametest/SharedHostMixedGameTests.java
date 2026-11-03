@@ -24,6 +24,9 @@ import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.colony.requestsystem.requestable.Stack;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
+import com.minecolonies.api.colony.requestsystem.request.IRequest;
+import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
+import com.minecolonies.api.colony.requestsystem.requestable.crafting.PublicCrafting;
 import com.minecolonies.api.colony.workorders.WorkOrderType;
 import com.minecolonies.api.crafting.RecipeStorage;
 import com.minecolonies.api.crafting.ItemStorage;
@@ -226,7 +229,7 @@ final class SharedHostMixedGameTests
                 progress.put("cell" + cell.index + "Windows", (long) cell.completed);
                 progress.put("cell" + cell.index + "Fells", cellFells);
             }
-            // Coupled window proxies, not independent per-worker craft/delivery counters.
+            // Coupled completed-window proxies with token-attributed carry, not independent per-worker counters.
             progress.put("builder", built); progress.put("crafter", built);
             progress.put("courier", built); progress.put("forester", fells);
             return progress;
@@ -385,7 +388,12 @@ final class SharedHostMixedGameTests
             private ICitizenData builderWorker, crafter, courier, forester;
             private IToken<?> request;
             private WorkOrderBuilding order;
-            private int completed, seeded, startingLogs;
+            private int completed, seeded, startingLogs, startingPlanks, craftingCell = -1, carryingCitizen = -1;
+            private int[] startingCellLogs;
+            private IRequest<?> windowRequest;
+            private final Map<IToken<?>, IRequest<?>> observedRequests = new java.util.LinkedHashMap<>();
+            private final Map<IToken<?>, Set<Integer>> emptyTokenCouriers = new java.util.LinkedHashMap<>();
+            private final Set<IToken<?>> carriedTokens = new LinkedHashSet<>();
             private long windowStart;
             private long diagnosticFells, lastFellTick;
             private String diagnosticPipeline = "";
@@ -489,7 +497,7 @@ final class SharedHostMixedGameTests
                     }
                 }
                 return "window=" + completed + " windowStart=" + windowStart + " flags=" + crafted + "/" + carried + "/" + delivered + "/" + courierEmptyObserved
-                  + " logs=" + logs() + "/" + startingLogs + " planksHut=" + hut + " planksBuilder=" + held + " required=" + (4 + completed * 3)
+                  + " logs=" + logs() + "/" + startingLogs + " planksHut=" + hut + " planksBuilder=" + held + " startingPlanks=" + startingPlanks + " requiredDelta=4 craftingCell=" + craftingCell + " carryingCitizen=" + carryingCitizen + " carriedTokens=" + carriedTokens + " parentState=" + (windowRequest == null ? "none" : windowRequest.getState())
                   + " courierPlanks=" + InventoryUtils.getItemCountInItemHandler(courier.getInventory(), item -> item.is(Items.OAK_PLANKS))
                   + " craftingQueue=" + crafting + " warehousePlanks=" + warehouses + " request=" + diagnosticRequest(request, 0) + " queue=" + queue
                   + " order=" + (order == null ? "none" : order.getID()) + " builderHasOrder=" + ((BuildingBuilder) builder).hasWorkOrder()
@@ -590,15 +598,83 @@ final class SharedHostMixedGameTests
                 helper.assertTrue(completed < TARGET_LIMIT, "shared mixed exhausted finite target/stock schedule");
                 startingLogs = logs(); windowStart = now;
                 crafted = false; carried = false; delivered = false; order = null;
-                courierEmptyObserved = InventoryUtils.getItemCountInItemHandler(courier.getInventory(), item -> item.is(Items.OAK_PLANKS)) == 0;
+                courierEmptyObserved = false;
                 // Each window demands new delivery; saved stock belongs to earlier windows.
+                startingCellLogs = cells.stream().mapToInt(Cell::logs).toArray();
+                craftingCell = -1; carryingCitizen = -1;
+                observedRequests.clear(); emptyTokenCouriers.clear(); carriedTokens.clear();
                 final Stack demand = new Stack(new ItemStack(Items.OAK_PLANKS), 4, 4);
                 demand.setCanBeResolvedByBuilding(false);
                 final int hutPlanks = InventoryUtils.getItemCountInItemHandler(builder.getItemHandlerCap(), item -> item.is(Items.OAK_PLANKS));
                 final int workerPlanks = InventoryUtils.getItemCountInItemHandler(builderWorker.getInventory(), item -> item.is(Items.OAK_PLANKS));
+                startingPlanks = hutPlanks + workerPlanks;
                 request = builder.createRequest(demand, true);
-                helper.assertTrue(a.getRequestManager().getRequestForToken(request) != null,
+                windowRequest = a.getRequestManager().getRequestForToken(request);
+                helper.assertTrue(windowRequest != null,
                   "shared mixed request absent: cell=" + index + " completed=" + completed + " startingLogs=" + startingLogs + " hutPlanks=" + hutPlanks + " workerPlanks=" + workerPlanks);
+                observeRequestTree(windowRequest, new LinkedHashSet<>(), 0);
+            }
+
+            private boolean succeeded(final IRequest<?> observed)
+            {
+                return observed.getState() == RequestState.COMPLETED || observed.getState() == RequestState.RECEIVED;
+            }
+
+            private void observeRequestTree(final IRequest<?> observed, final Set<IToken<?>> visited, final int depth)
+            {
+                if (!visited.add(observed.getId())) { return; }
+                helper.assertTrue(depth <= 8 && observedRequests.size() < 64, "shared mixed request witness exceeded finite bound");
+                observedRequests.putIfAbsent(observed.getId(), observed);
+                for (final IToken<?> child : observed.getChildren())
+                {
+                    final var current = a.getRequestManager().getRequestForToken(child);
+                    helper.assertTrue(current != null, "shared mixed child unavailable before witness: " + child);
+                    observeRequestTree(current, visited, depth + 1);
+                }
+            }
+
+            private void observeWindow()
+            {
+                // Retain the native objects: RECEIVED survives manager cleanup; disappearance alone proves no success.
+                observeRequestTree(windowRequest, new LinkedHashSet<>(), 0);
+                for (final IRequest<?> observed : new ArrayList<>(observedRequests.values()))
+                {
+                    final RequestState state = observed.getState();
+                    helper.assertTrue(state != RequestState.FAILED && state != RequestState.CANCELLED
+                      && state != RequestState.OVERRULED && state != RequestState.FINALIZING,
+                      "shared mixed request unsuccessful: cell=" + index + " token=" + observed.getId() + " state=" + state);
+                    if (observed.getRequest() instanceof PublicCrafting)
+                    {
+                        final var resolver = a.getRequestManager().getRequestForToken(observed.getId()) == null ? null
+                          : a.getRequestManager().getResolverForRequest(observed.getId());
+                        if (resolver != null && resolver.getLocation() != null)
+                        {
+                            final BlockPos location = resolver.getLocation().getInDimensionLocation();
+                            final Cell source = cells.stream().filter(cell -> cell.sawmill.getID().equals(location)).findFirst().orElse(null);
+                            helper.assertTrue(source != null && (craftingCell == -1 || craftingCell == source.index),
+                              "shared mixed crafting source unavailable or changed");
+                            craftingCell = source.index;
+                        }
+                        if (craftingCell >= 0) { crafted |= cells.get(craftingCell).logs() < startingCellLogs[craftingCell]; }
+                    }
+                    if (observed.getRequest() instanceof Delivery deliveryRequest && deliveryRequest.getStack().is(Items.OAK_PLANKS)
+                      && deliveryRequest.getTarget().getInDimensionLocation().equals(builder.getID()))
+                    {
+                        final Set<Integer> emptyCouriers = emptyTokenCouriers.computeIfAbsent(observed.getId(), ignored -> new LinkedHashSet<>());
+                        for (final Cell cell : cells)
+                        {
+                            if (cell.courier.getJob() instanceof com.minecolonies.core.colony.jobs.JobDeliveryman job && job.holdsTask(observed.getId()))
+                            {
+                                final int planks = InventoryUtils.getItemCountInItemHandler(cell.courier.getInventory(), item -> item.is(Items.OAK_PLANKS));
+                                if (planks == 0) { emptyCouriers.add(cell.courier.getId()); courierEmptyObserved = true; }
+                                if (planks > 0 && emptyCouriers.contains(cell.courier.getId()))
+                                {
+                                    carriedTokens.add(observed.getId()); carried = true; carryingCitizen = cell.courier.getId();
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             private void arm()
@@ -628,13 +704,11 @@ final class SharedHostMixedGameTests
                 }
                 else
                 {
-                    crafted |= logs() < startingLogs;
-                    final int courierPlanks = InventoryUtils.getItemCountInItemHandler(courier.getInventory(), item -> item.is(Items.OAK_PLANKS));
-                    courierEmptyObserved |= courierPlanks == 0;
-                    carried |= courierEmptyObserved && courierPlanks > 0;
+                    observeWindow();
                     final int planks = InventoryUtils.getItemCountInItemHandler(builder.getItemHandlerCap(), item -> item.is(Items.OAK_PLANKS))
                       + InventoryUtils.getItemCountInItemHandler(builderWorker.getInventory(), item -> item.is(Items.OAK_PLANKS));
-                    delivered |= crafted && carried && planks >= 4 + completed * 3;
+                    final boolean deliverySucceeded = carriedTokens.stream().anyMatch(token -> succeeded(observedRequests.get(token)));
+                    delivered |= crafted && carried && deliverySucceeded && succeeded(windowRequest) && planks - startingPlanks >= 4;
                     final var current = a.getRequestManager().getRequestForToken(request);
                     helper.assertTrue(current == null || current.getState() != RequestState.FAILED, "shared mixed request failed");
                     if (order == null && delivered && (current == null || current.getState() == RequestState.RECEIVED || current.getState() == RequestState.COMPLETED)) { arm(); }
@@ -645,7 +719,10 @@ final class SharedHostMixedGameTests
                         completed++;
                         request = null; order = null;
                     }
-                    helper.assertTrue(now - windowStart < 4000, "shared mixed native production stalled: cell=" + index + " window=" + completed);
+                    helper.assertTrue(now - windowStart < 4000, "shared mixed native production stalled: cell=" + index + " window=" + completed
+                        + " crafted=" + crafted + " carried=" + carried + " delivered=" + delivered
+                        + " delta=" + (planks - startingPlanks) + " observedDeliveryTokens=" + emptyTokenCouriers.keySet()
+                        + " builderLeisure=" + builderWorker.getLeisureTime() + " crafterLeisure=" + crafter.getLeisureTime());
                 }
                 if (now % 400 == 0 && level.getBlockState(root).is(Blocks.BIRCH_SAPLING))
                 {
