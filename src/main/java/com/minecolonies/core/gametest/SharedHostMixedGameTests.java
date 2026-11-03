@@ -423,8 +423,8 @@ final class SharedHostMixedGameTests
 
             private String diagnosticWorker(final ICitizenData citizen)
             {
-                return citizen.getEntity().map(entity -> "status=" + citizen.getStatus().getTranslationKey() + " leisure=" + citizen.getLeisureTime()
-                  + " lifeState=" + (entity instanceof com.minecolonies.core.entity.citizen.EntityCitizen concrete ? concrete.getCitizenAI().getState() : "unavailable") + " pos=" + entity.blockPosition()
+                return citizen.getEntity().map(entity -> "status=" + (citizen.getStatus() == null ? "unavailable" : citizen.getStatus().getTranslationKey()) + " leisure=" + citizen.getLeisureTime()
+                  + " lifeState=" + (entity instanceof com.minecolonies.core.entity.citizen.EntityCitizen concrete ? (concrete.getCitizenAI() == null ? "uninitialized" : concrete.getCitizenAI().getState()) : "unavailable") + " pos=" + entity.blockPosition()
                   + " state=" + (entity.getCitizenJobHandler().getWorkAI() == null ? "no-ai" : entity.getCitizenJobHandler().getWorkAI().getStateAI().getState())
                   + " navDone=" + entity.getNavigation().isDone() + " path=" + entity.getNavigation().getPath()).orElse("no-entity");
             }
@@ -439,7 +439,7 @@ final class SharedHostMixedGameTests
                 try
                 {
                     final var assigned = manager.getResolverForRequest(token);
-                    resolver = assigned == null ? "unassigned" : assigned.getClass().getSimpleName() + "@" + assigned.getLocation().getInDimensionLocation();
+                    resolver = assigned == null ? "unassigned" : assigned.getClass().getSimpleName() + "@" + (assigned.getLocation() == null ? "unavailable" : assigned.getLocation().getInDimensionLocation());
                 }
                 catch (final IllegalArgumentException missing) { resolver = "unavailable"; }
                 final StringBuilder result = new StringBuilder().append(token).append("=").append(current.getState())
