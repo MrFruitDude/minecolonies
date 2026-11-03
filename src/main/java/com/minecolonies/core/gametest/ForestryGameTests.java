@@ -572,6 +572,156 @@ public final class ForestryGameTests
           }, "forestry_due_dump_full_hut");
     }
 
+    /** A real native stripping request must progress despite a due count below the fill threshold. */
+    static void dumpQueuedCraft(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry due queued craft");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final IBuilding requester = MinecoloniesGameTests.placeProductionBuilding(helper, colony, ModBlocks.blockHutBuilder,
+          new BlockPos(30, 1, 2), "fundamentals/builder1.blueprint");
+        final var module = building.getModule(BuildingModules.FORESTER_CRAFT);
+        module.checkForWorkerSpecificRecipes();
+        helper.assertTrue(module.getRecipes().stream().map(token -> IColonyManager.getInstance().getRecipeManager().getRecipes().get(token))
+          .filter(java.util.Objects::nonNull).anyMatch(recipe -> recipe.getPrimaryOutput().is(Items.STRIPPED_BIRCH_LOG)
+            || recipe.getAlternateOutputs().stream().anyMatch(stack -> stack.is(Items.STRIPPED_BIRCH_LOG))), "native birch stripping recipe unavailable");
+        helper.assertTrue(InventoryUtils.forceItemStackToItemHandler(building.getItemHandlerCap(), new ItemStack(Items.BIRCH_LOG, 4), stack -> true).isEmpty(),
+          "queued-craft input stock did not fit");
+        final ICitizenData worker = forester(helper, colony, building, new BlockPos(10, 1, 4));
+        final JobLumberjack job = (JobLumberjack) worker.getJob();
+        job.incrementActionsDone(32);
+        final var demand = new com.minecolonies.api.colony.requestsystem.requestable.Stack(new ItemStack(Items.STRIPPED_BIRCH_LOG), 4, 4);
+        demand.setCanBeResolvedByBuilding(false);
+        requester.createRequest(demand, true);
+        helper.assertTrue(!job.getTaskQueue().isEmpty(), "native crafting task was not queued before first AI tick");
+        final boolean[] progressed = {false}, dumpedEarly = {false};
+        pump(helper, List.of(worker), 6000,
+          () -> progressed[0] && !dumpedEarly[0]
+            && InventoryUtils.getItemCountInItemHandler(worker.getInventory(), stack -> stack.is(Items.STRIPPED_BIRCH_LOG))
+              + InventoryUtils.getCountFromBuilding(building, stack -> stack.is(Items.STRIPPED_BIRCH_LOG)) == 4,
+          () -> "queued craft did not progress without due-dump wait: actions=" + job.getActionsDone()
+            + " progressed=" + progressed[0] + " dumpedEarly=" + dumpedEarly[0] + " " + describe(worker),
+          () -> {
+              final EntityAIWorkLumberjack current = ai(worker);
+              final int output = InventoryUtils.getItemCountInItemHandler(worker.getInventory(), stack -> stack.is(Items.STRIPPED_BIRCH_LOG))
+                + InventoryUtils.getCountFromBuilding(building, stack -> stack.is(Items.STRIPPED_BIRCH_LOG));
+              if (current != null && current.getState() == AIWorkerState.INVENTORY_FULL && output == 0) { dumpedEarly[0] = true; }
+              progressed[0] |= output > 0;
+              final Predicate<ItemStack> material = stack -> stack.is(Items.BIRCH_LOG) || stack.is(Items.STRIPPED_BIRCH_LOG);
+              helper.assertTrue(InventoryUtils.getItemCountInItemHandler(worker.getInventory(), material)
+                + InventoryUtils.getCountFromBuilding(building, material) == 4, "queued native stripping lost or duplicated material");
+          }, "forestry_due_dump_queued_craft");
+    }
+
+    /** Observe a natural gathering-to-dump interruption with two workers, exclusive claims and complete collection. */
+    static void dumpGatheringClaims(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry gathering dump claims");
+        final BuildingLumberjack first = hut(helper, colony, HUT, false);
+        final BuildingLumberjack second = hut(helper, colony, new BlockPos(34, 1, 2), false);
+        final List<Grown> trees = List.of(
+          grow(helper, new TreeSpec("birch a", new BlockPos(16, 1, 18), false, Blocks.BIRCH_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.BIRCH, null), 61L),
+          grow(helper, new TreeSpec("birch b", new BlockPos(26, 1, 18), false, Blocks.BIRCH_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.BIRCH, null), 62L),
+          grow(helper, new TreeSpec("birch c", new BlockPos(21, 1, 28), false, Blocks.BIRCH_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.BIRCH, null), 63L));
+        final List<BlockPos> logs = new ArrayList<>();
+        for (final Grown grown : trees)
+        {
+            for (final BlockPos at : BlockPos.betweenClosed(BlockPos.containing(grown.box().minX, grown.box().minY, grown.box().minZ),
+              BlockPos.containing(grown.box().maxX - 1, grown.box().maxY - 1, grown.box().maxZ - 1)))
+            { if (level.getBlockState(at).is(Blocks.BIRCH_LOG) && !logs.contains(at)) { logs.add(at.immutable()); } }
+        }
+        final ICitizenData a = forester(helper, colony, first, new BlockPos(12, 1, 10), new ItemStack(Items.BIRCH_SAPLING, 8));
+        final ICitizenData b = forester(helper, colony, second, new BlockPos(30, 1, 10), new ItemStack(Items.BIRCH_SAPLING, 8));
+        ((JobLumberjack) a.getJob()).incrementActionsDone(29);
+        final boolean[] supplied = {false}, interrupted = {false}, resumed = {false}, claimObserved = {false};
+        final IAIState[] previous = {null};
+        final EntityAIWorkLumberjack[] originalAi = {null};
+        final AABB plot = new AABB(Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(-8, 0, -8))),
+          Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(48, 40, 44))));
+        final Predicate<ItemStack> marker = stack -> stack.is(Items.BIRCH_SAPLING) && stack.has(DataComponents.CUSTOM_NAME)
+          && stack.get(DataComponents.CUSTOM_NAME).getString().startsWith("dump-gather-");
+        final int[] ticks = {0};
+        pump(helper, List.of(a, b), 12000,
+          () -> interrupted[0] && resumed[0] && claimObserved[0]
+            && logsKept(a, first) + logsKept(b, second) == logs.size()
+            && InventoryUtils.getItemCountInItemHandler(a.getInventory(), marker) + InventoryUtils.getItemCountInItemHandler(b.getInventory(), marker)
+              + InventoryUtils.getCountFromBuilding(first, marker) + InventoryUtils.getCountFromBuilding(second, marker) == 8,
+          () -> "gathering interruption unobserved or unsafe: supplied=" + supplied[0] + " interrupted=" + interrupted[0]
+            + " resumed=" + resumed[0] + " claimObserved=" + claimObserved[0] + " A " + describe(a) + " B " + describe(b),
+          () -> {
+              final EntityAIWorkLumberjack current = ai(a);
+              if (current != null)
+              {
+                  if (originalAi[0] == null) { originalAi[0] = current; }
+                  helper.assertTrue(current == originalAi[0], "gathering dump replaced the worker AI");
+                  final IAIState state = current.getState();
+                  if (!supplied[0] && state == AIWorkerState.LUMBERJACK_GATHERING)
+                  {
+                      supplied[0] = true;
+                      final BlockPos center = a.getEntity().orElseThrow().blockPosition();
+                      int itemIndex = 0;
+                      for (final int dx : new int[]{-3, 0, 3})
+                      {
+                          for (final int dz : new int[]{-3, 0, 3})
+                          {
+                              if (dx == 0 && dz == 0) { continue; }
+                              final ItemStack stack = new ItemStack(Items.BIRCH_SAPLING);
+                              stack.set(DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("dump-gather-" + itemIndex++));
+                              final ItemEntity item = new ItemEntity(level, center.getX() + dx + 0.5D, center.getY() + 0.25D, center.getZ() + dz + 0.5D, stack);
+                              item.setDeltaMovement(Vec3.ZERO); item.setNoPickUpDelay(); level.addFreshEntity(item);
+                          }
+                      }
+                  }
+                  if ((previous[0] == AIWorkerState.LUMBERJACK_GATHERING || previous[0] == AIWorkerState.LUMBERJACK_GATHERING_2)
+                    && state == AIWorkerState.INVENTORY_FULL)
+                  {
+                      helper.assertTrue(a.getJob().getActionsDone() >= 32, "gathering dump was not action-count due");
+                      interrupted[0] = true;
+                  }
+                  if (interrupted[0] && state != AIWorkerState.INVENTORY_FULL && a.getJob().getActionsDone() < 32) { resumed[0] = true; }
+                  previous[0] = state;
+              }
+              final Tree ta = tree(a), tb = tree(b);
+              if (ta != null && tb != null)
+              { helper.assertTrue(!ta.getLocation().equals(tb.getLocation()) && ta.getAllLogs().stream().noneMatch(tb.getAllLogs()::contains), "foresters share a claimed tree across dump"); }
+              for (final ICitizenData owner : List.of(a, b))
+              {
+                  final Tree activeTree = tree(owner);
+                  final EntityAIWorkLumberjack activeAi = ai(owner);
+                  if (activeTree != null && activeAi != null && activeAi.getState() == AIWorkerState.LUMBERJACK_CHOP_TREE && activeTree.hasLogs())
+                  {
+                      final ICitizenData other = owner == a ? b : a;
+                      helper.assertTrue(!TreeClaims.isTakenByOther(level, activeTree.getLocation(), colony.getID(), owner.getId())
+                        && TreeClaims.isTakenByOther(level, activeTree.getLocation(), colony.getID(), other.getId()), "native tree claim missing or stolen");
+                      claimObserved[0] = true;
+                  }
+              }
+              if (++ticks[0] % 20 == 0)
+              {
+                  int standing = 0;
+                  for (final BlockPos at : logs)
+                  {
+                      if (level.getBlockState(at).is(Blocks.BIRCH_LOG)) { standing++; }
+                      else if (Compatibility.treeChop.isChoppedLog(level.getBlockState(at)))
+                      {
+                          final BlockState original = Compatibility.treeChop.getOriginalLogState(level, at);
+                          helper.assertTrue(original != null && original.is(Blocks.BIRCH_LOG), "unknown wrapped gathering log"); standing++;
+                      }
+                  }
+                  final int dropped = level.getEntitiesOfClass(ItemEntity.class, plot).stream().filter(item -> item.getItem().is(Items.BIRCH_LOG))
+                    .mapToInt(item -> item.getItem().getCount()).sum();
+                  helper.assertTrue(logsKept(a, first) + logsKept(b, second) + standing + dropped == logs.size(), "gathering dump lost or duplicated logs");
+                  if (supplied[0])
+                  {
+                      final int physicalMarkers = InventoryUtils.getItemCountInItemHandler(a.getInventory(), marker) + InventoryUtils.getItemCountInItemHandler(b.getInventory(), marker)
+                        + InventoryUtils.getCountFromBuilding(first, marker) + InventoryUtils.getCountFromBuilding(second, marker)
+                        + level.getEntitiesOfClass(ItemEntity.class, plot).stream().filter(item -> marker.test(item.getItem())).mapToInt(item -> item.getItem().getCount()).sum();
+                      helper.assertTrue(physicalMarkers == 8, "gathering dump lost or duplicated collection markers");
+                  }
+              }
+          }, "forestry_due_dump_gather_claims");
+    }
+
     private static void wholeBroadleaf(final GameTestHelper helper)
     {
         wholeTrees(helper, "forestry_whole_broadleaf", List.of(
