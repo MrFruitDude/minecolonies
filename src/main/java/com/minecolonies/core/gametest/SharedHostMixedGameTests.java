@@ -388,6 +388,7 @@ final class SharedHostMixedGameTests
             private int completed, seeded, startingLogs;
             private long windowStart;
             private long diagnosticFells, lastFellTick;
+            private String diagnosticPipeline = "";
             private final java.util.ArrayDeque<String> diagnosticEvents = new java.util.ArrayDeque<>();
 
             private void diagnosticEvent(final String reason)
@@ -406,6 +407,10 @@ final class SharedHostMixedGameTests
                 {
                     diagnosticFells = fells; lastFellTick = now; diagnosticEvent("fell-counter-change");
                 }
+                final var current = request == null ? null : a.getRequestManager().getRequestForToken(request);
+                final String pipeline = completed + ":" + request + ":" + crafted + ":" + carried + ":" + delivered + ":" + courierEmptyObserved
+                  + ":" + (current == null ? "gone" : current.getState()) + ":" + (order == null ? "none" : order.getID());
+                if (!pipeline.equals(diagnosticPipeline)) { diagnosticPipeline = pipeline; diagnosticEvent("pipeline-transition"); }
                 if (now % 400 == 0) { diagnosticEvent("regrow-check"); }
             }
 
@@ -414,6 +419,65 @@ final class SharedHostMixedGameTests
                 if (ai == null) { return "no-ai"; }
                 try { return String.valueOf(ai.getClass().getMethod("getTreeChopRefusedOutcomeCount").invoke(ai)); }
                 catch (final ReflectiveOperationException unavailable) { return "unavailable-on-this-jar"; }
+            }
+
+            private String diagnosticWorker(final ICitizenData citizen)
+            {
+                return citizen.getEntity().map(entity -> "status=" + citizen.getStatus() + " pos=" + entity.blockPosition()
+                  + " state=" + (entity.getCitizenJobHandler().getWorkAI() == null ? "no-ai" : entity.getCitizenJobHandler().getWorkAI().getStateAI().getState())
+                  + " navDone=" + entity.getNavigation().isDone() + " path=" + entity.getNavigation().getPath()).orElse("no-entity");
+            }
+
+            private String diagnosticRequest(final IToken<?> token, final int depth)
+            {
+                if (token == null) { return "none"; }
+                final var manager = a.getRequestManager();
+                final var current = manager.getRequestForToken(token);
+                if (current == null) { return token + "=gone"; }
+                String resolver;
+                try
+                {
+                    final var assigned = manager.getResolverForRequest(token);
+                    resolver = assigned == null ? "unassigned" : assigned.getClass().getSimpleName();
+                }
+                catch (final IllegalArgumentException missing) { resolver = "unavailable"; }
+                final StringBuilder result = new StringBuilder().append(token).append("=").append(current.getState())
+                  .append(" type=").append(current.getRequest().getClass().getSimpleName()).append(" resolver=").append(resolver);
+                if (depth < 2)
+                {
+                    int count = 0;
+                    for (final IToken<?> child : current.getChildren())
+                    {
+                        if (count++ == 8) { result.append(" [more children]"); break; }
+                        result.append(" [").append(diagnosticRequest(child, depth + 1)).append("]");
+                    }
+                }
+                return result.toString();
+            }
+
+            private String diagnosticProduction()
+            {
+                final int hut = InventoryUtils.getItemCountInItemHandler(builder.getItemHandlerCap(), item -> item.is(Items.OAK_PLANKS));
+                final int held = InventoryUtils.getItemCountInItemHandler(builderWorker.getInventory(), item -> item.is(Items.OAK_PLANKS));
+                final StringBuilder warehouses = new StringBuilder();
+                for (final Cell cell : cells) { warehouses.append(cell.index).append(":").append(InventoryUtils.getItemCountInItemHandler(cell.warehouse.getItemHandlerCap(), item -> item.is(Items.OAK_PLANKS))).append(" "); }
+                final StringBuilder queue = new StringBuilder();
+                if (courier.getJob() instanceof com.minecolonies.core.colony.jobs.JobDeliveryman job)
+                {
+                    int count = 0;
+                    for (final IToken<?> token : job.getTaskQueue())
+                    {
+                        if (count++ == 8) { queue.append(" [more tasks]"); break; }
+                        queue.append(" [").append(diagnosticRequest(token, 0)).append("]");
+                    }
+                }
+                return "window=" + completed + " windowStart=" + windowStart + " flags=" + crafted + "/" + carried + "/" + delivered + "/" + courierEmptyObserved
+                  + " logs=" + logs() + "/" + startingLogs + " planksHut=" + hut + " planksBuilder=" + held + " required=" + (4 + completed * 3)
+                  + " courierPlanks=" + InventoryUtils.getItemCountInItemHandler(courier.getInventory(), item -> item.is(Items.OAK_PLANKS))
+                  + " warehousePlanks=" + warehouses + " request=" + diagnosticRequest(request, 0) + " queue=" + queue
+                  + " order=" + (order == null ? "none" : order.getID()) + " builderHasOrder=" + ((BuildingBuilder) builder).hasWorkOrder()
+                  + " target=" + (targets.size() <= completed ? "not-armed" : level.getBlockState(targets.get(completed)))
+                  + " builder[" + diagnosticWorker(builderWorker) + "] crafter[" + diagnosticWorker(crafter) + "] courier[" + diagnosticWorker(courier) + "]";
             }
 
             private String diagnosticState()
@@ -428,14 +492,14 @@ final class SharedHostMixedGameTests
                       .append(" taken=").append(com.minecolonies.core.entity.ai.workers.util.TreeClaims.isTakenByOther(level, at, b.getID(), forester.getId()));
                 }
                 final var tree = forester.getJob() instanceof com.minecolonies.core.colony.jobs.JobLumberjack job ? job.getTree() : null;
-                return "seeded=" + seeded + " regrows=" + Math.max(0, seeded / 4 - 1) + " lastFell=" + lastFellTick + blocks
+                return diagnosticProduction() + " seeded=" + seeded + " regrows=" + Math.max(0, seeded / 4 - 1) + " lastFell=" + lastFellTick + blocks
                   + " stumpOwnsRoot=" + (tree != null && tree.getStumpLocations().contains(root))
                   + " fells=" + (ai == null ? 0 : ai.getTreeChopFellCount()) + " chops=" + (ai == null ? 0 : ai.getTreeChopChopCount())
                   + " refusals=" + (ai == null ? 0 : ai.getTreeChopRefusedCount()) + " markRefused=" + (ai == null ? 0 : ai.getTreeChopMarkRefusedCount())
                   + " refusedOutcome=" + diagnosticRefusedOutcome(ai) + " skipped=" + lumber.getSkippedTreeCount()
                   + " hutSaplings=" + InventoryUtils.getItemCountInItemHandler(lumber.getItemHandlerCap(), item -> item.is(Items.BIRCH_SAPLING))
                   + " hutAxes=" + InventoryUtils.getItemCountInItemHandler(lumber.getItemHandlerCap(), item -> item.is(Items.STONE_AXE))
-                  + " " + ForestryGameTests.describe(forester);
+                  + " forester[" + diagnosticWorker(forester) + "] " + ForestryGameTests.describe(forester);
             }
             private boolean crafted, carried, delivered, courierEmptyObserved;
 
