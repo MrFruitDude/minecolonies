@@ -272,6 +272,22 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                   info -> new MinecoloniesGameTestInstance(info, RecoveryJourneyGameTests::hutDoorReopens),
                   withSkyAccess(isolatedColonyData(event, name)));
             }
+            if (groups.contains("shared_host_mixed"))
+            {
+                final String name = "shared_host_mixed";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, SharedHostMixedGameTests::run),
+                  withSkyAccess(longIsolatedColonyData(event, name, 30_000)));
+            }
+            if (groups.contains("shared_host_forestry"))
+            {
+                final String name = "shared_host_forestry";
+                final var data = withSkyAccess(longIsolatedColonyData(event, name, 30_000));
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, SharedHostForestryGameTests::run),
+                  new TestData<>(data.environment(), data.dimension(), Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest/forestry_perf_plot"),
+                    data.maxTicks(), data.setupTicks(), data.required(), data.rotation(), data.manualOnly(), data.maxAttempts(), data.requiredSuccesses(), true, data.padding()));
+            }
             if (groups.contains("forestry_perf"))
             {
                 final String name = "forestry_perf_20tps";

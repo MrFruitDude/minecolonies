@@ -38,6 +38,8 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
         final boolean treeChopEnabled = com.minecolonies.api.compatibility.Compatibility.treeChop.isEnabled();
         final boolean foresterTreeChopEnabled = com.minecolonies.core.MineColonies.getConfig().getServer().lumberjacksUseTreeChop.get();
         MixedColonyLoadGameTests.clear(level);
+        SharedHostMixedGameTests.clear(level);
+        SharedHostForestryGameTests.clear(level);
         // Tests of the request-system redesign switch the flags in code; none may leak into the next test.
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideReservations(null);
         com.minecolonies.core.colony.requestsystem.RsFlags.overrideSmartRetry(null);
@@ -94,7 +96,12 @@ public record ColonyIsolationEnvironment(String test) implements TestEnvironment
             }
             finally
             {
-                MixedColonyLoadGameTests.clear(level);
+                try { SharedHostMixedGameTests.clear(level); }
+                finally
+                {
+                    try { SharedHostForestryGameTests.clear(level); }
+                    finally { MixedColonyLoadGameTests.clear(level); }
+                }
             }
         }
     }
