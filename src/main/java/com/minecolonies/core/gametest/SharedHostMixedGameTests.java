@@ -198,7 +198,14 @@ final class SharedHostMixedGameTests
             }
             if (now % 80 == 0) { waypoint((int) ((now / 80) % 2)); }
             for (final Cell cell : cells) { cell.maintain(now); }
-            if (now % 20 == 0) { verify(); }
+        }
+
+        @Override public void verifyAdmissionHeadroom()
+        {
+            for (final Cell cell : cells)
+            {
+                helper.assertTrue(cell.completed <= TARGET_LIMIT - 16, "shared mixed admission lacks 16 target slots of headroom: cell=" + cell.index);
+            }
         }
 
         @Override public Map<String, Long> counters()

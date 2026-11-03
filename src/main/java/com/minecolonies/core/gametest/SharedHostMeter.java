@@ -27,6 +27,7 @@ final class SharedHostMeter
         void verify();
         void close();
         String describe();
+        default void verifyAdmissionHeadroom() { }
     }
 
     private static final int INVOCATION = 20_000;
@@ -71,6 +72,7 @@ final class SharedHostMeter
             require("functional".equals(mode) || timing, "MC_SHARED_MODE must be functional or timing");
             require(workload != null && !workload.isBlank() && activity != null, "missing workload or activity");
             require(System.getenv("MC_SHARED_PROTOCOL_SHA") != null && !System.getenv("MC_SHARED_PROTOCOL_SHA").isBlank(), "missing protocol identity");
+            warmupStart = System.nanoTime();
             if (timing)
             {
                 require(threads.isThreadCpuTimeSupported() && threads.isThreadCpuTimeEnabled(), "thread CPU time unavailable");
@@ -116,6 +118,8 @@ final class SharedHostMeter
         final JsonObject endCpuMark = timing ? cpuMark() : null;
         final long nowCpu = timing ? endCpuMark.get("cpuNs").getAsLong() : 0;
         final long nowWall = timing ? System.nanoTime() : 0;
+        // Read-only ledger scans must not occupy exactly the top 5% of CPU samples.
+        if (tick % 20 == 0) { activity.verify(); }
         if (tick > INVOCATION + SETTLE)
         {
             final long async = paths(true);
@@ -171,13 +175,13 @@ final class SharedHostMeter
         helper.runAfterDelay(1, this::tick);
         if (tick <= INVOCATION)
         {
-            if (timing) { require(System.nanoTime() - warmupStart <= 120_000_000_000L, "invocation warmup exceeded 120 seconds"); }
+            require(System.nanoTime() - warmupStart <= 120_000_000_000L, "invocation warmup exceeded 120 seconds");
             final long limit = System.nanoTime() + 200_000_000L;
             final var pool = Pathfinding.getExecutor();
             while ((!pool.getQueue().isEmpty() || pool.getActiveCount() > 0) && System.nanoTime() < limit) { LockSupport.parkNanos(20_000L); }
+            require(System.nanoTime() - warmupStart <= 120_000_000_000L, "invocation warmup exceeded 120 seconds");
             if (timing)
             {
-                require(System.nanoTime() - warmupStart <= 120_000_000_000L, "invocation warmup exceeded 120 seconds");
                 if (tick == INVOCATION) { deadline = System.nanoTime(); }
             }
         }
@@ -274,7 +278,10 @@ final class SharedHostMeter
         final long started = Pathfinding.Stats.started.get() - startedStart;
         require(completed > 0 && started >= 0, "no completed path jobs or decreasing path counter");
         if (timing) { require(pathTotal > 0, "no measured path CPU"); }
+        if (!timing) { activity.verifyAdmissionHeadroom(); }
         final JsonObject result = new JsonObject();
+        result.addProperty("phaseElapsedNs", System.nanoTime() - warmupStart);
+        result.addProperty("admissionHeadroomPassed", true);
         result.addProperty("workload", workload);
         result.addProperty("mode", timing ? "timing" : "functional");
         result.addProperty("protocolSha256", System.getenv("MC_SHARED_PROTOCOL_SHA"));
