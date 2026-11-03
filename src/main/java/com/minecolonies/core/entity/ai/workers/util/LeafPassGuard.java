@@ -50,6 +50,21 @@ public final class LeafPassGuard
     private final String         family;
     private final long           madeAt;
     private volatile boolean     refused        = false;
+    private volatile String refusalNote = "none";
+
+    public String refusalNote()
+    {
+        return refusalNote;
+    }
+
+    private void refuse(final int x, final int y, final int z, final String reason)
+    {
+        if (!refused)
+        {
+            refusalNote = new BlockPos(x, y, z).toShortString() + ": " + reason;
+        }
+        refused = true;
+    }
 
     private LeafPassGuard(final List<BlockPos> logs, final boolean netherTree, final String family, final long madeAt)
     {
@@ -136,6 +151,7 @@ public final class LeafPassGuard
     public void newSearch()
     {
         refused = false;
+        refusalNote = "none";
     }
 
     /**
@@ -155,12 +171,15 @@ public final class LeafPassGuard
                               && clearableCaps.contains(BlockPos.asLong(x, y, z));
         if (!leaf && !cap)
         {
-            refused |= TreeFootprint.isCap(state);
+            if (TreeFootprint.isCap(state))
+            {
+                refuse(x, y, z, "cap not owned or joined to decoration");
+            }
             return false;
         }
         if (foreignChunks.contains(ChunkPos.pack(x >> 4, z >> 4)) || inBox(x, y, z) || touchesBuild(world, new BlockPos(x, y, z)))
         {
-            refused = true;
+            refuse(x, y, z, foreignChunks.contains(ChunkPos.pack(x >> 4, z >> 4)) ? "foreign claim" : inBox(x, y, z) ? "hut box" : "touches build");
             return false;
         }
         return true;

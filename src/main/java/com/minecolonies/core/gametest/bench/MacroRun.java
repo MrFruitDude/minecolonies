@@ -200,6 +200,13 @@ public final class MacroRun
     private long   rsOverheadTotal;
     private long   harnessCpuTotal;
     private long   startGameTime;
+    // Fixed-window AI qualification data, independent of the variable completion/drain window above.
+    private final long[] aiTickCpu = new long[6000];
+    private final long[] aiTickWall = new long[6000];
+    private int aiSamples;
+    private int aiQueueMax;
+    private int aiActiveMax;
+    private long aiLastWall;
 
     // observers
     private final Map<Integer, Vec3> lastPos = new HashMap<>();
@@ -373,6 +380,7 @@ public final class MacroRun
                 lastMarkRs = RsProbe.totalCpuNs();
                 lastMarkRsAlloc = RsProbe.totalAllocBytes();
                 lastMarkOverhead = RsProbe.overheadNs();
+                aiLastWall = System.nanoTime();
                 helper.runAfterDelay(1, this::tickLoop);
             });
         });
@@ -439,12 +447,24 @@ public final class MacroRun
         final long gameTime = level.getGameTime();
         final long tick = gameTime - startGameTime;
         final long elapsed = Math.max(1, gameTime - lastGameTime);
+        final long wallNow = System.nanoTime();
         // The window since the last call: whole server ticks, minus the bookkeeping this class did in its last call.
         final long cpu = Math.max(0, cpuNow - lastMarkCpu - harnessCpuPrev);
         final long alloc = Math.max(0, allocNow - lastMarkAlloc - harnessAllocPrev);
         final long overhead = Math.max(0, overheadNow - lastMarkOverhead);
         final long rs = Math.max(0, rsNow - lastMarkRs - overhead);
         final long rsAlloc = Math.max(0, rsAllocNow - lastMarkRsAlloc);
+        if (scenarioName.equals("ai_busy_fixed") && tick > 2000 && tick <= 8000)
+        {
+            helper.assertTrue(elapsed == 1 && aiSamples < aiTickCpu.length, "AI performance sampling skipped or duplicated a tick");
+            aiTickCpu[aiSamples] = cpu;
+            // Includes awaitPathing's bounded wait and previous harness bookkeeping; not a 20 TPS latency claim.
+            aiTickWall[aiSamples++] = wallNow - aiLastWall;
+            final var pool = com.minecolonies.core.entity.pathfinding.Pathfinding.getExecutor();
+            aiQueueMax = Math.max(aiQueueMax, pool.getQueue().size());
+            aiActiveMax = Math.max(aiActiveMax, pool.getActiveCount());
+        }
+        aiLastWall = wallNow;
         record(cpu / elapsed, rs / elapsed, alloc / elapsed, rsAlloc / elapsed, elapsed);
         rsOverheadTotal += overhead;
         lastGameTime = gameTime;
@@ -1335,6 +1355,34 @@ public final class MacroRun
         meter.addProperty("harnessCpuNsPerTick", samples == 0 ? 0 : (double) harnessCpuTotal / samples);
         meter.addProperty("rsCpuNsTotal", sumRs);
         out.add("meter", meter);
+        if (scenarioName.equals("ai_busy_fixed"))
+        {
+            final JsonObject fixed = new JsonObject();
+            fixed.addProperty("samples", aiSamples);
+            fixed.addProperty("fromTickExclusive", 2000);
+            fixed.addProperty("toTickInclusive", 8000);
+            fixed.addProperty("citizens", citizens.size());
+            fixed.addProperty("serverCpuP50Ns", quantile(aiTickCpu, aiSamples, 0.5));
+            fixed.addProperty("serverCpuP95Ns", quantile(aiTickCpu, aiSamples, 0.95));
+            fixed.addProperty("wallP50Ns", quantile(aiTickWall, aiSamples, 0.5));
+            fixed.addProperty("wallP95Ns", quantile(aiTickWall, aiSamples, 0.95));
+            fixed.addProperty("queueMaxAtSample", aiQueueMax);
+            fixed.addProperty("activePathsMaxAtSample", aiActiveMax);
+            final JsonArray cpuRaw = new JsonArray();
+            final JsonArray wallRaw = new JsonArray();
+            for (int i = 0; i < aiSamples; i++)
+            {
+                cpuRaw.add(aiTickCpu[i]);
+                wallRaw.add(aiTickWall[i]);
+            }
+            fixed.add("serverCpuNsRaw", cpuRaw);
+            fixed.add("wallNsRaw", wallRaw);
+            out.add("aiFixedWindow", fixed);
+            if (aiSamples != 6000)
+            {
+                errors.add("AI performance window has " + aiSamples + " samples instead of 6000");
+            }
+        }
 
         final JsonObject scopes = new JsonObject();
         for (int s = 0; s < RsProbe.SCOPES; s++)

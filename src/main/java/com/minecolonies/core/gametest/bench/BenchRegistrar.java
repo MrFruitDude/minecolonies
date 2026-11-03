@@ -64,6 +64,24 @@ public final class BenchRegistrar
 
     private static final net.minecraft.world.phys.AABB AABB_NONE = new net.minecraft.world.phys.AABB(0, 0, 0, 0, 0, 0);
 
+    /** Fixed seeded mixed-worker workload: two whole-scenario warmups, then one measured repeat. */
+    public static void registerAiPerf(final RegisterGameTestsEvent event)
+    {
+        macro(event, "ai_busy_fixed", 1, () -> {
+            final MacroRun.Scenario busy = Scenarios.busy(true);
+            return new MacroRun.Scenario()
+            {
+                @Override public void setup(final MacroRun run) { busy.setup(run); }
+                @Override public void staff(final MacroRun run) { busy.staff(run); }
+                @Override public void begin(final MacroRun run) { busy.begin(run); }
+                @Override public void onTick(final MacroRun run, final long tick) { busy.onTick(run, tick); }
+                @Override public boolean done(final MacroRun run, final long tick) { return tick >= 8000 && busy.done(run, tick); }
+                @Override public void stopDemand(final MacroRun run) { busy.stopDemand(run); }
+                @Override public int budget() { return busy.budget(); }
+            };
+        });
+    }
+
     /** Unmeasured repeats before the measured ones: the JIT is still compiling the request system during the first one. */
     private static final int MACRO_WARMUPS = 2;
     private static final int MICRO_WARMUPS = 2;

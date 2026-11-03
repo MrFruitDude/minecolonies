@@ -33,6 +33,9 @@ public class PathResult<T extends AbstractPathJob>
      */
     private volatile boolean pathReachesDestination = false;
 
+    private volatile boolean cancelled;
+
+
     /**
      * Finished path reference
      */
@@ -99,6 +102,10 @@ public class PathResult<T extends AbstractPathJob>
      */
     public void setStatus(final PathFindingStatus s)
     {
+        if (s == PathFindingStatus.CANCELLED)
+        {
+            cancelled = true;
+        }
         status = s;
     }
 
@@ -146,7 +153,7 @@ public class PathResult<T extends AbstractPathJob>
      */
     public boolean isCancelled()
     {
-        return status == PathFindingStatus.CANCELLED;
+        return cancelled || status == PathFindingStatus.CANCELLED;
     }
 
     /**
@@ -377,6 +384,7 @@ public class PathResult<T extends AbstractPathJob>
      */
     public void cancel()
     {
+        cancelled = true;
         if (pathCalculation != null)
         {
             pathCalculation.cancel(true);

@@ -41,14 +41,15 @@ public final class AliveGameTests
 {
     public static final String[] NAMES = {"alive_rules", "alive_chat", "alive_chat_yields", "alive_morning", "alive_building_cheer", "alive_grief", "alive_raid_relief",
       "alive_rain_hurry", "alive_rain_where", "alive_traits_stable", "alive_chat_pairs", "alive_calm_pace", "alive_morning_crowd", "alive_shelter_inside",
-      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe"};
+      "alive_no_cheer", "alive_shelter_dry", "alive_shelter_chat", "alive_leisure_rain_go", "alive_leisure_rain_wander", "alive_chorus", "alive_lines_wait", "alive_morning_dawn", "alive_greet_once_safe", "alive_greet_hearing_edge", "alive_chat_departure",
+      "alive_chat_wander_gate", "alive_greet_wander_gate", "alive_chat_pair_lifecycle", "alive_chat_raid_a_first", "alive_chat_raid_b_first", "alive_chat_raid_expired"};
 
     /**
      * Tests whose citizens must stand in the rain: they run without the barrier ceiling of the GameTest frame, which stops the rain (vanilla's isRainingAt
      * reads the MOTION_BLOCKING heightmap) while it lets the sky light through.
      */
     public static final java.util.Set<String> NEEDS_SKY = java.util.Set.of("alive_rain_hurry", "alive_rain_where", "alive_shelter_inside", "alive_shelter_dry",
-      "alive_shelter_chat", "alive_chorus", "alive_lines_wait");
+      "alive_shelter_chat", "alive_leisure_rain_go", "alive_leisure_rain_wander", "alive_chorus", "alive_lines_wait", "alive_chat_departure");
 
     /**
      * A life moment must give way within this many ticks: the AI decides every 10 ticks, a life step runs every 20, the setting is read once a second.
@@ -108,10 +109,20 @@ public final class AliveGameTests
             case "alive_no_cheer" -> AliveGameTests::noCheer;
             case "alive_shelter_dry" -> AliveGameTests::shelterDry;
             case "alive_shelter_chat" -> AliveGameTests::shelterChat;
+            case "alive_leisure_rain_go" -> helper -> shelterChat(helper, 1);
+            case "alive_leisure_rain_wander" -> helper -> shelterChat(helper, 2);
             case "alive_chorus" -> AliveGameTests::chorus;
             case "alive_lines_wait" -> AliveGameTests::linesWait;
+            case "alive_chat_departure" -> AliveGameTests::chatDeparture;
+            case "alive_chat_wander_gate" -> AliveGameTests::chatWanderGate;
+            case "alive_greet_wander_gate" -> AliveGameTests::greetingWanderGate;
+            case "alive_chat_pair_lifecycle" -> AliveGameTests::chatPairLifecycle;
+            case "alive_chat_raid_a_first" -> h -> chatRaidPair(h, false, false);
+            case "alive_chat_raid_b_first" -> h -> chatRaidPair(h, true, false);
+            case "alive_chat_raid_expired" -> h -> chatRaidPair(h, true, true);
             case "alive_morning_dawn" -> AliveGameTests::morningDawn;
             case "alive_greet_once_safe" -> AliveGameTests::greetOnceSafe;
+            case "alive_greet_hearing_edge" -> h -> greetOnceSafe(h, true);
             default -> AliveGameTests::rainHurry;
         };
     }
@@ -396,6 +407,7 @@ public final class AliveGameTests
             final EntityCitizen b = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
             makeTrait(a, LifeTrait.CHATTY);
             makeTrait(b, LifeTrait.CHATTY);
+            final LeisureVisitTestScope visits = new LeisureVisitTestScope(List.of(a.getCitizenData(), b.getCitizenData()));
             final long[] start = {-1};
             final long[] end = {-1};
             final boolean[] replied = {false};
@@ -404,15 +416,20 @@ public final class AliveGameTests
             final List<String> log = new ArrayList<>();
             final Runnable[] poll = new Runnable[1];
             final int[] ticks = {0};
-            poll[0] = () -> {
+            poll[0] = visits.guard(() -> {
                 ticks[0]++;
                 keepFed(a, b);
                 // This test checks a nearby pair's automatic chat, not the wander AI's choice of destinations.
-                pin(helper, a, new BlockPos(16, 1, 16));
-                pin(helper, b, new BlockPos(19, 1, 16));
+                // Once either partner starts, observe the AI without stopping navigation ourselves.
+                if (start[0] < 0 && !a.getLife().chatting() && !b.getLife().chatting())
+                {
+                    pin(helper, a, new BlockPos(16, 1, 16));
+                    pin(helper, b, new BlockPos(19, 1, 16));
+                }
                 final long now = helper.getLevel().getGameTime();
                 if (start[0] < 0 && (a.getLife().chatting() || b.getLife().chatting()))
                 {
+                    visits.close();
                     start[0] = now;
                     final EntityCitizen leader = a.getLife().chatLeader() ? a : b;
                     final EntityCitizen partner = leader == a ? b : a;
@@ -462,7 +479,7 @@ public final class AliveGameTests
                     return;
                 }
                 helper.runAfterDelay(1, () -> poll[0].run());
-            };
+            });
             helper.runAfterDelay(1, () -> poll[0].run());
         });
     }
@@ -1140,6 +1157,8 @@ public final class AliveGameTests
             final int hall = atHall;
             final long t0 = level.getGameTime();
             final boolean[] said = new boolean[all.size()];
+            final java.util.Map<Integer, String> previous = new java.util.HashMap<>();
+            final List<String> crowdTrace = new ArrayList<>();
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
                 final long now = level.getGameTime();
@@ -1151,6 +1170,18 @@ public final class AliveGameTests
                 {
                     final EntityCitizen c = all.get(i);
                     keepFed(c);
+                    final String state = c.getCitizenAI().getState() + "/active=" + c.getLife().greetingActive()
+                      + "/skipped=" + c.getLife().greetSkipped() + "/speech=" + c.getSpeech();
+                    if (!state.equals(previous.put(c.getCivilianID(), state)))
+                    {
+                        final String entry = "elapsed=" + (now - t0) + " id=" + c.getCivilianID() + " " + state
+                          + " age=" + (now - c.getLife().greetingStart()) + " spot=" + c.getLife().gatherSpot()
+                          + " pos=" + c.blockPosition() + " audience=" + c.getLife().someoneToGreet(c.blockPosition())
+                          + " navDone=" + c.getNavigation().isDone();
+                        if (crowdTrace.size() == 120) { crowdTrace.removeFirst(); }
+                        crowdTrace.add(entry);
+                        Log.getLogger().info("[morning crowd state] {}", entry);
+                    }
                     if (!said[i] && c.getSpeech().contains(".morning"))
                     {
                         helper.assertTrue(c.getLife().someoneToGreet(c.blockPosition()), "citizen " + c.getCivilianID() + " greets with nobody within "
@@ -1180,9 +1211,9 @@ public final class AliveGameTests
                         }
                         spoke += said[i] ? 1 : 0;
                     }
-                    helper.assertTrue(mute.isEmpty(), "greeters who never said their line: " + mute);
+                    helper.assertTrue(mute.isEmpty(), "greeters who never said their line: " + mute + " trace=" + crowdTrace);
                     helper.assertTrue(spoke >= ColonyLife.MAX_GREETERS_PER_SPOT, "only " + spoke + " greeted in a crowd");
-                    Log.getLogger().info("ALIVE RESULT morning_crowd greeters={} at_hall={}", greeters.size(), hall);
+                    Log.getLogger().info("ALIVE RESULT morning_crowd greeters={} at_hall={} trace={}", greeters.size(), hall, crowdTrace);
                     helper.succeed();
                     return;
                 }
@@ -1306,6 +1337,8 @@ public final class AliveGameTests
                         helper.assertTrue(!e.getLife().chatting() && !e.getLife().canJoinChat() && e.getCitizenAI().getState() != EntityAICitizenLife.LifeState.CHAT,
                           "a chat during the raid: citizen " + e.getCivilianID() + " in " + e.getCitizenAI().getState() + " says '" + e.getSpeech() + "'");
                     }
+                    helper.assertTrue(!talkA.getSpeech().startsWith(CitizenLife.CHAT) && !talkB.getSpeech().startsWith(CitizenLife.CHAT),
+                      "a chat bubble outlived raid entry: '" + talkA.getSpeech() + "' / '" + talkB.getSpeech() + "'");
                 }
                 for (int i = 0; i < who.length; i++)
                 {
@@ -1403,6 +1436,11 @@ public final class AliveGameTests
      */
     public static void shelterChat(final GameTestHelper helper)
     {
+        shelterChat(helper, 0);
+    }
+
+    private static void shelterChat(final GameTestHelper helper, final int leisureProbe)
+    {
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-shelter-chat");
         midday(helper);
         helper.runAfterDelay(40, () -> {
@@ -1424,31 +1462,59 @@ public final class AliveGameTests
             final int z0 = Math.max(Math.min(plotA.getZ(), plotB.getZ()), Math.min(cA.getZ(), cB.getZ()) - 1);
             final int z1 = Math.min(Math.max(plotA.getZ(), plotB.getZ()), Math.max(cA.getZ(), cB.getZ()) + 1);
             helper.assertTrue(x0 <= x1 && z0 <= z1, "precondition failed: the house " + cA + " " + cB + " is off the plot " + plotA + " " + plotB);
+            final int[] placements = {0, 0};
             for (int x = x0; x <= x1; x++)
             {
                 for (int z = z0; z <= z1; z++)
                 {
-                    level.setBlock(new BlockPos(x, roofY, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+                    placements[0]++;
+                    if (level.setBlock(new BlockPos(x, roofY, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3)) { placements[1]++; }
                 }
             }
-            // the roof is sky light: canSeeSky reads it, and the light engine settles the new roof a few ticks later, not on the tick it is laid
+            // Sky visibility is the production check. Setup waits for it without treating unpaced ticks as elapsed wall time.
             final BlockPos inside = EntityAICitizenLife.insideSpot(home, 0);
+            final BlockPos roofColumn = new BlockPos(inside.getX(), roofY, inside.getZ());
             final long roofedAt = level.getGameTime();
+            final long roofedAtNs = System.nanoTime();
+            final java.util.function.Supplier<String> roofSnapshot = () -> {
+                final List<String> column = new ArrayList<>();
+                for (int y = inside.getY(); y <= roofY + 1; y++)
+                { column.add(y + ":" + level.getBlockState(new BlockPos(inside.getX(), y, inside.getZ()))); }
+                return "ticks=" + (level.getGameTime() - roofedAt) + " milliseconds=" + (System.nanoTime() - roofedAtNs) / 1_000_000L
+                  + " inside=" + inside + " member=" + home.isInBuilding(inside) + " sky=" + level.canSeeSky(inside.above())
+                  + " brightness=" + level.getBrightness(net.minecraft.world.level.LightLayer.SKY, inside.above())
+                  + " height=" + level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, inside.getX(), inside.getZ())
+                  + " chunk=" + (inside.getX() >> 4) + "," + (inside.getZ() >> 4) + " chunkLoaded=" + level.hasChunkAt(inside)
+                  + " corners=" + home.getCorners().getA() + "/" + home.getCorners().getB()
+                  + " roofY=" + roofY + " roofX=" + x0 + ".." + x1 + " roofZ=" + z0 + ".." + z1
+                  + " placementCalls=" + placements[0] + " changed=" + placements[1] + " column=" + column;
+            };
+            Log.getLogger().info("ALIVE ROOF placed {}", roofSnapshot.get());
             final Runnable[] lit = new Runnable[1];
             lit[0] = () -> {
-                if (level.canSeeSky(inside.above()) && level.getGameTime() - roofedAt < 100)
+                final long settleTicks = level.getGameTime() - roofedAt;
+                if (settleTicks == 100) { Log.getLogger().info("ALIVE ROOF old_tick_bound {}", roofSnapshot.get()); }
+                if (level.canSeeSky(inside.above()) && settleTicks < 10_000 && System.nanoTime() - roofedAtNs < 5_000_000_000L)
                 {
                     helper.runAfterDelay(1, () -> lit[0].run());
                     return;
                 }
-                helper.assertTrue(home.isInBuilding(inside) && !level.canSeeSky(inside.above()), "precondition failed: the house is not roofed at " + inside + " roof y " + roofY
-                                                                                                 + " x " + x0 + ".." + x1 + " z " + z0 + ".." + z1);
+                final String settled = roofSnapshot.get();
+                Log.getLogger().info("ALIVE ROOF exit {}", settled);
+                helper.assertTrue(home.isInBuilding(inside), "precondition failed: inside point is outside the house: " + settled);
+                helper.assertTrue(level.getBlockState(roofColumn).is(net.minecraft.world.level.block.Blocks.STONE), "precondition failed: roof column stone missing: " + settled);
+                helper.assertTrue(!level.canSeeSky(inside.above()), "precondition failed: the roof has not blocked sky visibility: " + settled);
+                // Async fixture setup may advance the unpaced clock; start the behavior at the intended midday.
+                midday(helper);
                 for (int i = 0; i < 2; i++)
                 {
                     final BlockPos start = helper.absolutePos(new BlockPos(6 + i * 2, 1, 24));
                     helper.assertTrue(!home.isInBuilding(start) && level.canSeeSky(start.above()), "precondition failed: the roof covers the start " + start + " roof x "
                                                                                                   + x0 + ".." + x1 + " z " + z0 + ".." + z1);
                 }
+                rain(helper, true);
+                level.setRainLevel(1.0F);
+                helper.assertTrue(level.isRaining(), "precondition failed: rain has not become effective");
                 final EntityCitizen[] mates = new EntityCitizen[2];
                 for (int i = 0; i < 2; i++)
                 {
@@ -1483,13 +1549,29 @@ public final class AliveGameTests
                 }
                 helper.assertTrue(guestSpot != null, "precondition failed: no dry spot for the guest by " + inside);
                 final BlockPos guestAt = guestSpot;
+                if (leisureProbe != 0)
+                {
+                    leisureRainProbe(helper, a, home, leisureProbe == 2);
+                    return;
+                }
                 rain(helper, true);
                 final long t0 = helper.getLevel().getGameTime();
                 final String[] opener = {""};
                 final long[] chatEnd = {-1};
+                final List<String> shelterTrace = new ArrayList<>();
+                final String[] priorStates = {""};
                 final Runnable[] poll = new Runnable[1];
                 poll[0] = () -> {
                     keepFed(a, b, guest);
+                    final String states = a.getCitizenAI().getState() + "/" + b.getCitizenAI().getState();
+                    if (!states.equals(priorStates[0]))
+                    {
+                        priorStates[0] = states;
+                        final String entry = (level.getGameTime() - t0) + " a=" + shelterGates(a) + " b=" + shelterGates(b);
+                        if (shelterTrace.size() == 40) { shelterTrace.removeFirst(); }
+                        shelterTrace.add(entry);
+                        Log.getLogger().info("[shelter chat state] {}", entry);
+                    }
                     if (guestData.getHomeBuilding() != null)
                     {
                         // the colony may give the homeless guest a free bed; he stays a guest
@@ -1521,7 +1603,7 @@ public final class AliveGameTests
                         helper.assertTrue(a.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER || b.getCitizenAI().getState() == EntityAICitizenLife.LifeState.SHELTER,
                           "after the chat nobody waits out the rain: " + a.getCitizenAI().getState() + " / " + b.getCitizenAI().getState());
                         rain(helper, false);
-                        Log.getLogger().info("ALIVE RESULT shelter_chat chat_after={} opener={}", chatEnd[0] - t0, opener[0]);
+                        Log.getLogger().info("ALIVE RESULT shelter_chat chat_after={} opener={}", chatEnd[0] - t0, opener[0] + " trace=" + shelterTrace);
                         helper.succeed();
                         return;
                     }
@@ -1529,7 +1611,7 @@ public final class AliveGameTests
                     {
                         rain(helper, false);
                         helper.fail("no chat in the shelter: states " + a.getCitizenAI().getState() + " / " + b.getCitizenAI().getState() + " at " + a.blockPosition() + " "
-                                      + b.blockPosition() + " inside " + a.getLife().shelteredAtHome() + "/" + b.getLife().shelteredAtHome());
+                                      + b.blockPosition() + " inside " + a.getLife().shelteredAtHome() + "/" + b.getLife().shelteredAtHome() + " trace=" + shelterTrace);
                         return;
                     }
                     helper.runAfterDelay(1, () -> poll[0].run());
@@ -1540,11 +1622,114 @@ public final class AliveGameTests
         });
     }
 
+    private static String shelterGates(final EntityCitizen citizen)
+    {
+        return citizen.getCitizenAI().getState() + " pos=" + citizen.blockPosition()
+          + " wants=" + citizen.getLife().wantsShelter() + " hurries=" + citizen.getLife().hurriesInRain()
+          + " home=" + citizen.getLife().shelteredAtHome() + " navDone=" + citizen.getNavigation().isDone();
+    }
+
+    /** Controlled entry only: the route to the leisure site, rain response and walk home remain native. */
+    private static void leisureRainProbe(final GameTestHelper helper, final EntityCitizen citizen, final IBuilding home, final boolean afterArrival)
+    {
+        final ServerLevel level = helper.getLevel();
+        rain(helper, !afterArrival);
+        level.setRainLevel(afterArrival ? 0.0F : 1.0F);
+        final BlockPos site = afterArrival ? citizen.getCitizenData().getColony().getServerBuildingManager().getTownHall().getPosition()
+          : helper.absolutePos(new BlockPos(6, 1, 4));
+        helper.assertTrue(!home.isInBuilding(site) && level.canSeeSky(site.above()), "probe leisure site must be outdoors");
+        helper.assertTrue(home.getPosition().distSqr(site) < 48 * 48, "probe home must be nearby");
+        final boolean[] injected = {false};
+        citizen.getCitizenAI().addTransition(new com.minecolonies.api.entity.ai.statemachine.AIOneTimeEventTarget<IState>(
+          (com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.IStateSupplier<IState>) () -> {
+              final Object decision = ChatTrace.read(citizen, EntityCitizen.class, "decisionAI");
+              final List<?> minimal = (List<?>) ChatTrace.read(decision, CitizenAI.class, "minimalAI");
+              final Object wander = minimal.stream().filter(EntityAICitizenWander.class::isInstance).findFirst().orElseThrow();
+              try
+              {
+                  final var destination = EntityAICitizenWander.class.getDeclaredField("leisureSite");
+                  destination.setAccessible(true);
+                  destination.set(wander, site);
+              }
+              catch (final ReflectiveOperationException failure) { throw new IllegalStateException(failure); }
+              injected[0] = true;
+              return EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE;
+          }));
+        final long began = level.getGameTime();
+        final long[] eligible = {-1};
+        final long[] sheltered = {-1};
+        final com.minecolonies.core.entity.other.SittingEntity[] seat = {null};
+        final List<String> trace = new ArrayList<>();
+        final Runnable[] poll = new Runnable[1];
+        poll[0] = () -> {
+            keepFed(citizen);
+            final long now = level.getGameTime();
+            final IState state = citizen.getCitizenAI().getState();
+            final IState target = afterArrival ? EntityAICitizenWander.WanderState.WANDER_AT_LEISURE_SITE
+              : EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE;
+            if (injected[0] && eligible[0] < 0 && state == target)
+            {
+                if (afterArrival)
+                {
+                    helper.assertTrue(level.getBlockEntity(site) instanceof com.ldtteam.structurize.blockentities.interfaces.IBlueprintDataProviderBE,
+                      "WANDER probe must use a real building leisure site");
+                    helper.assertTrue(com.minecolonies.core.entity.other.SittingEntity.sitDown(citizen.blockPosition().below(), citizen, 600),
+                      "probe could not establish its seat input");
+                    helper.assertTrue(citizen.getVehicle() instanceof com.minecolonies.core.entity.other.SittingEntity,
+                      "probe citizen is not seated");
+                    seat[0] = (com.minecolonies.core.entity.other.SittingEntity) citizen.getVehicle();
+                    rain(helper, true);
+                    level.setRainLevel(1.0F);
+                }
+                helper.assertTrue(citizen.getLife().wantsShelter() && citizen.getLife().hurriesInRain(), "probe entry not shelter eligible: " + shelterGates(citizen));
+                eligible[0] = now;
+            }
+            if (trace.size() == 120) { trace.removeFirst(); }
+            trace.add((now - began) + " " + shelterGates(citizen));
+            if (eligible[0] >= 0 && sheltered[0] < 0 && state == EntityAICitizenLife.LifeState.SHELTER)
+            {
+                helper.assertTrue(!afterArrival || !citizen.isPassenger(), "shelter entry left the citizen seated");
+                sheltered[0] = now;
+            }
+            helper.assertTrue(!afterArrival || eligible[0] < 0 || sheltered[0] >= 0 || state == target,
+              "WANDER probe bypassed the shelter transition through another state: " + trace);
+            helper.assertTrue(eligible[0] < 0 || sheltered[0] >= 0 || now - eligible[0] <= 80,
+              "eligible leisure citizen did not begin shelter within 80 ticks: " + trace);
+            if (sheltered[0] >= 0 && citizen.getLife().shelteredAtHome())
+            {
+                rain(helper, false);
+                helper.assertTrue(!afterArrival || seat[0] != null && seat[0].isRemoved() && !citizen.isPassenger(),
+                  "shelter did not remove its seat and dismount the citizen");
+                Log.getLogger().info("ALIVE RESULT leisure_rain arrival={} eligible={} shelter={} seatRemoved={} trace={}",
+                  afterArrival, eligible[0] - began, sheltered[0] - began, seat[0] == null ? "not seated" : seat[0].isRemoved(), trace);
+                helper.succeed();
+                return;
+            }
+            helper.assertTrue(now - began <= 800, "probe entry or native walk home did not finish: " + trace);
+            helper.runAfterDelay(1, () -> poll[0].run());
+        };
+        helper.runAfterDelay(1, () -> poll[0].run());
+    }
+
     /**
      * Round 7 (R6-F3, N48), round 8 (R7-F2, N56): a dawn with real sleepers: their own AI puts them to sleep at night and gets them up at their wake time. A
      * first riser whose only neighbour sleeps on past the wait goes on with his day at once, without a word and without standing still. A first riser with a
      * neighbour due inside the wait holds his greeting, the neighbour gets up by himself inside it, and he is greeted then, never before.
      */
+    private static String dawnAudience(final EntityCitizen greeter, final EntityCitizen[] sleepers, final EntityCitizen late)
+    {
+        final BlockPos at = greeter.blockPosition();
+        return greeter.level().getEntitiesOfClass(EntityCitizen.class, new net.minecraft.world.phys.AABB(at).inflate(CitizenLife.GREET_HEAR_RANGE),
+          other -> other != greeter && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == greeter.getCitizenColonyHandler().getColonyId()
+            && !other.getCitizenSleepHandler().isAsleep() && other.blockPosition().distSqr(at) <= CitizenLife.GREET_HEAR_RANGE * CitizenLife.GREET_HEAR_RANGE)
+          .stream().map(other -> {
+              String role = other == late ? "late" : "other";
+              for (int i = 0; i < sleepers.length; i++) { if (other == sleepers[i]) { role = "sleeper" + i; } }
+              return role + ":id=" + other.getCivilianID() + ":uuid=" + other.getUUID() + ":colony=" + other.getCitizenColonyHandler().getColonyId()
+                + ":block=" + other.blockPosition() + ":distSqr=" + other.blockPosition().distSqr(at) + ":asleep=" + other.getCitizenSleepHandler().isAsleep();
+          }).toList().toString();
+    }
+
     public static void morningDawn(final GameTestHelper helper)
     {
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-morning-dawn");
@@ -1596,6 +1781,7 @@ public final class AliveGameTests
                 final long[] greetFrom = {-1};
                 final long[] wokeAt = {-1};
                 final long[] greetedAt = {-1};
+                final String[] lastGreetingState = {""};
                 final Runnable[] poll = new Runnable[1];
                 poll[0] = () -> {
                     hold.run();
@@ -1627,6 +1813,17 @@ public final class AliveGameTests
                                             && late[0].getCitizenAI().getState() != EntityAICitizenLife.LifeState.MORNING_GATHER,
                           "the late greeter held work or greeted a sleeper: '" + late[0].getSpeech() + "' " + late[0].getCitizenAI().getState());
                     }
+                    // Its skipped-greeting contract is checked for 60 ticks; keep that separate cohort out of the first riser's audience afterwards.
+                    if (late[0] != null && now - lateFrom[0] > 60)
+                    {
+                        keepFed(late[0]);
+                        pin(helper, late[0], lateAt);
+                    }
+                    if (late[0] != null && now - lateFrom[0] > 60 && (now - lateFrom[0]) % 20 == 0)
+                    {
+                        Log.getLogger().info("[morning dawn late] elapsed={} id={} block={} greeterDistSqr={}", now - lateFrom[0],
+                          late[0].getCivilianID(), late[0].blockPosition(), late[0].blockPosition().distSqr(helper.absolutePos(greeterAt)));
+                    }
                     final int wake = Math.min(CitizenAI.wakeDelayOf(sleepers[0]), CitizenAI.wakeDelayOf(sleepers[1]));
                     if (greeter[0] == null)
                     {
@@ -1642,7 +1839,7 @@ public final class AliveGameTests
                         makeTrait(greeter[0], LifeTrait.BRISK);
                         toGreetingDay(helper, greeter[0]);
                         final EntityCitizen g = greeter[0];
-                        helper.assertTrue(!g.getLife().someoneToGreet(g.blockPosition()), "precondition failed: someone is awake by the first riser");
+                        helper.assertTrue(!g.getLife().someoneToGreet(g.blockPosition()), "precondition failed: someone is awake by the first riser: " + dawnAudience(g, sleepers, late[0]));
                         helper.assertTrue(g.getLife().greetingHolds(true) && g.getLife().gatherSpot() == null && g.getLife().awaitingListener(),
                           "a first riser with a neighbour due does not wait: holds " + g.getLife().greetingHolds(true) + " spot " + g.getLife().gatherSpot());
                         greetFrom[0] = now;
@@ -1651,6 +1848,16 @@ public final class AliveGameTests
                     }
                     final EntityCitizen g = greeter[0];
                     keepFed(g);
+                    final String greetingState = "state=" + g.getCitizenAI().getState() + ", active=" + g.getLife().greetingActive()
+                      + ", waiting=" + g.getLife().awaitingListener() + ", skipped=" + g.getLife().greetSkipped()
+                      + ", spot=" + g.getLife().gatherSpot() + ", speech=" + g.getSpeech() + ", position=" + g.blockPosition()
+                      + ", hearers=" + dawnAudience(g, sleepers, late[0]) + ", productSomeone=" + g.getLife().someoneToGreet(g.blockPosition()) + ", trackedAsleep=" + sleepers[0].getCitizenSleepHandler().isAsleep()
+                      + "/" + sleepers[1].getCitizenSleepHandler().isAsleep() + ", lateId=" + late[0].getCivilianID() + ", latePosition=" + late[0].blockPosition();
+                    if (!greetingState.equals(lastGreetingState[0]))
+                    {
+                        Log.getLogger().info("[morning dawn] elapsed={} age={} {}", now - greetFrom[0], now - g.getLife().greetingStart(), greetingState);
+                        lastGreetingState[0] = greetingState;
+                    }
                     if (wokeAt[0] < 0 && (!sleepers[0].getCitizenSleepHandler().isAsleep() || !sleepers[1].getCitizenSleepHandler().isAsleep()))
                     {
                         wokeAt[0] = now;
@@ -1659,7 +1866,7 @@ public final class AliveGameTests
                     if (greetedAt[0] < 0 && g.getSpeech().contains(".morning"))
                     {
                         greetedAt[0] = now;
-                        helper.assertTrue(wokeAt[0] >= 0, "the first riser greeted before anyone woke, at " + (now - greetFrom[0]));
+                        helper.assertTrue(wokeAt[0] >= 0, "the first riser greeted before anyone woke, at " + (now - greetFrom[0]) + ": " + greetingState);
                         helper.assertTrue(g.getLife().someoneToGreet(g.blockPosition()), "the first riser greets with nobody awake near");
                     }
                     if (g.getLife().greetingHolds(true))
@@ -1690,9 +1897,28 @@ public final class AliveGameTests
      */
     public static void greetOnceSafe(final GameTestHelper helper)
     {
+        greetOnceSafe(helper, false);
+    }
+
+    private static void greetOnceSafe(final GameTestHelper helper, final boolean hearingEdge)
+    {
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "alive-greet-once-safe");
         midday(helper);
         final ServerLevel level = helper.getLevel();
+        if (hearingEdge)
+        {
+            // The edge approach extends west of the vanilla force-loaded structure box.
+            // Promote its chunks before the existing setup delay and greeting budget.
+            final BlockPos edgeMin = helper.absolutePos(new BlockPos(-8, 0, -4));
+            final BlockPos edgeMax = helper.absolutePos(new BlockPos(-1, 0, 8));
+            for (int chunkX = edgeMin.getX() >> 4; chunkX <= edgeMax.getX() >> 4; chunkX++)
+            {
+                for (int chunkZ = edgeMin.getZ() >> 4; chunkZ <= edgeMax.getZ() >> 4; chunkZ++)
+                {
+                    level.setChunkForced(chunkX, chunkZ, true);
+                }
+            }
+        }
         // the rule itself, on the plot's stone floor
         helper.assertTrue(CitizenLife.safeStand(level, helper.absolutePos(new BlockPos(30, 1, 4))), "plain stone floor is not safe to stand on");
         helper.setBlock(new BlockPos(31, 0, 4), net.minecraft.world.level.block.Blocks.MAGMA_BLOCK.defaultBlockState());
@@ -1753,15 +1979,75 @@ public final class AliveGameTests
             helper.assertTrue(!reloaded.greetingHolds(true) && reloaded.gatherSpot() == null, "a reloaded greeter greets again the same morning");
             helper.assertTrue(shut.getLife().greetingHolds(true) && shut.getLife().gatherSpot() != null, "precondition failed: the shut-in greeter has no spot");
             final BlockPos shutSpot = shut.getLife().gatherSpot();
+            final BlockPos actualListenerAt = spot.offset(2, 0, 0).subtract(helper.absolutePos(BlockPos.ZERO));
+            helper.assertTrue(helper.absolutePos(actualListenerAt).equals(spot.offset(2, 0, 0)), "listener coordinate round trip failed");
+            pin(helper, listener, actualListenerAt);
+            helper.assertTrue(listener.blockPosition().equals(spot.offset(2, 0, 0)), "listener was not placed beside the actual spot");
+            helper.assertTrue(greeter.getLife().someoneToGreet(spot), "precondition failed: no listener at the actual greeting spot");
+            if (hearingEdge)
+            {
+                // The hearing-edge variant needs an open route; the separate safety case retains all original terrain.
+                for (int dx = -5; dx <= 1; dx++)
+                {
+                    final BlockPos cell = spot.offset(dx, 0, 0);
+                    level.setBlockAndUpdate(cell.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                    level.setBlockAndUpdate(cell, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                    level.setBlockAndUpdate(cell.above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                }
+                // Same block-position distance of eight, with 0.85 blocks of exact-distance margin.
+                // A normal physics step before the first test poll must not erase the precondition.
+                greeter.setPos(spot.getX() - 4.9D, spot.getY(), spot.getZ() + 0.5D);
+                listener.setPos(spot.getX() + 3.95D, spot.getY(), spot.getZ() + 0.5D);
+                helper.assertTrue(greeter.getLife().someoneToGreet(greeter.blockPosition()) && greeter.distanceToSqr(listener) > 64,
+                  "fixture did not straddle block and exact hearing predicates");
+                for (final EntityCitizen actor : new EntityCitizen[] {greeter, listener, shut})
+                {
+                    helper.assertTrue(level.isPositionEntityTicking(actor.blockPosition()),
+                      "precondition failed: hearing-edge actor not entity-ticking at " + actor.blockPosition());
+                }
+                Log.getLogger().info("[greet edge ticking] origin={} greeter={} entityTicking={} tickCount={}",
+                  helper.absolutePos(BlockPos.ZERO), greeter.blockPosition(), level.isPositionEntityTicking(greeter.blockPosition()), greeter.tickCount);
+            }
             final long t0 = level.getGameTime();
+            final int initialGreeterTicks = greeter.tickCount;
             final int[] lines = {0};
             final boolean[] speaking = {false};
             final long[] shutEnded = {-1};
+            final boolean[] edgeObserved = {false};
+            final String[] lastState = {""};
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
                 final long now = level.getGameTime();
                 keepFed(greeter, shut, listener);
-                pin(helper, listener, listenerAt);
+                pin(helper, listener, actualListenerAt);
+                if (hearingEdge)
+                {
+                    listener.setPos(spot.getX() + 3.95D, spot.getY(), spot.getZ() + 0.5D);
+                }
+                if (hearingEdge && !edgeObserved[0] && greeter.getCitizenAI().getState() == EntityAICitizenLife.LifeState.MORNING_GATHER)
+                {
+                    final var eligible = level.getEntitiesOfClass(EntityCitizen.class, greeter.getBoundingBox().inflate(CitizenLife.GREET_HEAR_RANGE),
+                      other -> other != greeter && other.isAlive() && other.getCitizenColonyHandler().getColonyId() == colony.getID()
+                        && !other.getCitizenSleepHandler().isAsleep() && other.distanceToSqr(greeter) <= 64);
+                    helper.assertTrue(eligible.isEmpty() && greeter.distanceToSqr(listener) > 64 && greeter.getLife().someoneToGreet(greeter.blockPosition()),
+                      "first gather did not retain empty exact listener set at block hearing edge: " + eligible + " distance " + greeter.distanceToSqr(listener));
+                    helper.assertTrue(!greeter.getLife().greetSkipped() && !greeter.getSpeech().contains(".morning"), "edge skipped or spoke before approaching");
+                    for (int dx = -5; dx <= 1; dx++)
+                    {
+                        helper.assertTrue(CitizenLife.safeStand(level, spot.offset(dx, 0, 0)), "edge route obstructed at " + spot.offset(dx, 0, 0));
+                    }
+                    edgeObserved[0] = true;
+                    Log.getLogger().info("[greet first gather edge] position={} listener={} distance={} eligible={} entityTicking={} tickDelta={}",
+                      greeter.position(), listener.position(), greeter.distanceToSqr(listener), eligible.size(),
+                      level.isPositionEntityTicking(greeter.blockPosition()), greeter.tickCount - initialGreeterTicks);
+                }
+                final String state = "state=" + greeter.getCitizenAI().getState() + ", skipped=" + greeter.getLife().greetSkipped()
+                  + ", position=" + greeter.blockPosition() + ", listener=" + listener.blockPosition() + ", spot=" + spot + ", speech=" + greeter.getSpeech();
+                if (!state.equals(lastState[0]))
+                {
+                    Log.getLogger().info("[greet safe] elapsed={} {}", now - t0, state);
+                    lastState[0] = state;
+                }
                 final boolean says = greeter.getSpeech().contains(".morning");
                 lines[0] += says && !speaking[0] ? 1 : 0;
                 speaking[0] = says;
@@ -1775,6 +2061,9 @@ public final class AliveGameTests
                 }
                 if (now - t0 > CitizenLife.MORNING_BUDGET + 60)
                 {
+                    helper.assertTrue(!hearingEdge || edgeObserved[0], "no first-gather hearing edge observed: origin=" + helper.absolutePos(BlockPos.ZERO)
+                      + " chunk=" + (greeter.blockPosition().getX() >> 4) + "," + (greeter.blockPosition().getZ() >> 4)
+                      + " entityTicking=" + level.isPositionEntityTicking(greeter.blockPosition()) + " tickDelta=" + (greeter.tickCount - initialGreeterTicks));
                     helper.assertTrue(lines[0] == 1, "the greeter said his morning line " + lines[0] + " times");
                     helper.assertTrue(!greeter.getLife().greetingHolds(true) && !new CitizenLife(greeter).greetingHolds(true), "the greeting came back");
                     helper.assertTrue(shutEnded[0] >= 0, "the shut-in greeter still holds his greeting");
@@ -1909,17 +2198,19 @@ public final class AliveGameTests
             final long[] rainAfter = {-1};
             final long[] cheerAfter = {-1};
             final boolean[] relief = {false};
+            final ChatTrace trace = new ChatTrace(a, b, c);
             final Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
                 keepFed(a, b, c);
                 pin(helper, c, cAt);
                 final long now = helper.getLevel().getGameTime();
+                trace.capture();
                 final boolean talking = a.getLife().chatting() || b.getLife().chatting();
                 if (talking)
                 {
                     helper.assertTrue(!a.getSpeech().startsWith(CitizenLife.RAIN) && !b.getSpeech().startsWith(CitizenLife.RAIN), "a rain remark over the chat: '"
                                                                                                                               + a.getSpeech() + "' '" + b.getSpeech() + "'");
-                    helper.assertTrue(!b.getSpeech().startsWith(CitizenLife.CHEER_BUILDING), "a cheer over the chat");
+                    helper.assertTrue(!b.getSpeech().startsWith(CitizenLife.CHEER_BUILDING), "a cheer over the chat " + trace.describe());
                 }
                 else if (chatEnd[0] < 0)
                 {
@@ -1939,6 +2230,7 @@ public final class AliveGameTests
                     rain(helper, false);
                     Log.getLogger().info("ALIVE RESULT lines_wait chat_end={} rain_after={} cheer_after={}", chatEnd[0] - t0, rainAfter[0] - chatEnd[0],
                       cheerAfter[0] - chatEnd[0]);
+                    Log.getLogger().info("ALIVE CHAT TRACE {}", trace.describe());
                     helper.succeed();
                     return;
                 }
@@ -1946,13 +2238,340 @@ public final class AliveGameTests
                 {
                     rain(helper, false);
                     helper.fail("lines missing: chat end " + chatEnd[0] + " rain " + rainAfter[0] + " cheer " + cheerAfter[0] + " relief " + relief[0] + " a '"
-                                  + a.getSpeech() + "' b '" + b.getSpeech() + "' c '" + c.getSpeech() + "'");
+                                  + a.getSpeech() + "' b '" + b.getSpeech() + "' c '" + c.getSpeech() + "' " + trace.describe());
                     return;
                 }
                 helper.runAfterDelay(1, () -> poll[0].run());
             };
             helper.runAfterDelay(1, () -> poll[0].run());
         });
+    }
+
+    /** A real event transition takes one participant out of chat, as the leisure decision can do. */
+    private static void chatDeparture(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "chat departure");
+        midday(helper);
+        rain(helper, false);
+        helper.getLevel().setRainLevel(0.0F);
+        helper.runAfterDelay(40, () -> {
+            fillBiome(helper, new BlockPos(-8, 0, -8), new BlockPos(39, 12, 31), net.minecraft.world.level.biome.Biomes.PLAINS);
+            final EntityCitizen a = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));
+            final EntityCitizen b = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
+            makeTrait(a, LifeTrait.BRISK);
+            makeTrait(b, LifeTrait.BRISK);
+            keepFed(a, b);
+            helper.assertTrue(a.getLife().canJoinChat() && b.getLife().canJoinChat(), "departure fixture pair is not eligible " + lifeGates(a) + " / " + lifeGates(b));
+            a.getLife().startChat(b);
+            helper.assertTrue(a.getLife().chatPartnerId() == b.getCivilianID() && b.getLife().chatPartnerId() == a.getCivilianID(), "chat pair is not reciprocal");
+            b.getLife().schedule(CitizenLife.CHEER_BUILDING + "2", 0, true);
+            final ChatTrace trace = new ChatTrace(a, b);
+            final boolean[] eventSeen = {false};
+            final boolean[] activePairAtEvent = {false};
+            // Give the real leisure action a destination, so it cannot immediately return to IDLE.
+            a.getCitizenAI().addTransition(new com.minecolonies.api.entity.ai.statemachine.AIOneTimeEventTarget<IState>(
+              (com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.IStateSupplier<IState>) () -> {
+                activePairAtEvent[0] = a.getLife().chatting() && b.getLife().chatting();
+                final Object decision = ChatTrace.read(a, EntityCitizen.class, "decisionAI");
+                helper.assertTrue(decision != null, "departure decision AI is not initialized");
+                final List<?> minimal = (List<?>) ChatTrace.read(decision, CitizenAI.class, "minimalAI");
+                final Object wander = minimal.stream().filter(EntityAICitizenWander.class::isInstance).findFirst().orElseThrow();
+                try
+                {
+                    final var site = EntityAICitizenWander.class.getDeclaredField("leisureSite");
+                    site.setAccessible(true);
+                    site.set(wander, helper.absolutePos(new BlockPos(36, 1, 29)));
+                }
+                catch (final ReflectiveOperationException e)
+                {
+                    throw new IllegalStateException(e);
+                }
+                eventSeen[0] = true;
+                return EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE;
+            }));
+            rain(helper, true);
+            final long t0 = helper.getLevel().getGameTime();
+            final long[] departed = {-1};
+            final boolean[] cheer = {false};
+            final boolean[] rainLine = {false};
+            final Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                keepFed(a, b);
+                trace.capture();
+                final long now = helper.getLevel().getGameTime();
+                helper.assertTrue(!eventSeen[0] || activePairAtEvent[0], "departure event did not interrupt an active pair " + trace.describe());
+                if (departed[0] < 0 && a.getCitizenAI().getState() == EntityAICitizenWander.WanderState.GO_TO_LEISURE_SITE)
+                {
+                    helper.assertTrue(eventSeen[0], "departure was not caused by the controlled event " + trace.describe());
+                    departed[0] = now;
+                }
+                final boolean talking = a.getLife().chatting() || b.getLife().chatting();
+                helper.assertTrue(!talking || !b.getSpeech().startsWith(CitizenLife.CHEER_BUILDING), "departure cheer over chat " + trace.describe());
+                if (departed[0] >= 0 && now - departed[0] >= YIELD_TICKS)
+                {
+                    helper.assertTrue(!talking, "departed participant retains a stale chat " + trace.describe());
+                }
+                cheer[0] |= b.getSpeech().startsWith(CitizenLife.CHEER_BUILDING);
+                rainLine[0] |= a.getSpeech().startsWith(CitizenLife.RAIN);
+                if (departed[0] >= 0 && !talking && cheer[0] && rainLine[0])
+                {
+                    rain(helper, false);
+                    Log.getLogger().info("ALIVE RESULT chat_departure elapsed={} {}", now - t0, trace.describe());
+                    helper.succeed();
+                    return;
+                }
+                helper.assertTrue(now - t0 < 400, "departure event or queued lines did not finish " + trace.describe());
+                helper.runAfterDelay(1, () -> poll[0].run());
+            };
+            helper.runAfterDelay(1, () -> poll[0].run());
+        });
+    }
+
+    /** The idle decision, unlike an urgent event, must respect the invitation before CHAT entry. */
+    private static void chatWanderGate(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "chat wander gate");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            final EntityCitizen a = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));
+            final EntityCitizen b = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
+            a.getNavigation().stop();
+            final var wander = new EntityAICitizenWander(a, 0.6D);
+            helper.assertTrue(a.getCitizenAI().getState() == CitizenAIState.IDLE && wander.canUse(), "wander gate fixture not otherwise eligible");
+            a.getLife().startChat(b);
+            helper.assertTrue(!wander.canUse(), "idle wandering accepts a citizen already chatting");
+            try
+            {
+                final var decide = EntityAICitizenWander.class.getDeclaredMethod("decide");
+                decide.setAccessible(true);
+                helper.assertTrue(decide.invoke(wander) == CitizenAIState.IDLE && a.getNavigation().isDone(), "wander decision started a walk during chat");
+            }
+            catch (final ReflectiveOperationException e)
+            {
+                throw new IllegalStateException(e);
+            }
+            a.getLife().endChat();
+            helper.assertTrue(wander.canUse(), "ending the chat did not restore idle wander eligibility");
+            helper.succeed();
+        });
+    }
+
+    /** Component boundary: idle movement must not steal the native greeting hold. */
+    private static void greetingWanderGate(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "greeting wander gate");
+        midday(helper);
+        rain(helper, false);
+        helper.getLevel().setRainLevel(0.0F);
+        helper.runAfterDelay(40, () -> {
+            final EntityCitizen citizen = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));
+            final EntityCitizen listener = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
+            makeTrait(citizen, LifeTrait.CHATTY);
+            keepFed(citizen, listener);
+            final long readyStart = helper.getLevel().getGameTime();
+            final Runnable[] ready = new Runnable[1];
+            ready[0] = () -> {
+                if (citizen.getDecisionAI() == null)
+                {
+                    helper.assertTrue(helper.getLevel().getGameTime() - readyStart < 200, "citizen decision AI never initialized");
+                    helper.runAfterDelay(1, () -> ready[0].run());
+                    return;
+                }
+                keepFed(citizen, listener);
+                citizen.getNavigation().stop();
+                final CitizenAI decision = citizen.getDecisionAI();
+                final List<?> minimal = (List<?>) ChatTrace.read(decision, CitizenAI.class, "minimalAI");
+                final EntityAICitizenWander wander = (EntityAICitizenWander) minimal.stream()
+                  .filter(EntityAICitizenWander.class::isInstance).findFirst().orElseThrow();
+                helper.assertTrue(citizen.getCitizenAI().getState() == CitizenAIState.IDLE && wander.canUse(),
+                  "greeting component is not initially eligible for idle wandering: " + lifeGates(citizen));
+                long day = helper.getLevel().getOverworldClockTime() / 24000L + 1;
+                while (!CitizenLife.greetsOn(citizen.getCivilianID(), day, LifeTrait.CHATTY)) { day++; }
+                setClock(helper, day * 24000L + 100L);
+                helper.assertTrue(citizen.getLife().greetingHolds(true) && citizen.getLife().greetingActive(),
+                  "component did not establish an active native greeting: " + lifeGates(citizen));
+                Log.getLogger().info("[greeting wander gate] active={} state={} canUse={} audience={}",
+                  citizen.getLife().greetingActive(), citizen.getCitizenAI().getState(), wander.canUse(),
+                  citizen.getLife().someoneToGreet(citizen.blockPosition()));
+                helper.assertTrue(!wander.canUse(), "idle wandering accepts an active morning greeter");
+                try
+                {
+                    final var decide = EntityAICitizenWander.class.getDeclaredMethod("decide");
+                    decide.setAccessible(true);
+                    helper.assertTrue(decide.invoke(wander) == CitizenAIState.IDLE && citizen.getNavigation().isDone(),
+                      "wander decision started moving during a greeting hold");
+                }
+                catch (final ReflectiveOperationException failure) { throw new IllegalStateException(failure); }
+                citizen.getLife().finishGreeting();
+                helper.assertTrue(wander.canUse(), "finished greeting did not restore idle movement eligibility");
+                helper.succeed();
+            };
+            helper.runAfterDelay(1, () -> ready[0].run());
+        });
+    }
+
+    /** Controlled pair identity boundaries, separate from the live departure journey. */
+    private static void chatPairLifecycle(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "chat pair lifecycle");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            final EntityCitizen a = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));
+            final EntityCitizen b = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
+            final EntityCitizen c = entity(spawn(helper, colony, new BlockPos(22, 1, 16)));
+            a.getLife().startChat(b);
+            a.getLife().endChat();
+            helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting(), "leader end left a chat side");
+            a.getLife().startChat(b);
+            b.getLife().endChat();
+            helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting(), "partner end left a chat side");
+            a.getLife().endChat();
+            a.getLife().startChat(b);
+            b.getLife().startChat(c);
+            a.getLife().endChat();
+            helper.assertTrue(b.getLife().chatPartnerId() == c.getCivilianID() && c.getLife().chatPartnerId() == b.getCivilianID(),
+              "ending an old invitation cleared a newer conversation");
+            b.getLife().endChat();
+            // Same raw ID, different entity reference: this is a synthetic replacement boundary, not a world reload.
+            a.getLife().startChat(b);
+            try
+            {
+                final var reference = CitizenLife.class.getDeclaredField("chatPartner");
+                reference.setAccessible(true);
+                reference.set(b.getLife(), new java.lang.ref.WeakReference<>(c));
+                a.getLife().endChat();
+                helper.assertTrue(b.getLife().chatting(), "ID-only match cleared another entity's conversation");
+                b.getLife().endChat();
+                a.getLife().startChat(b);
+                reference.set(a.getLife(), new java.lang.ref.WeakReference<EntityCitizen>(null));
+                a.getLife().endChat();
+                b.getLife().chatStep();
+                helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting(), "missing reference left a chat side");
+            }
+            catch (final ReflectiveOperationException e)
+            {
+                throw new IllegalStateException(e);
+            }
+            final boolean enabled = MineColonies.getConfig().getServer().citizenLifeExtras.get();
+            try
+            {
+                a.getLife().startChat(b);
+                MineColonies.getConfig().getServer().citizenLifeExtras.set(false);
+                a.getLife().tick20();
+                b.getLife().tick20();
+                helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting() && a.getSpeech().isEmpty() && b.getSpeech().isEmpty(), "disabled life left chat state");
+                MineColonies.getConfig().getServer().citizenLifeExtras.set(true);
+                a.getLife().startChat(b);
+                helper.assertTrue(a.getLife().chatPartnerId() == b.getCivilianID(), "chat did not re-enter after enabling");
+                b.discard();
+                a.getLife().chatStep();
+                helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting(), "removed partner left chat state");
+            }
+            finally
+            {
+                MineColonies.getConfig().getServer().citizenLifeExtras.set(enabled);
+            }
+            helper.succeed();
+        });
+    }
+
+    /** Drives the actual once-a-second raid callback in each order, including already expired chat flags. */
+    private static void chatRaidPair(final GameTestHelper helper, final boolean bFirst, final boolean expired)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "chat raid pair");
+        midday(helper);
+        helper.runAfterDelay(40, () -> {
+            final EntityCitizen a = entity(spawn(helper, colony, new BlockPos(16, 1, 16)));
+            final EntityCitizen b = entity(spawn(helper, colony, new BlockPos(19, 1, 16)));
+            a.getLife().startChat(b);
+            final Runnable raid = () -> {
+                if (expired)
+                {
+                    helper.assertTrue(!a.getLife().chatting() && !b.getLife().chatting(), "chat did not expire before raid boundary");
+                }
+                // Explicitly seed both bubbles so neither tick order can hide an uncleared partner line.
+                a.getLife().say(CitizenLife.CHAT + "rain.1");
+                b.getLife().say(CitizenLife.CHAT + "rain.1.reply.1");
+                colony.getRaiderManager().setPassThroughRaid();
+                helper.assertTrue(colony.getRaiderManager().isRaided(), "raid fixture did not start");
+                (bFirst ? b : a).getLife().tick20();
+                (bFirst ? a : b).getLife().tick20();
+                for (final EntityCitizen citizen : new EntityCitizen[] {a, b})
+                {
+                    helper.assertTrue(!citizen.getLife().chatting() && !citizen.getSpeech().startsWith(CitizenLife.CHAT), "raid left chat state or bubble");
+                    helper.assertTrue(CitizenLife.RAID_START.equals(citizen.getLife().pendingLine()), "raid warning not queued for both participants");
+                }
+                helper.succeed();
+            };
+            if (expired)
+            {
+                helper.runAfterDelay(CitizenLife.CHAT_TICKS + 1, raid);
+            }
+            else
+            {
+                raid.run();
+            }
+        });
+    }
+
+    /** Test-only, bounded state-change history; reflection also works against the pinned old production jar. */
+    private static final class ChatTrace
+    {
+        private final EntityCitizen[] citizens;
+        private final java.util.ArrayDeque<String> changes = new java.util.ArrayDeque<>();
+        private String previous = "";
+
+        ChatTrace(final EntityCitizen... citizens)
+        {
+            this.citizens = citizens;
+            capture();
+        }
+
+        void capture()
+        {
+            final StringBuilder state = new StringBuilder();
+            for (final EntityCitizen c : citizens)
+            {
+                final CitizenLife life = c.getLife();
+                final Object decision = read(c, EntityCitizen.class, "decisionAI");
+                state.append(" [id=").append(c.getCivilianID()).append(" state=").append(c.getCitizenAI().getState())
+                  .append(" last=").append(decision == null ? "none" : read(decision, CitizenAI.class, "lastState"))
+                  .append(" chatting=").append(life.chatting()).append(" partner=").append(read(life, CitizenLife.class, "chatPartnerId"))
+                  .append(" until=").append(read(life, CitizenLife.class, "chatUntil"))
+                  .append(" speechUntil=").append(read(life, CitizenLife.class, "speechUntil"))
+                  .append(" speech=").append(c.getSpeech()).append(" pending=").append(read(life, CitizenLife.class, "pending")).append(']');
+            }
+            final String next = state.toString();
+            if (!next.equals(previous))
+            {
+                previous = next;
+                if (changes.size() == 16)
+                {
+                    changes.removeFirst();
+                }
+                changes.addLast("tick=" + citizens[0].level().getGameTime() + " phaseCounter="
+                  + read(null, com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.TickingTransition.class, "tickOffsetVariant") + next);
+            }
+        }
+
+        String describe()
+        {
+            return changes.toString();
+        }
+
+        private static Object read(final Object object, final Class<?> type, final String name)
+        {
+            try
+            {
+                final var field = type.getDeclaredField(name);
+                field.setAccessible(true);
+                return field.get(object);
+            }
+            catch (final ReflectiveOperationException e)
+            {
+                throw new IllegalStateException(e);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ helpers

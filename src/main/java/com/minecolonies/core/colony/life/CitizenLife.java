@@ -494,11 +494,12 @@ public final class CitizenLife
             if (chatting())
             {
                 endChat();
-                if (citizen.getSpeech().startsWith(CHAT))
-                {
-                    citizen.setSpeech("");
-                    speechUntil = 0;
-                }
+            }
+            // The partner may already have ended both sides. Raid speech cleanup still applies to this citizen.
+            if (citizen.getSpeech().startsWith(CHAT))
+            {
+                citizen.setSpeech("");
+                speechUntil = 0;
             }
             if (!asleep)
             {
@@ -884,9 +885,20 @@ public final class CitizenLife
     }
 
     /**
-     * Ends the chat of this citizen.
+     * Ends this conversation on both sides, without clearing a partner's newer conversation.
      */
     public void endChat()
+    {
+        final EntityCitizen partner = chatPartner.get();
+        clearChat();
+        if (partner != null && partner.getLife().chatPartnerId == citizen.getCivilianID()
+              && partner.getLife().chatPartner.get() == citizen)
+        {
+            partner.getLife().clearChat();
+        }
+    }
+
+    private void clearChat()
     {
         chatPartnerId = 0;
         chatPartner = new WeakReference<>(null);

@@ -210,6 +210,175 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
             }
             // forestry (round 3): exact group names, as "forestry_treechop" contains "forestry"
             final java.util.List<String> groups = java.util.Arrays.stream(only.split(",")).map(String::trim).toList();
+            if (groups.contains("ai_intent_mp"))
+            {
+                AIQualificationGameTests.register(event);
+            }
+            if (groups.contains("hearing_probe"))
+            {
+                registerAliveCase(event, "alive_greet_hearing_edge");
+            }
+            if (groups.contains("mixed_load_probe"))
+            {
+                MixedColonyLoadGameTests.register(event);
+            }
+            if (groups.contains("obstacle_journeys"))
+            {
+                ObstacleJourneyGameTests.register(event);
+            }
+            if (groups.contains("load_journey"))
+            {
+                CourierLoadJourneyGameTests.register(event);
+            }
+            if (groups.contains("gather_probe"))
+            {
+                for (final String name : new String[]{"alive_greet_wander_gate", "alive_morning_crowd"})
+                {
+                    registerAliveCase(event, name);
+                }
+            }
+            if (groups.contains("rain_probe"))
+            {
+                for (final String name : new String[]{"alive_leisure_rain_go", "alive_leisure_rain_wander", "alive_shelter_chat"})
+                {
+                    registerAliveCase(event, name);
+                }
+            }
+            if (groups.contains("dawn_probe"))
+            {
+                registerAliveCase(event, "alive_morning_dawn");
+            }
+            if (groups.contains("chat_departure"))
+            {
+                final String name = "alive_chat_departure";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, AliveGameTests.test(name)), withSkyAccess(isolatedColonyData(event, name)));
+            }
+            if (groups.contains("ai_perf"))
+            {
+                com.minecolonies.core.gametest.bench.BenchRegistrar.registerAiPerf(event);
+            }
+            if (groups.contains("ai_recovery"))
+            {
+                final String name = "forestry_hut_snap_exit_plant";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, RecoveryJourneyGameTests::hutSnapThenPlant),
+                  withSkyAccess(isolatedColonyData(event, name)));
+            }
+            if (groups.contains("ai_reroute"))
+            {
+                final String name = "forestry_hut_door_reroute_plant";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, RecoveryJourneyGameTests::hutDoorReopens),
+                  withSkyAccess(isolatedColonyData(event, name)));
+            }
+            if (groups.contains("forester_dump_probe"))
+            {
+                final String name = "forestry_due_dump_resume";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, ForestryGameTests::dumpWaitThenFell),
+                  withSkyAccess(longIsolatedColonyData(event, name, 8000)));
+                final String fullHutName = "forestry_due_dump_full_hut";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, fullHutName),
+                  info -> new MinecoloniesGameTestInstance(info, ForestryGameTests::dumpWaitFullHut),
+                  withSkyAccess(longIsolatedColonyData(event, fullHutName, 8000)));
+                final String queuedName = "forestry_due_dump_queued_craft";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, queuedName),
+                  info -> new MinecoloniesGameTestInstance(info, ForestryGameTests::dumpQueuedCraft),
+                  withSkyAccess(longIsolatedColonyData(event, queuedName, 8000)));
+                final String gatherName = "forestry_due_dump_gather_claims";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, gatherName),
+                  info -> new MinecoloniesGameTestInstance(info, ForestryGameTests::dumpGatheringClaims),
+                  withSkyAccess(longIsolatedColonyData(event, gatherName, 14000)));
+            }
+            if (groups.contains("shared_host_mixed"))
+            {
+                final String name = "shared_host_mixed";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, SharedHostMixedGameTests::run),
+                  withSkyAccess(longIsolatedColonyData(event, name, 30_000)));
+            }
+            if (groups.contains("shared_host_forestry"))
+            {
+                final String name = "shared_host_forestry";
+                final var data = withSkyAccess(longIsolatedColonyData(event, name, 30_000));
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, SharedHostForestryGameTests::run),
+                  new TestData<>(data.environment(), data.dimension(), Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest/forestry_perf_plot"),
+                    data.maxTicks(), data.setupTicks(), data.required(), data.rotation(), data.manualOnly(), data.maxAttempts(), data.requiredSuccesses(), true, data.padding()));
+            }
+            if (groups.contains("forestry_perf"))
+            {
+                final String name = "forestry_perf_20tps";
+                final var data = withSkyAccess(longIsolatedColonyData(event, name, 30_000));
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, ForestryPerformanceGameTests::run),
+                  new TestData<>(data.environment(), data.dimension(), Identifier.fromNamespaceAndPath(Constants.MOD_ID, "gametest/forestry_perf_plot"),
+                    data.maxTicks(), data.setupTicks(), data.required(), data.rotation(), data.manualOnly(), data.maxAttempts(), data.requiredSuccesses(), true, data.padding()));
+            }
+            if (groups.contains("social_probe"))
+            {
+                registerAliveCase(event, "alive_chat");
+                final String cleanup = "fixture_leisure_scope_cleanup";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, cleanup),
+                  info -> new MinecoloniesGameTestInstance(info, LeisureVisitTestScope::testCleanup), isolatedColonyData(event, cleanup));
+                final String name = "life_statuses";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, Round13LifeGameTests::statuses), isolatedColonyData(event, name));
+            }
+            if (groups.contains("farmer_leisure"))
+            {
+                final String name = "farmer_harvest_leisure";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, WorkerJourneyGameTests::farmerHarvestLeisure),
+                  withSkyAccess(isolatedColonyData(event, name)));
+            }
+            if (groups.contains("ai_worker_journeys"))
+            {
+                for (final String name : new String[]{"farmer_harvest_journey", "farmer_harvest_leisure", "labour_crafts_wooden_tools"})
+                {
+                    event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                      info -> new MinecoloniesGameTestInstance(info, name.equals("farmer_harvest_journey")
+                        ? WorkerJourneyGameTests::farmerHarvest : name.equals("farmer_harvest_leisure")
+                        ? WorkerJourneyGameTests::farmerHarvestLeisure : LabourGameTests::craftsWoodenTools),
+                      withSkyAccess(isolatedColonyData(event, name)));
+                }
+            }
+            if (groups.contains("supply_probe"))
+            {
+                registerRequestPriorities(event);
+            }
+            if (groups.contains("production_control"))
+            {
+                final String name = "production_courier_builder";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilder),
+                  isolatedColonyData(event, name));
+            }
+            if (groups.contains("restart_prepare"))
+            {
+                final String name = "production_courier_builder_restart_prepare";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilderRestartPrepare),
+                  plotData(event.registerEnvironment(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "colony/restart_prepare_focused"),
+                    new TestEnvironmentDefinition.Weather(TestEnvironmentDefinition.Weather.Type.CLEAR))));
+            }
+            if (groups.contains("restart_resume"))
+            {
+                final String name = "production_courier_builder_restart_resume";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, MinecoloniesGameTests::productionCourierBuilderRestartResume),
+                  new TestData<>(event.registerEnvironment(Identifier.fromNamespaceAndPath(Constants.MOD_ID, "restart_resume_focused")),
+                    Identifier.fromNamespaceAndPath("minecraft", "empty"), 40100, 0, true, Rotation.NONE));
+            }
+            if (groups.contains("nav_recovery"))
+            {
+                NavLifecycleGameTests.register(event, groups.contains("forestry"));
+            }
+            if (groups.contains("nav_retry"))
+            {
+                NavLifecycleGameTests.registerRetry(event);
+            }
             if (groups.contains("forestry"))
             {
                 ForestryGameTests.register(event);
@@ -998,6 +1167,11 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_wait_courier_stuck"),
           info -> new MinecoloniesGameTestInstance(info, RequestWaitGameTests::stuckCourierGivesUp),
           isolatedColonyData(event, "rs_wait_courier_stuck"));
+        registerRequestPriorities(event);
+    }
+
+    private void registerRequestPriorities(final RegisterGameTestsEvent event)
+    {
         // RS3: priority classes.
         event.registerTest(
           Identifier.fromNamespaceAndPath(Constants.MOD_ID, "rs_prio_far_nine"),
@@ -1606,12 +1780,16 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
     {
         for (final String name : AliveGameTests.NAMES)
         {
-            final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = AliveGameTests.test(name);
-            event.registerTest(
-              Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
-              info -> new MinecoloniesGameTestInstance(info, test),
-              AliveGameTests.NEEDS_SKY.contains(name) ? withSkyAccess(isolatedColonyData(event, name)) : isolatedColonyData(event, name));
+            registerAliveCase(event, name);
         }
+    }
+
+    private void registerAliveCase(final RegisterGameTestsEvent event, final String name)
+    {
+        final java.util.function.Consumer<net.minecraft.gametest.framework.GameTestHelper> test = AliveGameTests.test(name);
+        event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+          info -> new MinecoloniesGameTestInstance(info, test),
+          AliveGameTests.NEEDS_SKY.contains(name) ? withSkyAccess(isolatedColonyData(event, name)) : isolatedColonyData(event, name));
     }
 
     /**

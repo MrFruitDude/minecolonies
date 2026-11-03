@@ -28,6 +28,7 @@ import com.minecolonies.core.entity.ai.workers.production.EntityAIWorkLumberjack
 import com.minecolonies.core.entity.ai.workers.util.PlacedCaps;
 import com.minecolonies.core.entity.ai.workers.util.Tree;
 import com.minecolonies.core.entity.ai.workers.util.TreeClaims;
+import com.minecolonies.core.entity.pathfinding.navigation.MinecoloniesAdvancedPathNavigate;
 import com.minecolonies.core.entity.ai.workers.util.TreeFootprint;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -129,6 +130,20 @@ public final class ForestryGameTests
         TESTS.put("forestry_sweep_near_build", ForestryGameTests::sweepNearBuild);
         TESTS.put("forestry_replant_protected", ForestryGameTests::replantProtected);
         TESTS.put("forestry_cap_decoration", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_west", h -> capDecoration(h, new BlockPos(-3, 0, 0)));
+        TESTS.put("forestry_cap_decoration_north", h -> capDecoration(h, new BlockPos(0, 0, -3)));
+        TESTS.put("forestry_cap_decoration_corner", h -> capDecoration(h, new BlockPos(-2, 0, -2)));
+        TESTS.put("forestry_cap_decoration_east", h -> capDecoration(h, new BlockPos(3, 0, 0)));
+        TESTS.put("forestry_cap_decoration_far", h -> capDecoration(h, new BlockPos(-8, 0, -8)));
+        TESTS.put("forestry_cap_decoration_repeat_1", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_2", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_3", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_4", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_5", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_6", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_7", ForestryGameTests::capDecoration);
+        TESTS.put("forestry_cap_decoration_repeat_8", ForestryGameTests::capDecoration);
+
         TESTS.put("forestry_leaf_wall", ForestryGameTests::leafWall);
         TESTS.put("forestry_same_wood_beam", ForestryGameTests::sameWoodBeam);
         TESTS.put("forestry_cap_added_fungus", ForestryGameTests::capAddedFungus);
@@ -141,8 +156,15 @@ public final class ForestryGameTests
         TESTS.put("forestry_placed_cap_after_choice", helper -> placedCapAfterChoice(helper, "forestry_placed_cap_after_choice", false));
         TESTS.put("forestry_builder_marks_caps", ForestryGameTests::builderMarksCaps);
         TESTS.put("forestry_stale_marks", ForestryGameTests::staleMarks);
-        TESTS.put("forestry_walk_home_bounded", ForestryGameTests::walkHomeBounded);
+        TESTS.put("forestry_walk_home_bounded", helper -> walkHomeBounded(helper, true));
+        TESTS.put("forestry_walk_home_hut_saplings", helper -> walkHomeBounded(helper, false));
 
+        TREECHOP_TESTS.put("forestry_treechop_veto_throw", helper -> TreeChopGuardGameTests.test(helper, "throw"));
+        TREECHOP_TESTS.put("forestry_treechop_veto_reload", helper -> TreeChopGuardGameTests.workerTest(helper, true));
+        TREECHOP_TESTS.put("forestry_treechop_veto_worker", TreeChopGuardGameTests::workerTest);
+        TREECHOP_TESTS.put("forestry_treechop_veto_early", helper -> TreeChopGuardGameTests.test(helper, "early"));
+        TREECHOP_TESTS.put("forestry_treechop_veto_late", helper -> TreeChopGuardGameTests.test(helper, "late"));
+        TREECHOP_TESTS.put("forestry_treechop_veto_mismatch", helper -> TreeChopGuardGameTests.test(helper, "mismatch"));
         TREECHOP_TESTS.put("forestry_treechop_fell", ForestryGameTests::treeChopFell);
         TREECHOP_TESTS.put("forestry_treechop_half_chopped", ForestryGameTests::treeChopHalfChopped);
         TREECHOP_TESTS.put("forestry_treechop_disabled_fallback", ForestryGameTests::treeChopDisabledFallback);
@@ -209,7 +231,7 @@ public final class ForestryGameTests
         helper.getLevel().getGameRules().set(net.minecraft.world.level.gamerules.GameRules.RANDOM_TICK_SPEED, 0, helper.getLevel().getServer());
     }
 
-    private static BuildingLumberjack hut(final GameTestHelper helper, final IColony colony, final BlockPos rel, final boolean plantForest)
+    static BuildingLumberjack hut(final GameTestHelper helper, final IColony colony, final BlockPos rel, final boolean plantForest)
     {
         noRandomTicks(helper);
         final IBuilding building = MinecoloniesGameTests.placeProductionBuilding(helper, colony, ModBlocks.blockHutLumberjack, rel, "fundamentals/lumberjack1.blueprint");
@@ -223,12 +245,16 @@ public final class ForestryGameTests
         return lumberjack;
     }
 
-    private static ICitizenData forester(final GameTestHelper helper, final IColony colony, final BuildingLumberjack building, final BlockPos rel, final ItemStack... extra)
+    static ICitizenData forester(final GameTestHelper helper, final IColony colony, final BuildingLumberjack building, final BlockPos rel, final ItemStack... extra)
     {
         final ServerLevel level = helper.getLevel();
         final BlockPos anchor = helper.absolutePos(rel);
         final ICitizenData worker = colony.getCitizenManager().spawnOrCreateCivilian(null, level, List.of(anchor), true);
-        helper.assertTrue(worker != null && worker.getEntity().isPresent(), "forester did not spawn");
+        helper.assertTrue(worker != null && worker.getEntity().isPresent(), "forester did not spawn: anchor=" + anchor
+          + " ticking=" + com.minecolonies.api.util.WorldUtil.isEntityBlockLoaded(level, anchor)
+          + " calculated=" + com.minecolonies.api.util.EntityUtils.getSpawnPoint(level, anchor)
+          + " data=" + (worker == null ? "null" : worker.getId()) + " entity=" + (worker != null && worker.getEntity().isPresent())
+          + " registeredData=" + colony.getCitizenManager().getCurrentCitizenCount());
         helper.assertTrue(building.getModule(BuildingModules.FORESTER_WORK).assignCitizen(worker), "forester assignment failed");
         worker.getEntity().get().setPos(anchor.getX() + 0.5D, anchor.getY(), anchor.getZ() + 0.5D);
         worker.getInventory().setStackInSlot(0, new ItemStack(Items.STONE_AXE));
@@ -241,7 +267,7 @@ public final class ForestryGameTests
         return worker;
     }
 
-    private static EntityAIWorkLumberjack ai(final ICitizenData worker)
+    static EntityAIWorkLumberjack ai(final ICitizenData worker)
     {
         return worker.getEntity().map(e -> (Object) e.getCitizenJobHandler().getWorkAI()).filter(EntityAIWorkLumberjack.class::isInstance)
           .map(EntityAIWorkLumberjack.class::cast).orElse(null);
@@ -252,7 +278,7 @@ public final class ForestryGameTests
         return worker.getJob() instanceof JobLumberjack job ? job.getTree() : null;
     }
 
-    private static String describe(final ICitizenData worker)
+    static String describe(final ICitizenData worker)
     {
         final EntityAIWorkLumberjack ai = ai(worker);
         final Tree tree = tree(worker);
@@ -353,7 +379,7 @@ public final class ForestryGameTests
     /**
      * Pump the fixture every tick (daylight, full belly) until the check holds (asked every 20 ticks) or the cap is hit.
      */
-    private static void pump(
+    static void pump(
       final GameTestHelper helper,
       final List<ICitizenData> workers,
       final int cap,
@@ -379,6 +405,10 @@ public final class ForestryGameTests
             if (ticks[0] % 20 == 0 && done.getAsBoolean())
             {
                 Log.getLogger().info("[{}] passed in {} ticks", name, ticks[0]);
+                if (everyTick instanceof ApproachTrace trace)
+                {
+                    Log.getLogger().info("[forestry approach result] {} {}", name, trace.summary());
+                }
                 helper.succeed();
                 return;
             }
@@ -392,7 +422,339 @@ public final class ForestryGameTests
         helper.runAfterDelay(1, () -> step[0].run());
     }
 
+    /** Bounded, observation-only route history for the two intermittent forestry journeys. */
+    private static final class ApproachTrace implements Runnable
+    {
+        private final GameTestHelper helper;
+        private final ICitizenData worker;
+        private final java.util.ArrayDeque<String> samples = new java.util.ArrayDeque<>();
+        private Vec3 previous;
+        private String firstDeparture = "none";
+        private int ticks;
+        private int displacementLogs;
+
+        ApproachTrace(final GameTestHelper helper, final ICitizenData worker)
+        {
+            this.helper = helper;
+            this.worker = worker;
+            previous = worker.getEntity().orElseThrow().position();
+            ((MinecoloniesAdvancedPathNavigate) worker.getEntity().orElseThrow().getNavigation()).enableNavigationTrace();
+        }
+
+        @Override
+        public void run()
+        {
+            final var entity = worker.getEntity().orElseThrow();
+            final var nav = (MinecoloniesAdvancedPathNavigate) entity.getNavigation();
+            final EntityAIWorkLumberjack ai = ai(worker);
+            if (ai != null)
+            {
+                ai.enableApproachTrace();
+            }
+            final BlockPos at = entity.blockPosition();
+            final BlockPos relative = at.subtract(helper.absolutePos(BlockPos.ZERO));
+            final boolean departed = firstDeparture.equals("none") && (relative.getX() < -8 || relative.getX() >= 40
+              || relative.getZ() < -8 || relative.getZ() >= 32 || relative.getY() < 1);
+            final boolean jumped = previous.distanceToSqr(entity.position()) > 16;
+            if (++ticks % 20 == 0 || departed || jumped)
+            {
+                final String sample = "tick=" + helper.getLevel().getGameTime() + ", relative=" + relative + ", velocity=" + entity.getDeltaMovement()
+                  + ", feet=" + helper.getLevel().getBlockState(at) + ", head=" + helper.getLevel().getBlockState(at.above())
+                  + ", support=" + helper.getLevel().getBlockState(at.below()) + ", " + nav.navigationTraceState()
+                  + ", work=" + (ai == null ? "none" : ai.getState() + " " + ai.approachTraceState());
+                samples.addLast(sample);
+                if (samples.size() > 32)
+                {
+                    samples.removeFirst();
+                }
+                if (departed)
+                {
+                    firstDeparture = sample;
+                }
+                if ((departed || jumped) && displacementLogs++ < 4)
+                {
+                    Log.getLogger().info("[forestry displacement] floorExit={} jump={} previous={} {}", departed, jumped, previous, summary());
+                }
+            }
+            previous = entity.position();
+        }
+
+        String summary()
+        {
+            final var nav = (MinecoloniesAdvancedPathNavigate) worker.getEntity().orElseThrow().getNavigation();
+            final EntityAIWorkLumberjack ai = ai(worker);
+            return "first supported-floor departure=" + firstDeparture + ", samples=" + samples + ", " + nav.navigationTraceHistory()
+              + ", judgments=" + (ai == null ? "none" : ai.approachTraceHistory());
+        }
+    }
+
     // ---------------------------------------------------------------- whole trees
+
+    /** Regression for a due woodcutting dump below the crafting inventory threshold. */
+    static void dumpWaitThenFell(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry due dump");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final Grown grown = grow(helper, new TreeSpec("birch dump regression", new BlockPos(24, 1, 18), false,
+          Blocks.BIRCH_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.BIRCH, state -> state.is(Blocks.BIRCH_SAPLING)), 71L);
+        final List<BlockPos> originalLogs = new ArrayList<>();
+        for (final BlockPos at : BlockPos.betweenClosed(BlockPos.containing(grown.box().minX, grown.box().minY, grown.box().minZ),
+          BlockPos.containing(grown.box().maxX - 1, grown.box().maxY - 1, grown.box().maxZ - 1)))
+        {
+            if (level.getBlockState(at).is(Blocks.BIRCH_LOG)) { originalLogs.add(at.immutable()); }
+        }
+        helper.assertTrue(originalLogs.size() == grown.logs(), "unexpected non-birch tree in due-dump fixture");
+        final ICitizenData worker = forester(helper, colony, building, new BlockPos(10, 1, 4), new ItemStack(Items.BIRCH_LOG, 4));
+        final JobLumberjack job = (JobLumberjack) worker.getJob();
+        job.incrementActionsDone(32);
+        helper.assertTrue(job.getActionsDone() == 32 && logsKept(worker, building) == 4, "due-dump regression setup differs");
+        final boolean[] dumped = {false}, cleared = {false};
+        final int[] observedTicks = {0};
+        pump(helper, List.of(worker), 6000,
+          () -> dumped[0] && cleared[0] && ai(worker) != null && ai(worker).getTreeChopFellCount() > 0
+            && logsKept(worker, building) == 4 + grown.logs(),
+          () -> "due dump did not clear and resume forestry: actions=" + job.getActionsDone()
+            + " dumped=" + dumped[0] + " cleared=" + cleared[0] + " " + describe(worker),
+          () -> {
+              if (++observedTicks[0] % 20 == 0)
+              {
+                  int standingLogs = 0;
+                  for (final BlockPos at : originalLogs)
+                  {
+                      if (level.getBlockState(at).is(Blocks.BIRCH_LOG)) { standingLogs++; }
+                      else if (Compatibility.treeChop.isChoppedLog(level.getBlockState(at)))
+                      {
+                          final BlockState original = Compatibility.treeChop.getOriginalLogState(level, at);
+                          helper.assertTrue(original != null && original.is(Blocks.BIRCH_LOG), "unknown wrapped regression log");
+                          standingLogs++;
+                      }
+                  }
+                  final int dropped = level.getEntitiesOfClass(ItemEntity.class, grown.box().inflate(20)).stream()
+                    .filter(item -> item.getItem().is(Items.BIRCH_LOG)).mapToInt(item -> item.getItem().getCount()).sum();
+                  helper.assertTrue(logsKept(worker, building) + standingLogs + dropped == 4 + grown.logs(),
+                    "due-dump regression lost or duplicated logs");
+              }
+              dumped[0] |= InventoryUtils.getCountFromBuilding(building, stack -> stack.is(Items.BIRCH_LOG)) >= 4;
+              cleared[0] |= job.getActionsDone() < 32;
+          }, "forestry_due_dump_resume");
+    }
+
+    /** A due, high-occupancy dump into a hut that fills must keep every remaining item. */
+    static void dumpWaitFullHut(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry due dump full hut");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final var cap = building.getItemHandlerCap();
+        for (int slot = 0; slot < cap.getSlots(); slot++) { cap.insertItem(slot, new ItemStack(Items.COBBLESTONE, 64), false); }
+        cap.extractItem(0, 64, false);
+        helper.assertTrue(InventoryUtils.openSlotCount(cap) == 1, "due-dump hut needs one free slot");
+        final ICitizenData worker = forester(helper, colony, building, new BlockPos(10, 1, 4), new ItemStack(Items.BIRCH_LOG, 4));
+        for (int slot = 4; slot < 24; slot++) { worker.getInventory().setStackInSlot(slot, new ItemStack(Items.DIRT, 64)); }
+        final JobLumberjack job = (JobLumberjack) worker.getJob();
+        job.incrementActionsDone(32);
+        final int[] ticks = {0};
+        pump(helper, List.of(worker), 6000,
+          () -> job.getActionsDone() < 32 && InventoryUtils.openSlotCount(cap) == 0,
+          () -> "full-hut due dump did not finish: actions=" + job.getActionsDone() + " " + describe(worker),
+          () -> {
+              if (++ticks[0] % 20 == 0)
+              {
+                  for (final var entry : Map.of(Items.DIRT, 1280, Items.BIRCH_LOG, 4).entrySet())
+                  {
+                      final Predicate<ItemStack> matches = stack -> stack.is(entry.getKey());
+                      final int physical = InventoryUtils.getItemCountInItemHandler(worker.getInventory(), matches)
+                        + InventoryUtils.getCountFromBuilding(building, matches);
+                      helper.assertTrue(physical == entry.getValue(), "full-hut due dump dropped, lost or duplicated " + entry.getKey());
+                  }
+              }
+          }, "forestry_due_dump_full_hut");
+    }
+
+    /** A real native stripping request must progress despite a due count below the fill threshold. */
+    static void dumpQueuedCraft(final GameTestHelper helper)
+    {
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry due queued craft");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final IBuilding requester = MinecoloniesGameTests.placeProductionBuilding(helper, colony, ModBlocks.blockHutBuilder,
+          new BlockPos(30, 1, 2), "fundamentals/builder1.blueprint");
+        final var module = building.getModule(BuildingModules.FORESTER_CRAFT);
+        module.checkForWorkerSpecificRecipes();
+        helper.assertTrue(module.getRecipes().stream().map(token -> IColonyManager.getInstance().getRecipeManager().getRecipes().get(token))
+          .filter(java.util.Objects::nonNull).anyMatch(recipe -> recipe.getPrimaryOutput().is(Items.STRIPPED_BIRCH_LOG)
+            || recipe.getAlternateOutputs().stream().anyMatch(stack -> stack.is(Items.STRIPPED_BIRCH_LOG))), "native birch stripping recipe unavailable");
+        helper.assertTrue(InventoryUtils.forceItemStackToItemHandler(building.getItemHandlerCap(), new ItemStack(Items.BIRCH_LOG, 4), stack -> true).isEmpty(),
+          "queued-craft input stock did not fit");
+        final ICitizenData worker = forester(helper, colony, building, new BlockPos(10, 1, 4));
+        final JobLumberjack job = (JobLumberjack) worker.getJob();
+        job.incrementActionsDone(32);
+        final var demand = new com.minecolonies.api.colony.requestsystem.requestable.Stack(new ItemStack(Items.STRIPPED_BIRCH_LOG), 4, 4);
+        demand.setCanBeResolvedByBuilding(false);
+        requester.createRequest(demand, true);
+        helper.assertTrue(!job.getTaskQueue().isEmpty(), "native crafting task was not queued before first AI tick");
+        final boolean[] progressed = {false}, dumpedEarly = {false};
+        pump(helper, List.of(worker), 6000,
+          () -> progressed[0] && !dumpedEarly[0]
+            && InventoryUtils.getItemCountInItemHandler(worker.getInventory(), stack -> stack.is(Items.STRIPPED_BIRCH_LOG))
+              + InventoryUtils.getCountFromBuilding(building, stack -> stack.is(Items.STRIPPED_BIRCH_LOG)) == 4,
+          () -> "queued craft did not progress without due-dump wait: actions=" + job.getActionsDone()
+            + " progressed=" + progressed[0] + " dumpedEarly=" + dumpedEarly[0] + " " + describe(worker),
+          () -> {
+              final EntityAIWorkLumberjack current = ai(worker);
+              final int output = InventoryUtils.getItemCountInItemHandler(worker.getInventory(), stack -> stack.is(Items.STRIPPED_BIRCH_LOG))
+                + InventoryUtils.getCountFromBuilding(building, stack -> stack.is(Items.STRIPPED_BIRCH_LOG));
+              if (current != null && current.getState() == AIWorkerState.INVENTORY_FULL && output == 0) { dumpedEarly[0] = true; }
+              progressed[0] |= output > 0;
+              final Predicate<ItemStack> material = stack -> stack.is(Items.BIRCH_LOG) || stack.is(Items.STRIPPED_BIRCH_LOG);
+              helper.assertTrue(InventoryUtils.getItemCountInItemHandler(worker.getInventory(), material)
+                + InventoryUtils.getCountFromBuilding(building, material) == 4, "queued native stripping lost or duplicated material");
+          }, "forestry_due_dump_queued_craft");
+    }
+
+    /** Seed a due count during native gathering; verify safe relinquishment and later work by the same forester. */
+    static void dumpGatheringClaims(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry gathering dump claims");
+        final BuildingLumberjack first = hut(helper, colony, HUT, false);
+        final BuildingLumberjack second = hut(helper, colony, new BlockPos(34, 1, 2), false);
+        final List<Grown> trees = List.of(
+          grow(helper, new TreeSpec("birch a", new BlockPos(16, 1, 18), false, Blocks.BIRCH_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.BIRCH, null), 61L),
+          grow(helper, new TreeSpec("birch b", new BlockPos(26, 1, 18), false, Blocks.BIRCH_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.BIRCH, null), 62L),
+          grow(helper, new TreeSpec("birch c", new BlockPos(21, 1, 28), false, Blocks.BIRCH_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.BIRCH, null), 63L),
+          grow(helper, new TreeSpec("birch d", new BlockPos(10, 1, 32), false, Blocks.BIRCH_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.BIRCH, null), 64L),
+          grow(helper, new TreeSpec("birch e", new BlockPos(34, 1, 32), false, Blocks.BIRCH_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.BIRCH, null), 65L));
+        final List<BlockPos> logs = new ArrayList<>();
+        for (final Grown grown : trees)
+        {
+            for (final BlockPos at : BlockPos.betweenClosed(BlockPos.containing(grown.box().minX, grown.box().minY, grown.box().minZ),
+              BlockPos.containing(grown.box().maxX - 1, grown.box().maxY - 1, grown.box().maxZ - 1)))
+            { if (level.getBlockState(at).is(Blocks.BIRCH_LOG) && !logs.contains(at)) { logs.add(at.immutable()); } }
+        }
+        final ICitizenData a = forester(helper, colony, first, new BlockPos(12, 1, 10), new ItemStack(Items.BIRCH_SAPLING, 8));
+        final ICitizenData b = forester(helper, colony, second, new BlockPos(30, 1, 10), new ItemStack(Items.BIRCH_SAPLING, 8));
+        final JobLumberjack firstJob = (JobLumberjack) a.getJob();
+        final boolean[] supplied = {false}, dueSeeded = {false}, interrupted = {false}, dumpCompleted = {false}, workedAfterDump = {false};
+        final List<BlockPos> lastOwnedLogs = new ArrayList<>();
+        final int[] fellsAtInterruption = {0};
+        final IAIState[] previous = {null};
+        final EntityAIWorkLumberjack[] originalAi = {null};
+        final AABB plot = new AABB(Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(-8, 0, -8))),
+          Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(48, 40, 44))));
+        final Predicate<ItemStack> marker = stack -> stack.is(Items.PRISMARINE_SHARD);
+        final int[] ticks = {0};
+        pump(helper, List.of(a, b), 12000,
+          () -> interrupted[0] && dumpCompleted[0] && workedAfterDump[0]
+            && logsKept(a, first) + logsKept(b, second) == logs.size(),
+          () -> "gathering interruption unobserved or unsafe: supplied=" + supplied[0] + " dueSeeded=" + dueSeeded[0]
+            + " interrupted=" + interrupted[0] + " dumpCompleted=" + dumpCompleted[0] + " workedAfterDump=" + workedAfterDump[0]
+            + " A " + describe(a) + " B " + describe(b),
+          () -> {
+              final EntityAIWorkLumberjack current = ai(a);
+              if (current != null)
+              {
+                  if (originalAi[0] == null) { originalAi[0] = current; }
+                  helper.assertTrue(current == originalAi[0], "gathering dump replaced the worker AI");
+                  final IAIState state = current.getState();
+                  if (!supplied[0] && state == AIWorkerState.LUMBERJACK_GATHERING)
+                  {
+                      supplied[0] = true;
+                      final BlockPos center = a.getEntity().orElseThrow().blockPosition();
+                      for (final int dx : new int[]{-3, 0, 3})
+                      {
+                          for (final int dz : new int[]{-3, 0, 3})
+                          {
+                              if (dx == 0 && dz == 0) { continue; }
+                              final ItemStack stack = new ItemStack(Items.PRISMARINE_SHARD);
+                              final ItemEntity item = new ItemEntity(level, center.getX() + dx + 0.5D, center.getY() + 0.25D, center.getZ() + dz + 0.5D, stack);
+                              item.setDeltaMovement(Vec3.ZERO);
+                              if (dx != 0 && dz != 0) { item.setPickUpDelay(400); }
+                              else { item.setNoPickUpDelay(); }
+                              item.setUnlimitedLifetime(); level.addFreshEntity(item);
+                          }
+                      }
+                  }
+                  final int heldMarkers = InventoryUtils.getItemCountInItemHandler(a.getInventory(), marker);
+                  final int groundMarkers = level.getEntitiesOfClass(ItemEntity.class, plot).stream().filter(item -> marker.test(item.getItem()))
+                    .mapToInt(item -> item.getItem().getCount()).sum();
+                  final List<BlockPos> pending = current.getItemsForPickUp();
+                  final boolean liveMarkerPending = pending != null && level.getEntitiesOfClass(ItemEntity.class, plot).stream()
+                    .anyMatch(item -> marker.test(item.getItem()) && pending.contains(item.blockPosition()));
+                  if (!dueSeeded[0] && state == AIWorkerState.LUMBERJACK_GATHERING && heldMarkers > 0 && groundMarkers > 0
+                    && liveMarkerPending)
+                  {
+                      // Controlled test input after collection begins, not a state change, forced dump or reset.
+                      firstJob.incrementActionsDone(32);
+                      dueSeeded[0] = true;
+                  }
+                  if (!interrupted[0] && (previous[0] == AIWorkerState.LUMBERJACK_GATHERING || previous[0] == AIWorkerState.LUMBERJACK_GATHERING_2)
+                    && state == AIWorkerState.INVENTORY_FULL)
+                  {
+                      helper.assertTrue(dueSeeded[0] && firstJob.getActionsDone() >= 32, "gathering dump was not the seeded due-count case");
+                      helper.assertTrue(heldMarkers > 0 && groundMarkers > 0 && liveMarkerPending,
+                        "dump did not interrupt real pending gathering: held=" + heldMarkers + " ground=" + groundMarkers + " pending=" + pending);
+                      helper.assertTrue(tree(a) == null && !lastOwnedLogs.isEmpty(), "gathering interruption did not relinquish the completed tree");
+                      // For the peer, an A-owned or blocked claim would read as taken. A peer-owned claim is allowed.
+                      helper.assertTrue(lastOwnedLogs.stream().noneMatch(at -> TreeClaims.isTakenByOther(level, at, colony.getID(), b.getId())),
+                        "interrupted forester retained or blocked its completed tree claim");
+                      interrupted[0] = true;
+                      fellsAtInterruption[0] = current.getTreeChopFellCount();
+                  }
+                  if (interrupted[0] && state != AIWorkerState.INVENTORY_FULL && firstJob.getActionsDone() < 32) { dumpCompleted[0] = true; }
+                  if (dumpCompleted[0] && current.getTreeChopFellCount() > fellsAtInterruption[0]) { workedAfterDump[0] = true; }
+                  final Tree owned = tree(a);
+                  if (!interrupted[0] && owned != null && state == AIWorkerState.LUMBERJACK_CHOP_TREE && owned.hasLogs())
+                  {
+                      lastOwnedLogs.clear(); lastOwnedLogs.addAll(owned.getAllLogs());
+                  }
+                  previous[0] = state;
+              }
+              final Tree ta = tree(a), tb = tree(b);
+              if (ta != null && tb != null)
+              { helper.assertTrue(!ta.getLocation().equals(tb.getLocation()) && ta.getAllLogs().stream().noneMatch(tb.getAllLogs()::contains), "foresters share a claimed tree across dump"); }
+              for (final ICitizenData owner : List.of(a, b))
+              {
+                  final Tree activeTree = tree(owner);
+                  final EntityAIWorkLumberjack activeAi = ai(owner);
+                  if (activeTree != null && activeAi != null && activeAi.getState() == AIWorkerState.LUMBERJACK_CHOP_TREE && activeTree.hasLogs())
+                  {
+                      final ICitizenData other = owner == a ? b : a;
+                      helper.assertTrue(!TreeClaims.isTakenByOther(level, activeTree.getLocation(), colony.getID(), owner.getId())
+                        && TreeClaims.isTakenByOther(level, activeTree.getLocation(), colony.getID(), other.getId()), "native tree claim missing or stolen");
+                      // Ownership is checked on every observed chop, including A's work after the dump.
+                  }
+              }
+              if (++ticks[0] % 20 == 0)
+              {
+                  int standing = 0;
+                  for (final BlockPos at : logs)
+                  {
+                      if (level.getBlockState(at).is(Blocks.BIRCH_LOG)) { standing++; }
+                      else if (Compatibility.treeChop.isChoppedLog(level.getBlockState(at)))
+                      {
+                          final BlockState original = Compatibility.treeChop.getOriginalLogState(level, at);
+                          helper.assertTrue(original != null && original.is(Blocks.BIRCH_LOG), "unknown wrapped gathering log"); standing++;
+                      }
+                  }
+                  final int dropped = level.getEntitiesOfClass(ItemEntity.class, plot).stream().filter(item -> item.getItem().is(Items.BIRCH_LOG))
+                    .mapToInt(item -> item.getItem().getCount()).sum();
+                  helper.assertTrue(logsKept(a, first) + logsKept(b, second) + standing + dropped == logs.size(), "gathering dump lost or duplicated logs");
+                  if (supplied[0])
+                  {
+                      final int physicalMarkers = InventoryUtils.getItemCountInItemHandler(a.getInventory(), marker) + InventoryUtils.getItemCountInItemHandler(b.getInventory(), marker)
+                        + InventoryUtils.getCountFromBuilding(first, marker) + InventoryUtils.getCountFromBuilding(second, marker)
+                        + level.getEntitiesOfClass(ItemEntity.class, plot).stream().filter(item -> marker.test(item.getItem())).mapToInt(item -> item.getItem().getCount()).sum();
+                      if (physicalMarkers != 8)
+                      {
+                          helper.fail("gathering collection marker count=" + physicalMarkers + " expected=8 supplied=" + supplied[0]
+                            + " interrupted=" + interrupted[0] + " dumpCompleted=" + dumpCompleted[0] + " workedAfterDump=" + workedAfterDump[0]
+                            + " A " + describe(a) + " B " + describe(b));
+                      }
+                  }
+              }
+          }, "forestry_due_dump_gather_claims");
+    }
 
     private static void wholeBroadleaf(final GameTestHelper helper)
     {
@@ -1072,6 +1434,7 @@ public final class ForestryGameTests
             final java.util.function.ToIntFunction<Grown> standing = grown -> (int) logsAtChoice.get(grown).stream().filter(pos -> level.getBlockState(pos).is(Blocks.OAK_LOG)).count();
             final List<BlockPos> planks = new ArrayList<>();
             final boolean[] duringChanged = {false};
+            final Map<Grown, Integer> chopsAtChoice = new HashMap<>();
             final String[] last = {""};
             pump(helper, List.of(worker), FELL_CAP, () -> {
                 for (final BlockPos pos : planks)
@@ -1110,6 +1473,7 @@ public final class ForestryGameTests
                     roles.add(grown);
                     logsAtChoice.put(grown, List.copyOf(current.getAllLogs()));
                     baseAtChoice.put(grown, current.getLocation());
+                    chopsAtChoice.put(grown, ai(worker) == null ? 0 : ai(worker).getTreeChopChopCount());
                     if (roles.size() == 1)
                     {
                         // Before his first cut: the top log becomes planks
@@ -1118,9 +1482,15 @@ public final class ForestryGameTests
                         planks.add(top);
                     }
                 }
-                if (roles.size() >= 2 && grown == roles.get(1) && !duringChanged[0] && current.getLogsLeft() < current.getAllLogs().size()
-                      && level.getBlockState(current.getLocation()).is(Blocks.OAK_LOG))
+                final EntityAIWorkLumberjack activeAI = ai(worker);
+                final boolean partialChop = activeAI != null && activeAI.usesTreeChop()
+                  && activeAI.getTreeChopChopCount() > chopsAtChoice.get(grown)
+                  && Compatibility.treeChop.isChoppedLog(level.getBlockState(current.getLocation()));
+                if (roles.size() >= 2 && grown == roles.get(1) && !duringChanged[0]
+                      && ((current.getLogsLeft() < current.getAllLogs().size() && level.getBlockState(current.getLocation()).is(Blocks.OAK_LOG)) || partialChop))
                 {
+                    Log.getLogger().info("[changed tree] partialTreeChop={} chops={} fellings={} base={}", partialChop,
+                      activeAI == null ? -1 : activeAI.getTreeChopChopCount(), activeAI == null ? -1 : activeAI.getTreeChopFellCount(), level.getBlockState(current.getLocation()));
                     // During the felling: the base log becomes planks
                     level.setBlockAndUpdate(current.getLocation(), Blocks.OAK_PLANKS.defaultBlockState());
                     planks.add(current.getLocation());
@@ -1359,6 +1729,7 @@ public final class ForestryGameTests
         helper.runAfterDelay(20, () -> {
             final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10), new ItemStack(Items.OAK_SAPLING, 8));
             final String[] last = {""};
+            final ApproachTrace trace = new ApproachTrace(helper, worker);
             pump(helper, List.of(worker), FELL_CAP, () -> {
                 final int logs = count(level, strip, s -> s.is(Blocks.OAK_LOG));
                 final long replanted = trunks.stream().filter(pos -> level.getBlockState(pos).is(Blocks.OAK_SAPLING)).count();
@@ -1367,7 +1738,7 @@ public final class ForestryGameTests
                 helper.assertTrue(building.getSkippedTreeCount() == 0 && building.getSkippedTreeCount(BuildingLumberjack.SkipReason.TOO_BIG) == 0,
                   "a touching oak was left standing: " + last[0]);
                 return logs == 0 && replanted == 4 && tree(worker) == null;
-            }, () -> last[0] + ", standing " + standingTrunks(level, colony, building, worker, trunks) + ", " + describe(worker), null, "forestry_touching_same_wood");
+            }, () -> last[0] + ", standing " + standingTrunks(level, colony, building, worker, trunks) + ", " + describe(worker) + ", " + trace.summary(), trace, "forestry_touching_same_wood");
         });
     }
 
@@ -1605,6 +1976,11 @@ public final class ForestryGameTests
      */
     private static void capDecoration(final GameTestHelper helper)
     {
+        capDecoration(helper, null);
+    }
+
+    private static void capDecoration(final GameTestHelper helper, final BlockPos stance)
+    {
         final ServerLevel level = helper.getLevel();
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry cap decoration");
         final BuildingLumberjack building = hut(helper, colony, HUT, false);
@@ -1650,9 +2026,19 @@ public final class ForestryGameTests
             final Tree tree = new Tree(level, stem.above(1), colony);
             helper.assertTrue(tree.isTree() && tree.getSkip() == TreeFootprint.Skip.NONE, "the mushroom is no tree: " + tree.getSkip() + " " + tree.getSkipDetail());
             final ICitizenData worker = forester(helper, colony, building, new BlockPos(14, 1, 10));
+            if (stance != null)
+            {
+                final BlockPos target = stem.offset(stance);
+                helper.assertTrue(helper.absolutePos(new BlockPos(24, 1, 18)).equals(stem), "mushroom stem differs from known fixture base");
+                helper.assertTrue(level.getBlockState(target).isAir() && level.getBlockState(target.above()).isAir()
+                  && !level.getBlockState(target.below()).getCollisionShape(level, target.below()).isEmpty(), "unsafe approach stance " + target);
+                worker.getEntity().orElseThrow().setPos(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D);
+                helper.runAfterDelay(1, () -> helper.assertTrue(worker.getEntity().orElseThrow().blockPosition().equals(target), "stance moved before first approach tick"));
+            }
             helper.assertTrue(worker.getJob() instanceof JobLumberjack, "no lumberjack job");
             ((JobLumberjack) worker.getJob()).setTree(tree);
             final String[] last = {""};
+            final ApproachTrace trace = new ApproachTrace(helper, worker);
             pump(helper, List.of(worker), 12_000, () -> {
                 final int stems = count(level, stemBox, TreeFootprint::isTreeBlock);
                 final long rowLeft = row.stream().filter(pos -> level.getBlockState(pos).is(Blocks.RED_MUSHROOM_BLOCK)).count();
@@ -1660,8 +2046,12 @@ public final class ForestryGameTests
                             + level.getBlockState(shroomlight).getBlock();
                 helper.assertTrue(rowLeft == 4 && level.getBlockState(plank).is(Blocks.OAK_PLANKS), "the decoration joined to the cap was taken: " + last[0]);
                 helper.assertTrue(level.getBlockState(shroomlight).is(Blocks.SHROOMLIGHT), "the shroomlight on the cap was taken: " + last[0]);
+                for (BlockPos post = plank.below(); post.getY() >= stem.getY(); post = post.below())
+                {
+                    helper.assertTrue(level.getBlockState(post).is(Blocks.OAK_FENCE), "decoration post removed at " + post);
+                }
                 return stems == 0 && tree(worker) == null;
-            }, () -> last[0] + ", " + describe(worker), null, "forestry_cap_decoration");
+            }, () -> last[0] + ", " + describe(worker) + ", " + trace.summary(), trace, "forestry_cap_decoration");
         });
     }
 
@@ -2342,17 +2732,26 @@ public final class ForestryGameTests
      * stands, as on an island or by a sealed hut). After a minute of walking he ends the search for this round as no tree found, without searching from
      * where he stands; the oak by his hut is not chosen from out there.
      */
-    private static void walkHomeBounded(final GameTestHelper helper)
+    private static void walkHomeBounded(final GameTestHelper helper, final boolean carrySaplings)
     {
         final ServerLevel level = helper.getLevel();
         final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry walk home bounded");
-        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final BuildingLumberjack building = hut(helper, colony, HUT, true);
         grow(helper, new TreeSpec("oak", new BlockPos(16, 1, 18), false, Blocks.OAK_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.OAK, null), 61L);
         final BlockPos far = helper.absolutePos(new BlockPos(58, 1, 38));
         level.setChunkForced(far.getX() >> 4, far.getZ() >> 4, true);
+        // The common colony fixture floors only x<40,z<32. This remote island needs its own support.
+        for (final BlockPos support : BlockPos.betweenClosed(far.offset(-3, -1, -3), far.offset(3, -1, 3)))
+        {
+            level.setBlockAndUpdate(support, Blocks.STONE.defaultBlockState());
+        }
 
+        InventoryUtils.forceItemStackToItemHandler(building.getItemHandlerCap(), new ItemStack(Items.OAK_SAPLING, 16), stack -> true);
         helper.runAfterDelay(20, () -> {
-            final ICitizenData worker = forester(helper, colony, building, new BlockPos(58, 1, 38), new ItemStack(Items.OAK_SAPLING, 4));
+            final ICitizenData worker = forester(helper, colony, building, new BlockPos(58, 1, 38),
+              carrySaplings ? new ItemStack(Items.OAK_SAPLING, 4) : ItemStack.EMPTY);
+            final var original = worker.getEntity().orElseThrow();
+            final String[] lifecycle = {""};
             final long[] searchingAt = {-1};
             final String[] last = {""};
             pump(helper, List.of(worker), (int) EntityAIWorkLumberjack.WALK_HOME_TICKS + 1_200, () -> {
@@ -2368,8 +2767,23 @@ public final class ForestryGameTests
                 }
                 return false;
             }, () -> last[0] + ", " + describe(worker), () -> {
-                // he never gets home: held where he stands
-                worker.getEntity().ifPresent(e -> e.setPos(far.getX() + 0.5D, far.getY(), far.getZ() + 0.5D));
+                final String lifecycleState = "present=" + worker.getEntity().isPresent() + ", removed=" + original.isRemoved()
+                  + ", removal=" + original.getRemovalReason() + ", alive=" + original.isAlive() + ", health=" + original.getHealth()
+                  + ", damage=" + original.getLastDamageSource() + ", support=" + level.getBlockState(original.blockPosition().below())
+                  + ", job=" + worker.getJob()
+                  + ", outer=" + (original instanceof com.minecolonies.core.entity.citizen.EntityCitizen citizen ? citizen.getCitizenAI().getState() : "not citizen") + ", work=" + (ai(worker) == null ? "none" : ai(worker).getState());
+                if (!lifecycleState.equals(lifecycle[0]))
+                {
+                    Log.getLogger().info("[forestry return] tick={} {}", level.getGameTime(), lifecycleState);
+                    lifecycle[0] = lifecycleState;
+                }
+                helper.assertTrue(worker.getEntity().isPresent() && !original.isRemoved(), "forester vanished: " + lifecycleState);
+                // A controlled moving-but-not-arriving path, not a stationary worker whose rescue we undo.
+                // Keep vertical physics on the island; only horizontal position models the blocked return.
+                final double angle = level.getGameTime() * 0.15D;
+                original.setPos(far.getX() + 0.5D + Math.cos(angle) * 2, far.getY(), far.getZ() + 0.5D + Math.sin(angle) * 2);
+                original.setDeltaMovement(0, 0, 0);
+                original.fallDistance = 0;
                 final EntityAIWorkLumberjack ai = ai(worker);
                 if (ai != null && searchingAt[0] < 0)
                 {
@@ -2380,7 +2794,7 @@ public final class ForestryGameTests
                         searchingAt[0] = level.getGameTime();
                     }
                 }
-            }, "forestry_walk_home_bounded");
+            }, carrySaplings ? "forestry_walk_home_bounded" : "forestry_walk_home_hut_saplings");
         });
     }
 
@@ -2594,7 +3008,7 @@ public final class ForestryGameTests
 
     // ---------------------------------------------------------------- TreeChop lane
 
-    private static void resetTreeChop(final GameTestHelper helper)
+    static void resetTreeChop(final GameTestHelper helper)
     {
         helper.assertTrue(Compatibility.treeChop.isPresent(), "TreeChop is loaded but the Forester's TreeChop compat is not active");
         Compatibility.treeChop.setEnabled(true);

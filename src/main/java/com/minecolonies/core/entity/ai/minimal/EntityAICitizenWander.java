@@ -281,6 +281,8 @@ public class EntityAICitizenWander implements IStateAI
             final Optional<BlockPos> site = chooseLeisureSite();
             if (site.isPresent())
             {
+                // A visit interrupted by shelter must not resume its previous walk target.
+                walkTo = null;
                 leisureSite = site.get();
                 citizen.getCitizenAI().setCurrentDelay(60 * 20);
                 return GO_TO_LEISURE_SITE;
@@ -321,7 +323,7 @@ public class EntityAICitizenWander implements IStateAI
 
     public boolean canUse()
     {
-        return citizen.getNavigation().isDone() && !citizen.isBaby()
+        return citizen.getNavigation().isDone() && !citizen.isBaby() && !citizen.getLife().chatting() && !citizen.getLife().greetingActive()
                  && !(citizen.getCitizenData().getJob() instanceof AbstractJobGuard);
     }
 }

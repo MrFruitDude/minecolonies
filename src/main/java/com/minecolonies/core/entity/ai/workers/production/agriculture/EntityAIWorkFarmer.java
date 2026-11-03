@@ -176,11 +176,17 @@ public class EntityAIWorkFarmer extends AbstractEntityAICrafting<JobFarmer, Buil
     {
         if (shouldDumpInventory || job.getActionsDone() >= getActionRewardForCraftingSuccess() || gatheredEnoughToDump())
         {
-            shouldDumpInventory = false;
-            fieldStepsSinceDump = 0;
             return true;
         }
         return super.wantInventoryDumped();
+    }
+
+    @Override
+    protected void onDumpFinished(final boolean buildingFull)
+    {
+        super.onDumpFinished(buildingFull);
+        shouldDumpInventory = false;
+        fieldStepsSinceDump = 0;
     }
 
     @Override
@@ -943,9 +949,22 @@ public class EntityAIWorkFarmer extends AbstractEntityAICrafting<JobFarmer, Buil
         return canGoIdle() && noCraftingWork();
     }
 
+    /** Finish handing over a harvest before an earned leisure break; urgent needs still take priority in CitizenAI. */
+    @Override
+    public boolean canTakeLeisure()
+    {
+        return !shouldDumpInventory && getState() != INVENTORY_FULL && super.canTakeLeisure();
+    }
+
     @Override
     public boolean canGoIdle()
     {
+        // Completing the last field does not complete the work: deliver its harvest first.
+        // Keep other active dumps too; deciding whether to dump must not consume the pending flag.
+        if (shouldDumpInventory || getState() == INVENTORY_FULL)
+        {
+            return false;
+        }
         if (building.getModule(FARMER_FIELDS).getBuildingExtensionToWorkOn() == null)
         {
             return !super.hasWorkToDo();

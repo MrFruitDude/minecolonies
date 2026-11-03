@@ -10,5 +10,5 @@ public class TreePathResult extends PathResult
     /**
      * Position of the found tree.
      */
-    public BlockPos treeLocation;
+    public volatile BlockPos treeLocation;
 }
