@@ -642,8 +642,7 @@ public final class ForestryGameTests
         final EntityAIWorkLumberjack[] originalAi = {null};
         final AABB plot = new AABB(Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(-8, 0, -8))),
           Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(48, 40, 44))));
-        final Predicate<ItemStack> marker = stack -> stack.is(Items.STICK) && stack.has(DataComponents.CUSTOM_NAME)
-          && stack.get(DataComponents.CUSTOM_NAME).getString().startsWith("dump-gather-");
+        final Predicate<ItemStack> marker = stack -> stack.is(Items.PRISMARINE_SHARD);
         final int[] ticks = {0};
         pump(helper, List.of(a, b), 12000,
           () -> interrupted[0] && dumpCompleted[0] && workedAfterDump[0]
@@ -662,14 +661,12 @@ public final class ForestryGameTests
                   {
                       supplied[0] = true;
                       final BlockPos center = a.getEntity().orElseThrow().blockPosition();
-                      int itemIndex = 0;
                       for (final int dx : new int[]{-3, 0, 3})
                       {
                           for (final int dz : new int[]{-3, 0, 3})
                           {
                               if (dx == 0 && dz == 0) { continue; }
-                              final ItemStack stack = new ItemStack(Items.STICK);
-                              stack.set(DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("dump-gather-" + itemIndex++));
+                              final ItemStack stack = new ItemStack(Items.PRISMARINE_SHARD);
                               final ItemEntity item = new ItemEntity(level, center.getX() + dx + 0.5D, center.getY() + 0.25D, center.getZ() + dz + 0.5D, stack);
                               item.setDeltaMovement(Vec3.ZERO);
                               if (dx != 0 && dz != 0) { item.setPickUpDelay(400); }
