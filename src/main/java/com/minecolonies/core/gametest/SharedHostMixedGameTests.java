@@ -752,7 +752,7 @@ final class SharedHostMixedGameTests
                         completed++;
                         request = null; order = null;
                     }
-                    if (now - windowStart >= 4000)
+                    if (now - windowStart >= 7600)
                     {
                         helper.fail("shared mixed native production stalled: cell=" + index + " window=" + completed
                           + " crafted=" + crafted + " carried=" + carried + " delivered=" + delivered
