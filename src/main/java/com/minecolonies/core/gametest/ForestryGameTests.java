@@ -671,7 +671,10 @@ public final class ForestryGameTests
                               final ItemStack stack = new ItemStack(Items.STICK);
                               stack.set(DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("dump-gather-" + itemIndex++));
                               final ItemEntity item = new ItemEntity(level, center.getX() + dx + 0.5D, center.getY() + 0.25D, center.getZ() + dz + 0.5D, stack);
-                              item.setDeltaMovement(Vec3.ZERO); item.setNoPickUpDelay(); item.setUnlimitedLifetime(); level.addFreshEntity(item);
+                              item.setDeltaMovement(Vec3.ZERO);
+                              if (dx != 0 && dz != 0) { item.setPickUpDelay(400); }
+                              else { item.setNoPickUpDelay(); }
+                              item.setUnlimitedLifetime(); level.addFreshEntity(item);
                           }
                       }
                   }
@@ -679,18 +682,20 @@ public final class ForestryGameTests
                   final int groundMarkers = level.getEntitiesOfClass(ItemEntity.class, plot).stream().filter(item -> marker.test(item.getItem()))
                     .mapToInt(item -> item.getItem().getCount()).sum();
                   final List<BlockPos> pending = current.getItemsForPickUp();
+                  final boolean liveMarkerPending = pending != null && level.getEntitiesOfClass(ItemEntity.class, plot).stream()
+                    .anyMatch(item -> marker.test(item.getItem()) && pending.contains(item.blockPosition()));
                   if (!dueSeeded[0] && state == AIWorkerState.LUMBERJACK_GATHERING && heldMarkers > 0 && groundMarkers > 0
-                    && pending != null && !pending.isEmpty())
+                    && liveMarkerPending)
                   {
                       // Controlled test input after collection begins, not a state change, forced dump or reset.
                       firstJob.incrementActionsDone(32);
                       dueSeeded[0] = true;
                   }
-                  if ((previous[0] == AIWorkerState.LUMBERJACK_GATHERING || previous[0] == AIWorkerState.LUMBERJACK_GATHERING_2)
+                  if (!interrupted[0] && (previous[0] == AIWorkerState.LUMBERJACK_GATHERING || previous[0] == AIWorkerState.LUMBERJACK_GATHERING_2)
                     && state == AIWorkerState.INVENTORY_FULL)
                   {
                       helper.assertTrue(dueSeeded[0] && firstJob.getActionsDone() >= 32, "gathering dump was not the seeded due-count case");
-                      helper.assertTrue(heldMarkers > 0 && groundMarkers > 0 && pending != null && !pending.isEmpty(),
+                      helper.assertTrue(heldMarkers > 0 && groundMarkers > 0 && liveMarkerPending,
                         "dump did not interrupt real pending gathering: held=" + heldMarkers + " ground=" + groundMarkers + " pending=" + pending);
                       helper.assertTrue(tree(a) == null && !lastOwnedLogs.isEmpty(), "gathering interruption did not relinquish the completed tree");
                       // For the peer, an A-owned or blocked claim would read as taken. A peer-owned claim is allowed.
