@@ -142,6 +142,7 @@ final class SharedHostMeter
             activity.verify();
             measurementStart = snapshot();
             previousCounters = measurementStart;
+            if (!timing) { functionalDiagnostic("measurement-start", null); }
             paths(false);
             require(!pathMarks.isEmpty(), "no native path workers at measurement start");
             completedStart = Pathfinding.getExecutor().getCompletedTaskCount();
@@ -158,13 +159,14 @@ final class SharedHostMeter
             activity.verify();
             if (timing) { require(nativePathIdentity.equals(nativePaths(samples)), "native path worker identity changed"); }
             final Map<String, Long> current = snapshot();
+            if (!timing) { functionalDiagnostic("block-boundary", null); }
             final JsonObject block = new JsonObject();
             block.addProperty("sample", samples);
             final JsonObject delta = new JsonObject();
             for (final String role : requiredRoles())
             {
                 final long count = current.get(role) - previousCounters.get(role);
-                require(count > 0, "no native " + role + " activity in block");
+                require(count > 0, "no native " + role + " activity in block sample=" + samples + " tick=" + (helper.getLevel().getGameTime() - began) + " previous=" + previousCounters + " current=" + current);
                 delta.addProperty(role, count);
             }
             block.add("roleDeltas", delta);
@@ -374,8 +376,33 @@ final class SharedHostMeter
         if (!closed) { closed = true; if (activity != null) { activity.close(); } }
     }
 
+    private void functionalDiagnostic(final String type, final Throwable failure)
+    {
+        final JsonObject record = new JsonObject();
+        record.addProperty("type", type); record.addProperty("sample", samples);
+        record.addProperty("tick", helper.getLevel().getGameTime() - began);
+        record.addProperty("previousCounters", String.valueOf(previousCounters));
+        record.addProperty("currentCounters", String.valueOf(activity.counters()));
+        record.addProperty("description", activity.describe());
+        if (failure != null) { record.addProperty("failure", failure.toString()); }
+        final Path destination = Path.of(System.getenv("MC_GT_DURABLE_DIR")).resolve("shared-host-functional-diagnostic.jsonl");
+        try (final java.nio.channels.FileChannel file = java.nio.channels.FileChannel.open(destination,
+          java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE, java.nio.file.StandardOpenOption.APPEND))
+        {
+            final java.nio.ByteBuffer bytes = java.nio.charset.StandardCharsets.UTF_8.encode(record.toString() + "\n");
+            while (bytes.hasRemaining()) { file.write(bytes); }
+            file.force(true);
+        }
+        catch (final IOException error) { throw new IllegalStateException("functional diagnostic could not be retained", error); }
+    }
+
     private void abort(final Throwable failure)
     {
+        if (!timing)
+        {
+            try { functionalDiagnostic("failure-before-cleanup", failure); }
+            catch (final Throwable diagnosticFailure) { failure.addSuppressed(diagnosticFailure); }
+        }
         try { closeActivity(); } catch (final Throwable closeFailure) { failure.addSuppressed(closeFailure); }
         if (noise != null) { noise.abort(failure); }
     }

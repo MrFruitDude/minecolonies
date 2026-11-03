@@ -93,6 +93,7 @@ final class SharedHostMixedGameTests
         private int fallbackSeen;
         private long tick;
         private boolean closed;
+        private final boolean functionalDiagnostic = "functional".equals(System.getenv("MC_SHARED_MODE"));
 
         private Session(final GameTestHelper helper) { this.helper = helper; level = helper.getLevel(); }
 
@@ -197,7 +198,11 @@ final class SharedHostMixedGameTests
                   && level.isPositionEntityTicking(worker.getEntity().orElseThrow().blockPosition()), "shared mixed worker unavailable");
             }
             if (now % 80 == 0) { waypoint((int) ((now / 80) % 2)); }
-            for (final Cell cell : cells) { cell.maintain(now); }
+            for (final Cell cell : cells)
+            {
+                cell.maintain(now);
+                if (functionalDiagnostic) { cell.diagnosticTick(now); }
+            }
         }
 
         @Override public void verifyAdmissionHeadroom()
@@ -341,7 +346,14 @@ final class SharedHostMixedGameTests
             return stack.is(Items.STONE_AXE) && stack.has(net.minecraft.core.component.DataComponents.UNBREAKABLE) && stack.getDamageValue() == 0;
         }
 
-        @Override public String describe() { return "mixed tick=" + tick + " workers=" + workers.size() + " counters=" + counters(); }
+        @Override public String describe()
+        {
+            final String base = "mixed tick=" + tick + " workers=" + workers.size() + " counters=" + counters();
+            if (!functionalDiagnostic) { return base; }
+            final StringBuilder detail = new StringBuilder(base);
+            for (final Cell cell : cells) { detail.append("\ncell=").append(cell.index).append(" ").append(cell.diagnosticState()).append(" events=").append(cell.diagnosticEvents); }
+            return detail.toString();
+        }
 
         @Override public void close()
         {
@@ -375,6 +387,56 @@ final class SharedHostMixedGameTests
             private WorkOrderBuilding order;
             private int completed, seeded, startingLogs;
             private long windowStart;
+            private long diagnosticFells, lastFellTick;
+            private final java.util.ArrayDeque<String> diagnosticEvents = new java.util.ArrayDeque<>();
+
+            private void diagnosticEvent(final String reason)
+            {
+                final String event = "tick=" + tick + " reason=" + reason + " " + diagnosticState();
+                if (diagnosticEvents.size() == 16) { diagnosticEvents.removeFirst(); }
+                diagnosticEvents.addLast(event);
+                Log.getLogger().info("SHARED MIXED DIAGNOSTIC cell={} {}", index, event);
+            }
+
+            private void diagnosticTick(final long now)
+            {
+                final var ai = ForestryGameTests.ai(forester);
+                final long fells = ai == null ? 0 : ai.getTreeChopFellCount();
+                if (fells != diagnosticFells)
+                {
+                    diagnosticFells = fells; lastFellTick = now; diagnosticEvent("fell-counter-change");
+                }
+                if (now % 400 == 0) { diagnosticEvent("regrow-check"); }
+            }
+
+            private String diagnosticRefusedOutcome(final Object ai)
+            {
+                if (ai == null) { return "no-ai"; }
+                try { return String.valueOf(ai.getClass().getMethod("getTreeChopRefusedOutcomeCount").invoke(ai)); }
+                catch (final ReflectiveOperationException unavailable) { return "unavailable-on-this-jar"; }
+            }
+
+            private String diagnosticState()
+            {
+                final var ai = ForestryGameTests.ai(forester);
+                final StringBuilder blocks = new StringBuilder();
+                for (int y = 0; y < 4; y++)
+                {
+                    final BlockPos at = root.above(y);
+                    blocks.append(" y").append(y).append("=").append(level.getBlockState(at))
+                      .append(" blocked=").append(com.minecolonies.core.entity.ai.workers.util.TreeClaims.isBlocked(level, at))
+                      .append(" taken=").append(com.minecolonies.core.entity.ai.workers.util.TreeClaims.isTakenByOther(level, at, b.getID(), forester.getId()));
+                }
+                final var tree = forester.getJob() instanceof com.minecolonies.core.colony.jobs.JobLumberjack job ? job.getTree() : null;
+                return "seeded=" + seeded + " regrows=" + Math.max(0, seeded / 4 - 1) + " lastFell=" + lastFellTick + blocks
+                  + " stumpOwnsRoot=" + (tree != null && tree.getStumpLocations().contains(root))
+                  + " fells=" + (ai == null ? 0 : ai.getTreeChopFellCount()) + " chops=" + (ai == null ? 0 : ai.getTreeChopChopCount())
+                  + " refusals=" + (ai == null ? 0 : ai.getTreeChopRefusedCount()) + " markRefused=" + (ai == null ? 0 : ai.getTreeChopMarkRefusedCount())
+                  + " refusedOutcome=" + diagnosticRefusedOutcome(ai) + " skipped=" + lumber.getSkippedTreeCount()
+                  + " hutSaplings=" + InventoryUtils.getItemCountInItemHandler(lumber.getItemHandlerCap(), item -> item.is(Items.BIRCH_SAPLING))
+                  + " hutAxes=" + InventoryUtils.getItemCountInItemHandler(lumber.getItemHandlerCap(), item -> item.is(Items.STONE_AXE))
+                  + " " + ForestryGameTests.describe(forester);
+            }
             private boolean crafted, carried, delivered, courierEmptyObserved;
 
             private Cell(final int index, final int x, final int z)
@@ -433,6 +495,7 @@ final class SharedHostMixedGameTests
                     }
                 }
                 seeded += 4;
+                if (functionalDiagnostic && forester != null) { diagnosticEvent("planted-tree"); }
             }
 
             private int logs()
