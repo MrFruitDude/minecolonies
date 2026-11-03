@@ -638,7 +638,7 @@ public final class ForestryGameTests
         final EntityAIWorkLumberjack[] originalAi = {null};
         final AABB plot = new AABB(Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(-8, 0, -8))),
           Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(48, 40, 44))));
-        final Predicate<ItemStack> marker = stack -> stack.is(Items.BIRCH_SAPLING) && stack.has(DataComponents.CUSTOM_NAME)
+        final Predicate<ItemStack> marker = stack -> stack.is(Items.STICK) && stack.has(DataComponents.CUSTOM_NAME)
           && stack.get(DataComponents.CUSTOM_NAME).getString().startsWith("dump-gather-");
         final int[] ticks = {0};
         pump(helper, List.of(a, b), 12000,
@@ -665,7 +665,7 @@ public final class ForestryGameTests
                           for (final int dz : new int[]{-3, 0, 3})
                           {
                               if (dx == 0 && dz == 0) { continue; }
-                              final ItemStack stack = new ItemStack(Items.BIRCH_SAPLING);
+                              final ItemStack stack = new ItemStack(Items.STICK);
                               stack.set(DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("dump-gather-" + itemIndex++));
                               final ItemEntity item = new ItemEntity(level, center.getX() + dx + 0.5D, center.getY() + 0.25D, center.getZ() + dz + 0.5D, stack);
                               item.setDeltaMovement(Vec3.ZERO); item.setNoPickUpDelay(); level.addFreshEntity(item);
@@ -716,7 +716,11 @@ public final class ForestryGameTests
                       final int physicalMarkers = InventoryUtils.getItemCountInItemHandler(a.getInventory(), marker) + InventoryUtils.getItemCountInItemHandler(b.getInventory(), marker)
                         + InventoryUtils.getCountFromBuilding(first, marker) + InventoryUtils.getCountFromBuilding(second, marker)
                         + level.getEntitiesOfClass(ItemEntity.class, plot).stream().filter(item -> marker.test(item.getItem())).mapToInt(item -> item.getItem().getCount()).sum();
-                      helper.assertTrue(physicalMarkers == 8, "gathering dump lost or duplicated collection markers");
+                      if (physicalMarkers != 8)
+                      {
+                          helper.fail("gathering collection marker count=" + physicalMarkers + " expected=8 supplied=" + supplied[0]
+                            + " interrupted=" + interrupted[0] + " resumed=" + resumed[0] + " A " + describe(a) + " B " + describe(b));
+                      }
                   }
               }
           }, "forestry_due_dump_gather_claims");
