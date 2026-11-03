@@ -272,6 +272,13 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                   info -> new MinecoloniesGameTestInstance(info, RecoveryJourneyGameTests::hutDoorReopens),
                   withSkyAccess(isolatedColonyData(event, name)));
             }
+            if (groups.contains("forester_dump_probe"))
+            {
+                final String name = "forestry_due_dump_resume";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
+                  info -> new MinecoloniesGameTestInstance(info, ForestryGameTests::dumpWaitThenFell),
+                  withSkyAccess(longIsolatedColonyData(event, name, 8000)));
+            }
             if (groups.contains("shared_host_mixed"))
             {
                 final String name = "shared_host_mixed";

@@ -490,6 +490,56 @@ public final class ForestryGameTests
 
     // ---------------------------------------------------------------- whole trees
 
+    /** Regression for a due woodcutting dump below the crafting inventory threshold. */
+    static void dumpWaitThenFell(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry due dump");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final Grown grown = grow(helper, new TreeSpec("birch dump regression", new BlockPos(24, 1, 18), false,
+          Blocks.BIRCH_SAPLING, Blocks.GRASS_BLOCK, TreeGrower.BIRCH, state -> state.is(Blocks.BIRCH_SAPLING)), 71L);
+        final List<BlockPos> originalLogs = new ArrayList<>();
+        for (final BlockPos at : BlockPos.betweenClosed(BlockPos.containing(grown.box().minX, grown.box().minY, grown.box().minZ),
+          BlockPos.containing(grown.box().maxX - 1, grown.box().maxY - 1, grown.box().maxZ - 1)))
+        {
+            if (level.getBlockState(at).is(Blocks.BIRCH_LOG)) { originalLogs.add(at.immutable()); }
+        }
+        helper.assertTrue(originalLogs.size() == grown.logs(), "unexpected non-birch tree in due-dump fixture");
+        final ICitizenData worker = forester(helper, colony, building, new BlockPos(10, 1, 4), new ItemStack(Items.BIRCH_LOG, 4));
+        final JobLumberjack job = (JobLumberjack) worker.getJob();
+        job.incrementActionsDone(32);
+        helper.assertTrue(job.getActionsDone() == 32 && logsKept(worker, building) == 4, "due-dump regression setup differs");
+        final boolean[] dumped = {false}, cleared = {false};
+        final int[] observedTicks = {0};
+        pump(helper, List.of(worker), 6000,
+          () -> dumped[0] && cleared[0] && ai(worker) != null && ai(worker).getTreeChopFellCount() > 0
+            && logsKept(worker, building) == 4 + grown.logs(),
+          () -> "due dump did not clear and resume forestry: actions=" + job.getActionsDone()
+            + " dumped=" + dumped[0] + " cleared=" + cleared[0] + " " + describe(worker),
+          () -> {
+              if (++observedTicks[0] % 20 == 0)
+              {
+                  int standingLogs = 0;
+                  for (final BlockPos at : originalLogs)
+                  {
+                      if (level.getBlockState(at).is(Blocks.BIRCH_LOG)) { standingLogs++; }
+                      else if (Compatibility.treeChop.isChoppedLog(level.getBlockState(at)))
+                      {
+                          final BlockState original = Compatibility.treeChop.getOriginalLogState(level, at);
+                          helper.assertTrue(original != null && original.is(Blocks.BIRCH_LOG), "unknown wrapped regression log");
+                          standingLogs++;
+                      }
+                  }
+                  final int dropped = level.getEntitiesOfClass(ItemEntity.class, grown.box().inflate(20)).stream()
+                    .filter(item -> item.getItem().is(Items.BIRCH_LOG)).mapToInt(item -> item.getItem().getCount()).sum();
+                  helper.assertTrue(logsKept(worker, building) + standingLogs + dropped == 4 + grown.logs(),
+                    "due-dump regression lost or duplicated logs");
+              }
+              dumped[0] |= InventoryUtils.getCountFromBuilding(building, stack -> stack.is(Items.BIRCH_LOG)) >= 4;
+              cleared[0] |= job.getActionsDone() < 32;
+          }, "forestry_due_dump_resume");
+    }
+
     private static void wholeBroadleaf(final GameTestHelper helper)
     {
         wholeTrees(helper, "forestry_whole_broadleaf", List.of(
