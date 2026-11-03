@@ -450,9 +450,11 @@ final class SharedHostMixedGameTests
                 // Each window demands new delivery; saved stock belongs to earlier windows.
                 final Stack demand = new Stack(new ItemStack(Items.OAK_PLANKS), 4, 4);
                 demand.setCanBeResolvedByBuilding(false);
+                final int hutPlanks = InventoryUtils.getItemCountInItemHandler(builder.getItemHandlerCap(), item -> item.is(Items.OAK_PLANKS));
+                final int workerPlanks = InventoryUtils.getItemCountInItemHandler(builderWorker.getInventory(), item -> item.is(Items.OAK_PLANKS));
                 request = builder.createRequest(demand, true);
                 helper.assertTrue(a.getRequestManager().getRequestForToken(request) != null,
-                  "shared mixed request absent: cell=" + index + " completed=" + completed + " startingLogs=" + startingLogs);
+                  "shared mixed request absent: cell=" + index + " completed=" + completed + " startingLogs=" + startingLogs + " hutPlanks=" + hutPlanks + " workerPlanks=" + workerPlanks);
             }
 
             private void arm()
