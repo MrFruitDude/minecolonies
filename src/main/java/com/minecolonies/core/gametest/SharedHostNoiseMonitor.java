@@ -305,12 +305,16 @@ final class SharedHostNoiseMonitor
         measuring = true;
     }
 
-    void sample(final long tick, final int sample, final long cpu, final long pathCpu, final long wall, final long busyWall)
+    String serverIdentity() { return identity; }
+
+    void sample(final long tick, final int sample, final long cpu, final long pathCpu, final long wall, final long busyWall, final JsonObject startCpu, final JsonObject endCpu)
     {
         require(measuring && sample >= 1 && sample <= 6000, "v3 sample outside measured window");
         require(cpu >= 0 && pathCpu >= 0, "v3 CPU counters decreased");
         cpuTotal += cpu; blockCpu += cpu;
         final JsonObject point = sampleRecord(tick, sample, cpu, pathCpu, wall, busyWall);
+        point.add("cpuStart", startCpu.deepCopy());
+        point.add("cpuEnd", endCpu.deepCopy());
         pending.add(point);
         if (sample % 50 != 0) { checkWriter(); return; }
         final JsonObject record = new JsonObject(); record.addProperty("type", "samples"); record.add("samples", pending); pending = new JsonArray();

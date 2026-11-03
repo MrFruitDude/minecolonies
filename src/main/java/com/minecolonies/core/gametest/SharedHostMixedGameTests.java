@@ -204,14 +204,20 @@ final class SharedHostMixedGameTests
         @Override public Map<String, Long> counters()
         {
             long built = 0, fells = 0;
+            final Map<String, Long> progress = new java.util.HashMap<>();
             for (final Cell cell : cells)
             {
                 built += cell.completed;
                 final var ai = ForestryGameTests.ai(cell.forester);
-                if (ai != null) { fells += ai.getTreeChopFellCount(); }
+                final long cellFells = ai == null ? 0 : ai.getTreeChopFellCount();
+                fells += cellFells;
+                progress.put("cell" + cell.index + "Windows", (long) cell.completed);
+                progress.put("cell" + cell.index + "Fells", cellFells);
             }
-            // A completed build window requires observed native crafting and courier carry/delivery in that window.
-            return Map.of("builder", built, "crafter", built, "courier", built, "forester", fells);
+            // Coupled window proxies, not independent per-worker craft/delivery counters.
+            progress.put("builder", built); progress.put("crafter", built);
+            progress.put("courier", built); progress.put("forester", fells);
+            return progress;
         }
 
         private void count(final ItemStack item, final int[] totals)
@@ -362,7 +368,7 @@ final class SharedHostMixedGameTests
             private WorkOrderBuilding order;
             private int completed, seeded, startingLogs;
             private long windowStart;
-            private boolean crafted, carried, delivered;
+            private boolean crafted, carried, delivered, courierEmptyObserved;
 
             private Cell(final int index, final int x, final int z)
             {
@@ -433,6 +439,7 @@ final class SharedHostMixedGameTests
                 helper.assertTrue(completed < TARGET_LIMIT, "shared mixed exhausted finite target/stock schedule");
                 startingLogs = logs(); windowStart = now;
                 crafted = false; carried = false; delivered = false; order = null;
+                courierEmptyObserved = InventoryUtils.getItemCountInItemHandler(courier.getInventory(), item -> item.is(Items.OAK_PLANKS)) == 0;
                 request = builder.createRequest(new Stack(new ItemStack(Items.OAK_PLANKS), 4, 4), true);
                 helper.assertTrue(a.getRequestManager().getRequestForToken(request) != null, "shared mixed request absent");
             }
@@ -465,7 +472,9 @@ final class SharedHostMixedGameTests
                 else
                 {
                     crafted |= logs() < startingLogs;
-                    carried |= InventoryUtils.getItemCountInItemHandler(courier.getInventory(), item -> item.is(Items.OAK_PLANKS)) > 0;
+                    final int courierPlanks = InventoryUtils.getItemCountInItemHandler(courier.getInventory(), item -> item.is(Items.OAK_PLANKS));
+                    courierEmptyObserved |= courierPlanks == 0;
+                    carried |= courierEmptyObserved && courierPlanks > 0;
                     final int planks = InventoryUtils.getItemCountInItemHandler(builder.getItemHandlerCap(), item -> item.is(Items.OAK_PLANKS))
                       + InventoryUtils.getItemCountInItemHandler(builderWorker.getInventory(), item -> item.is(Items.OAK_PLANKS));
                     delivered |= crafted && carried && planks >= 4 + completed * 3;

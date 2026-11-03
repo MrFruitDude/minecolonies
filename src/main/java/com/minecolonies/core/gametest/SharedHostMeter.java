@@ -10,6 +10,7 @@ import java.lang.management.ThreadMXBean;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -79,7 +80,7 @@ final class SharedHostMeter
             began = helper.getLevel().getGameTime();
             previousTick = began;
             helper.runAfterDelay(1, this::tick);
-            if (timing) { priorCpu = threads.getCurrentThreadCpuTime(); priorBusyWall = System.nanoTime(); priorWall = priorBusyWall; }
+            if (timing) { priorCpuMark = cpuMark(); priorCpu = priorCpuMark.get("cpuNs").getAsLong(); priorBusyWall = System.nanoTime(); priorWall = priorBusyWall; }
         }
         catch (final RuntimeException | Error failure) { abort(failure); throw failure; }
     }
@@ -90,23 +91,36 @@ final class SharedHostMeter
         catch (final RuntimeException | Error failure) { abort(failure); throw failure; }
     }
 
+    private JsonObject priorCpuMark;
+
+    private JsonObject cpuMark()
+    {
+        final JsonObject mark = new JsonObject();
+        mark.addProperty("beforeNs", System.nanoTime());
+        mark.addProperty("cpuNs", threads.getCurrentThreadCpuTime());
+        mark.addProperty("afterNs", System.nanoTime());
+        mark.addProperty("javaThreadId", Thread.currentThread().threadId());
+        mark.addProperty("nativeIdentity", noise.serverIdentity());
+        return mark;
+    }
+
     private void tickGuarded()
     {
-        // Take the CPU mark before any observer or fixture work on this tick.
-        final long nowCpu = timing ? threads.getCurrentThreadCpuTime() : 0;
-        final long nowWall = timing ? System.nanoTime() : 0;
         final long nowTick = helper.getLevel().getGameTime();
         require(nowTick - previousTick == 1, "nonconsecutive GameTest tick");
         previousTick = nowTick;
         final long tick = nowTick - began;
         require(tick >= 1 && tick <= INVOCATION + SETTLE + SAMPLES, "unexpected phase tick");
+        // Fixture calls into production are part of the registered Server CPU interval.
+        activity.maintain(tick);
+        final JsonObject endCpuMark = timing ? cpuMark() : null;
+        final long nowCpu = timing ? endCpuMark.get("cpuNs").getAsLong() : 0;
+        final long nowWall = timing ? System.nanoTime() : 0;
         if (tick > INVOCATION + SETTLE)
         {
             final long async = paths(true);
             if (timing)
             {
-                final long lag = nowWall - deadline;
-                if (lag > 0) { overruns++; maxOverrun = Math.max(maxOverrun, lag); }
                 final long value = nowCpu - priorCpu;
                 require(value >= 0 && async >= 0 && nowWall >= priorWall && nowWall >= priorBusyWall, "counter decreased");
                 serverCpu[samples] = value;
@@ -114,11 +128,10 @@ final class SharedHostMeter
                 pathTotal += async;
                 wall[samples] = nowWall - priorWall;
                 busyWall[samples] = nowWall - priorBusyWall;
-                noise.sample(nowTick, samples + 1, value, async, wall[samples], busyWall[samples]);
+                noise.sample(nowTick, samples + 1, value, async, wall[samples], busyWall[samples], priorCpuMark, endCpuMark);
             }
             samples++;
         }
-        activity.maintain(tick);
         if (tick <= INVOCATION && timing) { noise.warmup(tick); }
         if (tick == INVOCATION + SETTLE)
         {
@@ -171,10 +184,12 @@ final class SharedHostMeter
         else if (timing)
         {
             deadline += PERIOD;
+            final long lag = System.nanoTime() - deadline;
+            if (lag > 0) { overruns++; maxOverrun = Math.max(maxOverrun, lag); }
             long remaining;
             while ((remaining = deadline - System.nanoTime()) > 0) { LockSupport.parkNanos(remaining); }
         }
-        if (timing) { priorCpu = threads.getCurrentThreadCpuTime(); priorBusyWall = System.nanoTime(); priorWall = nowWall; }
+        if (timing) { priorCpuMark = cpuMark(); priorCpu = priorCpuMark.get("cpuNs").getAsLong(); priorBusyWall = System.nanoTime(); priorWall = nowWall; }
     }
 
     private Set<String> requiredRoles()
@@ -274,6 +289,17 @@ final class SharedHostMeter
         final JsonObject roles = new JsonObject();
         final Map<String, Long> current = snapshot();
         for (final var entry : current.entrySet()) { roles.addProperty(entry.getKey(), entry.getValue() - measurementStart.get(entry.getKey())); }
+        if (workload.contains("mixed"))
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                for (final String suffix : List.of("Windows", "Fells"))
+                {
+                    final String key = "cell" + i + suffix;
+                    require(current.get(key) - measurementStart.get(key) > 0, "inactive mixed cell during measurement: " + key);
+                }
+            }
+        }
         result.add("roleCounters", roles);
         if (timing)
         {
