@@ -424,7 +424,7 @@ final class SharedHostMixedGameTests
             private String diagnosticWorker(final ICitizenData citizen)
             {
                 return citizen.getEntity().map(entity -> "status=" + citizen.getStatus().getTranslationKey() + " leisure=" + citizen.getLeisureTime()
-                  + " lifeState=" + entity.getCitizenAI().getState() + " pos=" + entity.blockPosition()
+                  + " lifeState=" + (entity instanceof com.minecolonies.core.entity.citizen.EntityCitizen concrete ? concrete.getCitizenAI().getState() : "unavailable") + " pos=" + entity.blockPosition()
                   + " state=" + (entity.getCitizenJobHandler().getWorkAI() == null ? "no-ai" : entity.getCitizenJobHandler().getWorkAI().getStateAI().getState())
                   + " navDone=" + entity.getNavigation().isDone() + " path=" + entity.getNavigation().getPath()).orElse("no-entity");
             }
