@@ -554,8 +554,6 @@ public final class ForestryGameTests
         for (int slot = 4; slot < 24; slot++) { worker.getInventory().setStackInSlot(slot, new ItemStack(Items.DIRT, 64)); }
         final JobLumberjack job = (JobLumberjack) worker.getJob();
         job.incrementActionsDone(32);
-        final AABB plot = new AABB(Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(-8, 0, -8))),
-          Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(40, 40, 40))));
         final int[] ticks = {0};
         pump(helper, List.of(worker), 6000,
           () -> job.getActionsDone() < 32 && InventoryUtils.openSlotCount(cap) == 0,
@@ -567,10 +565,8 @@ public final class ForestryGameTests
                   {
                       final Predicate<ItemStack> matches = stack -> stack.is(entry.getKey());
                       final int physical = InventoryUtils.getItemCountInItemHandler(worker.getInventory(), matches)
-                        + InventoryUtils.getCountFromBuilding(building, matches)
-                        + level.getEntitiesOfClass(ItemEntity.class, plot).stream().filter(item -> matches.test(item.getItem()))
-                          .mapToInt(item -> item.getItem().getCount()).sum();
-                      helper.assertTrue(physical == entry.getValue(), "full-hut due dump lost or duplicated " + entry.getKey());
+                        + InventoryUtils.getCountFromBuilding(building, matches);
+                      helper.assertTrue(physical == entry.getValue(), "full-hut due dump dropped, lost or duplicated " + entry.getKey());
                   }
               }
           }, "forestry_due_dump_full_hut");
