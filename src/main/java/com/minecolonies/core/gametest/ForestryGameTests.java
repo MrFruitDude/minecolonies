@@ -540,6 +540,42 @@ public final class ForestryGameTests
           }, "forestry_due_dump_resume");
     }
 
+    /** A due, high-occupancy dump into a hut that fills must keep every remaining item. */
+    static void dumpWaitFullHut(final GameTestHelper helper)
+    {
+        final ServerLevel level = helper.getLevel();
+        final IColony colony = MinecoloniesGameTests.foundGameTestColony(helper, "forestry due dump full hut");
+        final BuildingLumberjack building = hut(helper, colony, HUT, false);
+        final var cap = building.getItemHandlerCap();
+        for (int slot = 0; slot < cap.getSlots(); slot++) { cap.insertItem(slot, new ItemStack(Items.COBBLESTONE, 64), false); }
+        cap.extractItem(0, 64, false);
+        helper.assertTrue(InventoryUtils.openSlotCount(cap) == 1, "due-dump hut needs one free slot");
+        final ICitizenData worker = forester(helper, colony, building, new BlockPos(10, 1, 4), new ItemStack(Items.BIRCH_LOG, 4));
+        for (int slot = 4; slot < 24; slot++) { worker.getInventory().setStackInSlot(slot, new ItemStack(Items.DIRT, 64)); }
+        final JobLumberjack job = (JobLumberjack) worker.getJob();
+        job.incrementActionsDone(32);
+        final AABB plot = new AABB(Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(-8, 0, -8))),
+          Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(40, 40, 40))));
+        final int[] ticks = {0};
+        pump(helper, List.of(worker), 6000,
+          () -> job.getActionsDone() < 32 && InventoryUtils.openSlotCount(cap) == 0,
+          () -> "full-hut due dump did not finish: actions=" + job.getActionsDone() + " " + describe(worker),
+          () -> {
+              if (++ticks[0] % 20 == 0)
+              {
+                  for (final var entry : Map.of(Items.DIRT, 1280, Items.BIRCH_LOG, 4).entrySet())
+                  {
+                      final Predicate<ItemStack> matches = stack -> stack.is(entry.getKey());
+                      final int physical = InventoryUtils.getItemCountInItemHandler(worker.getInventory(), matches)
+                        + InventoryUtils.getCountFromBuilding(building, matches)
+                        + level.getEntitiesOfClass(ItemEntity.class, plot).stream().filter(item -> matches.test(item.getItem()))
+                          .mapToInt(item -> item.getItem().getCount()).sum();
+                      helper.assertTrue(physical == entry.getValue(), "full-hut due dump lost or duplicated " + entry.getKey());
+                  }
+              }
+          }, "forestry_due_dump_full_hut");
+    }
+
     private static void wholeBroadleaf(final GameTestHelper helper)
     {
         wholeTrees(helper, "forestry_whole_broadleaf", List.of(

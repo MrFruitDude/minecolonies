@@ -278,6 +278,10 @@ public final class MinecoloniesGameTestRegistrar implements Consumer<RegisterGam
                 event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, name),
                   info -> new MinecoloniesGameTestInstance(info, ForestryGameTests::dumpWaitThenFell),
                   withSkyAccess(longIsolatedColonyData(event, name, 8000)));
+                final String fullHutName = "forestry_due_dump_full_hut";
+                event.registerTest(Identifier.fromNamespaceAndPath(Constants.MOD_ID, fullHutName),
+                  info -> new MinecoloniesGameTestInstance(info, ForestryGameTests::dumpWaitFullHut),
+                  withSkyAccess(longIsolatedColonyData(event, fullHutName, 8000)));
             }
             if (groups.contains("shared_host_mixed"))
             {

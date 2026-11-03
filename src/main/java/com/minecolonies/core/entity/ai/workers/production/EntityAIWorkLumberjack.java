@@ -673,9 +673,9 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
             return START_WORKING;
         }
 
-        if (job.getActionsDone() >= getActionsDoneUntilDumping())
+        if (waitForDumpBeforeWork())
         {
-            // Wait to dump before continuing.
+            // Wait only when the inherited dump event is also eligible.
             return getState();
         }
 
@@ -697,6 +697,13 @@ public class EntityAIWorkLumberjack extends AbstractEntityAICrafting<JobLumberja
         }
 
         return getNextCraftingState();
+    }
+
+    /** Woodcutting always has work; only a real crafting task should postpone a due dump. */
+    @Override
+    protected boolean dumpNowAfterWork()
+    {
+        return !super.hasWorkToDo() || inventoryOverDumpRatio();
     }
 
     /**
