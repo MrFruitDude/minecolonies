@@ -137,7 +137,6 @@ final class SharedHostMeter
             samples++;
         }
         if (tick <= INVOCATION && timing) { noise.warmup(tick); }
-        if (tick == INVOCATION) { warmupElapsed = System.nanoTime() - warmupStart; }
         if (tick == INVOCATION + SETTLE)
         {
             activity.verify();
@@ -181,9 +180,11 @@ final class SharedHostMeter
             final var pool = Pathfinding.getExecutor();
             while ((!pool.getQueue().isEmpty() || pool.getActiveCount() > 0) && System.nanoTime() < limit) { LockSupport.parkNanos(20_000L); }
             require(System.nanoTime() - warmupStart <= 120_000_000_000L, "invocation warmup exceeded 120 seconds");
-            if (timing)
+            if (tick == INVOCATION)
             {
-                if (tick == INVOCATION) { deadline = System.nanoTime(); }
+                warmupElapsed = System.nanoTime() - warmupStart;
+                require(warmupElapsed <= 120_000_000_000L, "final warmup exceeded 120 seconds");
+                if (timing) { deadline = System.nanoTime(); }
             }
         }
         else if (timing)
