@@ -1504,6 +1504,8 @@ public final class AliveGameTests
                 helper.assertTrue(home.isInBuilding(inside), "precondition failed: inside point is outside the house: " + settled);
                 helper.assertTrue(level.getBlockState(roofColumn).is(net.minecraft.world.level.block.Blocks.STONE), "precondition failed: roof column stone missing: " + settled);
                 helper.assertTrue(!level.canSeeSky(inside.above()), "precondition failed: the roof has not blocked sky visibility: " + settled);
+                // Async fixture setup may advance the unpaced clock; start the behavior at the intended midday.
+                midday(helper);
                 for (int i = 0; i < 2; i++)
                 {
                     final BlockPos start = helper.absolutePos(new BlockPos(6 + i * 2, 1, 24));
