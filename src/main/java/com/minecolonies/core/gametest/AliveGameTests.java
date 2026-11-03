@@ -1462,25 +1462,48 @@ public final class AliveGameTests
             final int z0 = Math.max(Math.min(plotA.getZ(), plotB.getZ()), Math.min(cA.getZ(), cB.getZ()) - 1);
             final int z1 = Math.min(Math.max(plotA.getZ(), plotB.getZ()), Math.max(cA.getZ(), cB.getZ()) + 1);
             helper.assertTrue(x0 <= x1 && z0 <= z1, "precondition failed: the house " + cA + " " + cB + " is off the plot " + plotA + " " + plotB);
+            final int[] placements = {0, 0};
             for (int x = x0; x <= x1; x++)
             {
                 for (int z = z0; z <= z1; z++)
                 {
-                    level.setBlock(new BlockPos(x, roofY, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+                    placements[0]++;
+                    if (level.setBlock(new BlockPos(x, roofY, z), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3)) { placements[1]++; }
                 }
             }
-            // the roof is sky light: canSeeSky reads it, and the light engine settles the new roof a few ticks later, not on the tick it is laid
+            // Sky visibility is the production check. Setup waits for it without treating unpaced ticks as elapsed wall time.
             final BlockPos inside = EntityAICitizenLife.insideSpot(home, 0);
+            final BlockPos roofColumn = new BlockPos(inside.getX(), roofY, inside.getZ());
             final long roofedAt = level.getGameTime();
+            final long roofedAtNs = System.nanoTime();
+            final java.util.function.Supplier<String> roofSnapshot = () -> {
+                final List<String> column = new ArrayList<>();
+                for (int y = inside.getY(); y <= roofY + 1; y++)
+                { column.add(y + ":" + level.getBlockState(new BlockPos(inside.getX(), y, inside.getZ()))); }
+                return "ticks=" + (level.getGameTime() - roofedAt) + " milliseconds=" + (System.nanoTime() - roofedAtNs) / 1_000_000L
+                  + " inside=" + inside + " member=" + home.isInBuilding(inside) + " sky=" + level.canSeeSky(inside.above())
+                  + " brightness=" + level.getBrightness(net.minecraft.world.level.LightLayer.SKY, inside.above())
+                  + " height=" + level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, inside.getX(), inside.getZ())
+                  + " chunk=" + (inside.getX() >> 4) + "," + (inside.getZ() >> 4) + " chunkLoaded=" + level.hasChunkAt(inside)
+                  + " corners=" + home.getCorners().getA() + "/" + home.getCorners().getB()
+                  + " roofY=" + roofY + " roofX=" + x0 + ".." + x1 + " roofZ=" + z0 + ".." + z1
+                  + " placementCalls=" + placements[0] + " changed=" + placements[1] + " column=" + column;
+            };
+            Log.getLogger().info("ALIVE ROOF placed {}", roofSnapshot.get());
             final Runnable[] lit = new Runnable[1];
             lit[0] = () -> {
-                if (level.canSeeSky(inside.above()) && level.getGameTime() - roofedAt < 100)
+                final long settleTicks = level.getGameTime() - roofedAt;
+                if (settleTicks == 100) { Log.getLogger().info("ALIVE ROOF old_tick_bound {}", roofSnapshot.get()); }
+                if (level.canSeeSky(inside.above()) && settleTicks < 10_000 && System.nanoTime() - roofedAtNs < 5_000_000_000L)
                 {
                     helper.runAfterDelay(1, () -> lit[0].run());
                     return;
                 }
-                helper.assertTrue(home.isInBuilding(inside) && !level.canSeeSky(inside.above()), "precondition failed: the house is not roofed at " + inside + " roof y " + roofY
-                                                                                                 + " x " + x0 + ".." + x1 + " z " + z0 + ".." + z1);
+                final String settled = roofSnapshot.get();
+                Log.getLogger().info("ALIVE ROOF exit {}", settled);
+                helper.assertTrue(home.isInBuilding(inside), "precondition failed: inside point is outside the house: " + settled);
+                helper.assertTrue(level.getBlockState(roofColumn).is(net.minecraft.world.level.block.Blocks.STONE), "precondition failed: roof column stone missing: " + settled);
+                helper.assertTrue(!level.canSeeSky(inside.above()), "precondition failed: the roof has not blocked sky visibility: " + settled);
                 for (int i = 0; i < 2; i++)
                 {
                     final BlockPos start = helper.absolutePos(new BlockPos(6 + i * 2, 1, 24));
