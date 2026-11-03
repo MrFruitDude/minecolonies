@@ -423,7 +423,8 @@ final class SharedHostMixedGameTests
 
             private String diagnosticWorker(final ICitizenData citizen)
             {
-                return citizen.getEntity().map(entity -> "status=" + citizen.getStatus() + " pos=" + entity.blockPosition()
+                return citizen.getEntity().map(entity -> "status=" + citizen.getStatus().getTranslationKey() + " leisure=" + citizen.getLeisureTime()
+                  + " lifeState=" + entity.getCitizenAI().getState() + " pos=" + entity.blockPosition()
                   + " state=" + (entity.getCitizenJobHandler().getWorkAI() == null ? "no-ai" : entity.getCitizenJobHandler().getWorkAI().getStateAI().getState())
                   + " navDone=" + entity.getNavigation().isDone() + " path=" + entity.getNavigation().getPath()).orElse("no-entity");
             }
@@ -438,7 +439,7 @@ final class SharedHostMixedGameTests
                 try
                 {
                     final var assigned = manager.getResolverForRequest(token);
-                    resolver = assigned == null ? "unassigned" : assigned.getClass().getSimpleName();
+                    resolver = assigned == null ? "unassigned" : assigned.getClass().getSimpleName() + "@" + assigned.getLocation().getInDimensionLocation();
                 }
                 catch (final IllegalArgumentException missing) { resolver = "unavailable"; }
                 final StringBuilder result = new StringBuilder().append(token).append("=").append(current.getState())
@@ -461,6 +462,22 @@ final class SharedHostMixedGameTests
                 final int held = InventoryUtils.getItemCountInItemHandler(builderWorker.getInventory(), item -> item.is(Items.OAK_PLANKS));
                 final StringBuilder warehouses = new StringBuilder();
                 for (final Cell cell : cells) { warehouses.append(cell.index).append(":").append(InventoryUtils.getItemCountInItemHandler(cell.warehouse.getItemHandlerCap(), item -> item.is(Items.OAK_PLANKS))).append(" "); }
+                final StringBuilder crafting = new StringBuilder();
+                if (crafter.getJob() instanceof com.minecolonies.core.colony.jobs.AbstractJobCrafter<?, ?> job)
+                {
+                    int count = 0;
+                    for (final IToken<?> token : job.getTaskQueue())
+                    {
+                        if (count++ == 8) { crafting.append(" [more tasks]"); break; }
+                        crafting.append(" [queued ").append(diagnosticRequest(token, 0)).append("]");
+                    }
+                    count = 0;
+                    for (final IToken<?> token : job.getAssignedTasks())
+                    {
+                        if (count++ == 8) { crafting.append(" [more assignments]"); break; }
+                        crafting.append(" [assigned ").append(diagnosticRequest(token, 0)).append("]");
+                    }
+                }
                 final StringBuilder queue = new StringBuilder();
                 if (courier.getJob() instanceof com.minecolonies.core.colony.jobs.JobDeliveryman job)
                 {
@@ -474,7 +491,7 @@ final class SharedHostMixedGameTests
                 return "window=" + completed + " windowStart=" + windowStart + " flags=" + crafted + "/" + carried + "/" + delivered + "/" + courierEmptyObserved
                   + " logs=" + logs() + "/" + startingLogs + " planksHut=" + hut + " planksBuilder=" + held + " required=" + (4 + completed * 3)
                   + " courierPlanks=" + InventoryUtils.getItemCountInItemHandler(courier.getInventory(), item -> item.is(Items.OAK_PLANKS))
-                  + " warehousePlanks=" + warehouses + " request=" + diagnosticRequest(request, 0) + " queue=" + queue
+                  + " craftingQueue=" + crafting + " warehousePlanks=" + warehouses + " request=" + diagnosticRequest(request, 0) + " queue=" + queue
                   + " order=" + (order == null ? "none" : order.getID()) + " builderHasOrder=" + ((BuildingBuilder) builder).hasWorkOrder()
                   + " target=" + (targets.size() <= completed ? "not-armed" : level.getBlockState(targets.get(completed)))
                   + " builder[" + diagnosticWorker(builderWorker) + "] crafter[" + diagnosticWorker(crafter) + "] courier[" + diagnosticWorker(courier) + "]";
